@@ -6,6 +6,10 @@
     },
     "workspaceFolder": "/workspace",
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind,consistency=cached",
+    // 新增 Volume 掛載配置
+    "mounts": [
+        "source=ai-news-data,target=/workspace/data,type=volume"
+    ],
     "customizations": {
         "vscode": {
             "extensions": [
@@ -33,8 +37,9 @@
         }
     },
     "remoteUser": "vscode",
-    "postCreateCommand": "pip install -r requirements.txt && pip install -r requirements-dev.txt",
+    "postCreateCommand":  "pip install -r requirements.txt && pip install -r requirements-dev.txt",
     "remoteEnv": {
+        "DATABASE_PATH": "/workspace/data/news.db",
         "PYTHONPATH": "${containerWorkspaceFolder}",
         "PATH": "${containerEnv:PATH}:/home/vscode/.local/bin"
     },

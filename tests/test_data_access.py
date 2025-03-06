@@ -5,7 +5,6 @@ from src.model.data_access import DataAccess
 @pytest.fixture
 def data_access():
     # 使用記憶體中的 SQLite 資料庫
-    engine = create_engine("sqlite:///:memory:")
     data_access = DataAccess(db_path="sqlite:///:memory:")
     # 確認資料庫表格已經建立
     data_access.create_tables()

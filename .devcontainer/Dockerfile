@@ -1,4 +1,5 @@
 FROM python:3.9-slim
+
 # 設定使用者名稱、使用者ID、使用者群組ID
 ARG USERNAME=vscode
 ARG USER_UID=1000
@@ -14,11 +15,23 @@ RUN groupadd --gid $USER_GID $USERNAME \
 
 WORKDIR /workspace
 # 安裝pylint、black、pytest、pytest-cov
-RUN pip install --upgrade pip && pip install pylint black pytest pytest-cov
+RUN pip install --upgrade pip && pip install \
+    pylint \
+    black \
+    pytest \
+    pytest-cov \
+    flask
+
+RUN mkdir -p /workspace/data && \
+    chmod 777 /workspace/data
+
 # 設定PYTHONPATH
 ENV PYTHONPATH=/workspace
 # 設定PATH
 ENV PATH="/home/vscode/.local/bin:${PATH}"
+
+# 設定資料庫路徑
+ENV DATABASE_PATH=/workspace/data/news.db
 # 設定使用者
 USER $USERNAME
 # 設定命令

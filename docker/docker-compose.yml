@@ -1,0 +1,23 @@
+!yaml
+
+version: '3.8'
+
+services:
+  ai-news-crawler:
+    # 指定 Dockerfile 位置
+    build:  
+      context: .
+      dockerfile: Dockerfile
+    # 掛載資料庫
+    volumes:
+      - news-data:/app/data
+    # 指定 port
+    ports:
+      - 5000:5000
+    # 指定環境變量
+    environment:
+      - DATABASE_PATH=/app/data/news.db
+    # 指定驅動
+volumes:
+  news-data:
+    driver: local

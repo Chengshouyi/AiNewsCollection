@@ -36,6 +36,10 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
+# 資料庫備份
+data/
+backups/
+
 # Unit test / coverage reports
 htmlcov/
 .tox/
@@ -170,5 +174,4 @@ cython_debug/
 # PyPI configuration file
 .pypirc
 
-# ai chat records
 .ai/
