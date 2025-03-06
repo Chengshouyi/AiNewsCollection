@@ -1,3 +1,13 @@
 {
-    "editor.fontSize": 16
+    "editor.fontSize": 16,
+    "python.analysis.typeCheckingMode": "basic",
+    "python.analysis.autoImportCompletions": true,
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.defaultInterpreterPath": "/usr/local/bin/python",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}"
+    ],
+    "debug.internalConsoleOptions": "neverOpen",
+    "debug.console.fontSize": 14
 }

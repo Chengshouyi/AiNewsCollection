@@ -1,6 +1,6 @@
 import pytest
 from sqlalchemy import create_engine
-from src.model.data_access import DataAccess
+from src.model.data_access import DataAccess, Article
 
 @pytest.fixture
 def data_access():
@@ -10,15 +10,16 @@ def data_access():
     data_access.create_tables()
     return data_access
 
+
 def test_insert_article(data_access):
     # 測試插入文章
     article_data = {
         "title":"測試文章",
-        "simmary":"這是測試文章的摘要",
-        "link":"https://test.com/article",
+        "summary":"這是測試文章的摘要",
+        "link":"https://test.com/article", 
         "content":"測試文章內容",
         "published_at":"2025-03-05 10:00:00",
-        "soure":"資料來源"
+        "source":"資料來源"
     }
 
     # 插入文章
@@ -29,6 +30,7 @@ def test_insert_article(data_access):
     assert len(articles) == 1
     assert articles[0]["title"] == "測試文章"
     assert articles[0]["link"] == "https://test.com/article"
+
 
 def test_insert_duplicate_article(data_access):
     # 測試插入重複的文章
@@ -83,6 +85,7 @@ def test_get_article_by_id(data_access):
     assert retrieved_article["title"] == "測試文章"
     assert retrieved_article["link"] == "https://test.com/article"
 
+
 def test_get_all_articles(data_access):
     # 測試抓取所有文章
     article_data1 = {
@@ -114,9 +117,7 @@ def test_get_all_articles(data_access):
     assert articles[0]["title"] == "測試文章1"
     assert articles[1]["title"] == "測試文章2"
 
-    
-    
-    
+      
     
 
 

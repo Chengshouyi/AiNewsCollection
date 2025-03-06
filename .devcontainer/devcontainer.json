@@ -18,7 +18,8 @@
                 "ms-vscode-remote.remote-containers",
                 "ms-azuretools.vscode-docker",
                 "eamodio.gitlens",
-                "njpwerner.autodocstring"
+                "njpwerner.autodocstring",
+                "ms-python.debugpy"
             ],
             "settings": {
                 "python.analysis.extraPaths": [
