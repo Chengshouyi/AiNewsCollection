@@ -1,153 +1,193 @@
 import os
-from sqlalchemy import create_engine, MetaData, Table, Column, Integer, String, DateTime, UniqueConstraint, text
-from sqlalchemy.orm import sessionmaker
+import logging
+from sqlalchemy import create_engine, Integer, String, DateTime, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import DeclarativeBase, Session
+from contextlib import contextmanager
+from sqlalchemy.orm import Mapped, mapped_column
+from typing import Optional, Dict, Any, List
+from datetime import datetime
 
+# 設定 logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 class Article(Base):
     __tablename__ = 'articles'
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    title = Column(String, nullable=False)
-    summary = Column(String)
-    link = Column(String, unique=True)
-    content = Column(String)
-    published_at = Column(DateTime)
-    source = Column(String)
+    # 設定資料庫欄位
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    summary: Mapped[Optional[str]] = mapped_column(String)
+    link: Mapped[str] = mapped_column(String, unique=True)
+    content: Mapped[Optional[str]] = mapped_column(String)
+    published_at: Mapped[Optional[datetime]]
+    source: Mapped[Optional[str]] = mapped_column(String)
 
 class DataAccess:
-    def __init__(self, db_path=None):
+    def __init__(self, db_path: Optional[str] = None) -> None:
         try:
-            # 確定資料庫路徑和 URL
-            if db_path is None:
-                # 使用環境變數或預設路徑
-                db_path = os.getenv('DATABASE_PATH', '/workspace/data/news.db')
-                db_url = f"sqlite:///{db_path}"
-            else:
-                # 使用提供的路徑
-                if db_path.startswith('sqlite:///:memory:'):
-                    # 記憶體資料庫
-                    db_url = db_path
-                else:
-                    # 檔案資料庫
-                    if db_path.startswith('sqlite:///'):
-                        file_path = db_path
-                    else:
-                        file_path = f"sqlite:///{db_path}"
-                        db_path = file_path.replace('sqlite:///', '')
-                    db_url = file_path
-            
-            # 僅對檔案資料庫，確保目錄存在
-            if not db_url.startswith('sqlite:///:memory:'):
-                file_path = db_url.replace('sqlite:///', '')
-                db_dir = os.path.dirname(file_path)
-                if db_dir:  # 確保目錄名稱非空
-                    os.makedirs(db_dir, exist_ok=True)
-            
+            # 確定及設定資料庫路徑和 URL
+            db_url = self._get_db_url(db_path)
             # 建立引擎
             self.engine = create_engine(db_url)
+            Base.metadata.create_all(self.engine)
             # 驗證連接 - 早期失敗
-            self.verify_connection()
-            # 建立 session
-            self.Session = sessionmaker(bind=self.engine)
-
+            self._verify_connection()  # 修正為正確的方法名稱
         except SQLAlchemyError as e:
             error_msg = f"資料庫連接或初始化錯誤: {e}"
-            print(error_msg)
+            logger.error(error_msg, exc_info=True)
             raise RuntimeError(error_msg) from e
         except Exception as e:
             error_msg = f"一般初始化錯誤: {e}"
-            print(error_msg)
+            logger.error(error_msg, exc_info=True)
             raise RuntimeError(error_msg) from e
-        
-    def verify_connection(self):
-        """驗證資料庫連接，如果失敗則拋出異常"""
+
+    @contextmanager
+    def _session_scope(self):
+        session = Session(self.engine)
         try:
+            yield session
+            session.commit()
+        except SQLAlchemyError as e:
+            error_msg = f"資料庫操作失敗: {e}"
+            logger.error(error_msg, exc_info=True)
+            session.rollback()
+            raise RuntimeError(error_msg) from e
+        finally:
+            session.close()
+
+    def _get_db_url(self, db_path: Optional[str] = None) -> str:
+        try:
+            # 確定資料庫路徑
+            if db_path is None:
+                db_path = os.getenv('DATABASE_PATH', '/workspace/data/news.db')
+            if db_path.startswith('sqlite:///:memory:'):
+                db_url = db_path
+            else:
+                # 確定資料庫路徑格式
+                if not db_path.startswith('sqlite:///'):
+                    db_path = f"sqlite:///{db_path}"
+                file_path = db_path.replace('sqlite:///', '')
+                db_dir = os.path.dirname(file_path)
+                # 確定資料庫路徑是否存在
+                if db_dir:
+                    os.makedirs(db_dir, exist_ok=True)
+                db_url = db_path
+            return db_url
+        except (FileNotFoundError, OSError) as e:
+            error_msg = f"資料庫路徑錯誤: {e}"
+            logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
+        except Exception as e:
+            error_msg = f"一般初始化錯誤: {e}"
+            logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
+
+    def _verify_connection(self) -> None:
+        try:
+            # 驗證連接
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
         except SQLAlchemyError as e:
-            raise SQLAlchemyError(f"資料庫連接驗證失敗: {e}") from e
-            
-    def check_connection(self):
-        """檢查資料庫連接狀態，返回布林值
-        
-        可在連接創建後的任何時間調用此方法以檢查連接狀態
-        """
+            error_msg = f"資料庫連接驗證失敗: {e}"
+            logger.error(error_msg, exc_info=True)
+            raise SQLAlchemyError(error_msg) from e
+
+    def _check_connection(self) -> bool:
         try:
+            # 檢查連接
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
             return True
-        except Exception:
+        except SQLAlchemyError as e:
+            logger.error(f"資料庫連接檢查失敗: {e}", exc_info=True)
             return False
 
-    def create_tables(self):
-        Base.metadata.create_all(self.engine)
-
-
-    def insert_article(self, article_data):
-        session = self.Session()
+    def _article_to_dict(self, article: Article) -> Dict[str, Any]:
         try:
-            # 如果傳入的是字典，轉換為 Article 實例
-            if isinstance(article_data, dict):
-                article = Article(**article_data)
-            else:
-                # 如果已經是 Article 實例，直接使用
-                article = article_data
-
-            # 檢查是否已存在相同連結的文章
-            existing_article = session.query(Article).filter_by(link=article.link).first()
-            
-            if not existing_article:
-                # 如果不存在，直接添加文章實例
-                session.add(article)
-                session.commit()
+            return {
+                "id": article.id,
+                "title": article.title,
+                "summary": article.summary,
+                "link": article.link,
+                "content": article.content,
+                "published_at": article.published_at.strftime('%Y-%m-%d %H:%M:%S') if article.published_at else None,
+                "source": article.source
+            }
+        except AttributeError as e:  # 捕獲更具體的異常
+            error_msg = f"轉換文章為字典失敗 (AttributeError): {e}, 文章ID: {article.id if hasattr(article, 'id') else 'N/A'}"
+            logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
+        except TypeError as e:
+            error_msg = f"轉換文章為字典失敗 (TypeError): {e}, 文章ID: {article.id if hasattr(article, 'id') else 'N/A'}"
+            logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
         except Exception as e:
-            session.rollback()
-            raise e
-        finally:
-            session.close()
-
-
-
-    def get_all_articles(self):
-        session = self.Session()
+            error_msg = f"轉換文章為字典失敗 (Exception): {e}, 文章ID: {article.id if hasattr(article, 'id') else 'N/A'}"
+            logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
+        
+    def create_tables(self) -> None:
         try:
-            articles = session.query(Article).all()
-            # 將 SQLAlchemy 模型實例轉換為字典
-            return [
-                {
-                    "id": article.id, 
-                    "title": article.title, 
-                    "summary": article.summary,
-                    "link": article.link,
-                    "content": article.content,
-                    "published_at": str(article.published_at),
-                    "source": article.source
-                } for article in articles
-            ]
-        finally:
-            session.close()
+            # 建立資料表
+            Base.metadata.create_all(self.engine)
+        except SQLAlchemyError as e:
+            error_msg = f"資料表建立失敗: {e}"
+            logger.error(error_msg, exc_info=True)
+            raise SQLAlchemyError(error_msg) from e
 
-    def get_article_by_id(self, article_id):
-        session = self.Session()
+    def insert_article(self, article_data: Dict[str, Any]) -> None:
+        with self._session_scope() as session:
+            try:
+                # 確認文章資料格式
+                if isinstance(article_data, dict):
+                    article = Article(**article_data)
+                else:
+                    article = article_data
+
+                if article.link is None or article.link.strip() == '':
+                    raise ValueError("文章連結不能為空")
+
+                # 確認文章是否已存在
+                existing_article = session.query(Article).filter_by(link=article.link).first()
+                if not existing_article:
+                    session.add(article)
+                    session.commit()
+            except Exception as e:
+                # 回復資料庫狀態
+                session.rollback()
+                error_msg = f"插入文章失敗: {e}"
+                logger.error(error_msg, exc_info=True)
+                raise RuntimeError(error_msg) from e
+
+    def get_all_articles(self) -> List[Dict[str, Any]]:
         try:
-            article = session.query(Article).filter_by(id=article_id).first()
-            if article:
-                return {
-                    "id": article.id, 
-                    "title": article.title, 
-                    "summary": article.summary,
-                    "link": article.link,
-                    "content": article.content,
-                    "published_at": str(article.published_at),
-                    "source": article.source
-                }
-            return None
-        finally:
-            session.close()
+            with self._session_scope() as session:
+                # 取得所有文章
+                articles = session.query(Article).all()
+                # 轉換為字典
+                return [self._article_to_dict(article) for article in articles]
+        except Exception as e:
+            error_msg = f"取得所有文章失敗: {e}"
+            logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
 
-    
-    
+    def get_article_by_id(self, article_id: int) -> Optional[Dict[str, Any]]:
+        try:
+            with self._session_scope() as session:
+                # 取得指定文章
+                article = session.query(Article).filter_by(id=article_id).first()
+                # 確認文章是否存在
+                if article:
+                    # 轉換為字典
+                    return self._article_to_dict(article)
+                return None
+        except Exception as e:
+            error_msg = f"取得指定文章失敗: {e}"
+            logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
+
+

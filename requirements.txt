@@ -2,5 +2,5 @@
 flask
 beautifulsoup4
 schedule
-sqlalchemy
+sqlalchemy>=2.0.0
 requests

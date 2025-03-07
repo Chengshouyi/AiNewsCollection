@@ -20,8 +20,8 @@ def main():
         data_access = DataAccess()
         
         # 創建資料庫表格
-        data_access.create_tables()
-        logging.info("資料庫初始化完成")
+        # data_access.create_tables()
+        # logging.info("資料庫初始化完成")
 
         # 可以在這裡添加其他初始化或定期任務
         logging.info("主程序啟動成功")
