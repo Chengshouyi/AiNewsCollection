@@ -1,30 +1,15 @@
 import os
 import logging
-from sqlalchemy import create_engine, Integer, String, DateTime, text
+from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import DeclarativeBase, Session
+from sqlalchemy.orm import Session
 from contextlib import contextmanager
-from sqlalchemy.orm import Mapped, mapped_column
 from typing import Optional, Dict, Any, List
-from datetime import datetime
-
+from model.models import Article, Base
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class Base(DeclarativeBase):
-    pass
-
-class Article(Base):
-    __tablename__ = 'articles'
-    # 設定資料庫欄位
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    title: Mapped[str] = mapped_column(String, nullable=False)
-    summary: Mapped[Optional[str]] = mapped_column(String)
-    link: Mapped[str] = mapped_column(String, unique=True)
-    content: Mapped[Optional[str]] = mapped_column(String)
-    published_at: Mapped[Optional[datetime]]
-    source: Mapped[Optional[str]] = mapped_column(String)
 
 class DataAccess:
     def __init__(self, db_path: Optional[str] = None) -> None:
@@ -105,7 +90,19 @@ class DataAccess:
         except SQLAlchemyError as e:
             logger.error(f"資料庫連接檢查失敗: {e}", exc_info=True)
             return False
+    def _db_base_to_dict(self, base: Base) -> Dict[str, Any]:
+        try:
+            return {
+                "id": getattr(base, "id", None),
+                "created_at": getattr(base, "created_at", None).strftime('%Y-%m-%d %H:%M:%S') if hasattr(base, "created_at") and getattr(base, "created_at") else None,
+                "updated_at": getattr(base, "updated_at", None).strftime('%Y-%m-%d %H:%M:%S') if hasattr(base, "updated_at") and getattr(base, "updated_at") else None
+            }
+        except AttributeError as e:
+            error_msg = f"轉換資料庫物件為字典失敗: {e}"
+            logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
 
+            
     def _article_to_dict(self, article: Article) -> Dict[str, Any]:
         try:
             return {
@@ -138,6 +135,7 @@ class DataAccess:
             error_msg = f"資料表建立失敗: {e}"
             logger.error(error_msg, exc_info=True)
             raise SQLAlchemyError(error_msg) from e
+
 
     def insert_article(self, article_data: Dict[str, Any]) -> None:
         with self._session_scope() as session:
