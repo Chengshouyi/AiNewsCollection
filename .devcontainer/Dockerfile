@@ -35,13 +35,6 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
 
 WORKDIR /workspace
-# 安裝pylint、black、pytest、pytest-cov
-RUN pip install --upgrade pip && pip install \
-    pylint \
-    black \
-    pytest \
-    pytest-cov \
-    flask
 
 RUN mkdir -p /workspace/data && \
     chmod 777 /workspace/data

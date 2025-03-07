@@ -23,7 +23,7 @@ RUN mkdir -p /app/data
 COPY requirements.txt .
 
 # 安裝 requirements.txt 中的套件
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 
 # 複製其他程式碼
 COPY . .

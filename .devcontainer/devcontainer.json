@@ -23,8 +23,7 @@
                 "njpwerner.autodocstring",
                 "ms-python.debugpy",
                 "mtxr.sqltools",
-                "mtxr.sqltools-driver-sqlite",
-                "ms-vscode.powershell"
+                "mtxr.sqltools-driver-sqlite"
             ],
             "settings": {
                 "python.defaultInterpreterPath": "/usr/local/bin/python",
@@ -58,7 +57,7 @@
         }
     },
     "remoteUser": "vscode",
-    "postCreateCommand": "pip install -r requirements.txt && pip install -r requirements-dev.txt",
+    "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt && pip install -r requirements-dev.txt",
     "remoteEnv": {
         "DATABASE_PATH": "/workspace/data/news.db",
         "PYTHONPATH": "${containerWorkspaceFolder}",
