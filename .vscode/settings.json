@@ -9,5 +9,6 @@
         "${workspaceFolder}"
     ],
     "debug.internalConsoleOptions": "neverOpen",
-    "debug.console.fontSize": 14
+    "debug.console.fontSize": 14,
+    "sqltools.useNodeRuntime": true
 }

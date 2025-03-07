@@ -9,19 +9,28 @@
     // 新增 Volume 掛載配置
     "mounts": [
         "source=ai-news-data,target=/workspace/data,type=volume"
+        //"source=${localWorkspaceFolder}/data,target=/workspace/data,type=bind,consistency=cached"
     ],
     "customizations": {
         "vscode": {
             "extensions": [
                 "ms-python.python",
+                "ms-python.pylance",
                 "ms-python.vscode-pylance",
+                "ms-python.isort",
                 "ms-vscode-remote.remote-containers",
                 "ms-azuretools.vscode-docker",
-                "eamodio.gitlens",
                 "njpwerner.autodocstring",
-                "ms-python.debugpy"
+                "ms-python.debugpy",
+                "mtxr.sqltools",
+                "mtxr.sqltools-driver-sqlite",
+                "ms-vscode.powershell"
             ],
             "settings": {
+                "python.defaultInterpreterPath": "/usr/local/bin/python",
+                "python.analysis.typeCheckingMode": "basic",
+                "python.languageServer": "Pylance",
+                "editor.formatOnSave": true,
                 "python.analysis.extraPaths": [
                     "/usr/local/bin"
                 ],
@@ -29,16 +38,27 @@
                 "[python]": {
                     "editor.defaultFormatter": "ms-python.python"
                 },
-                "editor.formatOnSave": true,
                 "python.testing.pytestEnabled": true,
                 "python.testing.pytestArgs": [
                     "tests"
-                ]
+                ],
+                "sqltools.connections": [
+                    {
+                        "database": "/workspace/data/news.db",
+                        "driver": "sqlite"
+                    }
+                ],
+                "sqltools.useNodeRuntime": true,
+                "sqltools.formatLanguage": [
+                    "sql",
+                    "sqlite"
+                ],
+                "sqltools.autoOpenSessionFiles": true
             }
         }
     },
     "remoteUser": "vscode",
-    "postCreateCommand":  "pip install -r requirements.txt && pip install -r requirements-dev.txt",
+    "postCreateCommand": "pip install -r requirements.txt && pip install -r requirements-dev.txt",
     "remoteEnv": {
         "DATABASE_PATH": "/workspace/data/news.db",
         "PYTHONPATH": "${containerWorkspaceFolder}",

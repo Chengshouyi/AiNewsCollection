@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 import schedule
 import time
@@ -20,8 +21,12 @@ def main():
         data_access = DataAccess()
         
         # 創建資料庫表格
-        # data_access.create_tables()
-        # logging.info("資料庫初始化完成")
+        data_access.create_tables()
+        logging.info("資料庫初始化完成")
+        
+        if __debug__:
+            # 測試資料庫存取
+            test_data_access(data_access)
 
         # 可以在這裡添加其他初始化或定期任務
         logging.info("主程序啟動成功")
@@ -37,6 +42,21 @@ def run_scheduled_tasks():
     while True:
         schedule.run_pending()
         time.sleep(1)
+
+def test_data_access(data_access):
+    # 測試插入文章
+    article_data = {
+        "title": "測試文章",
+        "link": "https://test.com/article",
+        "content": "這是一篇測試文章",
+        "published_at": datetime.now(),
+        "source": "測試來源"
+    }
+    data_access.insert_article(article_data)
+    logging.info("文章插入完成")
+
+    # 測試抓取所有文章
+    
 
 if __name__ == "__main__":
     logging.info("開始執行")
