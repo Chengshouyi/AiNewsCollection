@@ -10,5 +10,6 @@
     ],
     "debug.internalConsoleOptions": "neverOpen",
     "debug.console.fontSize": 14,
-    "sqltools.useNodeRuntime": true
+    "sqltools.useNodeRuntime": true,
+    "remote.autoForwardPortsFallback": 0
 }

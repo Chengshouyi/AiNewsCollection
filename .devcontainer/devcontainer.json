@@ -57,11 +57,12 @@
         }
     },
     "remoteUser": "vscode",
-    "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt && pip install -r requirements-dev.txt",
+    "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt && pip install -r requirements-dev.txt && pytest -v -s tests/",
+    "postStartCommand": "pytest -v -s tests/",
     "remoteEnv": {
         "DATABASE_PATH": "/workspace/data/news.db",
         "PYTHONPATH": "${containerWorkspaceFolder}",
-        "PATH": "${containerEnv:PATH}:/home/vscode/.local/bin"
+        "PATH": "${containerEnv:PATH}:/home/vsode/.local/bin"
     },
     "forwardPorts": [
         5000

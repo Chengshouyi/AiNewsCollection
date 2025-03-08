@@ -53,6 +53,7 @@ SHELL ["/bin/bash", "-c"]
 # 設定入口點
 ENTRYPOINT ["/bin/bash"]
 
+
 # 設定使用者
 USER $USERNAME
 

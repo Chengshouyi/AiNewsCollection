@@ -48,7 +48,6 @@ def test_insert_duplicate_article(create_app):
     # 驗證插入重複文章會返回 None
     assert article_service.create_article(article_data) is None
 
-
 # 測試根據ID抓取文章
 def test_get_article_by_id(create_app):
     article_service = create_app['article_service']
@@ -102,3 +101,85 @@ def test_insert_article_with_empty_link(create_app):
     article_data = get_test_article_data('這是測試空白link的資料', empty_link)
     # 插入文章，預期空白link會返回 None
     assert article_service.create_article(article_data) is None
+
+def test_update_article(create_app):
+    article_service = create_app['article_service']
+    article_data = get_test_article_data("測試文章", "https://test.com/article")
+    # 插入文章
+    created_article = article_service.create_article(article_data)
+    # 更新文章
+    updated_data = {
+        "title": "更新後的測試文章",
+        "summary": "更新後的摘要",
+        "link": "https://test.com/updated",
+        "content": "更新後的內容",
+        "published_at": datetime(2025, 3, 5, 10, 0, 0),
+        "source": "更新後的資料來源"
+    }
+    updated_article = article_service.update_article(created_article ["id"], updated_data)
+    assert updated_article is not None
+    assert updated_article["title"] == "更新後的測試文章"
+    assert updated_article["link"] == "https://test.com/updated"    
+
+def test_delete_article(create_app):
+    article_service = create_app['article_service']
+    article_data = get_test_article_data("測試文章", "https://test.com/article")
+    # 插入文章
+    created_article = article_service.create_article(article_data)
+    # 刪除文章
+    article_service.delete_article(created_article["id"])
+    # 驗證文章是否刪除成功
+    articles = article_service.get_all_articles()
+    assert len(articles) == 0   
+
+def test_delete_nonexistent_article(create_app):
+    article_service = create_app['article_service']
+    # 嘗試刪除不存在文章
+    assert not article_service.delete_article(999999)   
+
+def test_get_article_by_nonexistent_id(create_app):
+    article_service = create_app['article_service']
+    # 嘗試抓取不存在文章
+    assert article_service.get_article_by_id(999999) is None
+
+def test_get_all_articles_empty(create_app):
+    article_service = create_app['article_service']
+    # 驗證空資料庫返回空列表
+    assert article_service.get_all_articles() == []     
+    
+def test_create_article_with_empty_link(create_app):
+    article_service = create_app['article_service']
+    article_data = get_test_article_data("測試文章", "")
+    # 插入文章，預期空白link會返回 None
+    assert article_service.create_article(article_data) is None
+    
+def test_update_article_with_empty_link(create_app):
+    article_service = create_app['article_service']
+    article_data = get_test_article_data("測試文章", "https://test.com/article")
+    # 插入文章
+    created_article = article_service.create_article(article_data)
+    # 更新文章，預期空白link會返回 None
+    assert article_service.update_article(created_article["id"], {"link": ""}) is None     
+    
+def test_update_article_with_nonexistent_id(create_app):
+    article_service = create_app['article_service']
+    article_data = get_test_article_data("測試文章", "https://test.com/article")
+    # 插入文章
+    article_service.create_article(article_data)
+    # 更新文章，預期不存在id會返回 None
+    assert article_service.update_article(999999, {"link": "https://test.com/updated"}) is None
+    
+def test_delete_article_with_nonexistent_id(create_app):
+    article_service = create_app['article_service']
+    # 嘗試刪除不存在文章
+    assert not article_service.delete_article(999999)
+    
+
+# if __name__ == "__main__":
+#     # 先調用create_app()函數獲取返回的字典
+#     app_context = create_app()
+#     # 然後將這個字典傳給測試函數
+#     test_update_article_with_nonexistent_id(app_context)
+
+
+
