@@ -1,20 +1,21 @@
-# SQLAlchemy 模型定義
+from abc import ABC, abstractmethod
 from sqlalchemy import Integer, String, DateTime, Boolean
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Protocol, runtime_checkable
 
-class Base(DeclarativeBase):
+@runtime_checkable
+class BaseProtocol(Protocol):
     @staticmethod
-    def verify_insert_data(data: dict):
-        """驗證資料"""
-        raise NotImplementedError("子類別必須實作 verify_data 方法")
+    def verify_insert_data(data: dict) -> bool: ...
     
     @staticmethod
-    def verify_update_data(data: dict):
-        """驗證資料"""
-        raise NotImplementedError("子類別必須實作 verify_data 方法")
+    def verify_update_data(data: dict) -> bool: ...
+
+class Base(DeclarativeBase):
+    # 使用 Protocol 替代抽象基類
+    pass
 
 class Article(Base):
     __tablename__ = 'articles'
@@ -38,19 +39,30 @@ class Article(Base):
     
     # 驗證插入文章資料
     @staticmethod
-    def verify_insert_data(data: dict):
-        return bool(data.get('title') and data.get('link') and data.get('published_at'))
+    def verify_insert_data(data: dict) -> bool:
+        """驗證插入資料包含必要欄位"""
+        required_fields = ['title', 'link', 'published_at']
+        return all(data.get(field) for field in required_fields)
     
     # 驗證更新文章資料
     @staticmethod
-    def verify_update_data(data: dict):
-        return bool(
-            ((data.get('title') is not None and data.get('title') != '') or data.get('title') is None)
-            and 
-            ((data.get('link') is not None and data.get('link') != '') or data.get('link') is None)
-            and 
-            ((data.get('published_at') is not None and data.get('published_at') != '') or data.get('published_at') is None)
-            )
+    def verify_update_data(data: dict) -> bool:
+        """
+        驗證更新資料的合法性:
+        1. 若提供了 title，則不為空
+        2. 若提供了 link，則不為空
+        3. 若提供了 published_at，則不為空
+        """
+        # 更新資料中至少有一個欄位
+        if not data:
+            return False
+            
+        # 檢查各欄位若存在則需有值
+        for field in ['title', 'link', 'published_at']:
+            if field in data and not data[field]:
+                return False
+                
+        return True
 
 class SystemSettings(Base):
     __tablename__ = 'system_settings'
@@ -59,34 +71,35 @@ class SystemSettings(Base):
     crawl_interval: Mapped[int] = mapped_column(Integer, nullable=False)
     crawl_start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     crawl_end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    is_deleted: Mapped[bool] = mapped_column(Boolean, nullable=False)
-    deleted_at: Mapped[datetime] = mapped_column(DateTime)
-    last_crawl_time: Mapped[datetime] = mapped_column(DateTime)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
+    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_crawl_time: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     # 系統設定資料repr  
     def __repr__(self):
-        return f"<SystemSettings(id={self.id}, crawler_name='{self.crawler_name}', crawl_interval={self.crawl_interval}, crawl_start_time={self.crawl_start_time}, crawl_end_time={self.crawl_end_time}, is_active={self.is_active}, created_at={self.created_at}, updated_at={self.updated_at}, is_deleted={self.is_deleted}, deleted_at={self.deleted_at}, last_crawl_time={self.last_crawl_time})>"
+        return f"<SystemSettings(id={self.id}, crawler_name='{self.crawler_name}', is_active={self.is_active})>"
 
     # 驗證系統設定資料
     @staticmethod
-    def verify_insert_data(data: dict):
-        return bool(data.get('crawler_name') and data.get('crawl_interval') and data.get('crawl_start_time') and data.get('crawl_end_time') and data.get('is_active'))
+    def verify_insert_data(data: dict) -> bool:
+        """驗證插入系統設定資料包含必要欄位"""
+        required_fields = ['crawler_name', 'crawl_interval', 'crawl_start_time', 'crawl_end_time']
+        return all(data.get(field) for field in required_fields)
 
     # 驗證系統設定資料
     @staticmethod
-    def verify_update_data(data: dict):
-        return bool(
-            ((data.get('crawler_name') is not None and data.get('crawler_name') != '') or data.get('crawler_name') is None)
-            and 
-            ((data.get('crawl_interval') is not None and data.get('crawl_interval') != '') or data.get('crawl_interval') is None)
-            and 
-            ((data.get('crawl_start_time') is not None and data.get('crawl_start_time') != '') or data.get('crawl_start_time') is None)
-            and 
-            ((data.get('crawl_end_time') is not None and data.get('crawl_end_time') != '') or data.get('crawl_end_time') is None)
-            and 
-            ((data.get('is_active') is not None and data.get('is_active') != '') or data.get('is_active') is None)
-            )
-
+    def verify_update_data(data: dict) -> bool:
+        """驗證更新系統設定資料的合法性"""
+        if not data:
+            return False
+            
+        # 檢查若提供了欄位則需有值
+        fields_to_check = ['crawler_name', 'crawl_interval', 'crawl_start_time', 'crawl_end_time']
+        for field in fields_to_check:
+            if field in data and not data[field]:
+                return False
+        
+        return True
