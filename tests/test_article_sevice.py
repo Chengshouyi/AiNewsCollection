@@ -100,6 +100,5 @@ def test_insert_article_with_empty_link(create_app):
     article_service = create_app['article_service']
     empty_link = ''
     article_data = get_test_article_data('這是測試空白link的資料', empty_link)
-    # 插入文章，預期空白link會拋出異常
-    with pytest.raises(Exception): 
-        article_service.create_article(article_data)
+    # 插入文章，預期空白link會返回 None
+    assert article_service.create_article(article_data) is None
