@@ -1,9 +1,5 @@
-"""
-模型模組初始化
-"""
+from .models import Article, SystemSettings
+from .repository import Repository
+from .database_manager import DatabaseManager
 
-from model.models import Article
-from model.data_access import DataAccess
-from model.system_settings import SystemSettings
-
-__all__ = ["Article", "DataAccess", "SystemSettings"]
+__all__ = ["Article", "SystemSettings", "Repository", "DatabaseManager"]
