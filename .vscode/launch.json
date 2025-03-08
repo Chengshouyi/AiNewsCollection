@@ -7,7 +7,7 @@
             "request": "launch",
             "module": "pytest",
             "args": [
-                "${workspaceFolder}/tests/test_article_sevice.py::test_update_article_with_nonexistent_id",
+                "${workspaceFolder}/tests/test_article_sevice.py::test_update_article",
                 "-v"
             ],
             "console": "integratedTerminal",

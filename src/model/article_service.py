@@ -3,6 +3,7 @@ from typing import Optional, Dict, Any, List
 from .database_manager import DatabaseManager
 from .repository import Repository
 from .models import Article
+from datetime import datetime
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -13,7 +14,42 @@ class ArticleService:
     
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
-        
+    
+    def insert_article(
+        self, 
+        article_data: Dict[str, Any]
+        ) -> Optional[Dict[str, Any]]:
+        """創建新文章"""
+        with self.db_manager.session_scope() as session:
+            repo = Repository(session, Article)
+            
+            # 添加必要的欄位
+            now = datetime.now()
+            article_data.update({
+                'created_at': now,
+            })
+            
+            # 檢查文章連結是否為空
+            if not Article.verify_insert_data(article_data):
+                logger.error(f"文章資料驗證失敗: {article_data}")
+                return None
+            
+            # 檢查文章是否已存在
+            if not repo.exists(link=article_data['link']):
+                try:
+                    article = repo.create(**article_data)
+                    session.commit()
+                    return self._article_to_dict(article)
+                except Exception as e:
+                    error_msg = f"創建文章失敗: {e}"
+                    logger.error(error_msg, exc_info=True)
+                    session.rollback()
+                    return None
+            else:
+                error_msg = f"文章已存在: {article_data['link']}"
+                logger.error(error_msg)
+                return None
+
     def get_all_articles(self) -> List[Dict[str, Any]]:
         """獲取所有文章"""
         with self.db_manager.session_scope() as session:
@@ -34,31 +70,6 @@ class ArticleService:
             if article:
                 return self._article_to_dict(article)
             return None
-    
-    def create_article(
-        self, 
-        article_data: Dict[str, Any]
-        ) -> Optional[Dict[str, Any]]:
-        """創建新文章"""
-        with self.db_manager.session_scope() as session:
-            repo = Repository(session, Article)
-            
-            # 檢查文章連結是否為空
-            if not article_data.get('link'):
-                error_msg = f"文章連結不能為空"
-                logger.error(error_msg, exc_info=True)
-                return None
-            
-            # 檢查文章是否已存在
-            if not repo.exists(link=article_data['link']):
-                article = repo.create(**article_data)
-                session.commit()
-                return self._article_to_dict(article)
-            else:
-                error_msg = f"文章已存在: {article_data['link']}"
-                logger.error(error_msg, exc_info=True)
-                return None
-    
                 
     def update_article(
         self, 
@@ -72,9 +83,11 @@ class ArticleService:
             
             if (not article 
                 or not article_data 
-                or not article_data.get('link')
-                or not article_data.get('title')):
+                or not Article.verify_update_data(article_data)):
                 return None
+            
+            # 自動更新 updated_at 欄位
+            article_data['updated_at'] = datetime.now()
                 
             article = repo.update(article, **article_data)
             session.commit()
@@ -102,10 +115,10 @@ class ArticleService:
                 "summary": article.summary,
                 "link": article.link,
                 "content": article.content,
-                "published_at": article.published_at
-                                .strftime('%Y-%m-%d %H:%M:%S') 
-                                if article.published_at else None,
-                "source": article.source
+                "published_at": article.published_at,
+                "source": article.source,
+                "created_at": article.created_at,
+                "updated_at": article.updated_at,
             }
         except Exception as e:
             error_msg = f"轉換文章為字典失敗: {e}, \
