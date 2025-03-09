@@ -4,3 +4,4 @@ beautifulsoup4
 schedule
 sqlalchemy>=2.0.0
 requests
+pydantic
