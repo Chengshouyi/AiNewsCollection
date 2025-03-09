@@ -400,3 +400,66 @@ def test_batch_operations(create_app):
     assert len(remaining_articles) == 3
     for article in remaining_articles:
         assert article["id"] not in ids_to_delete
+
+
+# 測試 article_service 的無效輸入
+def test_article_service_invalid_inputs(create_app):
+    article_service = create_app['article_service']
+    
+    # 測試無效的文章ID
+    assert article_service.get_article_by_id(-1) is None
+    assert article_service.get_article_by_id(0) is None
+    
+    # 測試無效的更新輸入
+    assert article_service.update_article(-1, {}) is None
+    assert article_service.update_article(0, {"title": "測試"}) is None
+
+
+def test_article_service_edge_cases(create_app):
+    article_service = create_app['article_service']
+    
+    # 測試搜尋極端情況
+    edge_cases = [
+        # 空搜尋條件
+        {},
+        # 極端日期範圍
+        {"published_at_start": datetime.min, "published_at_end": datetime.max},
+        # 不存在的搜尋條件
+        {"non_existent_field": "value"}
+    ]
+    
+    for case in edge_cases:
+        results = article_service.search_articles(case)
+        assert isinstance(results, list)
+
+def test_article_service_pagination_edge_cases(create_app):
+    article_service = create_app['article_service']
+    
+    # 測試極端分頁情況
+    edge_cases = [
+        # 非常大的頁碼
+        {"page": 9999, "per_page": 10},
+        # 非常小的每頁數量
+        {"page": 1, "per_page": 0},
+        # 負數頁碼
+        {"page": -1, "per_page": 10}
+    ]
+    
+    for case in edge_cases:
+        result = article_service.get_articles_paginated(**case)
+        assert result["items"] == []
+        assert result["total"] == 0
+
+def test_article_service_batch_operations_error_handling(create_app):
+    article_service = create_app['article_service']
+    
+    # 測試批量操作的錯誤處理
+    # 空列表
+    assert article_service.batch_insert_articles([]) == (0, 0)
+    assert article_service.batch_update_articles([], {}) == (0, 0)
+    assert article_service.batch_delete_articles([]) == (0, 0)
+    
+    # 無效的 ID 列表
+    invalid_ids = [-1, 0, 999999]
+    assert article_service.batch_update_articles(invalid_ids, {}) == (0, len(invalid_ids))
+    assert article_service.batch_delete_articles(invalid_ids) == (0, len(invalid_ids))

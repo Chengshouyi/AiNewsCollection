@@ -18,9 +18,31 @@ class DatabaseManager:
     def __init__(self, db_path: Optional[str] = None):
         try:
             self.db_url = self._get_db_url(db_path)
-            self.engine = create_engine(self.db_url)
-            self.Session = sessionmaker(bind=self.engine)
+            
+            # 路徑和目錄檢查
+            if not self.db_url.startswith('sqlite:///:memory:'):
+                db_file_path = self.db_url.replace('sqlite:///', '')
+                db_dir = os.path.dirname(db_file_path)
+                
+                if db_dir and not os.path.exists(db_dir):
+                    raise RuntimeError(f"資料庫目錄不存在: {db_dir}")
+            
+            # 創建引擎時增加更多錯誤處理
+            try:
+                self.engine = create_engine(self.db_url)
+                self.Session = sessionmaker(bind=self.engine)
+            except Exception as engine_error:
+                error_msg = f"創建數據庫引擎失敗: {engine_error}"
+                logger.error(error_msg, exc_info=True)
+                raise RuntimeError(error_msg) from engine_error
+            
+            # 連接驗證
             self._verify_connection()
+        
+        except SQLAlchemyError as e:
+            error_msg = f"數據庫連接驗證失敗: {e}"
+            logger.error(error_msg, exc_info=True)
+            raise RuntimeError(error_msg) from e
         except Exception as e:
             error_msg = f"數據庫初始化錯誤: {e}"
             logger.error(error_msg, exc_info=True)
@@ -48,12 +70,13 @@ class DatabaseManager:
     def _verify_connection(self) -> None:
         """驗證數據庫連接"""
         try:
+            # 嘗試建立連接並執行簡單查詢
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
         except SQLAlchemyError as e:
             error_msg = f"數據庫連接驗證失敗: {e}"
             logger.error(error_msg, exc_info=True)
-            raise SQLAlchemyError(error_msg) from e
+            raise RuntimeError(error_msg) from e
     
     @contextmanager
     def session_scope(self):
@@ -66,7 +89,7 @@ class DatabaseManager:
             session.rollback()
             error_msg = f"數據庫操作失敗: {e}"
             logger.error(error_msg, exc_info=True)
-            raise
+            raise RuntimeError(error_msg) from e
         finally:
             session.close()
     

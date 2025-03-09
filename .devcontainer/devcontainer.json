@@ -57,8 +57,8 @@
         }
     },
     "remoteUser": "vscode",
-    "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt && pip install -r requirements-dev.txt && pytest -v -s tests/",
-    "postStartCommand": "pytest -v -s tests/",
+    "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt && pip install -r requirements-dev.txt && pytest -v -s --cov tests/",
+    "postStartCommand": "pytest -v -s --cov tests/",
     "remoteEnv": {
         "DATABASE_PATH": "/workspace/data/news.db",
         "PYTHONPATH": "${containerWorkspaceFolder}",
