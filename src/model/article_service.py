@@ -5,7 +5,7 @@ from .repository import Repository
 from .models import Article, Base
 from datetime import datetime
 from contextlib import contextmanager
-from .article_create_schema import ArticleCreateSchema
+from .article_schema import ArticleCreateSchema, ArticleUpdateSchema
 from pydantic import ValidationError
 
 # 設定 logger
@@ -55,19 +55,19 @@ class ArticleService:
 
             # 使用 Pydantic 驗證資料
             try:
-                validated_data = ArticleCreateSchema.model_validate(article_data)
+                validated_data = ArticleCreateSchema.model_validate(article_data).model_dump()
             except ValidationError as e:
                 logger.error(f"文章資料驗證失敗: {e}")
                 return None
 
             with self._get_repository(Article) as (repo, session):
                 # 檢查文章是否已存在
-                if not repo.exists(link=article_data['link']):
-                    article = repo.create(**article_data)
+                if not repo.exists(link=validated_data['link']):
+                    article = repo.create(**validated_data)
                     session.commit()
                     return self._article_to_dict(article)
                 else:
-                    error_msg = f"文章已存在: {article_data['link']}"
+                    error_msg = f"文章已存在: {validated_data['link']}"
                     logger.warning(error_msg)
                     return None
         except Exception as e:
@@ -107,17 +107,13 @@ class ArticleService:
             offset: 起始偏移，預設為 None
             sort_by: 排序欄位，預設為 None
             sort_desc: 是否降序排序，預設為 False
-            limit: 限制返回數量，默認全部
-            offset: 起始偏移，默認0
-            sort_by: 排序欄位，默認None
-            sort_desc: 是否降序排序，默認False
             
         Returns:
             文章字典列表
         """
         try:
             with self._get_repository(Article) as (repo, _):
-                # 添加分頁和排序支持
+                # 獲取所有文章
                 articles = repo.get_all(
                     limit=limit,
                     offset=offset,
@@ -291,12 +287,12 @@ class ArticleService:
                 
                 try: 
                     # 驗證更新資料    
-                    validated_data = ArticleCreateSchema.model_validate(current_article_data).model_dump()
+                    validated_data = ArticleUpdateSchema.model_validate(current_article_data).model_dump()
                 except ValidationError as e:
                     logger.error(f"文章更新資料驗證失敗: {e}")
                     return None
                 
-                article = repo.update(article, **article_data)
+                article = repo.update(article, **validated_data)
                 session.commit()
                 return self._article_to_dict(article)
         except Exception as e:

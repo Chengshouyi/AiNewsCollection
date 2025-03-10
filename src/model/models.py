@@ -3,17 +3,9 @@ from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import validates
 from datetime import datetime
-from typing import Optional  #, Protocol, runtime_checkable
+from typing import Optional
 
-# @runtime_checkable
-# class BaseProtocol(Protocol):
-#     @staticmethod
-#     def verify_insert_data(data: dict) -> bool: ...
-    
-#     @staticmethod
-#     def verify_update_data(data: dict) -> bool: ...
-    
-    # 使用 Protocol 替代抽象基類
+
 class Base(DeclarativeBase):
     pass
 
@@ -73,16 +65,6 @@ class Article(Base):
             raise ValueError("來源長度需在 1 到 255 個字元之間")
         return source
     
-    
-    # # 驗證插入文章資料
-    # @staticmethod
-    # def verify_insert_data(data: dict) -> bool:
-    #     pass
-    
-    # # 驗證更新文章資料
-    # @staticmethod
-    # def verify_update_data(data: dict) -> bool:
-    #     pass
 
 class SystemSettings(Base):
     __tablename__ = 'system_settings'
@@ -93,33 +75,59 @@ class SystemSettings(Base):
     crawl_end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
-    is_deleted: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    deleted_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_crawl_time: Mapped[Optional[datetime]] = mapped_column(DateTime)
 
     # 系統設定資料repr  
     def __repr__(self):
         return f"<SystemSettings(id={self.id}, crawler_name='{self.crawler_name}', is_active={self.is_active})>"
 
-    # # 驗證系統設定資料
-    # @staticmethod
-    # def verify_insert_data(data: dict) -> bool:
-    #     """驗證插入系統設定資料包含必要欄位"""
-    #     required_fields = ['crawler_name', 'crawl_interval', 'crawl_start_time', 'crawl_end_time']
-    #     return all(data.get(field) for field in required_fields)
+    @validates('crawler_name')
+    def validate_crawler_name(self, key, crawler_name):
+        if len(crawler_name.strip()) < 1 or len(crawler_name.strip()) > 255:
+            raise ValueError("爬蟲名稱長度需在 1 到 255 個字元之間")
+        return crawler_name
+    
+    @validates('crawl_interval')
+    def validate_crawl_interval(self, key, crawl_interval):
+        if crawl_interval < 0:
+            raise ValueError("爬取間隔需大於 0")
+        return crawl_interval
 
-    # # 驗證系統設定資料
-    # @staticmethod
-    # def verify_update_data(data: dict) -> bool:
-    #     """驗證更新系統設定資料的合法性"""
-    #     if not data:
-    #         return False
-            
-    #     # 檢查若提供了欄位則需有值
-    #     fields_to_check = ['crawler_name', 'crawl_interval', 'crawl_start_time', 'crawl_end_time']
-    #     for field in fields_to_check:
-    #         if field in data and not data[field]:
-    #             return False
-        
-    #     return True
+    @validates('crawl_start_time')
+    def validate_crawl_start_time(self, key, crawl_start_time):
+        if crawl_start_time is None:
+            raise ValueError("爬取開始時間不能為空")
+        return crawl_start_time
+    
+    @validates('crawl_end_time')
+    def validate_crawl_end_time(self, key, crawl_end_time):
+        if crawl_end_time is None:
+            raise ValueError("爬取結束時間不能為空")
+        return crawl_end_time
+
+    @validates('is_active')
+    def validate_is_active(self, key, is_active):
+        if is_active is None:
+            raise ValueError("是否啟用不能為空")
+        return is_active
+    
+    @validates('created_at')
+    def validate_created_at(self, key, created_at):
+        if created_at is None:
+            raise ValueError("建立時間不能為空")
+        return created_at
+
+
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    
+    

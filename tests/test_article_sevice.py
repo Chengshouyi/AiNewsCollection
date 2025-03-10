@@ -5,7 +5,7 @@ from src.model.models import Base, Article
 from src.model.database_manager import DatabaseManager
 from src.model.article_service import ArticleService
 from src.model.repository import Repository
-from src.model.article_create_schema import ArticleCreateSchema
+from src.model.article_schema import ArticleCreateSchema, ArticleUpdateSchema
 
 @pytest.fixture
 def create_app():
@@ -86,30 +86,43 @@ def test_article_data_validation():
     # 測試 verify_insert_data
     valid_data = get_test_article_data()
     assert ArticleCreateSchema.model_validate(valid_data) is not None
+    assert ArticleUpdateSchema.model_validate(valid_data) is not None
 
     # 無標題
     invalid_data = valid_data.copy()
     invalid_data["title"] = ""
     with pytest.raises(ValidationError):
         ArticleCreateSchema.model_validate(invalid_data)
+    with pytest.raises(ValidationError):
+        ArticleUpdateSchema.model_validate(invalid_data)
+
 
     # 無連結
     invalid_data = valid_data.copy()
     invalid_data["link"] = ""
     with pytest.raises(ValidationError):
         ArticleCreateSchema.model_validate(invalid_data)
+    with pytest.raises(ValidationError):
+        ArticleUpdateSchema.model_validate(invalid_data)
+
 
     # 無效的連結
     invalid_data = valid_data.copy()
     invalid_data["link"] = "invalid-url"
     with pytest.raises(ValidationError):
         ArticleCreateSchema.model_validate(invalid_data)
+    with pytest.raises(ValidationError):
+        ArticleUpdateSchema.model_validate(invalid_data)
+
 
     # 無發布日期
     invalid_data = valid_data.copy()
     invalid_data["published_at"] = None
     with pytest.raises(ValidationError):
         ArticleCreateSchema.model_validate(invalid_data)
+    with pytest.raises(ValidationError):
+        ArticleUpdateSchema.model_validate(invalid_data)
+
 
     # 未來日期
     future_date = datetime.now() + timedelta(days=30)
@@ -117,6 +130,8 @@ def test_article_data_validation():
     invalid_data["published_at"] = future_date
     with pytest.raises(ValidationError):
         ArticleCreateSchema.model_validate(invalid_data)
+    with pytest.raises(ValidationError):
+        ArticleUpdateSchema.model_validate(invalid_data)
 
 
 # 測試搜尋功能
