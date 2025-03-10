@@ -65,7 +65,17 @@ class ArticleService:
                 if not repo.exists(link=validated_data['link']):
                     article = repo.create(**validated_data)
                     session.commit()
-                    return self._article_to_dict(article)
+                    return {
+                        "id": article.id,
+                        "title": article.title,
+                        "summary": article.summary,
+                        "link": article.link,
+                        "content": article.content,
+                        "published_at": article.published_at,
+                        "source": article.source,
+                        "created_at": article.created_at,
+                        "updated_at": article.updated_at,
+                    }
                 else:
                     error_msg = f"文章已存在: {validated_data['link']}"
                     logger.warning(error_msg)
@@ -252,6 +262,9 @@ class ArticleService:
         Returns:
             更新後的文章字典或 None
         """
+        # 移除可能意外傳入的 created_at
+        article_data.pop('created_at', None)
+        
         # 驗證輸入
         if not isinstance(article_id, int) or article_id <= 0:
             logger.error(f"無效的文章ID: {article_id}")
@@ -392,6 +405,10 @@ class ArticleService:
             return None
             
         try:
+            # 如果已經是字典，直接返回
+            if isinstance(article, dict):
+                return article
+
             return {
                 "id": article.id,
                 "title": article.title,

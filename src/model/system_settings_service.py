@@ -1,7 +1,7 @@
 import logging
-from typing import Optional, Type, Any, Dict, List, Tuple
+from typing import Optional, Type, Any, Dict, List, Tuple, TypeVar
 from datetime import datetime
-from src.model.models import SystemSettings
+from src.model.models import SystemSettings, Base
 from src.model.database_manager import DatabaseManager
 from src.model.repository import Repository
 from contextlib import contextmanager
@@ -37,7 +37,7 @@ class SystemSettingsService:
                 session.rollback()
                 raise
     
-    def insert_system_settings(self, settings: SystemSettings) ->  Optional[Dict[str, Any]]:
+    def insert_system_settings(self, settings_data: Dict[str, Any]) ->  Optional[Dict[str, Any]]:
         """
         插入系統設定
         
@@ -48,13 +48,14 @@ class SystemSettingsService:
             成功時返回 SystemSettings 實例，失敗時返回 None
         """
         try:
-            # 添加必要的欄位
             now = datetime.now()
-            settings.created_at = now   
+            settings_data.update({
+                'created_at': now,
+            })
             
             # 使用 Pydantic 驗證資料    
             try:
-                validated_data = SystemSettingsCreateSchema.model_validate(settings).model_dump()
+                validated_data = SystemSettingsCreateSchema.model_validate(settings_data).model_dump()
             except ValidationError as e:
                 error_msg = f"資料驗證錯誤: {e}"
                 logger.error(error_msg, exc_info=True)
@@ -62,13 +63,23 @@ class SystemSettingsService:
 
             with self._get_repository(SystemSettings) as (repo, session):
                 # 檢查設定是否已存在
-                if not repo.exists(crawler_name=settings.crawler_name):
+                if not repo.exists(crawler_name=validated_data['crawler_name']):
                     # 插入新的設定
                     sys_settings = repo.create(**validated_data)
                     session.commit()
-                    return self._sys_settings_to_dict(sys_settings)
+                    
+                    # 直接返回字典
+                    return {
+                        "id": sys_settings.id,
+                        "crawler_name": sys_settings.crawler_name,
+                        "crawl_interval": sys_settings.crawl_interval,
+                        "is_active": sys_settings.is_active,
+                        "created_at": sys_settings.created_at,
+                        "updated_at": sys_settings.updated_at,
+                        "last_crawl_time": sys_settings.last_crawl_time
+                    }
                 else:
-                    error_msg = f"設定已存在: {settings.crawler_name}"
+                    error_msg = f"設定已存在: {validated_data['crawler_name']}"
                     logger.warning(error_msg)
                     return None
         except Exception as e:
@@ -219,6 +230,9 @@ class SystemSettingsService:
         Returns:
             更新後的系統設定字典或 None
         """
+        # 移除可能意外傳入的 created_at
+        setting_data.pop('created_at', None)
+        
         # 驗證輸入
         if not isinstance(sys_settings_id, int) or sys_settings_id <= 0:
             logger.error(f"無效的系統設定ID: {sys_settings_id}")
@@ -243,8 +257,6 @@ class SystemSettingsService:
                 current_settings_data = {
                     "crawler_name": sys_setting.crawler_name,
                     "crawl_interval": sys_setting.crawl_interval,
-                    "crawl_start_time": sys_setting.crawl_start_time,
-                    "crawl_end_time": sys_setting.crawl_end_time,
                     "is_active": sys_setting.is_active
                 }
                 
@@ -258,7 +270,7 @@ class SystemSettingsService:
                     error_msg = f"資料驗證錯誤: {e}"
                     logger.error(error_msg, exc_info=True)
                     return None
-                
+
                 sys_setting = repo.update(sys_setting, **validated_data)
                 session.commit()
                 return self._sys_settings_to_dict(sys_setting)
@@ -351,7 +363,7 @@ class SystemSettingsService:
         將 SystemSettings 實例轉換為字典
         
         Args:
-            sys_settings: SystemSettings 實例
+            sys_settings: SystemSettings 實例或字典
             
         Returns:
             系統設定字典或 None
@@ -360,15 +372,18 @@ class SystemSettingsService:
             return None
         
         try:
+            # 如果已經是字典，直接返回
+            if isinstance(sys_settings, dict):
+                return sys_settings
+            
             return {
                 "id": sys_settings.id,
                 "crawler_name": sys_settings.crawler_name,
                 "crawl_interval": sys_settings.crawl_interval,
-                "crawl_start_time": sys_settings.crawl_start_time,
-                "crawl_end_time": sys_settings.crawl_end_time,
                 "is_active": sys_settings.is_active,
                 "created_at": sys_settings.created_at,
-                "updated_at": sys_settings.updated_at
+                "updated_at": sys_settings.updated_at,
+                "last_crawl_time": sys_settings.last_crawl_time
             }
         except Exception as e:
             try:

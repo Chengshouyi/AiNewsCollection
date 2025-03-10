@@ -1,26 +1,20 @@
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
+from datetime import datetime
+
 class SystemSettingsCreateSchema(BaseModel):
     crawler_name: str = Field(..., min_length=1, max_length=255)
     crawl_interval: int = Field(..., ge=0)
-    crawl_start_time: str = Field(..., min_length=5, max_length=5)
-    crawl_end_time: str = Field(..., min_length=5, max_length=5)
     is_active: bool = Field(default=True)
+    created_at: datetime = Field(default_factory=datetime.now)
+    updated_at: Optional[datetime] = Field(default=None)
+    last_crawl_time: Optional[datetime] = Field(default=None)
     
-    @field_validator('crawl_start_time', 'crawl_end_time')
-    @classmethod
-    def validate_time(cls, v):
-        if not v:
-            return None
-        if len(v) != 5 or not v.isdigit():
-            raise ValueError("時間格式必須是HH:MM")
-        return v    
-
     @field_validator('crawler_name')
     @classmethod
     def validate_crawler_name(cls, v):
         if not v:
-            return None
+            raise ValueError("爬蟲名稱不能為空")
         if len(v) > 255 or len(v) < 1:
             raise ValueError("爬蟲名稱長度必須在1到255個字符之間")
         return v
@@ -29,7 +23,7 @@ class SystemSettingsCreateSchema(BaseModel):
     @classmethod
     def validate_crawl_interval(cls, v):
         if not v:
-            return None
+            raise ValueError("爬取間隔不能為空")
         if v < 0:
             raise ValueError("爬取間隔必須大於0")
         return v
@@ -40,23 +34,28 @@ class SystemSettingsCreateSchema(BaseModel):
         if not isinstance(v, bool):
             raise ValueError("is_active必須是布林值")
         return v
-    
-    @field_validator('crawl_end_time')
+
+    @field_validator('created_at')
     @classmethod
-    def validate_crawl_end_time(cls, v):
+    def validate_created_at(cls, v):
         if not v:
-            return None
-        if v <= cls.crawl_start_time:
-            raise ValueError("爬取結束時間必須大於爬取開始時間")
+            raise ValueError("建立時間不能為空")
         return v
 
 class SystemSettingsUpdateSchema(BaseModel):
     crawler_name: Optional[str] = Field(default=None, min_length=1, max_length=255)
     crawl_interval: Optional[int] = Field(default=None, ge=0)
-    crawl_start_time: Optional[str] = Field(default=None, min_length=5, max_length=5)
-    crawl_end_time: Optional[str] = Field(default=None, min_length=5, max_length=5)
     is_active: Optional[bool] = Field(default=None)
-    
+    updated_at: Optional[datetime] = Field(default=None)
+    last_crawl_time: Optional[datetime] = Field(default=None)
+
+    @model_validator(mode='before')
+    @classmethod
+    def remove_created_at(cls, data):
+        if isinstance(data, dict) and 'created_at' in data:
+            raise ValueError("不允許更新 created_at 欄位")
+        return data
+
     @field_validator('crawler_name')
     @classmethod
     def validate_crawler_name(cls, v):
@@ -71,27 +70,8 @@ class SystemSettingsUpdateSchema(BaseModel):
     def validate_crawl_interval(cls, v):
         if not v:
             return None
-        return v
         if v < 0:
             raise ValueError("爬取間隔必須大於0")
-        return v
-    
-    @field_validator('crawl_start_time')
-    @classmethod
-    def validate_crawl_start_time(cls, v):
-        if not v:
-            return None
-        if len(v) != 5 or not v.isdigit():
-            raise ValueError("時間格式必須是HH:MM")
-        return v
-    
-    @field_validator('crawl_end_time')
-    @classmethod
-    def validate_crawl_end_time(cls, v):
-        if not v:
-            return None
-        if v <= cls.crawl_start_time:
-            raise ValueError("爬取結束時間必須大於爬取開始時間")
         return v
     
     @field_validator('is_active')

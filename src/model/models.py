@@ -71,8 +71,6 @@ class SystemSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     crawler_name: Mapped[str] = mapped_column(String, nullable=False)
     crawl_interval: Mapped[int] = mapped_column(Integer, nullable=False)
-    crawl_start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    crawl_end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False)
     updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
@@ -93,18 +91,6 @@ class SystemSettings(Base):
         if crawl_interval < 0:
             raise ValueError("爬取間隔需大於 0")
         return crawl_interval
-
-    @validates('crawl_start_time')
-    def validate_crawl_start_time(self, key, crawl_start_time):
-        if crawl_start_time is None:
-            raise ValueError("爬取開始時間不能為空")
-        return crawl_start_time
-    
-    @validates('crawl_end_time')
-    def validate_crawl_end_time(self, key, crawl_end_time):
-        if crawl_end_time is None:
-            raise ValueError("爬取結束時間不能為空")
-        return crawl_end_time
 
     @validates('is_active')
     def validate_is_active(self, key, is_active):

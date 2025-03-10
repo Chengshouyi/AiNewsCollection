@@ -25,6 +25,7 @@ def get_test_article_data(
     summary="這是測試文章的摘要",
     content="測試文章內容",
     source="資料來源",
+    created_at=datetime.now()
 ):
     return {
         "title": title,
@@ -33,7 +34,7 @@ def get_test_article_data(
         "content": content,
         "published_at": published_at,
         "source": source,
-        "created_at": datetime.now(),
+        "created_at": created_at,
     }
 
 # 插入文章的基本測試
@@ -85,6 +86,7 @@ def test_article_data_validation():
     """測試文章資料驗證方法"""
     # 測試 verify_insert_data
     valid_data = get_test_article_data()
+    valid_data.pop('created_at', None)  
     assert ArticleCreateSchema.model_validate(valid_data) is not None
     assert ArticleUpdateSchema.model_validate(valid_data) is not None
 
@@ -271,6 +273,7 @@ def test_update_article(create_app):
     article_data = get_test_article_data()
     
     # 插入文章
+    article_data.pop('created_at', None)
     inserted_article = article_service.insert_article(article_data)
     inserted_article_id = inserted_article["id"]
     assert inserted_article_id is not None
