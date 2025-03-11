@@ -131,7 +131,7 @@ class TestArticleModel:
             published_at=datetime.now(),
             summary="a" * 1024
         )
-        assert len(article_max.summary) == 1024
+        assert len(article_max.summary or "") == 1024
     
     def test_article_content_too_long_validation(self):
         """測試內容過長的驗證"""
@@ -161,7 +161,7 @@ class TestArticleModel:
             published_at=datetime.now(),
             content="a" * 65536
         )
-        assert len(article_max.content) == 65536
+        assert len(article_max.content or "") == 65536
     
     def test_article_source_too_long_validation(self):
         """測試來源過長的驗證"""
@@ -201,7 +201,7 @@ class TestArticleModel:
             published_at=datetime.now(),
             source="a" * 255
         )
-        assert len(article_max.source) == 255
+        assert len(article_max.source or "") == 255
     
     def test_article_repr(self):
         """測試 Article 的 __repr__ 方法"""

@@ -7,36 +7,20 @@ from src.model.database_manager import (
 from src.model.models import Base
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-import tempfile
 from datetime import datetime
-
-
-@pytest.fixture
-def in_memory_db():
-    """提供記憶體資料庫管理器"""
-    return DatabaseManager("sqlite:///:memory:")
-
-
-@pytest.fixture
-def temp_file_db():
-    """提供臨時檔案資料庫管理器"""
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        db_path = os.path.join(tmp_dir, "test.db")
-        db_manager = DatabaseManager(db_path)
-        yield db_manager, db_path
-
+from tests import create_in_memory_db, create_temp_file_db, create_database_session
 
 class TestDatabaseManager:
     """資料庫管理器測試類"""
 
-    def test_initialization(self, in_memory_db):
+    def test_initialization(self, create_in_memory_db):
         """測試基本初始化"""
-        assert in_memory_db.engine is not None
-        assert in_memory_db.Session is not None
+        assert create_in_memory_db.engine is not None
+        assert create_in_memory_db.Session is not None
 
-    def test_custom_path_initialization(self, temp_file_db):
+    def test_custom_path_initialization(self, create_temp_file_db):
         """測試自定義路徑初始化"""
-        db_manager, db_path = temp_file_db
+        db_manager, db_path = create_temp_file_db
         assert os.path.exists(db_path)
         assert db_manager.engine is not None
 
@@ -59,24 +43,24 @@ class TestDatabaseManager:
         formatted_path = "sqlite:///test.db"
         assert db_manager._get_db_url(formatted_path) == formatted_path
 
-    def test_create_tables(self, in_memory_db):
+    def test_create_tables(self, create_in_memory_db):
         """測試創建表格"""
-        in_memory_db.create_tables(Base)
+        create_in_memory_db.create_tables(Base)
         
         # 驗證表格是否成功創建
-        with in_memory_db.session_scope() as session:
+        with create_in_memory_db.session_scope() as session:
             tables = session.execute(text("SELECT name FROM sqlite_master WHERE type='table';")).fetchall()
             table_names = [table[0] for table in tables]
             assert "articles" in table_names
             assert "system_settings" in table_names
 
-    def test_session_scope_commit(self, in_memory_db):
+    def test_session_scope_commit(self, create_in_memory_db):
         """測試 session_scope 正常提交事務"""
         # 設置測試表
-        in_memory_db.create_tables(Base)
+        create_in_memory_db.create_tables(Base)
         
         # 測試事務提交
-        with in_memory_db.session_scope() as session:
+        with create_in_memory_db.session_scope() as session:
             # 執行一些測試操作，例如插入文章
             session.execute(
                 text("INSERT INTO articles (title, link, published_at, content, created_at) VALUES (:title, :link, :published_at, :content, :created_at)"),
@@ -90,7 +74,7 @@ class TestDatabaseManager:
             )
         
         # 驗證數據是否已提交
-        with in_memory_db.session_scope() as session:
+        with create_in_memory_db.session_scope() as session:
             result = session.execute(
                 text("SELECT title FROM articles WHERE link = :link"),
                 {"link": "https://example.com/test"}
@@ -98,13 +82,13 @@ class TestDatabaseManager:
             assert result is not None
             assert result[0] == "測試文章"
 
-    def test_session_scope_rollback(self, in_memory_db):
+    def test_session_scope_rollback(self, create_in_memory_db):
         """測試 session_scope 異常回滾"""
         # 設置測試表
-        in_memory_db.create_tables(Base)
+        create_in_memory_db.create_tables(Base)
         
         # 先插入一些數據
-        with in_memory_db.session_scope() as session:
+        with create_in_memory_db.session_scope() as session:
             session.execute(
                 text("INSERT INTO articles (title, link, published_at, content, created_at) VALUES (:title, :link, :published_at, :content, :created_at)"),
                 {
@@ -118,7 +102,7 @@ class TestDatabaseManager:
         
         # 測試異常回滾
         with pytest.raises(DatabaseOperationError):
-            with in_memory_db.session_scope() as session:
+            with create_in_memory_db.session_scope() as session:
                 # 正常插入
                 session.execute(
                     text("INSERT INTO articles (title, link, published_at, content, created_at) VALUES (:title, :link, :published_at, :content, :created_at)"),
@@ -134,7 +118,7 @@ class TestDatabaseManager:
                 raise ValueError("模擬異常，應觸發回滾")
         
         # 驗證回滾是否成功（新插入的數據不應該存在）
-        with in_memory_db.session_scope() as session:
+        with create_in_memory_db.session_scope() as session:
             result = session.execute(
                 text("SELECT title FROM articles WHERE link = :link"),
                 {"link": "https://example.com/test"}
