@@ -16,7 +16,7 @@ class SiteConfig:
     # 選擇器配置
     selectors: Dict[str, List[Dict]] = field(default_factory=dict)
     
- def __post_init__(self):
+def __post_init__(self):
     default_selectors = {'list': [], 'content': [], 'date': [], 'title': [], 'pagination': []}
     self.selectors = {**default_selectors, **self.selectors}
     if not self.valid_domains: self.valid_domains = [self.base_url]
@@ -28,40 +28,6 @@ def validate_url(self, url: str) -> bool:
         return False
     if self.url_file_extensions and not any(url.endswith(ext) for ext in self.url_file_extensions):
         return False
-    return True
-    
-def __post_init__(self):
-    # 確保選擇器配置包含所有必要的鍵
-    default_selectors = {
-         'list': [],
-         'content': [],
-         'date': [],
-         'title': [],
-         'pagination': []
-        }
-    self.selectors = {**default_selectors, **self.selectors}
-        
-    # 設置默認的有效域名
-    if not self.valid_domains:
-        self.valid_domains = [self.base_url]
-    
-def validate_url(self, url: str) -> bool:
-    """驗證 URL 是否符合網站格式"""
-    if not url:
-        return False
-        
-    # 檢查基本 URL
-    if not any(url.startswith(domain) for domain in self.valid_domains):
-        return False
-        
-    # 檢查 URL 格式
-    if not any(pattern in url for pattern in self.url_patterns):
-        return False
-        
-    # 檢查文件擴展名（如果有設置）
-    if self.url_file_extensions and not any(url.endswith(ext) for ext in self.url_file_extensions):
-        return False
-            
     return True
 
 # 网易科技配置
