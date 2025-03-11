@@ -1,13 +1,14 @@
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, Tag
+from bs4.element import NavigableString
 import time
 import random
 import json
 import logging
 from fake_useragent import UserAgent
 from crawler.base_crawler import BaseCrawler
-from crawler.site_config import NetEaseTechConfig
+from crawler.site_config import SiteConfig, TECH163_CONFIG
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -30,7 +31,7 @@ class NetEaseTechCrawler(BaseCrawler):
             "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
         }
 
-    def _fetch_news_list(self, config: NetEaseTechConfig):
+    def _fetch_news_list(self, config: SiteConfig) -> List[Dict[str, str]]:
         """
         爬取新聞列表
         """
@@ -39,15 +40,18 @@ class NetEaseTechCrawler(BaseCrawler):
             response = requests.get(url, headers=self._get_headers(), timeout=10)
             response.raise_for_status()
             soup = BeautifulSoup(response.text, 'html.parser')
-            articles = []
+            articles: List[Dict[str, str]] = []
             for selector in config.selectors['list']:
                 items = soup.find_all(selector['tag'], **selector['attrs'])
                 for item in items:
-                    link = item.find('a')
-                    if link_tag:
-                        title = link_tag.get_text(strip=True)
-                        href = link_tag.get('href','')
-                        full_url = href if href.startswith('http') else config.base_url + href.lstrip('/')
+                    # type: ignore 用於忽略型別檢查
+                    link_tag = item.find('a')  # type: ignore
+                    if link_tag is not None:
+                        # type: ignore 用於忽略型別檢查
+                        title: str = link_tag.get_text(strip=True)  # type: ignore
+                        # type: ignore 用於忽略型別檢查
+                        href: str = str(link_tag.get('href', ''))  # type: ignore
+                        full_url: str = href if href.startswith('http') else str(config.base_url) + href.lstrip('/')
                         if config.validate_url(full_url) and any(kw in title for kw in self.ai_keywords):
                             articles.append({"title": title, "link": full_url})
             return articles
@@ -58,7 +62,7 @@ class NetEaseTechCrawler(BaseCrawler):
             logger.error(f"爬取新聞列表時發生錯誤: {e}")
             return []
 
-    def _fectch_artcle_details(self, config: NetEaseTechConfig, url: str):
+    def _fectch_artcle_details(self, config: SiteConfig, url: str):
         """
         爬取新聞詳細內容
         """
@@ -96,13 +100,13 @@ class NetEaseTechCrawler(BaseCrawler):
         """
         爬取網頁內容
         """
-        config = NetEaseTechConfig
+        config = TECH163_CONFIG
         news_list = self._fetch_news_list(config)
     
         results = []
         for news in news_list:
             print(f"正在處理: {news['title']}")
-            details = self._fetch_article_details(config, news['link'])
+            details = self._fectch_artcle_details(config, news['link'])
             results.append({
                 "title": news['title'],
                 "link": news['link'],

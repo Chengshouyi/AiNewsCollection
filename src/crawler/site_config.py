@@ -16,19 +16,19 @@ class SiteConfig:
     # 選擇器配置
     selectors: Dict[str, List[Dict]] = field(default_factory=dict)
     
-def __post_init__(self):
-    default_selectors = {'list': [], 'content': [], 'date': [], 'title': [], 'pagination': []}
-    self.selectors = {**default_selectors, **self.selectors}
-    if not self.valid_domains: self.valid_domains = [self.base_url]
-    
-def validate_url(self, url: str) -> bool:
-    if not url or not any(url.startswith(domain) for domain in self.valid_domains):
+    def validate_url(self, url: str) -> bool:
+        if not url or not any(url.startswith(domain) for domain in self.valid_domains):
             return False
-    if not any(pattern in url for pattern in self.url_patterns):
-        return False
-    if self.url_file_extensions and not any(url.endswith(ext) for ext in self.url_file_extensions):
-        return False
-    return True
+        if not any(pattern in url for pattern in self.url_patterns):
+            return False
+        if self.url_file_extensions and not any(url.endswith(ext) for ext in self.url_file_extensions):
+            return False
+        return True
+
+    def __post_init__(self):
+        default_selectors = {'list': [], 'content': [], 'date': [], 'title': [], 'pagination': []}
+        self.selectors = {**default_selectors, **self.selectors}
+        if not self.valid_domains: self.valid_domains = [self.base_url]
 
 # 网易科技配置
 TECH163_CONFIG = SiteConfig(
