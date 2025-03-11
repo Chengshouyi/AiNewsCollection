@@ -1,14 +1,12 @@
 import pytest
 from datetime import datetime
-from src.model.models import Base
-from src.model.database_manager import DatabaseManager
 from src.model.system_settings_service import SystemSettingsService
+from tests import create_in_memory_db
 
 @pytest.fixture(scope="function")
-def app_setup():
+def create_db_instance(create_in_memory_db):
     """創建應用實例，初始化數據庫和服務"""
-    db_manager = DatabaseManager(db_path="sqlite:///:memory:")
-    db_manager.create_tables(Base)
+    db_manager = create_in_memory_db
     system_settings_service = SystemSettingsService(db_manager)
     return {
         'db_manager': db_manager,
@@ -28,9 +26,9 @@ def valid_settings():
     }
 
 @pytest.fixture(scope="function")
-def populated_system_settings(app_setup, valid_settings):
+def populated_system_settings(create_db_instance, valid_settings):
     """預先填充資料庫的系統設定服務"""
-    service = app_setup['system_settings_service']
+    service = create_db_instance['system_settings_service']
 
       # 清空現有資料
     existing_settings = service.get_all_system_settings()
@@ -53,8 +51,8 @@ def populated_system_settings(app_setup, valid_settings):
 class TestSystemSettingsInsert:
     """測試系統設定的插入功能"""
 
-    def test_insert_system_settings(self, app_setup, valid_settings):
-        service = app_setup['system_settings_service']
+    def test_insert_system_settings(self, create_db_instance, valid_settings):
+        service = create_db_instance['system_settings_service']
         inserted = service.insert_system_settings(valid_settings)
         assert inserted is not None
         assert inserted['id'] is not None
@@ -66,8 +64,8 @@ class TestSystemSettingsInsert:
         assert retrieved is not None
         assert retrieved['crawler_name'] == valid_settings['crawler_name']
 
-    def test_insert_duplicate_system_settings(self, app_setup, valid_settings):
-        service = app_setup['system_settings_service']
+    def test_insert_duplicate_system_settings(self, create_db_instance, valid_settings):
+        service = create_db_instance['system_settings_service']
 
         # 確保資料庫中沒有重複的設定
         existing_settings = service.get_all_system_settings()
@@ -80,8 +78,8 @@ class TestSystemSettingsInsert:
         second_insert = service.insert_system_settings(valid_settings)
         assert second_insert is None
 
-    def test_insert_invalid_system_settings(self, app_setup):
-        service = app_setup['system_settings_service']
+    def test_insert_invalid_system_settings(self, create_db_instance):
+        service = create_db_instance['system_settings_service']
         invalid_data = [
             {"crawl_interval": 1},
             {"crawler_name": "", "crawl_interval": -1, "is_active": True}
@@ -275,8 +273,8 @@ class TestSystemSettingsUtilities:
             assert result['id'] == setting['id']
             assert result['crawler_name'] == setting['crawler_name']
 
-    def test_error_handling(self, app_setup, valid_settings):
-        service = app_setup['system_settings_service']
+    def test_error_handling(self, create_db_instance, valid_settings):
+        service = create_db_instance['system_settings_service']
         
         try:
             result = service.get_all_system_settings()

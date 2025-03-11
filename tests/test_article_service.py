@@ -10,10 +10,9 @@ from tests import create_in_memory_db, create_database_session
 
 
 @pytest.fixture
-def app_instance(create_in_memory_db):
+def create_db_instance(create_in_memory_db):
     """創建應用實例，初始化數據庫和服務"""
     db_manager = create_in_memory_db
-    db_manager.create_tables(Base)
     article_service = ArticleService(db_manager)
     return {
         'db_manager': db_manager,
@@ -46,10 +45,10 @@ class TestArticleService:
     """測試 ArticleService 的測試類"""
 
     @pytest.fixture(autouse=True)
-    def setup(self, app_instance):
+    def setup(self, create_db_instance):
         """每個測試前執行的設置"""
-        self.article_service = app_instance['article_service']
-        self.db_manager = app_instance['db_manager']
+        self.article_service = create_db_instance['article_service']
+        self.db_manager = create_db_instance['db_manager']
 
     # 插入相關測試
     def test_insert_basic(self):
