@@ -7,8 +7,8 @@ import random
 import json
 import logging
 from fake_useragent import UserAgent
-from crawler.base_crawler import BaseCrawler
-from crawler.site_config import SiteConfig, TECH163_CONFIG
+from .base_crawler import BaseCrawler
+from .site_config import SiteConfig, TECH163_CONFIG
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
