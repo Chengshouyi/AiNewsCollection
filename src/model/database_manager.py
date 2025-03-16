@@ -134,7 +134,7 @@ class DatabaseManager:
         except SQLAlchemyError as e:
             error_msg = f"數據庫連接驗證失敗: {e}"
             logger.error(error_msg, exc_info=True)
-            raise DatabaseConnectionError(error_msg) from e
+            raise DatabaseConnectionError(error_msg) from e  
     
     @contextmanager
     def session_scope(self):

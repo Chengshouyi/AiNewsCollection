@@ -1,36 +1,31 @@
 from abc import ABC, abstractmethod
-import requests
-from typing import Optional, Dict
+from typing import Dict
+import pandas as pd
+from src.crawler.site_config import SiteConfig
 
 class BaseCrawler(ABC):
-    def __init__(self, name: str, url: str):
-        self.name = name
-        self.url = url
-        self.headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
-
-    def _fetch_page(self, url: str) -> Optional[str]:
-        try:
-            response = requests.get(url, headers=self.headers)
-            response.raise_for_status()
-            return response.text
-        except requests.RequestException as e:
-            print(f"Error fetching {url}: {e}")
-            return None
-        except Exception as e:
-            print(f"Error fetching {url}: {e}")
-            return None
+    def __init__(self, config: SiteConfig):
+        self.site_config = config
 
     @abstractmethod
-    def _save_data(self, data: Dict):
+    def fetch_article_list(self, args: dict, **kwargs) -> pd.DataFrame:
         """
-        保存數據，子類別需要實作
+        爬取新聞列表，子類別需要實作
         """
         pass
 
     @abstractmethod
-    def run(self) -> Optional[Dict]:
+    def fetch_article_details(self, args: dict, **kwargs) -> pd.DataFrame:
         """
-        執行爬取流程，子類別需要實作
+        爬取文章詳細內容，子類別需要實作
+        """
+        pass
+
+
+    @abstractmethod
+    def save_data(self, data: pd.DataFrame):
+        """
+        保存數據，子類別需要實作
         """
         pass
 
