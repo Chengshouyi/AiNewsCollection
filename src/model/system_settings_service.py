@@ -6,7 +6,8 @@ from src.model.database_manager import DatabaseManager
 from src.model.repository import Repository
 from contextlib import contextmanager
 from pydantic import ValidationError
-from .system_settings_schema import SystemSettingsCreateSchema, SystemSettingsUpdateSchema
+from src.model.system_settings_schema import SystemSettingsCreateSchema, SystemSettingsUpdateSchema
+from src.model.repository import Result
 
 
 # 設定 logger
@@ -37,7 +38,7 @@ class SystemSettingsService:
                 session.rollback()
                 raise
     
-    def insert_system_settings(self, settings_data: Dict[str, Any]) ->  Optional[Dict[str, Any]]:
+    def insert_system_settings(self, settings_data: Dict[str, Any]) -> Result:
         """
         插入系統設定
         
@@ -45,7 +46,7 @@ class SystemSettingsService:
             settings: 系統設定實例
             
         Returns:
-            成功時返回 SystemSettings 實例，失敗時返回 None
+            Result 物件，包含成功/失敗狀態和詳細資訊
         """
         try:
             now = datetime.now()
@@ -59,33 +60,28 @@ class SystemSettingsService:
             except ValidationError as e:
                 error_msg = f"資料驗證錯誤: {e}"
                 logger.error(error_msg, exc_info=True)
-                return None
+                return Result.failure(error_msg, e)
 
             with self._get_repository(SystemSettings) as (repo, session):
                 # 檢查設定是否已存在
                 if not repo.exists(crawler_name=validated_data['crawler_name']):
                     # 插入新的設定
-                    sys_settings = repo.create(**validated_data)
+                    result = repo.create(**validated_data)
+                    if not result.succeed:
+                        return result
+                    
                     session.commit()
                     
                     # 直接返回字典
-                    return {
-                        "id": sys_settings.id,
-                        "crawler_name": sys_settings.crawler_name,
-                        "crawl_interval": sys_settings.crawl_interval,
-                        "is_active": sys_settings.is_active,
-                        "created_at": sys_settings.created_at,
-                        "updated_at": sys_settings.updated_at,
-                        "last_crawl_time": sys_settings.last_crawl_time
-                    }
+                    return Result.succeed(self._sys_settings_to_dict(result.data))
                 else:
                     error_msg = f"設定已存在: {validated_data['crawler_name']}"
                     logger.warning(error_msg)
-                    return None
+                    return Result.failure(error_msg)
         except Exception as e:
             error_msg = f"插入系統設定失敗: {e}"
             logger.error(error_msg, exc_info=True)
-            return None
+            return Result.failure(error_msg, e)
 
     def get_all_system_settings(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List[Dict[str, Any]]:
         """
@@ -219,7 +215,7 @@ class SystemSettingsService:
                 "total_pages": 0
             }   
         
-    def update_system_settings(self, sys_settings_id: int, setting_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def update_system_settings(self, sys_settings_id: int, setting_data: Dict[str, Any]) -> Result:
         """
         更新系統設定
         
@@ -236,11 +232,11 @@ class SystemSettingsService:
         # 驗證輸入
         if not isinstance(sys_settings_id, int) or sys_settings_id <= 0:
             logger.error(f"無效的系統設定ID: {sys_settings_id}")
-            return None
+            return Result.failure(f"無效的系統設定ID: {sys_settings_id}")
         
         if not setting_data:
             logger.error("更新資料為空")
-            return None
+            return Result.failure("更新資料為空")
         
         try:
             # 自動更新 updated_at 欄位
@@ -251,7 +247,7 @@ class SystemSettingsService:
 
                 if not sys_setting:
                     logger.warning(f"欲更新的設定不存在，ID={sys_settings_id}") 
-                    return None
+                    return Result.failure(f"欲更新的設定不存在，ID={sys_settings_id}")
                 
                 # 獲取當前設定資料
                 current_settings_data = {
@@ -269,15 +265,15 @@ class SystemSettingsService:
                 except ValidationError as e:
                     error_msg = f"資料驗證錯誤: {e}"
                     logger.error(error_msg, exc_info=True)
-                    return None
+                    return Result.failure(error_msg, e)
 
                 sys_setting = repo.update(sys_setting, **validated_data)
                 session.commit()
-                return self._sys_settings_to_dict(sys_setting)
+                return Result.succeed(self._sys_settings_to_dict(sys_setting))
         except Exception as e:
             error_msg = f"更新系統設定失敗，ID={sys_settings_id}: {e}"
             logger.error(error_msg, exc_info=True)
-            return None
+            return Result.failure(error_msg, e)
     
     def batch_update_system_settings(self, sys_settings_ids: List[int], setting_data: Dict[str, Any]) -> Tuple[int, int]:
         """
@@ -295,7 +291,7 @@ class SystemSettingsService:
         
         for sys_settings_id in sys_settings_ids:
             result = self.update_system_settings(sys_settings_id, setting_data)
-            if result:
+            if result.succeed:
                 success_count += 1
             else:
                 fail_count += 1

@@ -132,8 +132,8 @@ class BnextContentExtractor:
             category = category_elem.get_text(strip=True) if category_elem else None
             
             # 提取發布日期
-            publish_date_elem = BnextUtils.find_element_by_purpose(header, selectors, 'publish_date')
-            publish_date = publish_date_elem.get_text(strip=True) if publish_date_elem else None
+            publish_at_elem = BnextUtils.find_element_by_purpose(header, selectors, 'publish_at')
+            publish_at = publish_at_elem.get_text(strip=True) if publish_at_elem else None
             
             # 提取作者
             author_elem = BnextUtils.find_element_by_purpose(header, selectors, 'author')
@@ -178,7 +178,7 @@ class BnextContentExtractor:
                 'title': title,
                 'summary': summary,
                 'category': category,
-                'publish_date': publish_date,
+                'publish_at': publish_at,
                 'author': author,
                 'content': content_text,
                 'content_length': len(content_text) if content_text else 0,
@@ -250,7 +250,7 @@ class BnextContentExtractor:
                     'content': content_data.get('content', ''),
                     'link': content_data['link'],
                     'category': content_data.get('category', ''),
-                    'published_at': content_data.get('publish_date', ''),
+                    'published_at': content_data.get('publish_at', ''),
                     'author': content_data.get('author', ''),
                     'source': 'bnext_detail',
                     'tags': ', '.join(content_data.get('tags', [])) if isinstance(content_data.get('tags'), list) else ''

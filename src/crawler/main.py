@@ -1,7 +1,3 @@
-# main.py
-# 程式主入口點
-
-import argparse
 import pandas as pd
 import os
 

@@ -7,6 +7,8 @@ from datetime import datetime
 from contextlib import contextmanager
 from .article_schema import ArticleCreateSchema, ArticleUpdateSchema
 from pydantic import ValidationError
+from sqlalchemy.orm import Session
+from .repository import Result
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -36,7 +38,7 @@ class ArticleService:
                 session.rollback()
                 raise
     
-    def insert_article(self, article_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def insert_article(self, article_data: Dict[str, Any]) -> Result:
         """
         創建新文章
         
@@ -44,7 +46,7 @@ class ArticleService:
             article_data: 文章資料字典
             
         Returns:
-            成功時返回文章字典，失敗時返回 None
+            Result 物件，包含成功/失敗狀態和詳細資訊
         """
         try:
             # 添加必要的欄位
@@ -63,9 +65,9 @@ class ArticleService:
             # 使用 Pydantic 驗證資料
             try:
                 validated_data = ArticleCreateSchema.model_validate(article_data).model_dump()
-            except ValidationError as e:
+            except Exception as e:
                 logger.error(f"文章資料驗證失敗: {e}")
-                return None
+                return Result.failure(f"文章資料驗證失敗: {str(e)}", e)
 
             with self._get_repository(Article) as (repo, session):
                 # 檢查文章是否已存在
@@ -73,32 +75,37 @@ class ArticleService:
                 
                 if existing_article is None:
                     # 創建新文章
-                    article = repo.create(**validated_data)
+                    result = repo.create(**validated_data)
+                    if not result.succeed:
+                        return result
+                    
                     session.commit()
-                    return self._article_to_dict(article)
+                    return Result.succeed(self._article_to_dict(result.data))
                 else:
                     # 如果新資料來自詳細頁面且現有資料來自列表頁，則更新
                     if (validated_data.get('source') == 'bnext_detail' and 
                         existing_article.source == 'bnext_list'):
                         
                         # 保留原始資料的某些欄位
-                        validated_data['id'] = existing_article.id
                         validated_data['created_at'] = existing_article.created_at
                         
                         # 更新文章
-                        updated_article = repo.update(existing_article, **validated_data)
+                        result = repo.update(existing_article, **validated_data)
+                        if not result.succeed:
+                            return result
+                        
                         session.commit()
                         logger.info(f"更新已存在的文章: {validated_data['link']}")
-                        return self._article_to_dict(updated_article)
+                        return Result.succeed(self._article_to_dict(result.data))
                     else:
                         logger.warning(f"文章已存在: {validated_data['link']}")
-                        return None
+                        return Result.failure("文章已存在", None)
         except Exception as e:
             error_msg = f"創建文章失敗: {e}"
             logger.error(error_msg, exc_info=True)
-            return None
+            return Result.failure(error_msg, e)
 
-    def batch_insert_articles(self, articles_data: List[Dict[str, Any]]) -> Tuple[int, int]:
+    def batch_insert_articles(self, articles_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         批量創建新文章
         
@@ -106,20 +113,44 @@ class ArticleService:
             articles_data: 文章資料字典列表
             
         Returns:
-            成功插入數量和失敗數量的元組
+            包含成功和失敗信息的字典
         """
         success_count = 0
         fail_count = 0
+        failed_articles = []
         
+        # 驗證所有文章
+        validated_articles = []
         for article_data in articles_data:
-            result = self.insert_article(article_data)
-            if result:
-                success_count += 1
-            else:
+            try:
+                validated_data = ArticleCreateSchema.model_validate(article_data).model_dump()
+                validated_articles.append(validated_data)
+            except Exception as e:
                 fail_count += 1
+                failed_articles.append((article_data, str(e)))
+        
+        # 批量插入有效文章
+        if validated_articles:
+            try:
+                with self._get_repository(Article) as (repo, session):
+                    # 批量創建
+                    for article_data in validated_articles:
+                        result = self.insert_article(article_data)
+                        if result.success:
+                            success_count += 1
+                        else:
+                            fail_count += 1
+                            failed_articles.append((article_data, result.error_message))
+                            
+                    session.commit()
+            except Exception as e:
+                logger.error(f"批量插入失敗: {e}", exc_info=True)
                 
-        logger.info(f"批量創建文章完成: 成功 {success_count}, 失敗 {fail_count}")
-        return (success_count, fail_count)
+        return {
+            "success_count": success_count,
+            "fail_count": fail_count,
+            "failed_articles": failed_articles
+        }
 
     def get_all_articles(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List[Dict[str, Any]]:
         """
@@ -264,7 +295,7 @@ class ArticleService:
             }   
 
 
-    def update_article(self, article_id: int, article_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def update_article(self, article_id: int, article_data: Dict[str, Any]) -> Result:
         """
         更新文章
         
@@ -273,19 +304,17 @@ class ArticleService:
             article_data: 要更新的文章資料
             
         Returns:
-            更新後的文章字典或 None
+            Result 物件，包含成功/失敗狀態和詳細資訊
         """
         # 移除可能意外傳入的 created_at
         article_data.pop('created_at', None)
         
         # 驗證輸入
         if not isinstance(article_id, int) or article_id <= 0:
-            logger.error(f"無效的文章ID: {article_id}")
-            return None
+            return Result.failure(f"無效的文章ID: {article_id}")
             
         if not article_data:
-            logger.error("更新資料為空")
-            return None
+            return Result.failure("更新資料為空")
             
         try:
             # 自動更新 updated_at 欄位
@@ -295,8 +324,7 @@ class ArticleService:
                 article = repo.get_by_id(article_id)
                 
                 if not article:
-                    logger.warning(f"欲更新的文章不存在，ID={article_id}")
-                    return None
+                    return Result.failure(f"欲更新的文章不存在，ID={article_id}")
 
                 # 獲取當前文章資料
                 current_article_data = {
@@ -315,16 +343,18 @@ class ArticleService:
                     # 驗證更新資料    
                     validated_data = ArticleUpdateSchema.model_validate(current_article_data).model_dump()
                 except ValidationError as e:
-                    logger.error(f"文章更新資料驗證失敗: {e}")
-                    return None
+                    return Result.failure(f"文章更新資料驗證失敗: {str(e)}", e)
                 
-                article = repo.update(article, **validated_data)
+                result = repo.update(article, **validated_data)
+                if not result.succeed:
+                    return result
+                    
                 session.commit()
-                return self._article_to_dict(article)
+                return Result.succeed(self._article_to_dict(result.data))
         except Exception as e:
             error_msg = f"更新文章失敗，ID={article_id}: {e}"
             logger.error(error_msg, exc_info=True)
-            return None
+            return Result.failure(error_msg, e)
     
     def batch_update_articles(self, article_ids: List[int], article_data: Dict[str, Any]) -> Tuple[int, int]:
         """
@@ -342,7 +372,7 @@ class ArticleService:
         
         for article_id in article_ids:
             result = self.update_article(article_id, article_data)
-            if result:
+            if result.succeed:
                 success_count += 1
             else:
                 fail_count += 1

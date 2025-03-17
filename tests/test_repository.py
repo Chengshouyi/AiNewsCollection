@@ -5,7 +5,7 @@ from src.model.models import Article, Base
 from src.model.repository import Repository
 from datetime import datetime
 from tests import create_database_session
-
+from pydantic import ValidationError
 class TestRepository:
     
     @pytest.fixture
@@ -116,3 +116,51 @@ class TestRepository:
         
         assert repo.exists(title="測試文章") is True
         assert repo.exists(title="不存在的文章") is False
+
+    def test_repository_update_with_validation(self, create_database_session, repo, sample_article_data):
+        """測試更新時的驗證"""
+        article = repo.create(**sample_article_data)
+        create_database_session.commit()
+        
+        # 測試更新標題長度驗證
+        with pytest.raises(ValueError, match="標題長度需在 1 到 500 個字元之間"):
+            repo.update(article, title="")
+        
+        with pytest.raises(ValueError, match="標題長度需在 1 到 500 個字元之間"):
+            repo.update(article, title="a" * 501)
+    
+    def test_repository_create_with_optional_fields(self, create_database_session, repo):
+        """測試創建包含可選欄位的文章"""
+        article_data = {
+            "title": "帶有可選欄位的文章",
+            "link": "https://test.com/optional-article",
+            "published_at": datetime.now(),
+            "summary": "這是一篇測試文章",
+            "content": "測試內容",
+            "category": "測試分類",
+            "tags": "測試,範例"
+        }
+        
+        article = repo.create(**article_data)
+        create_database_session.commit()
+        
+        assert article.summary == "這是一篇測試文章"
+        assert article.content == "測試內容"
+        assert article.category == "測試分類"
+        assert article.tags == "測試,範例"
+    
+    def test_repository_unique_link_constraint(self, create_database_session, repo):
+        """測試連結唯一性約束"""
+        first_article_data = {
+            "title": "第一篇文章",
+            "link": "https://test.com/unique-link",
+            "published_at": datetime.now()
+        }
+
+        # 第一次創建成功
+        repo.create(**first_article_data)
+        create_database_session.commit()
+
+        # 第二次創建應拋出異常
+        with pytest.raises(ValidationError, match="已存在具有相同連結的文章"):
+            repo.create(**first_article_data)

@@ -3,7 +3,9 @@ import os
 import schedule
 import time
 import logging
-from src.model.data_access import DataAccess
+from src.model.article_service import ArticleService
+from src.model.models import Base
+from src.config import get_db_manager
 
 # 配置日誌
 logging.basicConfig(
@@ -18,10 +20,11 @@ logging.basicConfig(
 def main():
     try:
         # 初始化資料庫存取
-        data_access = DataAccess()
+        db_manager = get_db_manager()
+        data_access = ArticleService(db_manager)  
         
         # 創建資料庫表格
-        data_access.create_tables()
+        db_manager.create_tables(Base)
         logging.info("資料庫初始化完成")
         
         if __debug__:
