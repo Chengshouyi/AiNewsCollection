@@ -3,12 +3,18 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 class ArticleCreateSchema(BaseModel):
-    title: str = Field(..., min_length=1, max_length=255)
-    summary: Optional[str] = Field(default=None, max_length=1024)
-    link: str = Field(..., min_length=1, max_length=512)
-    content: str = Field(..., max_length=65536)
-    published_at: datetime = Field(...)
-    source: str = Field(..., max_length=255)
+    title: str
+    summary: Optional[str] = None
+    content: Optional[str] = None
+    link: str
+    category: Optional[str] = None
+    published_at: Optional[str] = None
+    author: Optional[str] = None
+    source: Optional[str] = None
+    article_type: Optional[str] = None
+    tags: Optional[str] = None
+    content_length: Optional[int] = None
+    is_ai_related: Optional[bool] = True
     created_at: datetime = Field(default=datetime.now())
     updated_at: Optional[datetime] = Field(default=None)
 
@@ -50,12 +56,18 @@ class ArticleCreateSchema(BaseModel):
 
 
 class ArticleUpdateSchema(BaseModel):
-    title: Optional[str] = Field(default=None, min_length=1, max_length=255)
-    summary: Optional[str] = Field(default=None, max_length=1024)
-    link: Optional[str] = Field(default=None, min_length=1, max_length=512)
-    content: Optional[str] = Field(default=None, max_length=65536)
-    published_at: Optional[datetime] = None
-    source: Optional[str] = Field(default=None, max_length=255)
+    title: Optional[str] = None
+    summary: Optional[str] = None
+    content: Optional[str] = None
+    link: Optional[str] = None
+    category: Optional[str] = None
+    published_at: Optional[str] = None
+    author: Optional[str] = None
+    source: Optional[str] = None
+    article_type: Optional[str] = None
+    tags: Optional[str] = None
+    content_length: Optional[int] = None
+    is_ai_related: Optional[bool] = None
     updated_at: Optional[datetime] = Field(default=datetime.now())
 
     @model_validator(mode='before')

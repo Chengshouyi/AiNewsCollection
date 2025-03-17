@@ -12,10 +12,22 @@ from urllib.parse import urljoin
 from src.crawler.base_config import DEFAULT_HEADERS
 from src.crawler.bnext_config import BNEXT_CONFIG, BNEXT_DEFAULT_CATEGORIES
 from src.crawler.article_analyzer import ArticleAnalyzer
+from src.crawler.bnext_utils import BnextUtils
 
 class BnextScraper:
-    def __init__(self):
-        pass
+    def __init__(self, db_manager=None):
+        """
+        初始化爬蟲
+        
+        Parameters:
+        db_manager (DatabaseManager, optional): 資料庫管理器，用於存儲文章
+        """
+        self.db_manager = db_manager
+        if db_manager:
+            from src.model.article_service import ArticleService
+            self.article_service = ArticleService(db_manager)
+        else:
+            self.article_service = None
 
     def scrape_article_list(self, max_pages=3, categories=None, ai_only=True) -> pd.DataFrame:
         """
@@ -133,12 +145,35 @@ class BnextScraper:
             
             print(f"完成爬取類別: {category_url}")
         
-        # 將爬取的文章資訊轉換為DataFrame
-        if all_articles:
+        # 在獲取DataFrame後，存儲到資料庫
+        if all_articles and self.article_service:
             df = pd.DataFrame(all_articles)
-
-            # 刪除重複項
             df = df.drop_duplicates(subset=['link'], keep='first')
+            
+            # 轉換資料格式以符合資料庫結構
+            success_count = 0
+            fail_count = 0
+            
+            for _, article in df.iterrows():
+                # 轉換為資料庫模型格式
+                db_article = {
+                    'title': article['title'],
+                    'summary': article.get('summary', ''),
+                    'link': article['link'],
+                    'category': article.get('category', ''),
+                    'published_at': article.get('publish_time', ''),
+                    'source': 'bnext_list',
+                    'article_type': article.get('article_type', 'regular')
+                }
+                
+                # 存儲到資料庫
+                result = self.article_service.insert_article(db_article)
+                if result:
+                    success_count += 1
+                else:
+                    fail_count += 1
+            
+            print(f"文章存儲結果: 成功 {success_count} 篇，失敗 {fail_count} 篇")
             
             # 顯示爬取結果
             print(f"\n總共爬取到 {len(df)} 篇文章")
@@ -155,81 +190,46 @@ class BnextScraper:
 
     def extract_focus_articles(self, soup):
         """
-        提取焦點文章，使用指定的選擇器
+        提取焦點文章，使用選擇器格式
         """
         articles = []
+        selectors = BNEXT_CONFIG.selectors
         
-        # 使用提供的焦點文章選擇器
-        focus_article_containers = soup.select('.grid.grid-cols-6.gap-4.relative.h-full')
+        # 使用容器選擇器
+        container_selector = BnextUtils.build_selector(selectors['focus_articles'][0])
+        focus_article_containers = soup.select(container_selector)
         
         for container in focus_article_containers:
             # 提取標題
-            title_elem = container.select_one('div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > h2')
+            title_elem = BnextUtils.find_element(container, selectors['focus_articles'][1:2], 'title')
             if not title_elem:
                 continue
             
             title = title_elem.get_text(strip=True)
             
             # 提取摘要
-            summary_elem = container.select_one('div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex-grow.pt-4.text-lg.text-gray-500')
+            summary_elem = BnextUtils.find_element(container, selectors['focus_articles'][2:3], 'summary')
             summary = summary_elem.get_text(strip=True) if summary_elem else ""
             
             # 尋找連結
-            link_elem = None
-            
-            # 嘗試從標題元素找連結
-            if title_elem:
-                parent_a = title_elem.find_parent('a')
-                if parent_a and 'href' in parent_a.attrs:
-                    link_elem = parent_a
-            
-            # 如果找不到，嘗試從容器中找連結
-            if not link_elem:
-                link_elem = container.find('a', href=lambda href: href and '/article/' in href)
-            
-            # 如果還是找不到，嘗試找任何可能的文章連結
-            if not link_elem:
-                all_links = container.find_all('a', href=True)
-                for a in all_links:
-                    if '/article/' in a['href']:
-                        link_elem = a
-                        break
-            
-            # 如果還是找不到連結，則跳過這篇文章
-            if not link_elem:
+            link = BnextUtils.extract_article_link(container, title_elem)
+            if not link:
                 continue
-                
-            link = link_elem.get('href', '')
             
-            # 確保連結是完整的
-            if link and not link.startswith('http'):
-                link = urljoin(BNEXT_CONFIG.base_url, link)
-            
-            # 提取分類 - 使用提供的選擇器
-            category_elem = container.select_one('div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex.relative.items-center.gap-2.text-gray-500.text-sm > a')
+            # 提取分類
+            category_elem = BnextUtils.find_element(container, selectors['focus_articles'][3:4], 'category')
             category = category_elem.get_text(strip=True) if category_elem else None
             
-            # 提取日期
-            date_elem = container.select_one('time, .date, .time')
-            publish_date = date_elem.get_text(strip=True) if date_elem else None
+            # 提取發布時間
+            time_elem = BnextUtils.find_element(container, selectors['focus_articles'][4:], 'time')
+            publish_time = time_elem.get_text(strip=True) if time_elem else None
             
-            # 提取作者
-            author_elem = container.select_one('.author, .writer')
-            author = author_elem.get_text(strip=True) if author_elem else None
-            
-            # 提取閱讀數
-            read_count_elem = container.select_one('.read-count, .view-count')
-            read_count = read_count_elem.get_text(strip=True) if read_count_elem else None
-            
-            # 添加到文章列表
             article_info = {
                 'title': title,
                 'summary': summary,
                 'link': link,
                 'category': category,
-                'publish_date': publish_date,
-                'author': author,
-                'read_count': read_count,
+                'publish_time': publish_time,
                 'article_type': 'focus'
             }
             
@@ -237,88 +237,48 @@ class BnextScraper:
         
         return articles
 
-
     def extract_regular_articles(self, soup):
         """
-        提取一般文章，使用指定的選擇器
+        提取一般文章，使用選擇器格式
         """
         articles = []
+        selectors = BNEXT_CONFIG.selectors
         
-        # 使用提供的一般文章選擇器
-        article_containers = soup.select('.grid.grid-cols-4.gap-8.xl\\:gap-6 > div')
+        # 使用容器選擇器
+        container_selector = BnextUtils.build_selector(selectors['regular_articles'][0])
+        article_containers = soup.select(container_selector)
         
         for container in article_containers:
             # 提取標題
-            title_elem = container.select_one('div > h2')
+            title_elem = BnextUtils.find_element(container, selectors['regular_articles'][1:2], 'title')
             if not title_elem:
                 continue
-                
+            
             title = title_elem.get_text(strip=True)
             
             # 提取摘要
-            summary_elem = container.select_one('div > div.text-sm.text-justify.font-normal.text-gray-500.three-line-text.tracking-wide')
+            summary_elem = BnextUtils.find_element(container, selectors['regular_articles'][2:3], 'summary')
             summary = summary_elem.get_text(strip=True) if summary_elem else ""
             
             # 尋找連結
-            link_elem = None
-            
-            # 嘗試從標題元素找連結
-            if title_elem:
-                parent_a = title_elem.find_parent('a')
-                if parent_a and 'href' in parent_a.attrs:
-                    link_elem = parent_a
-            
-            # 如果找不到，嘗試從容器中找連結
-            if not link_elem:
-                link_elem = container.find('a', href=lambda href: href and '/article/' in href)
-            
-            # 如果還是找不到，嘗試找任何可能的文章連結
-            if not link_elem:
-                all_links = container.find_all('a', href=True)
-                for a in all_links:
-                    if '/article/' in a['href']:
-                        link_elem = a
-                        break
-            
-            # 如果還是找不到連結，則跳過這篇文章
-            if not link_elem:
+            link = BnextUtils.extract_article_link(container, title_elem)
+            if not link:
                 continue
-                
-            link = link_elem.get('href', '')
             
-            # 確保連結是完整的
-            if link and not link.startswith('http'):
-                link = urljoin(BNEXT_CONFIG.base_url, link)
-            
-            # 提取分類 - 尋找類似的選擇器模式
-            category_elem = container.select_one('div.flex.relative.items-center.gap-2.text-gray-500.text-sm > a')
-            if not category_elem:
-                # 嘗試其他可能的類別選擇器
-                category_elem = container.select_one('.category, .tag, a[href*="/categories/"]')
-            
+            # 提取分類
+            category_elem = BnextUtils.find_element(container, selectors['regular_articles'][3:4], 'category')
             category = category_elem.get_text(strip=True) if category_elem else None
             
-            # 提取日期
-            date_elem = container.select_one('time, .date, .time')
-            publish_date = date_elem.get_text(strip=True) if date_elem else None
+            # 提取發布時間
+            time_elem = BnextUtils.find_element(container, selectors['regular_articles'][4:], 'time')
+            publish_time = time_elem.get_text(strip=True) if time_elem else None
             
-            # 提取作者
-            author_elem = container.select_one('.author, .writer')
-            author = author_elem.get_text(strip=True) if author_elem else None
-            
-            # 提取閱讀數
-            read_count_elem = container.select_one('.read-count, .view-count')
-            read_count = read_count_elem.get_text(strip=True) if read_count_elem else None
-            
-            # 添加到文章列表
             article_info = {
                 'title': title,
                 'summary': summary,
                 'link': link,
                 'category': category,
-                'publish_date': publish_date,
-                'author': author,
-                'read_count': read_count,
+                'publish_time': publish_time,
                 'article_type': 'regular'
             }
             
@@ -326,96 +286,61 @@ class BnextScraper:
         
         return articles
 
-    
     def extract_backup_articles(self, soup, current_url):
         """
-        備用方法，當特定選擇器失效時使用
+        備用方法，使用選擇器格式
         """
         articles = []
         found_links = set()
+        selectors = BNEXT_CONFIG.selectors
         
-        # 嘗試使用更通用的選擇器
-        article_cards = soup.select('.article-card, .article-item, .article-list-item')
-        
-        # 如果找不到特定卡片，就查找所有可能的文章連結
-        if not article_cards:
-            article_cards = soup.select('a[href*="/article/"]')
-        
-        # 處理文章卡片元素
-        for card in article_cards:
-            # 如果卡片本身是連結
-            if card.name == 'a':
-                link = card.get('href', '')
-                title_elem = card.select_one('.title, h2, h3, .article-title')
+        # 使用備用選擇器
+        for container_selector in selectors['backup_articles']:
+            css_selector = BnextUtils.build_selector(container_selector)
+            article_cards = soup.select(css_selector)
+            
+            if not article_cards:
+                continue
+                
+            for card in article_cards:
+                # 提取連結
+                link = BnextUtils.extract_article_link(card)
+                if not link or link in found_links:
+                    continue
+                    
+                found_links.add(link)
+                
+                # 提取標題
+                title_elem = BnextUtils.find_element(card, selectors['backup_articles'][1:2], 'title')
                 title = title_elem.get_text(strip=True) if title_elem else card.get_text(strip=True)
                 
-                # 尋找摘要
-                summary_elem = None
-                if title_elem:
-                    # 嘗試查找與標題相鄰的摘要元素
-                    parent = title_elem.parent
-                    if parent:
-                        summary_elem = parent.select_one('div.text-gray-500, .summary, .excerpt, .description')
-                
+                # 提取摘要
+                summary_elem = BnextUtils.find_element(card, selectors['backup_articles'][2:3], 'summary')
                 summary = summary_elem.get_text(strip=True) if summary_elem else ""
                 
-            else:
-                # 如果卡片包含連結
-                link_elem = card.select_one('a[href*="/article/"]')
-                if not link_elem:
-                    continue
+                # 提取分類
+                category_elem = BnextUtils.find_element(card, selectors['backup_articles'][3:4], 'category')
+                category = category_elem.get_text(strip=True) if category_elem else None
                 
-                link = link_elem.get('href', '')
-                title_elem = card.select_one('.title, h2, h3, .article-title')
-                title = title_elem.get_text(strip=True) if title_elem else link_elem.get_text(strip=True)
+                # 如果沒有找到分類，從URL推斷
+                if not category:
+                    category_match = re.search(r'/categories/([^/]+)', current_url)
+                    if category_match:
+                        category = category_match.group(1)
                 
-                # 尋找摘要
-                summary_elem = card.select_one('div.text-gray-500, .summary, .excerpt, .description')
-                summary = summary_elem.get_text(strip=True) if summary_elem else ""
-            
-            # 確保連結是完整的
-            if link and not link.startswith('http'):
-                link = urljoin(BNEXT_CONFIG.base_url, link)
-            
-            if not link or link in found_links:
-                continue
-            
-            found_links.add(link)
-            
-            # 提取文章分類
-            category_elem = card.select_one('.category, .tag')
-            category = category_elem.get_text(strip=True) if category_elem else None
-            
-            # 如果沒有在卡片上找到分類，則使用當前頁面URL推斷分類
-            if not category:
-                category_match = re.search(r'/categories/([^/]+)', current_url)
-                if category_match:
-                    category = category_match.group(1)
-            
-            # 提取發布日期
-            date_elem = card.select_one('time, .date, .time')
-            publish_date = date_elem.get_text(strip=True) if date_elem else None
-            
-            # 提取作者
-            author_elem = card.select_one('.author, .writer')
-            author = author_elem.get_text(strip=True) if author_elem else None
-            
-            # 提取閱讀數或點讀數
-            read_count_elem = card.select_one('.read-count, .view-count')
-            read_count = read_count_elem.get_text(strip=True) if read_count_elem else None
-            
-            article_info = {
-                'title': title,
-                'summary': summary,
-                'link': link,
-                'category': category,
-                'publish_date': publish_date,
-                'author': author,
-                'read_count': read_count,
-                'article_type': 'backup',
-                'source_page': current_url
-            }
-            
-            articles.append(article_info)
-        
+                # 提取發布時間
+                time_elem = BnextUtils.find_element(card, selectors['backup_articles'][4:], 'time')
+                publish_time = time_elem.get_text(strip=True) if time_elem else None
+                
+                article_info = {
+                    'title': title,
+                    'summary': summary,
+                    'link': link,
+                    'category': category,
+                    'publish_time': publish_time,
+                    'article_type': 'backup'
+                }
+                
+                articles.append(article_info)
+                
         return articles

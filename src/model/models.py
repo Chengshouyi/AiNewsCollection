@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, DateTime, Boolean
+from sqlalchemy import Integer, String, DateTime, Boolean, Text
 from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.orm import validates
@@ -13,17 +13,20 @@ class Article(Base):
     __tablename__ = 'articles'
     # 設定資料庫欄位
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    title: Mapped[str] = mapped_column(String(255), nullable=False)
-    summary: Mapped[Optional[str]] = mapped_column(String(1024))
-    link: Mapped[str] = mapped_column(String(512), unique=True, nullable=False)
-    content: Mapped[Optional[str]] = mapped_column(String)
-    published_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    source: Mapped[Optional[str]] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=datetime.now, 
-        nullable=False)
-    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    title: Mapped[str] = mapped_column(String(500), nullable=False)
+    summary: Mapped[Optional[str]] = mapped_column(Text)
+    content: Mapped[Optional[str]] = mapped_column(Text)
+    link: Mapped[str] = mapped_column(String(1000), unique=True, nullable=False)
+    category: Mapped[Optional[str]] = mapped_column(String(100))
+    published_at: Mapped[Optional[str]] = mapped_column(String(100))
+    author: Mapped[Optional[str]] = mapped_column(String(100))
+    source: Mapped[Optional[str]] = mapped_column(String(50))
+    article_type: Mapped[Optional[str]] = mapped_column(String(20))
+    tags: Mapped[Optional[str]] = mapped_column(String(500))
+    content_length: Mapped[Optional[int]] = mapped_column(Integer)
+    is_ai_related: Mapped[Optional[bool]] = mapped_column(Boolean, default=True)
+    created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     # 文章資料repr
     def __repr__(self):
@@ -31,14 +34,14 @@ class Article(Base):
     
     @validates('title')
     def validate_title(self, key, title):
-        if len(title.strip()) < 1 or len(title.strip()) > 255:
-            raise ValueError("標題長度需在 1 到 255 個字元之間")
+        if len(title.strip()) < 1 or len(title.strip()) > 500:
+            raise ValueError("標題長度需在 1 到 500 個字元之間")
         return title
 
     @validates('link')
     def validate_link(self, key, link):
-        if len(link.strip()) < 1 or len(link.strip()) > 512:
-            raise ValueError("連結長度需在 1 到 512 個字元之間")
+        if len(link.strip()) < 1 or len(link.strip()) > 1000:
+            raise ValueError("連結長度需在 1 到 1000 個字元之間")
         return link
     
     @validates('summary')
@@ -61,8 +64,8 @@ class Article(Base):
     
     @validates('source')
     def validate_source(self, key, source):
-        if len(source.strip()) > 255 or len(source.strip()) < 1:
-            raise ValueError("來源長度需在 1 到 255 個字元之間")
+        if len(source.strip()) > 50 or len(source.strip()) < 1:
+            raise ValueError("來源長度需在 1 到 50 個字元之間")
         return source
     
 

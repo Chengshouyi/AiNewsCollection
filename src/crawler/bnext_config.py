@@ -10,6 +10,49 @@ BNEXT_CONFIG = SiteConfig(
     url_file_extensions=['.html', ''],
     date_format='%Y-%m-%d',
     selectors={
+         # 文章列表頁選擇器
+        'focus_articles': [
+            {'tag': 'div', 'attrs': {'class': 'grid grid-cols-6 gap-4 relative h-full'}, 'parent': {'class': 'pc hidden lg:block'}},
+            {'tag': 'h2', 'attrs': {}, 'parent': {'class': 'col-span-3 flex flex-col flex-grow gap-y-3 m-4'}},
+            {'tag': 'div', 'attrs': {'class': 'flex-grow pt-4 text-lg text-gray-500'}, 'parent': {'class': 'col-span-3 flex flex-col flex-grow gap-y-3 m-4'}},
+            {'tag': 'a', 'attrs': {}, 'parent': {'class': 'flex relative items-center gap-2 text-gray-500 text-sm'}},
+            {'tag': 'span', 'attrs': {}, 'parent': {'class': 'flex relative items-center gap-2 text-gray-500 text-sm'}, 'nth_child': 3}
+        ],
+        'regular_articles': [
+            {'tag': 'div', 'attrs': {'class': 'grid grid-cols-4 gap-8 xl:gap-6'}, 'parent': {'class': 'pc hidden lg:block'}},
+            {'tag': 'h2', 'attrs': {}, 'parent': {'class': 'flex flex-col'}},
+            {'tag': 'div', 'attrs': {'class': 'text-sm text-justify font-normal text-gray-500 three-line-text tracking-wide'}},
+            {'tag': 'a', 'attrs': {}, 'parent': {'class': 'flex relative items-center gap-2 text-xs text-gray-500 font-normal'}},
+            {'tag': 'span', 'attrs': {}, 'parent': {'class': 'flex relative items-center gap-2 text-xs text-gray-500 font-normal'}, 'nth_child': 3}
+        ],
+        
+        # 文章詳細頁選擇器
+        'article_detail': [
+            {'tag': 'div', 'attrs': {'class': 'pc h-full hidden lg:flex flex-col gap-2 tracking-wide leading-normal'}, 'parent': {'id': 'hero'}, 'purpose': 'header'},
+            {'tag': 'span', 'attrs': {}, 'parent': {'class': 'flex gap-1 items-center text-sm text-gray-800'}, 'nth_child': 1, 'purpose': 'publish_date'},
+            {'tag': 'a', 'attrs': {}, 'parent': {'class': 'flex gap-1 items-center text-sm text-gray-800'}, 'purpose': 'category'},
+            {'tag': 'h1', 'attrs': {}, 'purpose': 'title'},
+            {'tag': 'div', 'attrs': {}, 'nth_child': 3, 'purpose': 'summary'},
+            {'tag': 'div', 'attrs': {'class': 'flex gap-1 flex-wrap'}, 'purpose': 'tags_container'},
+            {'tag': 'a', 'attrs': {}, 'purpose': 'tag'},
+            {'tag': 'a', 'attrs': {}, 'parent': {'class': 'flex gap-2 items-center text-sm text-gray-800'}, 'purpose': 'author'},
+            {'tag': 'div', 'attrs': {'class': 'htmlview article-content'}, 'purpose': 'content'},
+            {'tag': 'p', 'attrs': {}, 'purpose': 'content_paragraph'},
+            {'tag': 'h2', 'attrs': {}, 'purpose': 'content_heading'},
+            {'tag': 'a', 'attrs': {}, 'parent': {'tag': 'blockquote'}, 'purpose': 'related_links'}
+        ],
+        'common_elements': [
+            {'tag': 'time', 'attrs': {}},
+            {'tag': 'div', 'attrs': {'class': 'author'}},
+            {'tag': 'div', 'attrs': {'class': 'read-count'}},
+            {'tag': 'a', 'attrs': {'href': '/article/'}}
+        ],
+        'backup_articles': [
+            {'tag': 'div', 'attrs': {'class': 'article-card'}},
+            {'tag': 'div', 'attrs': {'class': 'article-item'}},
+            {'tag': 'div', 'attrs': {'class': 'article-list-item'}},
+            {'tag': 'a', 'attrs': {'href': '/article/'}}
+        ],
         'list': [
             {'tag': 'div', 'attrs': {'class': 'article-list'}},
             {'tag': 'a', 'attrs': {'class': 'article-link'}},
@@ -31,8 +74,6 @@ BNEXT_CONFIG = SiteConfig(
             {'tag': 'h1', 'attrs': {'class': 'post-title'}},
         ],
         'author': [
-            {'tag': 'div', 'attrs': {'class': 'author'}},
-            {'tag': 'span', 'attrs': {'class': 'writer'}},
             {'tag': 'div', 'attrs': {'class': 'article-author'}},
         ],
         'tags': [

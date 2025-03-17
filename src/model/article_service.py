@@ -53,6 +53,13 @@ class ArticleService:
                 'created_at': now,
             })
 
+            # 處理欄位名稱不一致的問題
+            if 'publish_time' in article_data and 'published_at' not in article_data:
+                article_data['published_at'] = article_data.pop('publish_time')
+                
+            if 'publish_date' in article_data and 'published_at' not in article_data:
+                article_data['published_at'] = article_data.pop('publish_date')
+
             # 使用 Pydantic 驗證資料
             try:
                 validated_data = ArticleCreateSchema.model_validate(article_data).model_dump()
@@ -62,24 +69,30 @@ class ArticleService:
 
             with self._get_repository(Article) as (repo, session):
                 # 檢查文章是否已存在
-                if not repo.exists(link=validated_data['link']):
+                existing_article = repo.find_one_by(link=validated_data['link'])
+                
+                if existing_article is None:
+                    # 創建新文章
                     article = repo.create(**validated_data)
                     session.commit()
-                    return {
-                        "id": article.id,
-                        "title": article.title,
-                        "summary": article.summary,
-                        "link": article.link,
-                        "content": article.content,
-                        "published_at": article.published_at,
-                        "source": article.source,
-                        "created_at": article.created_at,
-                        "updated_at": article.updated_at,
-                    }
+                    return self._article_to_dict(article)
                 else:
-                    error_msg = f"文章已存在: {validated_data['link']}"
-                    logger.warning(error_msg)
-                    return None
+                    # 如果新資料來自詳細頁面且現有資料來自列表頁，則更新
+                    if (validated_data.get('source') == 'bnext_detail' and 
+                        existing_article.source == 'bnext_list'):
+                        
+                        # 保留原始資料的某些欄位
+                        validated_data['id'] = existing_article.id
+                        validated_data['created_at'] = existing_article.created_at
+                        
+                        # 更新文章
+                        updated_article = repo.update(existing_article, **validated_data)
+                        session.commit()
+                        logger.info(f"更新已存在的文章: {validated_data['link']}")
+                        return self._article_to_dict(updated_article)
+                    else:
+                        logger.warning(f"文章已存在: {validated_data['link']}")
+                        return None
         except Exception as e:
             error_msg = f"創建文章失敗: {e}"
             logger.error(error_msg, exc_info=True)
@@ -413,10 +426,16 @@ class ArticleService:
                 "id": article.id,
                 "title": article.title,
                 "summary": article.summary,
-                "link": article.link,
                 "content": article.content,
+                "link": article.link,
+                "category": article.category,
                 "published_at": article.published_at,
+                "author": article.author,
                 "source": article.source,
+                "article_type": article.article_type,
+                "tags": article.tags,
+                "content_length": article.content_length,
+                "is_ai_related": article.is_ai_related,
                 "created_at": article.created_at,
                 "updated_at": article.updated_at,
             }
@@ -426,5 +445,69 @@ class ArticleService:
                 error_msg = f"轉換文章為字典失敗: {e}, 文章ID: {article_id}"
             except:
                 error_msg = f"轉換文章為字典失敗: {e}, 無法獲取文章ID"
+            logger.error(error_msg, exc_info=True)
+            return None
+
+    def merge_article_data(self, article_id: int, new_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        合併文章資料，用於將列表頁和詳細頁的資料合併
+        
+        Args:
+            article_id: 文章ID
+            new_data: 新的文章資料
+            
+        Returns:
+            合併後的文章字典或 None
+        """
+        try:
+            with self._get_repository(Article) as (repo, session):
+                article = repo.get_by_id(article_id)
+                
+                if not article:
+                    logger.warning(f"欲合併的文章不存在，ID={article_id}")
+                    return None
+                    
+                # 只更新非空值
+                update_data = {}
+                for key, value in new_data.items():
+                    if value is not None and value != '':
+                        # 特殊處理某些欄位
+                        if key == 'tags' and getattr(article, 'tags') and value:
+                            # 合併標籤
+                            existing_tags = set(getattr(article, 'tags').split(','))
+                            new_tags = set(value.split(','))
+                            update_data[key] = ','.join(existing_tags.union(new_tags))
+                        else:
+                            update_data[key] = value
+                
+                # 更新時間
+                update_data['updated_at'] = datetime.now()
+                
+                # 更新文章
+                updated_article = repo.update(article, **update_data)
+                session.commit()
+                return self._article_to_dict(updated_article)
+                
+        except Exception as e:
+            error_msg = f"合併文章資料失敗，ID={article_id}: {e}"
+            logger.error(error_msg, exc_info=True)
+            return None
+
+    def get_article_by_link(self, link: str) -> Optional[Dict[str, Any]]:
+        """
+        根據連結獲取文章
+        
+        Args:
+            link: 文章連結
+            
+        Returns:
+            文章字典或 None
+        """
+        try:
+            with self._get_repository(Article) as (repo, _):
+                article = repo.find_one_by(link=link)
+                return self._article_to_dict(article) if article else None
+        except Exception as e:
+            error_msg = f"根據連結獲取文章失敗，link={link}: {e}"
             logger.error(error_msg, exc_info=True)
             return None
