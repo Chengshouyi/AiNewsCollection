@@ -1,9 +1,10 @@
 from typing import TypeVar, Generic, Type, Optional, List, Dict, Any, Callable
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
-from .models import Base, AppError, ValidationError, NotFoundError
 from contextlib import contextmanager
 import logging
+from .models import Base
+
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -35,9 +36,9 @@ class Repository(Generic[T]):
         self.model_class = model_class
         self.validator = validator  # 可選的驗證器
 
-    def get_by_id(self, id: int) -> Optional[T]:
+    def get_by_id(self, id: int) -> Result:
         """根據 ID 獲取實體"""
-        return self.session.query(self.model_class).get(id)
+        return Result.succeed(self.session.query(self.model_class).get(id))
     
     def get_all(
         self, 
@@ -45,7 +46,7 @@ class Repository(Generic[T]):
         offset: Optional[int] = None, 
         sort_by: Optional[str] = None, 
         sort_desc: bool = False
-    ) -> List[T]:
+    ) -> Result:
         query = self.session.query(self.model_class)
     
         if sort_by:
@@ -58,15 +59,15 @@ class Repository(Generic[T]):
         if limit is not None:
             query = query.limit(limit)
     
-        return query.all()
+        return Result.succeed(query.all())
     
-    def find_by(self, **kwargs) -> List[T]:
+    def find_by(self, **kwargs) -> Result:
         """根據條件查詢實體"""
-        return self.session.query(self.model_class).filter_by(**kwargs).all()
+        return Result.succeed(self.session.query(self.model_class).filter_by(**kwargs).all())
     
-    def find_one_by(self, **kwargs) -> Optional[T]:
+    def find_one_by(self, **kwargs) -> Result:
         """根據條件查詢單個實體"""
-        return self.session.query(self.model_class).filter_by(**kwargs).first()
+        return Result.succeed(self.session.query(self.model_class).filter_by(**kwargs).first())
     
     def create(self, **kwargs) -> Result:
         """創建新實體，處理唯一性約束"""
@@ -127,11 +128,17 @@ class Repository(Generic[T]):
             return Result.failure(f"更新實體時發生錯誤: {str(e)}", e)
 
     def delete(self, entity: T) -> Result:
-        """刪除實體"""
+        """刪除實體
+        Args:
+            entity: 要刪除的實體
+        Returns:
+            Result: 包含成功/失敗狀態和詳細錯誤信息
+        """
         try:
             if not entity:
                 return Result.failure(f"找不到要刪除的實體")
             
+
             self.session.delete(entity)
             self.session.flush()
             return Result.succeed(True)
@@ -142,7 +149,7 @@ class Repository(Generic[T]):
             self.session.rollback()
             return Result.failure(f"刪除實體時發生錯誤: {str(e)}", e)
 
-    def batch_create(self, items_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def batch_create(self, items_data: List[Dict[str, Any]]) -> Result:
         """批量創建實體"""
         results = {
             "success_count": 0,
@@ -161,31 +168,31 @@ class Repository(Generic[T]):
                     "error": result.error_message
                 })
         
-        return results
+        return Result.succeed(results)
     
-    def find_by_filter(self, **kwargs) -> List[T]:
+    def find_by_filter(self, **kwargs) -> Result:
         """根據過濾條件查詢實體"""
         query = self.session.query(self.model_class)
         for key, value in kwargs.items():
             if hasattr(self.model_class, key):
                 query = query.filter(getattr(self.model_class, key) == value)
-        return query.all()
+        return Result.succeed(query.all())
     
-    def find_one_by_filter(self, **kwargs) -> Optional[T]:
+    def find_one_by_filter(self, **kwargs) -> Result:
         """根據過濾條件查詢單個實體"""
         query = self.session.query(self.model_class)
         for key, value in kwargs.items():
             if hasattr(self.model_class, key):
                 query = query.filter(getattr(self.model_class, key) == value)
-        return query.first()
+        return Result.succeed(query.first())
     
-    def exists(self, **kwargs) -> bool:
+    def exists(self, **kwargs) -> Result:
         """檢查是否存在符合條件的實體"""
         query = self.session.query(self.model_class)
         for key, value in kwargs.items():
             if hasattr(self.model_class, key):
                 query = query.filter(getattr(self.model_class, key) == value)
-        return self.session.query(query.exists()).scalar()
+        return Result.succeed(self.session.query(query.exists()).scalar())
 
 
 @contextmanager

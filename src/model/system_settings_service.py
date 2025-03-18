@@ -83,7 +83,7 @@ class SystemSettingsService:
             logger.error(error_msg, exc_info=True)
             return Result.failure(error_msg, e)
 
-    def get_all_system_settings(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List[Dict[str, Any]]:
+    def get_all_system_settings(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> Result:
         """
         獲取所有系統設定，支持分頁和排序
         
@@ -101,14 +101,14 @@ class SystemSettingsService:
                 # 獲取所有設定
                 sys_settings = repo.get_all(limit=limit, offset=offset, sort_by=sort_by, sort_desc=sort_desc)
                 # 使用列表推導式簡化轉換過程，並確保返回類型為 List[Dict[str, Any]]
-                return [sys_setting_dict for sys_setting in sys_settings
-                        if (sys_setting_dict := self._sys_settings_to_dict(sys_setting)) is not None]
+                return Result.succeed([sys_setting_dict for sys_setting in sys_settings
+                        if (sys_setting_dict := self._sys_settings_to_dict(sys_setting)) is not None])
         except Exception as e:
             error_msg = f"獲取所有系統設定失敗: {e}"
             logger.error(error_msg, exc_info=True)
-            return []
+            return Result.failure(error_msg, e)
 
-    def search_system_settings(self, search_terms: Dict[str, Any], limit: Optional[int] = None, offset: Optional[int] = None) -> List[Dict[str, Any]]:
+    def search_system_settings(self, search_terms: Dict[str, Any], limit: Optional[int] = None, offset: Optional[int] = None) -> Result:
         """
         搜尋系統設定
         
@@ -140,14 +140,14 @@ class SystemSettingsService:
                     
                 # 執行查詢
                 sys_settings = query.all()
-                return [sys_settings_dict for sys_setting in sys_settings
-                        if (sys_settings_dict := self._sys_settings_to_dict(sys_setting)) is not None]
+                return Result.succeed([sys_settings_dict for sys_setting in sys_settings
+                        if (sys_settings_dict := self._sys_settings_to_dict(sys_setting)) is not None])
         except Exception as e:
             error_msg = f"搜尋系統設定失敗: {e}"
             logger.error(error_msg, exc_info=True)
-            return []
+            return Result.failure(error_msg, e)
     
-    def get_system_settings_by_id(self, sys_settings_id: int) -> Optional[Dict[str, Any]]:
+    def get_system_settings_by_id(self, sys_settings_id: int) -> Result:
         """
         獲取特定 ID 的系統設定
         
@@ -159,18 +159,20 @@ class SystemSettingsService:
         """ 
         if not isinstance(sys_settings_id, int) or sys_settings_id <= 0:
             logger.error(f"無效的系統設定ID: {sys_settings_id}")
-            return None
+            return Result.failure(f"無效的系統設定ID: {sys_settings_id}")
         
         try:
             with self._get_repository(SystemSettings) as (repo, _):
                 sys_settings = repo.get_by_id(sys_settings_id)
-                return self._sys_settings_to_dict(sys_settings) if sys_settings else None
+                if not sys_settings:
+                    return Result.failure(f"系統設定不存在，ID={sys_settings_id}")
+                return Result.succeed(self._sys_settings_to_dict(sys_settings))
         except Exception as e:
             error_msg = f"獲取系統設定失敗，ID={sys_settings_id}: {e}"
             logger.error(error_msg, exc_info=True)
-            return None
+            return Result.failure(error_msg, e)
         
-    def get_system_settings_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
+    def get_system_settings_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Result:
         """
         獲取分頁的系統設定
         
@@ -197,23 +199,17 @@ class SystemSettingsService:
                 # 獲取分頁後的設定
                 sys_settings = repo.get_all(limit=per_page, offset=offset, sort_by=sort_by, sort_desc=sort_desc)    
                 
-                return {
+                return Result.succeed({
                     "items": [self._sys_settings_to_dict(sys_setting) for sys_setting in sys_settings],
                     "total": total_settings,
                     "page": page,
                     "per_page": per_page,
                     "total_pages": total_pages
-                }   
+                })
         except Exception as e:
             error_msg = f"分頁獲取系統設定失敗: {e}"
             logger.error(error_msg, exc_info=True)
-            return {
-                "items": [],
-                "total": 0,
-                "page": page,
-                "per_page": per_page,
-                "total_pages": 0
-            }   
+            return Result.failure(error_msg, e)
         
     def update_system_settings(self, sys_settings_id: int, setting_data: Dict[str, Any]) -> Result:
         """
@@ -275,7 +271,7 @@ class SystemSettingsService:
             logger.error(error_msg, exc_info=True)
             return Result.failure(error_msg, e)
     
-    def batch_update_system_settings(self, sys_settings_ids: List[int], setting_data: Dict[str, Any]) -> Tuple[int, int]:
+    def batch_update_system_settings(self, sys_settings_ids: List[int], setting_data: Dict[str, Any]) -> Result:
         """
         批量更新系統設定
         
@@ -297,9 +293,12 @@ class SystemSettingsService:
                 fail_count += 1
                 
         logger.info(f"批量更新系統設定完成: 成功 {success_count}, 失敗 {fail_count}")
-        return (success_count, fail_count)
+        return Result.succeed({
+                "success_count": success_count,
+                "fail_count": fail_count
+            })
 
-    def delete_system_settings(self, sys_settings_id: int) -> bool:
+    def delete_system_settings(self, sys_settings_id: int) -> Result:
         """
         刪除系統設定
         
@@ -311,7 +310,7 @@ class SystemSettingsService:
         """
         if not isinstance(sys_settings_id, int) or sys_settings_id <= 0:
             logger.error(f"無效的系統設定ID: {sys_settings_id}")
-            return False
+            return Result.failure(f"無效的系統設定ID: {sys_settings_id}")
         
         try:
             with self._get_repository(SystemSettings) as (repo, session):
@@ -319,19 +318,19 @@ class SystemSettingsService:
                 
                 if not sys_setting:
                     logger.warning(f"欲刪除的設定不存在，ID={sys_settings_id}")
-                    return False
+                    return Result.failure(f"欲刪除的設定不存在，ID={sys_settings_id}")
                 
                 repo.delete(sys_setting)
                 session.commit()
                 logger.info(f"成功刪除系統設定，ID={sys_settings_id}")
-                return True
+                return Result.succeed(f"成功刪除系統設定，ID={sys_settings_id}")
         except Exception as e:
             error_msg = f"刪除系統設定失敗，ID={sys_settings_id}: {e}"
             logger.error(error_msg, exc_info=True)
-            return False
+            return Result.failure(error_msg, e)
         
         
-    def batch_delete_system_settings(self, sys_settings_ids: List[int]) -> Tuple[int, int]:
+    def batch_delete_system_settings(self, sys_settings_ids: List[int]) -> Result:
         """
         批量刪除系統設定
         
@@ -352,9 +351,12 @@ class SystemSettingsService:
                 fail_count += 1
                 
         logger.info(f"批量刪除系統設定完成: 成功 {success_count}, 失敗 {fail_count}")
-        return (success_count, fail_count)
+        return Result.succeed({
+                "success_count": success_count,
+                "fail_count": fail_count
+            })
     
-    def _sys_settings_to_dict(self, sys_settings) -> Optional[Dict[str, Any]]:
+    def _sys_settings_to_dict(self, sys_settings) -> Result:
         """
         將 SystemSettings 實例轉換為字典
         
@@ -365,14 +367,14 @@ class SystemSettingsService:
             系統設定字典或 None
         """
         if not sys_settings:
-            return None
+            return Result.failure("系統設定不存在")
         
         try:
             # 如果已經是字典，直接返回
             if isinstance(sys_settings, dict):
-                return sys_settings
+                return Result.succeed(sys_settings)
             
-            return {
+            return Result.succeed({
                 "id": sys_settings.id,
                 "crawler_name": sys_settings.crawler_name,
                 "crawl_interval": sys_settings.crawl_interval,
@@ -380,14 +382,14 @@ class SystemSettingsService:
                 "created_at": sys_settings.created_at,
                 "updated_at": sys_settings.updated_at,
                 "last_crawl_time": sys_settings.last_crawl_time
-            }
+            })
         except Exception as e:
             try:
                 sys_settings_id = getattr(sys_settings, 'id', 'N/A')
                 error_msg = f"轉換系統設定字典失敗，ID={sys_settings_id}: {e}"
                 logger.error(error_msg, exc_info=True)
-                return None
+                return Result.failure(error_msg, e)
             except Exception as e:
                 error_msg = f"轉換系統設定字典失敗: {e}"
                 logger.error(error_msg, exc_info=True)
-                return None 
+                return Result.failure(error_msg, e)

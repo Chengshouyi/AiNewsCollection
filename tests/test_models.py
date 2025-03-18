@@ -1,9 +1,9 @@
 import pytest
 from datetime import datetime
 from src.model.models import Article, SystemSettings
-from src.model.article_schema import ArticleCreateSchema
-from src.model.system_settings_schema import SystemSettingsCreateSchema
-from pydantic import ValidationError
+from src.model.article_schema import ArticleCreateSchema, ArticleUpdateSchema
+from src.model.system_settings_schema import SystemSettingsCreateSchema, SystemSettingsUpdateSchema
+from src.model.models import ValidationError as CustomValidationError
 
 class TestArticleModel:
     """Article 模型的測試類"""
@@ -61,7 +61,7 @@ class TestArticleSchema:
             "published_at": datetime.now().isoformat(),
             "source": "test_source"
         }
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
         assert "標題不能為空" in str(exc_info.value)
     
@@ -73,9 +73,9 @@ class TestArticleSchema:
             "published_at": datetime.now().isoformat(),
             "source": "test_source"
         }
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "String should have at most 500 characters" in str(exc_info.value)
+        assert "標題長度不能超過 500 個字元" in str(exc_info.value)
     
     def test_article_title_boundary_values(self):
         """測試標題長度的邊界值"""
@@ -107,7 +107,7 @@ class TestArticleSchema:
             "published_at": datetime.now().isoformat(),
             "source": "test_source"
         }
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
         assert "連結不能為空" in str(exc_info.value)
     
@@ -119,9 +119,9 @@ class TestArticleSchema:
             "published_at": datetime.now().isoformat(),
             "source": "test_source"
         }
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "String should have at most 1000 characters" in str(exc_info.value)
+        assert "連結長度不能超過 1000 個字元" in str(exc_info.value)
     
     def test_article_link_boundary_values(self):
         """測試連結長度的邊界值"""
@@ -152,11 +152,11 @@ class TestArticleSchema:
             "link": "https://test.com/article",
             "published_at": datetime.now().isoformat(),
             "source": "test_source",
-            "summary": "a" * 1025
+            "summary": "a" * 10001
         }
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "String should have at most 1024 characters" in str(exc_info.value)
+        assert "摘要長度不能超過 10000 個字元" in str(exc_info.value)
     
     def test_article_summary_boundary_values(self):
         """測試摘要長度的邊界值"""
@@ -177,10 +177,10 @@ class TestArticleSchema:
             "link": "https://test.com/article",
             "published_at": datetime.now().isoformat(),
             "source": "test_source",
-            "summary": "a" * 1024
+            "summary": "a" * 10000
         }
         schema_max = ArticleCreateSchema.model_validate(data_max)
-        assert len(schema_max.summary or "") == 1024
+        assert len(schema_max.summary or "") == 10000
     
     def test_article_content_too_long_validation(self):
         """測試內容過長的驗證"""
@@ -191,9 +191,9 @@ class TestArticleSchema:
             "source": "test_source",
             "content": "a" * 65537
         }
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "String should have at most 65536 characters" in str(exc_info.value)
+        assert "內容長度不能超過 65536 個字元" in str(exc_info.value)
     
     def test_article_content_boundary_values(self):
         """測試內容長度的邊界值"""
@@ -227,9 +227,11 @@ class TestArticleSchema:
             "published_at": datetime.now().isoformat(),
             "source": "a" * 51
         }
-        with pytest.raises(ValidationError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "String should have at most 50 characters" in str(exc_info.value)
+        assert "來源長度不能超過 50 個字元" in str(exc_info.value)
+    
+
 
 
 class TestSystemSettingsModel:
@@ -285,7 +287,7 @@ class TestSystemSettingsSchema:
             "crawl_interval": 60,
             "is_active": True
         }
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             SystemSettingsCreateSchema.model_validate(data)
         assert "爬蟲名稱不能為空" in str(exc_info.value)
     
@@ -296,7 +298,7 @@ class TestSystemSettingsSchema:
             "crawl_interval": 60,
             "is_active": True
         }
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             SystemSettingsCreateSchema.model_validate(data)
         assert "爬蟲名稱長度必須在1到255個字符之間" in str(exc_info.value)
     
@@ -327,7 +329,7 @@ class TestSystemSettingsSchema:
             "crawl_interval": -1,
             "is_active": True
         }
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             SystemSettingsCreateSchema.model_validate(data)
         assert "爬取間隔必須大於0" in str(exc_info.value)
     
@@ -338,7 +340,7 @@ class TestSystemSettingsSchema:
             "crawl_interval": 0,
             "is_active": True
         }
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             SystemSettingsCreateSchema.model_validate(data)
         assert "爬取間隔必須大於0" in str(exc_info.value)
     
@@ -349,6 +351,32 @@ class TestSystemSettingsSchema:
             "crawl_interval": 60,
             "is_active": "not_a_boolean"
         }
-        with pytest.raises(ValueError) as exc_info:
+        with pytest.raises(CustomValidationError) as exc_info:
             SystemSettingsCreateSchema.model_validate(data)
         assert "is_active必須是布林值" in str(exc_info.value)
+
+    def test_system_settings_created_at_empty_validation(self):
+        """測試建立時間為空的驗證"""
+        data = {
+            "crawler_name": "test_crawler",
+            "crawl_interval": 60,
+            "is_active": True,
+            "created_at": None
+        }
+        with pytest.raises(CustomValidationError) as exc_info:
+            SystemSettingsCreateSchema.model_validate(data)
+        assert "建立時間不能為空" in str(exc_info.value)
+    
+    def test_system_settings_update_schema_with_valid_data(self):
+        """測試有效的系統設定更新資料"""
+        data = {
+            "crawler_name": "test_crawler",
+            "crawl_interval": 60,
+            "is_active": True
+        }
+        schema = SystemSettingsUpdateSchema.model_validate(data)
+        assert schema.crawler_name == "test_crawler"
+        assert schema.crawl_interval == 60
+        assert schema.is_active is True
+    
+

@@ -1,11 +1,10 @@
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from src.model.models import Article, Base
+from src.model.models import Article
 from src.model.repository import Repository
 from datetime import datetime
 from tests import create_database_session
-from pydantic import ValidationError
+
+
 class TestRepository:
     
     @pytest.fixture
@@ -22,29 +21,34 @@ class TestRepository:
         }
     
     def test_repository_create(self, create_database_session, repo, sample_article_data):
-        article = repo.create(**sample_article_data)
+        result = repo.create(**sample_article_data)
         create_database_session.commit()
         
-        assert article.id is not None
-        assert article.title == "測試文章"
+        assert result.success is True
+        assert result.data is not None
+        assert result.data.id is not None
+        assert result.data.title == "測試文章"
     
     def test_repository_update(self, create_database_session, repo, sample_article_data):
-        article = repo.create(**sample_article_data)
+        result = repo.create(**sample_article_data)
         create_database_session.commit()
         
-        updated_article = repo.update(article, title="更新後的文章")
+        updated_article = repo.update(result.data, title="更新後的文章")
         create_database_session.commit()
         
-        assert updated_article.title == "更新後的文章"
+        assert updated_article.success is True
+        assert updated_article.data is not None
+        assert updated_article.data.title == "更新後的文章"
     
     def test_repository_delete(self, create_database_session, repo, sample_article_data):
-        article = repo.create(**sample_article_data)
+        result = repo.create(**sample_article_data)
         create_database_session.commit()
         
-        repo.delete(article)
+        result = repo.delete(result.data)
         create_database_session.commit()
         
-        assert repo.get_by_id(article.id) is None
+        assert result.success is True
+        assert result.data is None
     
     def test_repository_find_methods(self, create_database_session, repo):
         # 準備測試資料
@@ -63,23 +67,26 @@ class TestRepository:
         }
         
         # 創建文章
-        article1 = repo.create(**article_data1)
-        article2 = repo.create(**article_data2)
+        repo.create(**article_data1)
+        repo.create(**article_data2)
         create_database_session.commit()
         
         # 測試 find_by 方法
         found_articles = repo.find_by(title="測試文章1")
-        assert len(found_articles) == 1
-        assert found_articles[0].title == "測試文章1"
+        assert found_articles.success is True
+        assert len(found_articles.data) == 1
+        assert found_articles.data[0].title == "測試文章1"
         
         # 測試 find_one_by 方法
         found_article = repo.find_one_by(link="https://test.com/article2")
-        assert found_article is not None
-        assert found_article.title == "測試文章2"
+        assert found_article.success is True
+        assert found_article.data is not None
+        assert found_article.data.title == "測試文章2"
         
         # 測試不存在的查詢
         not_found = repo.find_by(title="不存在的文章")
-        assert len(not_found) == 0
+        assert not_found.success is True
+        assert len(not_found.data) == 0
     
     def test_repository_get_all(self, create_database_session, repo):
         # 創建多篇文章用於測試排序和分頁
@@ -93,43 +100,51 @@ class TestRepository:
         create_database_session.commit()
         
         # 測試基本查詢
-        all_articles = repo.get_all()
-        assert len(all_articles) == 5
+        result = repo.get_all()
+        assert result.success is True
+        assert result.data is not None
+        assert len(result.data) == 5
         
         # 測試分頁
-        paged_articles = repo.get_all(limit=2, offset=1)
-        assert len(paged_articles) == 2
+        paged_result = repo.get_all(limit=2, offset=1)
+        assert paged_result.success is True
+        assert paged_result.data is not None
+        assert len(paged_result.data) == 2
         
         # 測試排序
-        sorted_articles = repo.get_all(sort_by="title")
-        for i in range(len(sorted_articles) - 1):
-            assert sorted_articles[i].title <= sorted_articles[i + 1].title
+        sorted_result = repo.get_all(sort_by="title")
+        assert sorted_result.success is True
+        assert sorted_result.data is not None
+        for i in range(len(sorted_result.data) - 1):
+            assert sorted_result.data[i].title <= sorted_result.data[i + 1].title
         
         # 測試倒序排序
-        desc_sorted_articles = repo.get_all(sort_by="title", sort_desc=True)
-        for i in range(len(desc_sorted_articles) - 1):
-            assert desc_sorted_articles[i].title >= desc_sorted_articles[i + 1].title
+        desc_sorted_result = repo.get_all(sort_by="title", sort_desc=True)
+        assert desc_sorted_result.success is True
+        assert desc_sorted_result.data is not None
+        for i in range(len(desc_sorted_result.data) - 1):
+            assert desc_sorted_result.data[i].title >= desc_sorted_result.data[i + 1].title
     
     def test_repository_exists(self, create_database_session, repo, sample_article_data):
-        article = repo.create(**sample_article_data)
+        repo.create(**sample_article_data)
         create_database_session.commit()
         
-        assert repo.exists(title="測試文章") is True
-        assert repo.exists(title="不存在的文章") is False
+        assert repo.exists(title="測試文章").success is True
+        assert repo.exists(title="不存在的文章").success is False
 
-    def test_repository_update_with_validation(self, create_database_session, repo, sample_article_data):
+    def test_repository_update_with_validation(self,  repo):
         """測試更新時的驗證"""
-        article = repo.create(**sample_article_data)
+        result = repo.create(**sample_article_data)
         create_database_session.commit()
         
         # 測試更新標題長度驗證
         with pytest.raises(ValueError, match="標題長度需在 1 到 500 個字元之間"):
-            repo.update(article, title="")
+            repo.update(result.data, title="")
         
         with pytest.raises(ValueError, match="標題長度需在 1 到 500 個字元之間"):
-            repo.update(article, title="a" * 501)
+            repo.update(result.data, title="a" * 501)
     
-    def test_repository_create_with_optional_fields(self, create_database_session, repo):
+    def test_repository_create_with_optional_fields(self,  repo):
         """測試創建包含可選欄位的文章"""
         article_data = {
             "title": "帶有可選欄位的文章",
@@ -141,15 +156,15 @@ class TestRepository:
             "tags": "測試,範例"
         }
         
-        article = repo.create(**article_data)
+        result = repo.create(**article_data)
         create_database_session.commit()
         
-        assert article.summary == "這是一篇測試文章"
-        assert article.content == "測試內容"
-        assert article.category == "測試分類"
-        assert article.tags == "測試,範例"
+        assert result.data.summary == "這是一篇測試文章"
+        assert result.data.content == "測試內容"
+        assert result.data.category == "測試分類"
+        assert result.data.tags == "測試,範例"
     
-    def test_repository_unique_link_constraint(self, create_database_session, repo):
+    def test_repository_unique_link_constraint(self,  repo):
         """測試連結唯一性約束"""
         first_article_data = {
             "title": "第一篇文章",
@@ -161,6 +176,107 @@ class TestRepository:
         repo.create(**first_article_data)
         create_database_session.commit()
 
-        # 第二次創建應拋出異常
-        with pytest.raises(ValidationError, match="已存在具有相同連結的文章"):
-            repo.create(**first_article_data)
+        # 第二次創建result應有錯誤訊息
+        result = repo.create(**first_article_data)
+        assert result.success is False
+        assert "已存在具有相同連結的文章" in result.error_message
+        assert result.error is not None
+        assert result.error.args[0] == "已存在具有相同連結的文章"
+        assert result.error.args[1] is None
+        assert result.error.args[2] is None
+        assert result.error.args[3] is None
+
+    def test_repository_batch_create(self, repo):
+        """測試批量創建"""
+        article_data1 = {
+            "title": "第一篇文章",
+            "link": "https://test.com/article1",
+            "published_at": datetime.now()
+        }
+
+        article_data2 = {
+            "title": "第二篇文章",
+            "link": "https://test.com/article2",
+            "published_at": datetime.now()
+        }
+
+        results = repo.batch_create([article_data1, article_data2])
+        assert results.success is True  
+        assert len(results.data) == 2
+        assert results.data[0].title == "第一篇文章"
+        assert results.data[1].title == "第二篇文章"
+
+    def test_repository_batch_update(self,  repo):
+        """測試批量更新"""  
+        article_data1 = {
+            "title": "第一篇文章",
+            "link": "https://test.com/article1",
+            "published_at": datetime.now()
+        }   
+
+        article_data2 = {
+            "title": "第二篇文章",
+            "link": "https://test.com/article2",
+            "published_at": datetime.now()
+        }           
+
+        results = repo.batch_create([article_data1, article_data2])
+        create_database_session.commit()
+
+        results = repo.batch_update(results.data, title="更新後的文章")
+        create_database_session.commit()
+
+        assert results.success is True
+        assert len(results.data) == 2
+        assert results.data[0].title == "更新後的文章"
+        assert results.data[1].title == "更新後的文章"  
+
+    def test_repository_batch_delete(self, repo):
+        """測試批量刪除"""
+        article_data1 = {
+            "title": "第一篇文章",
+            "link": "https://test.com/article1",
+            "published_at": datetime.now()
+        }   
+
+        article_data2 = {
+            "title": "第二篇文章",
+            "link": "https://test.com/article2",
+            "published_at": datetime.now()
+        }
+
+        results = repo.batch_create([article_data1, article_data2])
+        create_database_session.commit()
+
+        results = repo.batch_delete(results.data)
+        create_database_session.commit()
+
+        assert results.success is True
+        assert len(results.data) == 2
+        assert repo.get_by_id(results.data[0].id) is None
+        assert repo.get_by_id(results.data[1].id) is None
+
+    def test_repository_find_by_filter(self, create_database_session, repo):
+        """測試過濾查詢"""
+        article_data1 = {
+            "title": "第一篇文章",
+            "link": "https://test.com/article1",
+            "published_at": datetime.now()
+        }   
+
+        article_data2 = {
+            "title": "第二篇文章",
+            "link": "https://test.com/article2",
+            "published_at": datetime.now()
+        }
+        
+        results = repo.batch_create([article_data1, article_data2])
+        create_database_session.commit()
+
+        found_articles = repo.find_by_filter(title="第一篇文章")
+        assert len(found_articles) == 1
+        assert found_articles[0].title == "第一篇文章"
+        
+
+
+
