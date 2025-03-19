@@ -1,8 +1,10 @@
-from typing import TypeVar, Generic, Type, Optional, List, Dict, Any, Callable
+from typing import TypeVar, Generic, Type, Optional, List, Dict, Any
 from sqlalchemy.orm import Session
 from contextlib import contextmanager
 import logging
 from .models import Base
+from .database_manager import DatabaseManager
+from .models import ValidationError as CustomValidationError
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -14,13 +16,16 @@ T = TypeVar('T', bound=Base)
 class Repository(Generic[T]):
     """通用Repository模式實現，用於基本CRUD操作"""
     
-    def __init__(self, session: Session, model_class: Type[T], validator: Optional[Callable] = None):
+    def __init__(self, session: Session, model_class: Type[T]):
         self.session = session
         self.model_class = model_class
 
     def get_by_id(self, id: int) -> Optional[T]:
         """根據 ID 獲取實體"""
-        return self.session.query(self.model_class).get(id)
+        if not isinstance(id, int) or id <= 0:
+            logger.error(f"無效的ID: {id}")
+            raise CustomValidationError(f"無效的ID: {id}")
+        return self.session.query(self.model_class).get({"id":id})
     
     def get_all(
         self, 
@@ -29,6 +34,7 @@ class Repository(Generic[T]):
         sort_by: Optional[str] = None, 
         sort_desc: bool = False
     ) -> List[T]:
+        """根據條件查詢實體"""
         query = self.session.query(self.model_class)
     
         if sort_by:
@@ -43,6 +49,52 @@ class Repository(Generic[T]):
     
         return query.all()
     
+    def get_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
+        """
+        分頁獲取實體
+        
+        Args:
+            page: 頁碼
+            per_page: 每頁數量
+            sort_by: 排序欄位，默認None
+            sort_desc: 是否降序排序，默認False
+        Returns:
+            items: 分頁後的實體列表
+            total: 總實體數量
+            page: 當前頁碼
+            per_page: 每頁實體數量
+            total_pages: 總頁數
+        """
+        # 計算總文章數量
+        items = self.get_all()
+        if not items:
+            return {
+                "items": [],
+                "total": 0,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": 0
+            }
+        total_items = len(items)
+        
+        # 計算總頁數
+        total_pages = (total_items + per_page - 1) // per_page 
+        
+        # 計算起始偏移
+        offset = (page - 1) * per_page
+        
+        # 獲取分頁後的文章
+        items = self.get_all(limit=per_page, offset=offset, sort_by=sort_by, sort_desc=sort_desc)
+
+        return {
+            "items": items,
+            "total": total_items,
+            "page": page,
+            "per_page": per_page,
+            "total_pages": total_pages
+        }
+
+
     def find_by(self, **kwargs) -> List[T]:
         """根據條件查詢實體"""
         return self.session.query(self.model_class).filter_by(**kwargs).all()
@@ -51,16 +103,17 @@ class Repository(Generic[T]):
         """根據條件查詢單個實體"""
         return self.session.query(self.model_class).filter_by(**kwargs).first()
     
+    
     def create(self, **kwargs) -> T:
         """創建新實體，處理唯一性約束"""
         try:
-                
             entity = self.model_class(**kwargs)
             self.session.add(entity)
             self.session.flush()  # 立即獲取 ID
             return entity   
         except Exception as e:
             self.session.rollback()
+            logger.error(f"創建實體失敗: {str(e)}")
             raise e
     
     def update(self, entity: T, **kwargs) -> T:
@@ -70,11 +123,11 @@ class Repository(Generic[T]):
             for key, value in kwargs.items():
                 if hasattr(entity, key):
                     setattr(entity, key, value)
-            
             self.session.flush()
             return entity
         except Exception as e:
             self.session.rollback()
+            logger.error(f"更新實體失敗: {str(e)}")
             raise e
 
     def delete(self, entity: T) -> None:
@@ -89,6 +142,7 @@ class Repository(Generic[T]):
             self.session.flush()
         except Exception as e:
             self.session.rollback()
+            logger.error(f"刪除實體失敗: {str(e)}")
             raise e
 
     def batch_create(self, items_data: List[Dict[str, Any]]) -> List[T]:
@@ -136,15 +190,17 @@ class Repository(Generic[T]):
                 query = query.filter(getattr(self.model_class, key) == value)
         return self.session.query(query.exists()).scalar()
 
-
+# 使用上下文管理器處理 Repository 的創建和事務管理
 @contextmanager
-def repository_context(session: Session, model_class: Type[T], validator=None):
+def repository_context(db_manager: DatabaseManager, model_class: Type[T]):
     """使用上下文管理器處理 Repository 的創建和事務管理"""
-    repo = Repository(session, model_class, validator)
-    try:
-        yield repo
-        session.commit()
-    except Exception as e:
-        session.rollback()
-        raise e
+    with db_manager.session_scope() as session:
+        repo = Repository(session, model_class)
+        try:
+            yield repo, session
+        except Exception as e:
+            error_msg = f"儲存庫操作錯誤: {e}"
+            logger.error(error_msg, exc_info=True)
+            session.rollback()
+            raise
         

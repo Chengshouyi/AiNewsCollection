@@ -1,14 +1,12 @@
 import logging
-from typing import Optional, Dict, Any, List, TypeVar, Type, Tuple
-from .database_manager import DatabaseManager
-from .repository import Repository
+from typing import Optional, Dict, Any, List, TypeVar, Type
+from .repository import repository_context
 from .models import Article, Base
 from datetime import datetime
-from contextlib import contextmanager
 from .article_schema import ArticleCreateSchema, ArticleUpdateSchema
 from .models import ValidationError as CustomValidationError
-from .models import NotFoundError as CustomNotFoundError
-from .models import OptionError as CustomOptionError
+from .database_manager import DatabaseManager
+
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,20 +20,10 @@ class ArticleService:
     
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
-    
-    # 增加裝飾器來包裝通用的 session 與 repo 操作
-    @contextmanager
+
     def _get_repository(self, model_class: Type[T]):
         """取得儲存庫的上下文管理器"""
-        with self.db_manager.session_scope() as session:
-            repo = Repository(session, model_class)
-            try:
-                yield repo, session
-            except Exception as e:
-                error_msg = f"儲存庫操作錯誤: {e}"
-                logger.error(error_msg, exc_info=True)
-                session.rollback()
-                raise
+        return repository_context(self.db_manager, model_class)
     
     def insert_article(self, article_data: Dict[str, Any]) -> Optional[Article]:
         """
@@ -241,42 +229,16 @@ class ArticleService:
             sort_by: 排序欄位，默認None
             sort_desc: 是否降序排序，默認False
         Returns:
-            分頁後的文章字典列表
+            items: 分頁後的文章列表
+            total: 總文章數量
+            page: 當前頁碼
+            per_page: 每頁文章數量
+            total_pages: 總頁數
         """
-        try:
-            with self._get_repository(Article) as (repo, _):
-                # 計算總文章數量
-                articles = repo.get_all()
-                if not articles:
-                    return {
-                        "items": [],
-                        "total": 0,
-                        "page": page,
-                        "per_page": per_page,
-                        "total_pages": 0
-                    }
-                total_articles = len(articles)
-                
-                # 計算總頁數
-                total_pages = (total_articles + per_page - 1) // per_page 
-                
-                # 計算起始偏移
-                offset = (page - 1) * per_page
-                
-                # 獲取分頁後的文章
-                articles = repo.get_all(limit=per_page, offset=offset, sort_by=sort_by, sort_desc=sort_desc)
+        with self._get_repository(Article) as (repo, _):
+            return repo.get_paginated(page, per_page, sort_by, sort_desc)
 
-                return {
-                    "items": [self._article_to_dict(article) for article in articles],
-                    "total": total_articles,
-                    "page": page,
-                    "per_page": per_page,
-                    "total_pages": total_pages
-                }
-        except Exception as e:  
-            error_msg = f"分頁獲取文章失敗: {e}"
-            logger.error(error_msg, exc_info=True)
-            raise e
+
 
     def update_article(self, article_id: int, article_data: Dict[str, Any]) -> Optional[Article]:
         """
@@ -289,8 +251,6 @@ class ArticleService:
         Returns:
             更新成功的文章或 None
         """
-        # 移除可能意外傳入的 created_at
-        article_data.pop('created_at', None)
             
         try:
             # 自動更新 updated_at 欄位
@@ -320,12 +280,13 @@ class ArticleService:
                     # 驗證更新資料    
                     validated_data = ArticleUpdateSchema.model_validate(current_article_data).model_dump()
                 except Exception as e:
-                    logger.error(f"文章更新資料驗證失敗: {str(e)}", exc_info=True)
-                    raise CustomValidationError(f"文章更新資料驗證失敗: {str(e)}", e)
+                    error_msg = f"文章更新資料驗證失敗: {str(e)}"
+                    logger.error(error_msg, exc_info=True)
+                    raise CustomValidationError(error_msg, e)
                 
                 result = repo.update(article, **validated_data)
                 if not result:
-                    logger.error(f"文章更新失敗")
+                    logger.warning(f"文章更新失敗")
                     return None
                     
                 session.commit()
@@ -500,6 +461,7 @@ class ArticleService:
             "updated_at": article.updated_at,
         }
 
+    # 考慮刪除
     def merge_article_data(self, article_id: int, new_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
         合併文章資料，用於將列表頁和詳細頁的資料合併

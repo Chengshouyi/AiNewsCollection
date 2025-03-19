@@ -1,13 +1,11 @@
 import logging
-from typing import Optional, Type, Any, Dict, List, Tuple, TypeVar
+from typing import Optional, Type, Any, Dict, List, TypeVar
 from datetime import datetime
-from src.model.models import SystemSettings, Base
-from src.model.database_manager import DatabaseManager
-from src.model.repository import Repository
-from contextlib import contextmanager
-from pydantic import ValidationError
-from src.model.system_settings_schema import SystemSettingsCreateSchema, SystemSettingsUpdateSchema
-from src.model.repository import Result
+from .models import SystemSettings, Base
+from .database_manager import DatabaseManager
+from .repository import repository_context
+from .system_settings_schema import SystemSettingsCreateSchema, SystemSettingsUpdateSchema
+from .models import ValidationError as CustomValidationError
 
 
 # 設定 logger
@@ -24,29 +22,19 @@ class SystemSettingsService:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
 
-    # 增加裝飾器來包裝通用的 session 與 repo 操作
-    @contextmanager
     def _get_repository(self, model_class: Type[T]):
         """取得儲存庫的上下文管理器"""
-        with self.db_manager.session_scope() as session:
-            repo = Repository(session, model_class)
-            try:
-                yield repo, session
-            except Exception as e:
-                error_msg = f"儲存庫操作錯誤: {e}"
-                logger.error(error_msg, exc_info=True)
-                session.rollback()
-                raise
+        return repository_context(self.db_manager, model_class)
     
-    def insert_system_settings(self, settings_data: Dict[str, Any]) -> Result:
+    def insert_system_settings(self, settings_data: Dict[str, Any]) -> Optional[SystemSettings]:
         """
         插入系統設定
         
         Args:
-            settings: 系統設定實例
+            settings_data: 系統設定資料字典
             
         Returns:
-            Result 物件，包含成功/失敗狀態和詳細資訊
+            創建成功的系統設定實例或 None
         """
         try:
             now = datetime.now()
@@ -57,33 +45,28 @@ class SystemSettingsService:
             # 使用 Pydantic 驗證資料    
             try:
                 validated_data = SystemSettingsCreateSchema.model_validate(settings_data).model_dump()
-            except ValidationError as e:
-                error_msg = f"資料驗證錯誤: {e}"
-                logger.error(error_msg, exc_info=True)
-                return Result.failure(error_msg, e)
+            except CustomValidationError as e:
+                logger.error(f"系統設定新增資料驗證錯誤: {e}")
+                raise e
 
             with self._get_repository(SystemSettings) as (repo, session):
                 # 檢查設定是否已存在
                 if not repo.exists(crawler_name=validated_data['crawler_name']):
                     # 插入新的設定
                     result = repo.create(**validated_data)
-                    if not result.succeed:
-                        return result
-                    
                     session.commit()
-                    
-                    # 直接返回字典
-                    return Result.succeed(self._sys_settings_to_dict(result.data))
+                    return result
                 else:
-                    error_msg = f"設定已存在: {validated_data['crawler_name']}"
+                    error_msg = f"該爬蟲名稱已存在，請使用更新功能: {validated_data['crawler_name']}"
                     logger.warning(error_msg)
-                    return Result.failure(error_msg)
+                    raise CustomValidationError(error_msg)
         except Exception as e:
             error_msg = f"插入系統設定失敗: {e}"
             logger.error(error_msg, exc_info=True)
-            return Result.failure(error_msg, e)
+            raise e
 
-    def get_all_system_settings(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> Result:
+    def get_all_system_settings(self, limit: Optional[int] = None, offset: Optional[int] = None, 
+                                sort_by: Optional[str] = None, sort_desc: bool = False) -> List[SystemSettings]:
         """
         獲取所有系統設定，支持分頁和排序
         
@@ -100,15 +83,14 @@ class SystemSettingsService:
             with self._get_repository(SystemSettings) as (repo, _):
                 # 獲取所有設定
                 sys_settings = repo.get_all(limit=limit, offset=offset, sort_by=sort_by, sort_desc=sort_desc)
-                # 使用列表推導式簡化轉換過程，並確保返回類型為 List[Dict[str, Any]]
-                return Result.succeed([sys_setting_dict for sys_setting in sys_settings
-                        if (sys_setting_dict := self._sys_settings_to_dict(sys_setting)) is not None])
+                return [sys_setting for sys_setting in sys_settings]
         except Exception as e:
             error_msg = f"獲取所有系統設定失敗: {e}"
             logger.error(error_msg, exc_info=True)
-            return Result.failure(error_msg, e)
+            raise e
 
-    def search_system_settings(self, search_terms: Dict[str, Any], limit: Optional[int] = None, offset: Optional[int] = None) -> Result:
+    def search_system_settings(self, search_terms: Dict[str, Any], limit: Optional[int] = None, 
+                               offset: Optional[int] = None) -> List[SystemSettings]:
         """
         搜尋系統設定
         
@@ -118,10 +100,10 @@ class SystemSettingsService:
             offset: 起始偏移    
             
         Returns:
-            符合條件的系統設定字典列表
+            符合條件的系統設定列表
         """
         try:
-            with self._get_repository(SystemSettings) as (repo, session):
+            with self._get_repository(SystemSettings) as (_, session):
                 # 建立查詢
                 query = session.query(SystemSettings)
                 
@@ -140,14 +122,13 @@ class SystemSettingsService:
                     
                 # 執行查詢
                 sys_settings = query.all()
-                return Result.succeed([sys_settings_dict for sys_setting in sys_settings
-                        if (sys_settings_dict := self._sys_settings_to_dict(sys_setting)) is not None])
+                return [sys_setting for sys_setting in sys_settings]
         except Exception as e:
             error_msg = f"搜尋系統設定失敗: {e}"
             logger.error(error_msg, exc_info=True)
-            return Result.failure(error_msg, e)
+            raise e
     
-    def get_system_settings_by_id(self, sys_settings_id: int) -> Result:
+    def get_system_settings_by_id(self, sys_settings_id: int) -> Optional[SystemSettings]:
         """
         獲取特定 ID 的系統設定
         
@@ -155,63 +136,39 @@ class SystemSettingsService:
             sys_settings_id: 系統設定 ID
             
         Returns:
-            系統設定字典或 None
+            系統設定實例或 None
         """ 
-        if not isinstance(sys_settings_id, int) or sys_settings_id <= 0:
-            logger.error(f"無效的系統設定ID: {sys_settings_id}")
-            return Result.failure(f"無效的系統設定ID: {sys_settings_id}")
         
         try:
             with self._get_repository(SystemSettings) as (repo, _):
                 sys_settings = repo.get_by_id(sys_settings_id)
-                if not sys_settings:
-                    return Result.failure(f"系統設定不存在，ID={sys_settings_id}")
-                return Result.succeed(self._sys_settings_to_dict(sys_settings))
+
+                return sys_settings
         except Exception as e:
             error_msg = f"獲取系統設定失敗，ID={sys_settings_id}: {e}"
             logger.error(error_msg, exc_info=True)
-            return Result.failure(error_msg, e)
+            raise e
         
-    def get_system_settings_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Result:
+    def get_system_settings_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
         """
-        獲取分頁的系統設定
+        分頁獲取系統設定
         
         Args:
-            page: 頁碼
+            page: 頁碼  
             per_page: 每頁設定數量
-            sort_by: 排序欄位，預設None
-            sort_desc: 是否降序排序，預設False
-            
+            sort_by: 排序欄位，默認None
+            sort_desc: 是否降序排序，默認False
         Returns:
-            分頁後的系統設定字典列表
+            items: 分頁後的設定列表
+            total: 總設定數量
+            page: 當前頁碼
+            per_page: 每頁設定數量
+            total_pages: 總頁數
         """
-        try:
-            with self._get_repository(SystemSettings) as (repo, _):
-                # 計算總設定數量
-                total_settings = len(repo.get_all())
-                
-                # 計算總頁數
-                total_pages = (total_settings + per_page - 1) // per_page
-                
-                # 計算起始偏移
-                offset = (page - 1) * per_page
-                
-                # 獲取分頁後的設定
-                sys_settings = repo.get_all(limit=per_page, offset=offset, sort_by=sort_by, sort_desc=sort_desc)    
-                
-                return Result.succeed({
-                    "items": [self._sys_settings_to_dict(sys_setting) for sys_setting in sys_settings],
-                    "total": total_settings,
-                    "page": page,
-                    "per_page": per_page,
-                    "total_pages": total_pages
-                })
-        except Exception as e:
-            error_msg = f"分頁獲取系統設定失敗: {e}"
-            logger.error(error_msg, exc_info=True)
-            return Result.failure(error_msg, e)
+        with self._get_repository(SystemSettings) as (repo, _):
+            return repo.get_paginated(page, per_page, sort_by, sort_desc)
         
-    def update_system_settings(self, sys_settings_id: int, setting_data: Dict[str, Any]) -> Result:
+    def update_system_settings(self, sys_settings_id: int, setting_data: Dict[str, Any]) -> Optional[SystemSettings]:
         """
         更新系統設定
         
@@ -221,19 +178,7 @@ class SystemSettingsService:
             
         Returns:
             更新後的系統設定字典或 None
-        """
-        # 移除可能意外傳入的 created_at
-        setting_data.pop('created_at', None)
-        
-        # 驗證輸入
-        if not isinstance(sys_settings_id, int) or sys_settings_id <= 0:
-            logger.error(f"無效的系統設定ID: {sys_settings_id}")
-            return Result.failure(f"無效的系統設定ID: {sys_settings_id}")
-        
-        if not setting_data:
-            logger.error("更新資料為空")
-            return Result.failure("更新資料為空")
-        
+        """   
         try:
             # 自動更新 updated_at 欄位
             setting_data['updated_at'] = datetime.now()
@@ -243,7 +188,7 @@ class SystemSettingsService:
 
                 if not sys_setting:
                     logger.warning(f"欲更新的設定不存在，ID={sys_settings_id}") 
-                    return Result.failure(f"欲更新的設定不存在，ID={sys_settings_id}")
+                    return None
                 
                 # 獲取當前設定資料
                 current_settings_data = {
@@ -258,18 +203,22 @@ class SystemSettingsService:
                 # 使用 Pydantic 驗證資料
                 try:
                     validated_data = SystemSettingsUpdateSchema.model_validate(current_settings_data).model_dump()
-                except ValidationError as e:
-                    error_msg = f"資料驗證錯誤: {e}"
+                except CustomValidationError as e:
+                    error_msg = f"系統設定更新資料驗證失敗: {str(e)}"
                     logger.error(error_msg, exc_info=True)
-                    return Result.failure(error_msg, e)
+                    raise CustomValidationError(error_msg, e)
 
-                sys_setting = repo.update(sys_setting, **validated_data)
+                result = repo.update(sys_setting, **validated_data)
+                if not result:
+                    logger.warning(f"系統設定更新失敗")
+                    return None
+                
                 session.commit()
-                return Result.succeed(self._sys_settings_to_dict(sys_setting))
+                return result
         except Exception as e:
             error_msg = f"更新系統設定失敗，ID={sys_settings_id}: {e}"
             logger.error(error_msg, exc_info=True)
-            return Result.failure(error_msg, e)
+            raise e
     
     def batch_update_system_settings(self, sys_settings_ids: List[int], setting_data: Dict[str, Any]) -> Result:
         """
