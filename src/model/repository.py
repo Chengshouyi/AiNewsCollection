@@ -1,6 +1,5 @@
 from typing import TypeVar, Generic, Type, Optional, List, Dict, Any, Callable
 from sqlalchemy.orm import Session
-from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from contextlib import contextmanager
 import logging
 from .models import Base
@@ -10,22 +9,6 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T', bound=Base)
-
-class Result:
-    """表示操作結果的類別，包含成功/失敗狀態和詳細錯誤信息"""
-    def __init__(self, success: bool, data=None, error=None, error_message=None):
-        self.success = success
-        self.data = data
-        self.error = error
-        self.error_message = error_message
-
-    @classmethod
-    def succeed(cls, data=None):
-        return cls(True, data=data)
-
-    @classmethod
-    def failure(cls, error_message, error=None):
-        return cls(False, error=error, error_message=error_message)
     
 
 class Repository(Generic[T]):
@@ -34,11 +17,10 @@ class Repository(Generic[T]):
     def __init__(self, session: Session, model_class: Type[T], validator: Optional[Callable] = None):
         self.session = session
         self.model_class = model_class
-        self.validator = validator  # 可選的驗證器
 
-    def get_by_id(self, id: int) -> Result:
+    def get_by_id(self, id: int) -> Optional[T]:
         """根據 ID 獲取實體"""
-        return Result.succeed(self.session.query(self.model_class).get(id))
+        return self.session.query(self.model_class).get(id)
     
     def get_all(
         self, 
@@ -46,7 +28,7 @@ class Repository(Generic[T]):
         offset: Optional[int] = None, 
         sort_by: Optional[str] = None, 
         sort_desc: bool = False
-    ) -> Result:
+    ) -> List[T]:
         query = self.session.query(self.model_class)
     
         if sort_by:
@@ -59,140 +41,100 @@ class Repository(Generic[T]):
         if limit is not None:
             query = query.limit(limit)
     
-        return Result.succeed(query.all())
+        return query.all()
     
-    def find_by(self, **kwargs) -> Result:
+    def find_by(self, **kwargs) -> List[T]:
         """根據條件查詢實體"""
-        return Result.succeed(self.session.query(self.model_class).filter_by(**kwargs).all())
+        return self.session.query(self.model_class).filter_by(**kwargs).all()
     
-    def find_one_by(self, **kwargs) -> Result:
+    def find_one_by(self, **kwargs) -> Optional[T]:
         """根據條件查詢單個實體"""
-        return Result.succeed(self.session.query(self.model_class).filter_by(**kwargs).first())
+        return self.session.query(self.model_class).filter_by(**kwargs).first()
     
-    def create(self, **kwargs) -> Result:
+    def create(self, **kwargs) -> T:
         """創建新實體，處理唯一性約束"""
         try:
-            # 如果有驗證器，先進行驗證
-            if self.validator:
-                try:
-                    kwargs = self.validator(kwargs)
-                except Exception as e:
-                    return Result.failure(f"驗證失敗: {str(e)}", e)
                 
             entity = self.model_class(**kwargs)
             self.session.add(entity)
             self.session.flush()  # 立即獲取 ID
-            return Result.succeed(entity)
-        except IntegrityError as e:
-            self.session.rollback()
-            if "unique constraint" in str(e).lower():
-                return Result.failure("資料已存在，違反唯一性約束", e)
-            return Result.failure(f"資料庫約束違反: {str(e)}", e)
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            return Result.failure(f"資料庫錯誤: {str(e)}", e)
+            return entity   
         except Exception as e:
             self.session.rollback()
-            return Result.failure(f"創建實體時發生錯誤: {str(e)}", e)
+            raise e
     
-    def update(self, entity: T, **kwargs) -> Result:
+    def update(self, entity: T, **kwargs) -> T:
         """更新實體"""
-        try:
-            if not entity:
-                return Result.failure(f"找不到要更新的實體")
-            
-            # 如果有驗證器，先進行驗證
-            if self.validator:
-                try:
-                    kwargs = self.validator(kwargs, is_update=True)
-                except Exception as e:
-                    return Result.failure(f"驗證失敗: {str(e)}", e)
-            
+        try:      
             # 更新屬性
             for key, value in kwargs.items():
                 if hasattr(entity, key):
                     setattr(entity, key, value)
             
             self.session.flush()
-            return Result.succeed(entity)
-        except IntegrityError as e:
-            self.session.rollback()
-            if "unique constraint" in str(e).lower():
-                return Result.failure("資料已存在，違反唯一性約束", e)
-            return Result.failure(f"資料庫約束違反: {str(e)}", e)
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            return Result.failure(f"資料庫錯誤: {str(e)}", e)
+            return entity
         except Exception as e:
             self.session.rollback()
-            return Result.failure(f"更新實體時發生錯誤: {str(e)}", e)
+            raise e
 
-    def delete(self, entity: T) -> Result:
+    def delete(self, entity: T) -> None:
         """刪除實體
         Args:
             entity: 要刪除的實體
         Returns:
-            Result: 包含成功/失敗狀態和詳細錯誤信息
+            None
         """
         try:
-            if not entity:
-                return Result.failure(f"找不到要刪除的實體")
-            
-
             self.session.delete(entity)
             self.session.flush()
-            return Result.succeed(True)
-        except SQLAlchemyError as e:
-            self.session.rollback()
-            return Result.failure(f"資料庫錯誤: {str(e)}", e)
         except Exception as e:
             self.session.rollback()
-            return Result.failure(f"刪除實體時發生錯誤: {str(e)}", e)
+            raise e
 
-    def batch_create(self, items_data: List[Dict[str, Any]]) -> Result:
+    def batch_create(self, items_data: List[Dict[str, Any]]) -> List[T]:
         """批量創建實體"""
-        results = {
-            "success_count": 0,
-            "fail_count": 0,
-            "failed_items": []
-        }
-        
-        for item_data in items_data:
-            result = self.create(**item_data)
-            if result.success:
-                results["success_count"] += 1
-            else:
-                results["fail_count"] += 1
-                results["failed_items"].append({
-                    "data": item_data,
-                    "error": result.error_message
-                })
-        
-        return Result.succeed(results)
+        try:
+            # 預先建立所有實體物件
+            entities = []
+            for item_data in items_data:
+                # 創建實體並加入列表
+                entity = self.model_class(**item_data)
+                entities.append(entity)
+            
+            # 批量添加所有實體
+            if entities:
+                self.session.add_all(entities)
+                self.session.flush()
+                
+            return entities
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"批量創建失敗: {str(e)}")
+            raise e
     
-    def find_by_filter(self, **kwargs) -> Result:
+    def find_by_filter(self, **kwargs) -> List[T]:
         """根據過濾條件查詢實體"""
         query = self.session.query(self.model_class)
         for key, value in kwargs.items():
             if hasattr(self.model_class, key):
                 query = query.filter(getattr(self.model_class, key) == value)
-        return Result.succeed(query.all())
+        return query.all()
     
-    def find_one_by_filter(self, **kwargs) -> Result:
+    def find_one_by_filter(self, **kwargs) -> Optional[T]:
         """根據過濾條件查詢單個實體"""
         query = self.session.query(self.model_class)
         for key, value in kwargs.items():
             if hasattr(self.model_class, key):
                 query = query.filter(getattr(self.model_class, key) == value)
-        return Result.succeed(query.first())
+        return query.first()
     
-    def exists(self, **kwargs) -> Result:
+    def exists(self, **kwargs) -> bool:
         """檢查是否存在符合條件的實體"""
         query = self.session.query(self.model_class)
         for key, value in kwargs.items():
             if hasattr(self.model_class, key):
                 query = query.filter(getattr(self.model_class, key) == value)
-        return Result.succeed(self.session.query(query.exists()).scalar())
+        return self.session.query(query.exists()).scalar()
 
 
 @contextmanager

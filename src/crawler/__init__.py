@@ -9,7 +9,5 @@ from .bnext_content_extractor import BnextContentExtractor
 from .bnext_crawler import BnextCrawler
 
 
-
-
 __all__ = ['BaseCrawler', 'SiteConfig', 'BnextCrawler', 'BNEXT_CONFIG', 'BNEXT_DEFAULT_CATEGORIES', 'BnextScraper', 'AI_KEYWORDS', 'AI_CATEGORIES', 'BnextContentExtractor', 'ArticleAnalyzer', 'BnextUtils']
 

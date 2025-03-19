@@ -2,6 +2,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from .models import ValidationError as CustomValidationError
 
+
 class ArticleCreateSchema(BaseModel):
     title: str = Field(..., min_length=1, max_length=500, description="文章標題")
     summary: Optional[str] = Field(None, max_length=10000, description="文章摘要")

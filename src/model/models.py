@@ -9,6 +9,10 @@ class AppError(Exception):
     """Base application error"""
     pass
 
+class OptionError(AppError):
+    """Option error"""
+    pass
+
 class ValidationError(AppError):
     """Validation error"""
     pass
