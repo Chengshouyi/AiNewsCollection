@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
-from .models import ValidationError as CustomValidationError
-
+from .base_models import ValidationError
 
 class ArticleCreateSchema(BaseModel):
     title: str = Field(..., min_length=1, max_length=500, description="文章標題")
@@ -14,76 +13,74 @@ class ArticleCreateSchema(BaseModel):
     source: str = Field(..., min_length=1, max_length=50, description="來源")
     article_type: Optional[str] = Field(None, max_length=20, description="文章類型")
     tags: Optional[str] = Field(None, max_length=500, description="標籤")
-    content_length: Optional[int] = Field(None, description="內容長度")
-    is_ai_related: Optional[bool] = Field(True, description="是否與 AI 相關")
 
     @field_validator('title', mode='before')
     @classmethod
     def validate_title(cls, value):
         if not value or not value.strip():
-            raise CustomValidationError("標題不能為空")
-        if 1 <= len(value) <= 500:
-            raise CustomValidationError("標題長度需在 1 到 500 個字元之間")
+            raise ValidationError("title: do not be empty.")
+        if 1 > len(value) or len(value) > 500:
+            raise ValidationError("title: length must be between 1 and 500.")
         return value
 
     @field_validator('link', mode='before')
     @classmethod
     def validate_link(cls, value):
         if not value or not value.strip():
-            raise CustomValidationError("連結不能為空")
-        if 1 <= len(value) <= 1000:
-            raise CustomValidationError("連結長度需在 1 到 1000 個字元之間")
+            raise ValidationError("link: do not be empty.")
+        if 1 > len(value) or len(value) > 1000:
+            raise ValidationError("link: length must be between 1 and 1000.")
         return value
 
     @field_validator('summary', mode='before')
     @classmethod
     def validate_summary(cls, value):
-        if 1 <= len(value) <= 10000:
-            raise CustomValidationError("摘要長度需在 1 到 10000 個字元之間")
+        if 1 > len(value) or len(value) > 10000:
+            raise ValidationError("summary: length must be between 1 and 10000.")
         return value
 
     @field_validator('source', mode='before')
     @classmethod
     def validate_source(cls, value):
         if not value or not value.strip():
-            raise CustomValidationError("來源不能為空")
-        if 1 <= len(value) <= 50:
-            raise CustomValidationError("來源長度需在 1 到 50 個字元之間")
+            raise ValidationError("source: do not be empty.")
+        if 1 > len(value) or len(value) > 50:
+            raise ValidationError("source: length must be between 1 and 50.")
         return value
     
     @field_validator('published_at', mode='before')
     @classmethod
     def validate_published_at(cls, value):
         if not value or not value.strip():
-            raise CustomValidationError("發布時間不能為空")
+            raise ValidationError("published_at: do not be empty.")
         return value
     
     @field_validator('author', mode='before')
     @classmethod
     def validate_author(cls, value):
-        if 1 <= len(value) <= 100:
-            raise CustomValidationError("作者長度需在 1 到 100 個字元之間")
+        if 1 > len(value) or len(value) > 100:
+            raise ValidationError("author: length must be between 1 and 100.")
         return value    
         
     @field_validator('article_type', mode='before')
     @classmethod
     def validate_article_type(cls, value):
-        if 1 <= len(value) <= 20:
-            raise CustomValidationError("文章類型長度需在 1 到 20 個字元之間")
+        if 1 > len(value) or len(value) > 20:
+            raise ValidationError("article_type: length must be between 1 and 20.")
         return value        
         
     @field_validator('tags', mode='before')
     @classmethod
     def validate_tags(cls, value):
-        if 1 <= len(value) <= 500:
-            raise CustomValidationError("標籤長度需在 1 到 500 個字元之間")
+        if 1 > len(value) or len(value) > 500:
+            raise ValidationError("tags: length must be between 1 and 500.")
         return value    
     
     @field_validator('content', mode='before')
     @classmethod
     def validate_content(cls, value):
-        if 1 <= len(value) <= 65536:
-            raise CustomValidationError("內容長度需在 1 到 65536 個字元之間")
+        if 1 > len(value) or len(value) > 65536:
+            raise ValidationError("content: length must be between 1 and 65536.")
         return value
 
 
@@ -98,8 +95,6 @@ class ArticleUpdateSchema(BaseModel):
     source: Optional[str] = Field(None, min_length=1, max_length=50, description="來源")
     article_type: Optional[str] = Field(None, max_length=20, description="文章類型")
     tags: Optional[str] = Field(None, max_length=500, description="標籤")
-    content_length: Optional[int] = Field(None, description="內容長度")
-    is_ai_related: Optional[bool] = Field(None, description="是否與 AI 相關")
     
     @model_validator(mode='before')
     @classmethod
@@ -107,12 +102,12 @@ class ArticleUpdateSchema(BaseModel):
         if isinstance(data, dict):
             # 防止更新 created_at
             if 'created_at' in data:
-                raise CustomValidationError("不允許更新 created_at 欄位")
+                raise ValidationError("do not allow to update created_at field.")
             
             # 確保至少有一個欄位被更新
             update_fields = [k for k in data.keys() if k not in ['updated_at', 'created_at']]
             if not update_fields:
-                raise CustomValidationError("必須提供至少一個要更新的欄位")
+                raise ValidationError("must provide at least one field to update.")
         
         return data
 
@@ -120,62 +115,62 @@ class ArticleUpdateSchema(BaseModel):
     @classmethod
     def validate_title(cls, value):
         if not value or not value.strip():
-            raise CustomValidationError("標題不能為空")
-        if 1 <= len(value) <= 500:
-            raise CustomValidationError("標題長度需在 1 到 500 個字元之間")
+            raise ValidationError("title: do not be empty.")
+        if 1 > len(value) or len(value) > 500:
+            raise ValidationError("title: length must be between 1 and 500.")
         return value
     
     @field_validator('link', mode='before')
     @classmethod
     def validate_link(cls, value):  
         if not value or not value.strip():
-            raise CustomValidationError("連結不能為空")
-        if 1 <= len(value) <= 1000:
-            raise CustomValidationError("連結長度需在 1 到 1000 個字元之間")
+            raise ValidationError("link: do not be empty.")
+        if 1 > len(value) or len(value) > 1000:
+            raise ValidationError("link: length must be between 1 and 1000.")
         return value
     
     @field_validator('summary', mode='before')
     @classmethod
     def validate_summary(cls, value):
-        if 1 <= len(value) <= 10000:
-            raise CustomValidationError("摘要長度需在 1 到 10000 個字元之間")
+        if 1 > len(value) or len(value) > 10000:
+            raise ValidationError("summary: length must be between 1 and 10000.")
         return value
     
     @field_validator('source', mode='before')
     @classmethod
     def validate_source(cls, value):
         if not value or not value.strip():
-            raise CustomValidationError("來源不能為空")
-        if 1 <= len(value) <= 50:
-            raise CustomValidationError("來源長度需在 1 到 50 個字元之間")
+            raise ValidationError("source: do not be empty.")
+        if 1 > len(value) or len(value) > 50:
+            raise ValidationError("source: length must be between 1 and 50.")
         return value    
     
     @field_validator('published_at', mode='before')
     @classmethod
     def validate_published_at(cls, value):
         if not value or not value.strip():
-            raise CustomValidationError("發布時間不能為空")
+            raise ValidationError("published_at: do not be empty.")
         return value
     
     @field_validator('author', mode='before')
     @classmethod
     def validate_author(cls, value):
-        if 1 <= len(value) <= 100:
-            raise CustomValidationError("作者長度需在 1 到 100 個字元之間")
+        if 1 > len(value) or len(value) > 100:
+            raise ValidationError("author: length must be between 1 and 100.")
         return value    
     
     @field_validator('article_type', mode='before')
     @classmethod
     def validate_article_type(cls, value):
-        if 1 <= len(value) <= 20:
-            raise CustomValidationError("文章類型長度需在 1 到 20 個字元之間")
+        if 1 > len(value) or len(value) > 20:
+            raise ValidationError("article_type: length must be between 1 and 20.")
         return value    
     
     @field_validator('tags', mode='before')
     @classmethod
     def validate_tags(cls, value):
-        if 1 <= len(value) <= 500:
-            raise CustomValidationError("標籤長度需在 1 到 500 個字元之間")
+        if 1 > len(value) or len(value) > 500:
+            raise ValidationError("tags: length must be between 1 and 500.")
         return value    
         
 

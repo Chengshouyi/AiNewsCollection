@@ -1,11 +1,11 @@
 import logging
 from typing import Optional, Dict, Any, List, TypeVar, Type
-from .repository import repository_context
-from .models import Article, Base
+from .article_models import Article, Base
 from datetime import datetime
 from .article_schema import ArticleCreateSchema, ArticleUpdateSchema
-from .models import ValidationError as CustomValidationError
-from .database_manager import DatabaseManager
+from .base_models import ValidationError as CustomValidationError
+from .database_manager import DatabaseManager, DatabaseOperationError
+from .article_repository import ArticleRepository
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -21,9 +21,16 @@ class ArticleService:
     def __init__(self, db_manager: DatabaseManager):
         self.db_manager = db_manager
 
-    def _get_repository(self, model_class: Type[T]):
+    def _get_repository(self):
         """取得儲存庫的上下文管理器"""
-        return repository_context(self.db_manager, model_class)
+        session = self.db_manager.Session()
+        try:
+            return ArticleRepository(session, Article), session
+        except Exception as e:
+            error_msg = f"取得儲存庫失敗: {e}"
+            logger.error(error_msg)
+            session.close()
+            raise DatabaseOperationError(error_msg) from e
     
     def insert_article(self, article_data: Dict[str, Any]) -> Optional[Article]:
         """
@@ -54,20 +61,20 @@ class ArticleService:
                 logger.error(error_msg)
                 raise e
 
-            with self._get_repository(Article) as (repo, session):
-                # 檢查文章是否已存在
-                if repo.exists(link=validated_data['link']):
-                    error_msg = f"文章已存在: {validated_data['link']}"
-                    logger.error(error_msg)
-                    raise CustomValidationError(error_msg)
-                try:
-                    result = repo.create(**validated_data)
-                except Exception as e:
-                    error_msg = f"文章創建失敗: {e}"
-                    logger.error(error_msg)
-                    raise e
-                session.commit()
-                return result
+            repo, session = self._get_repository()
+            # 檢查文章是否已存在
+            if repo.find_by_link(validated_data['link']):
+                error_msg = f"文章已存在: {validated_data['link']}"
+                logger.error(error_msg)
+                raise CustomValidationError(error_msg)
+            try:
+                result = repo.create(**validated_data)
+            except Exception as e:
+                error_msg = f"文章創建失敗: {e}"
+                logger.error(error_msg)
+                raise e
+            session.commit()
+            return result
         except Exception as e:
             error_msg = f"創建文章失敗: {e}"
             logger.error(error_msg)
@@ -97,19 +104,19 @@ class ArticleService:
         # 批量插入有效文章
         if validated_articles: 
             try:
-                with self._get_repository(Article) as (repo, session):
+                repo, session = self._get_repository()
                     # 創建所有文章實體
-                    article_entities = []
-                    for article_data in validated_articles:
-                        article = Article(**article_data)
-                        article_entities.append(article)
-                    
-                    # 批量添加
-                    session.add_all(article_entities)
-                    session.flush()  # 獲取所有ID
-                    
-                    session.commit()
-                    return article_entities
+                article_entities = []
+                for article_data in validated_articles:
+                    article = Article(**article_data)
+                    article_entities.append(article)
+                
+                # 批量添加
+                session.add_all(article_entities)
+                session.flush()  # 獲取所有ID
+                
+                session.commit()
+                return article_entities
             except Exception as e:
                 error_msg = f"批量插入失敗: {e}"
                 logger.error(error_msg)
@@ -130,17 +137,17 @@ class ArticleService:
             文章字典列表
         """
         try:
-            with self._get_repository(Article) as (repo, _):
-                # 獲取所有文章
-                articles = repo.get_all(
-                    limit=limit,
-                    offset=offset,
-                    sort_by=sort_by,
-                    sort_desc=sort_desc
-                )
-                if not articles:
-                    return []
-                return articles
+            repo, session = self._get_repository()
+            # 獲取所有文章
+            articles = repo.get_all(
+                limit=limit,
+                offset=offset,
+                sort_by=sort_by,
+                sort_desc=sort_desc
+            )
+            if not articles:
+                return []
+            return articles
         except Exception as e:
             error_msg = f"獲取所有文章失敗: {e}"
             logger.error(error_msg)

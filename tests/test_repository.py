@@ -1,5 +1,5 @@
 import pytest
-from src.model.models import Article, ValidationError as CustomValidationError
+from src.model.base_models import Article, ValidationError as CustomValidationError
 from src.model.repository import Repository
 from datetime import datetime
 

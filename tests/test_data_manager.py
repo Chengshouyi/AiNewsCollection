@@ -4,7 +4,7 @@ from src.model.database_manager import (
     DatabaseManager, DatabaseConnectionError, 
     DatabaseConfigError, DatabaseOperationError
 )
-from src.model.models import Base
+from src.model.base_models import Base
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime

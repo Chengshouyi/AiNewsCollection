@@ -1,9 +1,9 @@
 import pytest
 from datetime import datetime
-from src.model.models import Article, SystemSettings
+from src.model.base_models import Article, SystemSettings
 from src.model.article_schema import ArticleCreateSchema, ArticleUpdateSchema
-from src.model.system_settings_schema import SystemSettingsCreateSchema, SystemSettingsUpdateSchema
-from src.model.models import ValidationError as CustomValidationError
+from src.model.crawler_settings_schema import SystemSettingsCreateSchema, SystemSettingsUpdateSchema
+from src.model.base_models import ValidationError as CustomValidationError
 
 class TestArticleModel:
     """Article 模型的測試類"""

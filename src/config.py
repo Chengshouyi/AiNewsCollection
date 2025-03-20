@@ -1,5 +1,5 @@
 from src.model.database_manager import DatabaseManager
-from src.model.models import Base
+from src.model.base_models import Base
 from typing import Optional
 
 def create_database_manager(db_path: Optional[str] = None) -> DatabaseManager:
