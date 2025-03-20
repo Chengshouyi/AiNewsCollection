@@ -36,6 +36,11 @@ class ArticleService:
             創建成功的文章或 None
         """
         try:
+            # 檢查文章是否已存在
+            if 'link' in article_data and article_data['link']:
+               existing = self.get_article_by_link(article_data['link'])
+               if existing:
+                   raise CustomValidationError(f"已存在具有相同連結的文章: {article_data['link']}")
             # 添加必要的欄位
             now = datetime.now()
             article_data.update({

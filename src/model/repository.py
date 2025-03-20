@@ -1,5 +1,6 @@
 from typing import TypeVar, Generic, Type, Optional, List, Dict, Any
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 from contextlib import contextmanager
 import logging
 from .models import Base
@@ -111,7 +112,14 @@ class Repository(Generic[T]):
             entity = self.model_class(**kwargs)
             self.session.add(entity)
             self.session.flush()  # 立即獲取 ID
-            return entity   
+            return entity  
+        except IntegrityError as e:
+            self.session.rollback()
+            if "uq_article_link" in str(e):
+                link_value = kwargs.get('link', '未知連結')
+                raise CustomValidationError(f"已存在具有相同連結的文章: {link_value}")
+            logger.error(f"資料庫唯一性約束違反: {str(e)}")
+            raise CustomValidationError(f"資料唯一性衝突: {str(e)}")
         except Exception as e:
             self.session.rollback()
             error_msg = f"創建實體失敗: {str(e)}"
@@ -133,21 +141,22 @@ class Repository(Generic[T]):
             logger.error(error_msg)
             raise e
 
-    def delete(self, entity: T) -> None:
+    def delete(self, entity: T) -> bool:
         """刪除實體
         Args:
             entity: 要刪除的實體
         Returns:
-            None
+            bool: 刪除成功與否
         """
         try:
             self.session.delete(entity)
             self.session.flush()
+            return True
         except Exception as e:
             self.session.rollback()
             error_msg = f"刪除實體失敗: {str(e)}"
             logger.error(error_msg)
-            raise e
+            return False
 
     def batch_create(self, items_data: List[Dict[str, Any]]) -> List[T]:
         """批量創建實體"""
@@ -171,6 +180,34 @@ class Repository(Generic[T]):
             logger.error(error_msg)
             raise e
     
+    def batch_update(self, entities: List[T], **kwargs) -> List[T]:
+        """批量更新實體"""
+        try:
+            for entity in entities:
+                for key, value in kwargs.items():
+                    if hasattr(entity, key):    
+                        setattr(entity, key, value)
+            self.session.flush()
+            return entities
+        except Exception as e:
+            self.session.rollback()
+            error_msg = f"批量更新失敗: {str(e)}"
+            logger.error(error_msg)
+            raise e
+
+    def batch_delete(self, entities: List[T]) -> bool:
+        """批量刪除實體"""
+        try:
+            for entity in entities:
+                self.session.delete(entity)
+            self.session.flush()
+            return True
+        except Exception as e:
+            self.session.rollback()
+            error_msg = f"批量刪除失敗: {str(e)}"
+            logger.error(error_msg)
+            return False
+
     def find_by_filter(self, **kwargs) -> List[T]:
         """根據過濾條件查詢實體"""
         query = self.session.query(self.model_class)
@@ -205,7 +242,7 @@ def repository_context(db_manager: DatabaseManager, model_class: Type[T]):
             yield repo, session
         except Exception as e:
             error_msg = f"儲存庫操作錯誤: {e}"
-            logger.error(error_msg)
+            logger.error(error_msg, exc_info=True)
             session.rollback()
             raise
         

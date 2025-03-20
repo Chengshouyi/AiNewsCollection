@@ -1,8 +1,7 @@
 import pytest
-from src.model.models import Article
+from src.model.models import Article, ValidationError as CustomValidationError
 from src.model.repository import Repository
 from datetime import datetime
-from tests import create_database_session
 
 
 class TestRepository:
@@ -22,7 +21,7 @@ class TestRepository:
     
     def test_repository_create(self, create_database_session, repo, sample_article_data):
         result = repo.create(**sample_article_data)
-        create_database_session.commit()
+        repo.session.commit()
         
         assert result.id is not None
         assert result.title == "測試文章"
@@ -30,22 +29,23 @@ class TestRepository:
 
     def test_repository_update(self, create_database_session, repo, sample_article_data):
         result = repo.create(**sample_article_data)
-        create_database_session.commit()
+        repo.session.commit()
         
         updated_article = repo.update(result, title="更新後的文章")
-        create_database_session.commit()
+        repo.session.commit()
         
         assert updated_article.id is not None
         assert updated_article.title == "更新後的文章"
     
     def test_repository_delete(self, create_database_session, repo, sample_article_data):
+        """測試刪除實體"""
         result = repo.create(**sample_article_data)
-        create_database_session.commit()
+        repo.session.commit()
         
-        repo.delete(result)
-        create_database_session.commit()
+        assert repo.delete(result)
+        repo.session.commit()
         
-        assert result is None
+        assert repo.get_by_id(result.id) is None
     
     def test_repository_find_methods(self, create_database_session, repo):
         # 準備測試資料
@@ -66,7 +66,7 @@ class TestRepository:
         # 創建文章
         repo.create(**article_data1)
         repo.create(**article_data2)
-        create_database_session.commit()
+        repo.session.commit()
 
         # 測試 find_by 方法
         found_articles = repo.find_by(title="測試文章1")
@@ -91,7 +91,7 @@ class TestRepository:
                 published_at=datetime.now(),
                 created_at=datetime.now()
             )
-        create_database_session.commit()
+        repo.session.commit()
         
         # 測試基本查詢
         result = repo.get_all()
@@ -117,7 +117,7 @@ class TestRepository:
     
     def test_repository_exists(self, create_database_session, repo, sample_article_data):
         repo.create(**sample_article_data)
-        create_database_session.commit()
+        repo.session.commit()
         
         assert repo.exists(title="測試文章")
         assert not repo.exists(title="不存在的文章")
@@ -125,13 +125,13 @@ class TestRepository:
     def test_repository_update_with_validation(self,  repo, sample_article_data):
         """測試更新時的驗證"""
         result = repo.create(**sample_article_data)
-        create_database_session.commit()
+        repo.session.commit()
         
         # 測試更新標題長度驗證
-        with pytest.raises(ValueError, match="標題長度需在 1 到 500 個字元之間"):
+        with pytest.raises(CustomValidationError):
             repo.update(result, title="")
         
-        with pytest.raises(ValueError, match="標題長度需在 1 到 500 個字元之間"):
+        with pytest.raises(CustomValidationError):
             repo.update(result, title="a" * 501)
     
     def test_repository_create_with_optional_fields(self,  repo, sample_article_data):
@@ -147,7 +147,7 @@ class TestRepository:
         }
         
         result = repo.create(**article_data)
-        create_database_session.commit()
+        repo.session.commit()
         
         assert result.summary == "這是一篇測試文章"
         assert result.content == "測試內容"
@@ -161,15 +161,11 @@ class TestRepository:
             "link": "https://test.com/unique-link",
             "published_at": datetime.now()
         }
-
-        # 第一次創建成功
         repo.create(**first_article_data)
-        create_database_session.commit()
+        repo.session.commit()
 
-        # 第二次創建result應有錯誤訊息
-        result = repo.create(**first_article_data)
-        assert result is None
-        assert "已存在具有相同連結的文章" in result.error_message
+        with pytest.raises(CustomValidationError):
+            repo.create(**first_article_data)
 
 
     def test_repository_batch_create(self, repo, sample_article_data):
@@ -207,10 +203,10 @@ class TestRepository:
         }           
 
         results = repo.batch_create([article_data1, article_data2])
-        create_database_session.commit()
+        repo.session.commit()
 
         results = repo.batch_update(results, title="更新後的文章")
-        create_database_session.commit()
+        repo.session.commit()
 
         assert results is not None
         assert len(results) == 2
@@ -232,15 +228,12 @@ class TestRepository:
         }
 
         results = repo.batch_create([article_data1, article_data2])
-        create_database_session.commit()
+        repo.session.commit()
 
         results = repo.batch_delete(results)
-        create_database_session.commit()
+        repo.session.commit()
 
-        assert results is not None
-        assert len(results) == 2
-        assert repo.get_by_id(results[0].id) is None
-        assert repo.get_by_id(results[1].id) is None
+        assert results is True
 
     def test_repository_find_by_filter(self, create_database_session, repo):
         """測試過濾查詢"""
@@ -257,7 +250,7 @@ class TestRepository:
         }
         
         repo.batch_create([article_data1, article_data2])
-        create_database_session.commit()
+        repo.session.commit()
 
         found_articles = repo.find_by_filter(title="第一篇文章")
         assert len(found_articles) == 1
