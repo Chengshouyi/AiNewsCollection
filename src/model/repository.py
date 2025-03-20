@@ -23,8 +23,9 @@ class Repository(Generic[T]):
     def get_by_id(self, id: int) -> Optional[T]:
         """根據 ID 獲取實體"""
         if not isinstance(id, int) or id <= 0:
-            logger.error(f"無效的ID: {id}")
-            raise CustomValidationError(f"無效的ID: {id}")
+            error_msg = f"無效的ID: {id}"
+            logger.error(error_msg)
+            raise CustomValidationError(error_msg)
         return self.session.query(self.model_class).get({"id":id})
     
     def get_all(
@@ -113,7 +114,8 @@ class Repository(Generic[T]):
             return entity   
         except Exception as e:
             self.session.rollback()
-            logger.error(f"創建實體失敗: {str(e)}")
+            error_msg = f"創建實體失敗: {str(e)}"
+            logger.error(error_msg)
             raise e
     
     def update(self, entity: T, **kwargs) -> T:
@@ -127,7 +129,8 @@ class Repository(Generic[T]):
             return entity
         except Exception as e:
             self.session.rollback()
-            logger.error(f"更新實體失敗: {str(e)}")
+            error_msg = f"更新實體失敗: {str(e)}"
+            logger.error(error_msg)
             raise e
 
     def delete(self, entity: T) -> None:
@@ -142,7 +145,8 @@ class Repository(Generic[T]):
             self.session.flush()
         except Exception as e:
             self.session.rollback()
-            logger.error(f"刪除實體失敗: {str(e)}")
+            error_msg = f"刪除實體失敗: {str(e)}"
+            logger.error(error_msg)
             raise e
 
     def batch_create(self, items_data: List[Dict[str, Any]]) -> List[T]:
@@ -163,7 +167,8 @@ class Repository(Generic[T]):
             return entities
         except Exception as e:
             self.session.rollback()
-            logger.error(f"批量創建失敗: {str(e)}")
+            error_msg = f"批量創建失敗: {str(e)}"
+            logger.error(error_msg)
             raise e
     
     def find_by_filter(self, **kwargs) -> List[T]:
@@ -200,7 +205,7 @@ def repository_context(db_manager: DatabaseManager, model_class: Type[T]):
             yield repo, session
         except Exception as e:
             error_msg = f"儲存庫操作錯誤: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             session.rollback()
             raise
         

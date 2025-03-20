@@ -45,24 +45,27 @@ class ArticleService:
             try:
                 validated_data = ArticleCreateSchema.model_validate(article_data).model_dump()
             except Exception as e:
-                logger.error(f"文章資料驗證失敗: {e}")
+                error_msg = f"文章資料驗證失敗: {e}"
+                logger.error(error_msg)
                 raise e
 
             with self._get_repository(Article) as (repo, session):
                 # 檢查文章是否已存在
                 if repo.exists(link=validated_data['link']):
-                    logger.warning(f"文章已存在: {validated_data['link']}")
-                    raise CustomValidationError(f"文章已存在: {validated_data['link']}")
+                    error_msg = f"文章已存在: {validated_data['link']}"
+                    logger.error(error_msg)
+                    raise CustomValidationError(error_msg)
                 try:
                     result = repo.create(**validated_data)
                 except Exception as e:
-                    logger.error(f"文章創建失敗: {e}")
+                    error_msg = f"文章創建失敗: {e}"
+                    logger.error(error_msg)
                     raise e
                 session.commit()
                 return result
         except Exception as e:
             error_msg = f"創建文章失敗: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise e
 
     def batch_insert_articles(self, articles_data: List[Dict[str, Any]]) -> Optional[List[Article]]:
@@ -82,7 +85,8 @@ class ArticleService:
                 validated_data = ArticleCreateSchema.model_validate(article_data).model_dump()
                 validated_articles.append(validated_data)
         except Exception as e:
-            logger.error(f"批次插入文章時，文章資料驗證失敗: {e}")
+            error_msg = f"批次插入文章時，文章資料驗證失敗: {e}"
+            logger.error(error_msg)
             raise e
         
         # 批量插入有效文章
@@ -102,7 +106,8 @@ class ArticleService:
                     session.commit()
                     return article_entities
             except Exception as e:
-                logger.error(f"批量插入失敗: {e}", exc_info=True)
+                error_msg = f"批量插入失敗: {e}"
+                logger.error(error_msg)
                 raise e
         return None
 
@@ -133,7 +138,7 @@ class ArticleService:
                 return articles
         except Exception as e:
             error_msg = f"獲取所有文章失敗: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise e
     
     def search_articles(self, search_terms: Dict[str, Any], limit: Optional[int] = None, offset: Optional[int] = None) -> List[Article]:
@@ -177,7 +182,7 @@ class ArticleService:
                 return articles
         except Exception as e:
             error_msg = f"搜尋文章失敗: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise e
     
     def get_article_by_id(self, article_id: int) -> Optional[Article]:
@@ -197,7 +202,7 @@ class ArticleService:
             return article
         except Exception as e:
             error_msg = f"獲取文章失敗，ID={article_id}: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise e
 
     def get_article_by_link(self, link: str) -> Optional[Dict[str, Any]]:
@@ -216,7 +221,7 @@ class ArticleService:
                 return self._article_to_dict(article) if article else None
         except Exception as e:
             error_msg = f"根據連結獲取文章失敗，link={link}: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise e
 
     def get_articles_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
@@ -260,7 +265,8 @@ class ArticleService:
                 article = repo.get_by_id(article_id)
                 
                 if not article:
-                    logger.error(f"ID不存在，文章更新失敗")
+                    error_msg = f"ID不存在，文章更新失敗"
+                    logger.error(error_msg)
                     return None
 
                 # 獲取當前文章資料
@@ -281,19 +287,20 @@ class ArticleService:
                     validated_data = ArticleUpdateSchema.model_validate(current_article_data).model_dump()
                 except Exception as e:
                     error_msg = f"文章更新資料驗證失敗: {str(e)}"
-                    logger.error(error_msg, exc_info=True)
+                    logger.error(error_msg)
                     raise CustomValidationError(error_msg, e)
                 
                 result = repo.update(article, **validated_data)
                 if not result:
-                    logger.warning(f"文章更新失敗")
+                    error_msg = f"文章更新失敗"
+                    logger.error(error_msg)
                     return None
                     
                 session.commit()
                 return result
         except Exception as e:
             error_msg = f"更新文章失敗，ID={article_id}: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise e
     
     def batch_update_articles(self, article_ids: List[int], article_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -311,49 +318,68 @@ class ArticleService:
                 updated_articles: 成功更新的文章列表
                 missing_ids: 未找到的文章ID列表
         """
-        updated_articles = []
-        
         try:
+            # 自動更新 updated_at 欄位
+            article_data['updated_at'] = datetime.now()
+            
+            # 先驗證更新資料
+            try:
+                validated_data = ArticleUpdateSchema.model_validate(article_data).model_dump(exclude_unset=True)
+            except Exception as e:
+                error_msg = f"文章更新資料驗證失敗: {e}"
+                logger.error(error_msg)
+                raise e
+                
             with self._get_repository(Article) as (repo, session):
-                # 先驗證更新資料
-                try:
-                    # 假設有用於更新的驗證模式
-                    validated_data = ArticleUpdateSchema.model_validate(article_data).model_dump(exclude_unset=True)
-                except Exception as e:
-                    logger.error(f"文章更新資料驗證失敗: {e}")
-                    raise e
-                    
                 # 批量查詢所有文章
                 articles_to_update = session.query(Article).filter(Article.id.in_(article_ids)).all()
                 
                 # 追蹤找到的文章ID
                 found_article_ids = [article.id for article in articles_to_update]
                 
+                # 計算未找到的文章ID
+                missing_ids = [id for id in article_ids if id not in found_article_ids]
+                
+                updated_articles = []
                 # 更新找到的文章
                 for article in articles_to_update:
-                    for key, value in validated_data.items():
+                    # 獲取當前文章資料
+                    current_article_data = {
+                        'title': article.title,
+                        'link': article.link,
+                        'published_at': article.published_at,
+                        'summary': article.summary or '',
+                        'content': article.content or '',
+                        'source': article.source or ''
+                    }
+                    
+                    # 更新資料
+                    current_article_data.update(validated_data)
+                    
+                    # 更新文章
+                    for key, value in current_article_data.items():
                         if hasattr(article, key):
                             setattr(article, key, value)
                     updated_articles.append(article)
                 
                 # 提交更新
-                session.flush()
+                session.commit()
                 
                 success_count = len(updated_articles)
-                fail_count = len(article_ids) - success_count
-                
-                logger.info(f"批量更新文章完成: 成功 {success_count}, 失敗 {fail_count}")
+                fail_count = len(missing_ids)
+                log_info = f"批量更新文章完成: 成功 {success_count}, 失敗 {fail_count}"
+                logger.info(log_info)
                 return {
                     "updated_articles": updated_articles,
                     "success_count": success_count,
                     "fail_count": fail_count,
-                    "missing_ids": [id for id in article_ids if id not in found_article_ids]
+                    "missing_ids": missing_ids
                 }
         except Exception as e:
             error_msg = f"批量更新文章失敗: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise e
-
+        
     def delete_article(self, article_id: int) -> bool:
         """
         刪除文章
@@ -365,20 +391,22 @@ class ArticleService:
             是否成功刪除
         """              
         try:
-            with self._get_repository(Article) as (repo, session):
-                article = repo.get_by_id(article_id)
+            with self._get_repository(Article) as (_, session):
+                # 直接執行刪除操作並返回受影響的行數
+                result = session.query(Article).filter(Article.id == article_id).delete()
                 
-                if not article:
-                    logger.warning(f"欲刪除的文章不存在，ID={article_id}")
+                if result == 0:
+                    error_msg = f"欲刪除的文章不存在，ID={article_id}"
+                    logger.error(error_msg)
                     return False
                     
-                repo.delete(article)
                 session.commit()
-                logger.info(f"成功刪除文章，ID={article_id}")
+                log_info = f"成功刪除文章，ID={article_id}"
+                logger.info(log_info)
                 return True
         except Exception as e:
-            error_msg = f"刪除文章失敗，ID={article_id}: {e}"
-            logger.error(error_msg, exc_info=True)
+            error_msg = f"刪除文章失敗，ID={article_id}: {str(e)}"
+            logger.error(error_msg)
             raise e
             
     def batch_delete_articles(self, article_ids: List[int]) -> Dict[str, Any]:
@@ -394,28 +422,37 @@ class ArticleService:
                 fail_count: 失敗數量
                 missing_ids: 未找到的文章ID列表
         """
+        if not article_ids:
+            return {
+                "success_count": 0,
+                "fail_count": 0,
+                "missing_ids": []
+            }
+        
         try:
             with self._get_repository(Article) as (repo, session):
                 # 先查詢所有需要刪除的文章
                 articles_to_delete = session.query(Article).filter(Article.id.in_(article_ids)).all()
                 
                 # 追蹤找到的文章ID
-                found_article_ids = [article.id for article in articles_to_delete]
+                found_ids = [article.id for article in articles_to_delete]
                 
                 # 計算未找到的文章ID
-                missing_ids = [id for id in article_ids if id not in found_article_ids]
+                missing_ids = list(set(article_ids) - set(found_ids))
                 
                 # 批量刪除找到的文章
                 if articles_to_delete:
+                    # 使用bulk_delete操作而非逐個刪除
                     for article in articles_to_delete:
                         session.delete(article)
                     
-                    session.flush()
+                    session.commit() 
                 
-                success_count = len(found_article_ids)
+                success_count = len(found_ids)
                 fail_count = len(missing_ids)
                 
-                logger.info(f"批量刪除文章完成: 成功 {success_count}, 失敗 {fail_count}")
+                log_info = f"批量刪除文章完成: 成功 {success_count}, 失敗 {fail_count}"
+                logger.info(log_info)
                 
                 return {
                     "success_count": success_count,
@@ -424,8 +461,9 @@ class ArticleService:
                 }
         except Exception as e:
             error_msg = f"批量刪除文章失敗: {e}"
-            logger.error(error_msg, exc_info=True)
-            raise e
+            logger.error(error_msg)
+            session.rollback()  
+            raise  
     
     def _article_to_dict(self, article) -> Optional[Dict[str, Any]]:
         """
@@ -478,7 +516,8 @@ class ArticleService:
                 article = repo.get_by_id(article_id)
                 
                 if not article:
-                    logger.warning(f"欲合併的文章不存在，ID={article_id}")
+                    error_msg = f"欲合併的文章不存在，ID={article_id}"
+                    logger.error(error_msg)
                     return None
                     
                 # 只更新非空值
@@ -504,7 +543,7 @@ class ArticleService:
                 
         except Exception as e:
             error_msg = f"合併文章資料失敗，ID={article_id}: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise e
 
    

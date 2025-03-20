@@ -67,7 +67,7 @@ class DatabaseManager:
                 self.Session = sessionmaker(bind=self.engine)
             except Exception as engine_error:
                 error_msg = f"創建數據庫引擎失敗: {engine_error}"
-                logger.error(error_msg, exc_info=True)
+                logger.error(error_msg)
                 raise DatabaseConfigError(error_msg) from engine_error
             
             # 連接驗證
@@ -75,14 +75,14 @@ class DatabaseManager:
         
         except SQLAlchemyError as e:
             error_msg = f"數據庫連接驗證失敗: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise DatabaseConnectionError(error_msg) from e
         except DatabaseError:
             # 直接傳遞已定義的資料庫異常
             raise
         except Exception as e:
             error_msg = f"數據庫初始化錯誤: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise DatabaseConfigError(error_msg) from e
     
     def _get_db_url(self, db_path: Optional[str] = None) -> str:
@@ -117,7 +117,7 @@ class DatabaseManager:
             return db_path
         except Exception as e:
             error_msg = f"數據庫路徑解析錯誤: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise DatabaseConfigError(error_msg) from e
     
     def _verify_connection(self) -> None:
@@ -133,7 +133,7 @@ class DatabaseManager:
                 conn.execute(text("SELECT 1"))
         except SQLAlchemyError as e:
             error_msg = f"數據庫連接驗證失敗: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise DatabaseConnectionError(error_msg) from e  
     
     @contextmanager
@@ -154,7 +154,7 @@ class DatabaseManager:
         except Exception as e:
             session.rollback()
             error_msg = f"數據庫操作失敗: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e
         finally:
             session.close()
@@ -173,5 +173,5 @@ class DatabaseManager:
             base.metadata.create_all(self.engine)
         except SQLAlchemyError as e:
             error_msg = f"創建表格失敗: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e
