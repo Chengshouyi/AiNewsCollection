@@ -22,6 +22,8 @@ class CrawlerSettings(Base):
         # 設置預設的 created_at
         if 'created_at' not in kwargs:
             kwargs['created_at'] = datetime.now(timezone.utc)
+        if 'is_active' not in kwargs:
+            kwargs['is_active'] = True
             
         super().__init__(**kwargs)
         self.is_initialized = True
@@ -72,7 +74,7 @@ class CrawlerSettings(Base):
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean, 
-        default=True, 
+        default=lambda: True, 
         nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(

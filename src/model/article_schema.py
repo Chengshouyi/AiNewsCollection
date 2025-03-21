@@ -14,6 +14,16 @@ class ArticleCreateSchema(BaseModel):
     article_type: Optional[str] = Field(None, max_length=20, description="文章類型")
     tags: Optional[str] = Field(None, max_length=500, description="標籤")
 
+    @model_validator(mode='before') 
+    @classmethod
+    def validate_required_fields(cls, data):
+        if isinstance(data, dict):
+            required_fields = ['title', 'link', 'published_at', 'source']
+            for field in required_fields:
+                if field not in data:
+                    raise ValidationError(f"{field}: do not be empty.")
+        return data
+    
     @field_validator('title', mode='before')
     @classmethod
     def validate_title(cls, value):
@@ -35,6 +45,8 @@ class ArticleCreateSchema(BaseModel):
     @field_validator('summary', mode='before')
     @classmethod
     def validate_summary(cls, value):
+        if value is None:
+            raise ValidationError("summary: do not be empty.")
         if 1 > len(value) or len(value) > 10000:
             raise ValidationError("summary: length must be between 1 and 10000.")
         return value
@@ -58,6 +70,8 @@ class ArticleCreateSchema(BaseModel):
     @field_validator('author', mode='before')
     @classmethod
     def validate_author(cls, value):
+        if value is None:
+            raise ValidationError("author: do not be empty.")
         if 1 > len(value) or len(value) > 100:
             raise ValidationError("author: length must be between 1 and 100.")
         return value    
@@ -65,6 +79,8 @@ class ArticleCreateSchema(BaseModel):
     @field_validator('article_type', mode='before')
     @classmethod
     def validate_article_type(cls, value):
+        if value is None:
+            raise ValidationError("article_type: do not be empty.")
         if 1 > len(value) or len(value) > 20:
             raise ValidationError("article_type: length must be between 1 and 20.")
         return value        
@@ -72,6 +88,8 @@ class ArticleCreateSchema(BaseModel):
     @field_validator('tags', mode='before')
     @classmethod
     def validate_tags(cls, value):
+        if value is None:
+            raise ValidationError("tags: do not be empty.")
         if 1 > len(value) or len(value) > 500:
             raise ValidationError("tags: length must be between 1 and 500.")
         return value    
@@ -79,6 +97,8 @@ class ArticleCreateSchema(BaseModel):
     @field_validator('content', mode='before')
     @classmethod
     def validate_content(cls, value):
+        if value is None:
+            raise ValidationError("content: do not be empty.")
         if 1 > len(value) or len(value) > 65536:
             raise ValidationError("content: length must be between 1 and 65536.")
         return value
@@ -132,8 +152,19 @@ class ArticleUpdateSchema(BaseModel):
     @field_validator('summary', mode='before')
     @classmethod
     def validate_summary(cls, value):
+        if value is None:
+            raise ValidationError("summary: do not be empty.")
         if 1 > len(value) or len(value) > 10000:
             raise ValidationError("summary: length must be between 1 and 10000.")
+        return value
+    
+    @field_validator('content', mode='before')
+    @classmethod
+    def validate_content(cls, value):
+        if value is None:
+            raise ValidationError("content: do not be empty.")
+        if 1 > len(value) or len(value) > 65536:
+            raise ValidationError("content: length must be between 1 and 65536.")
         return value
     
     @field_validator('source', mode='before')
@@ -155,6 +186,8 @@ class ArticleUpdateSchema(BaseModel):
     @field_validator('author', mode='before')
     @classmethod
     def validate_author(cls, value):
+        if value is None:
+            raise ValidationError("author: do not be empty.")
         if 1 > len(value) or len(value) > 100:
             raise ValidationError("author: length must be between 1 and 100.")
         return value    
@@ -162,6 +195,8 @@ class ArticleUpdateSchema(BaseModel):
     @field_validator('article_type', mode='before')
     @classmethod
     def validate_article_type(cls, value):
+        if value is None:
+            raise ValidationError("article_type: do not be empty.")
         if 1 > len(value) or len(value) > 20:
             raise ValidationError("article_type: length must be between 1 and 20.")
         return value    
@@ -169,6 +204,8 @@ class ArticleUpdateSchema(BaseModel):
     @field_validator('tags', mode='before')
     @classmethod
     def validate_tags(cls, value):
+        if value is None:
+            raise ValidationError("tags: do not be empty.")
         if 1 > len(value) or len(value) > 500:
             raise ValidationError("tags: length must be between 1 and 500.")
         return value    
