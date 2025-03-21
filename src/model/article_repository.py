@@ -1,6 +1,7 @@
 from .base_rerository import BaseRepository
 from .article_models import ArticleLinks, Article
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
+
 
 class ArticleLinksRepository(BaseRepository['ArticleLinks']):
     """ArticleLinks 特定的Repository"""
@@ -30,3 +31,9 @@ class ArticleRepository(BaseRepository['Article']):
         return self.session.query(self.model_class).filter(
             self.model_class.title.like(f'%{keyword}%')
         ).all()
+    
+    def get_all_articles(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List['Article']:
+        return []
+    
+    def get_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
+        return {}
