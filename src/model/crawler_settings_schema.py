@@ -12,6 +12,16 @@ class CrawlerSettingsCreateSchema(BaseModel):
     updated_at: Optional[datetime] = Field(default=None, description="更新時間")
     last_crawl_time: Optional[datetime] = Field(default=None, description="最後爬取時間")
     
+    @model_validator(mode='before')
+    @classmethod
+    def validate_required_fields(cls, data):
+        if isinstance(data, dict):
+            required_fields = ['crawler_name', 'scrape_target', 'crawl_interval']
+            for field in required_fields:
+                if field not in data:
+                    raise ValidationError(f"{field}: do not be empty.")
+        return data
+    
     @field_validator('crawler_name', mode='before')
     @classmethod
     def validate_crawler_name(cls, value):
@@ -43,6 +53,16 @@ class CrawlerSettingsCreateSchema(BaseModel):
         if not value:
             raise ValidationError("created_at: do not be empty.")
         return value
+    
+    @field_validator('scrape_target', mode='before')
+    @classmethod
+    def validate_scrape_target(cls, value):
+        if not value or not value.strip():
+            raise ValidationError("scrape_target: do not be empty.")
+        if 1 > len(value) or len(value) > 1000:
+            raise ValidationError("scrape_target: length must be between 1 and 1000.")
+        return value
+
 
 class CrawlerSettingsUpdateSchema(BaseModel):
     crawler_name: Optional[str] = Field(None, min_length=1, max_length=255, description="爬蟲名稱")
