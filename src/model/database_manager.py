@@ -6,30 +6,12 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.decl_api import DeclarativeBase
+from src.error.errors import DatabaseError, DatabaseConnectionError, DatabaseConfigError, DatabaseOperationError
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-
-class DatabaseError(Exception):
-    """資料庫操作基礎異常類"""
-    pass
-
-
-class DatabaseConnectionError(DatabaseError):
-    """資料庫連接異常"""
-    pass
-
-
-class DatabaseConfigError(DatabaseError):
-    """資料庫設定異常"""
-    pass
-
-
-class DatabaseOperationError(DatabaseError):
-    """資料庫操作異常"""
-    pass
 
 
 class DatabaseManager:

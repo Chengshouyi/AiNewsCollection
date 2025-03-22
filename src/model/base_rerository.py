@@ -1,13 +1,16 @@
-from typing import List, Optional, TypeVar, Generic, Type, Dict, Any, Union, Set
+from typing import List, Optional, TypeVar, Generic, Type, Dict, Any, Union, Set, cast, Protocol
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from .base_models import Base, ValidationError, NotFoundError
+from .base_models import Base
+from src.error.errors import ValidationError, NotFoundError
+from .base_entity import ValidatableEntity
 import logging
 import re
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# 將T綁定到Base，這樣可以訪問SQLAlchemy的屬性
 T = TypeVar('T', bound=Base)
 
 class BaseRepository(Generic[T]):
@@ -37,6 +40,13 @@ class BaseRepository(Generic[T]):
             ValidationError: 驗證失敗時拋出
             NotFoundError: 更新操作時找不到實體時拋出
         """
+        # 如果是實體對象且實現了validate方法，先調用其自身驗證
+        if not isinstance(entity, dict) and isinstance(entity, ValidatableEntity):
+            errors = entity.validate(is_update)
+            if errors:
+                self._raise_validation_errors(errors)
+            return entity
+        
         skip_validators = skip_validators or set()
         
         if is_update:
@@ -325,7 +335,7 @@ class BaseRepository(Generic[T]):
     
     def get_by_id(self, entity_id: Any) -> Optional[T]:
         """根據ID獲取實體"""
-        return self.session.query(self.model_class).get(entity_id)
+        return self.session.get(self.model_class, entity_id)
     
     def get_all(self) -> List[T]:
         """獲取所有實體"""
@@ -337,9 +347,6 @@ class BaseRepository(Generic[T]):
         if not entity:
             return None
         
-        # 確保ID不可修改
-        entity_data['id'] = entity_id
-        
         # 資料驗證 - 這裡會檢查不可修改欄位
         validated_entity = self.validate_entity(entity_data, is_update=True)
         
@@ -347,7 +354,7 @@ class BaseRepository(Generic[T]):
             # 更新實體 - 無需再檢查欄位是否可修改，因為驗證已確保所有欄位都可以安全設置
             # 驗證已檢查了不可修改的欄位，所以這裡可以放心設置所有欄位
             for key, value in entity_data.items():
-                if key != 'id':  # ID仍然不更新，以防萬一
+                if key != 'id':  # ID不更新
                     setattr(entity, key, value)
             
             self.session.flush()

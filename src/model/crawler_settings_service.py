@@ -1,11 +1,11 @@
 import logging
 from typing import Optional, Type, Any, Dict, List, TypeVar
 from datetime import datetime
-from .base_models import SystemSettings, Base
-from .database_manager import DatabaseManager
-from .repository import repository_context
-from .crawler_settings_schema import SystemSettingsCreateSchema, SystemSettingsUpdateSchema
-from .base_models import ValidationError as CustomValidationError
+from src.model.base_models import Base
+from src.model.database_manager import DatabaseManager
+from src.model.crawler_settings_schema import CrawlerSettingsCreateSchema, CrawlerSettingsUpdateSchema
+from src.error.errors import ValidationError
+from src.model.crawler_settings_models import CrawlerSettings
 
 
 # 設定 logger

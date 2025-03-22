@@ -3,8 +3,8 @@ from typing import Optional, Dict, Any, List, TypeVar, Type
 from .article_models import Article, Base
 from datetime import datetime
 from .article_schema import ArticleCreateSchema, ArticleUpdateSchema
-from .base_models import ValidationError as CustomValidationError
-from .database_manager import DatabaseManager, DatabaseOperationError
+from src.error.errors import ValidationError, DatabaseOperationError
+from .database_manager import DatabaseManager
 from .article_repository import ArticleRepository
 
 # 設定 logger

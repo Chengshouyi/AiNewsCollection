@@ -77,7 +77,6 @@ class TestBaseRepository:
         repo.session.commit()
         
         updated_data = {
-            "id": article.id,
             "title": "更新後的文章",
             "summary": "這是更新後的摘要"
         }

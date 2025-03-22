@@ -1,11 +1,13 @@
 from sqlalchemy import Integer, String, DateTime, Boolean
 from sqlalchemy import CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column
-from .base_models import Base
-from typing import Optional
+from src.model.base_models import Base
+from src.error.errors import ValidationError
+from typing import Optional, List
 from datetime import datetime, timezone
+from .base_entity import BaseEntity
 
-class CrawlerSettings(Base):
+class CrawlerSettings(Base, BaseEntity):
     """爬蟲設定模型
     
     欄位說明：
@@ -50,7 +52,7 @@ class CrawlerSettings(Base):
             return
 
         if key in ['id', 'created_at'] and hasattr(self, key):
-            raise AttributeError(f"{key} cannot be updated")
+            raise ValidationError(f"{key} cannot be updated")
 
         super().__setattr__(key, value)
 
@@ -101,3 +103,9 @@ class CrawlerSettings(Base):
             f")>"
         )
   
+    def validate(self, is_update: bool = False) -> List[str]:
+        """爬蟲設定驗證"""
+        errors = []
+        # 個性化驗證
+        return errors
+

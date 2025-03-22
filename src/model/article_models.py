@@ -1,12 +1,14 @@
 from sqlalchemy import UniqueConstraint, CheckConstraint, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from .base_models import Base
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship
 from sqlalchemy import Integer, String, Boolean, DateTime, Text
+from .base_entity import BaseEntity
+from src.error.errors import ValidationError
 
-class ArticleLinks(Base):
+class ArticleLinks(Base, BaseEntity):
     """文章連結模型
     
     欄位說明：
@@ -60,7 +62,7 @@ class ArticleLinks(Base):
             return
 
         if key in ['id', 'article_link', 'created_at'] and hasattr(self, key):
-            raise AttributeError(f"{key} cannot be updated")
+            raise ValidationError(f"{key} cannot be updated")
 
         super().__setattr__(key, value)
 
@@ -108,9 +110,13 @@ class ArticleLinks(Base):
     def __repr__(self):
         return f"<ArticleLink(id={self.id}, source_name='{self.source_name}', source_url='{self.source_url}', article_link='{self.article_link}', is_scraped={self.is_scraped})>"
     
-    
+    def validate(self, is_update: bool = False) -> List[str]:
+        """文章連結驗證"""
+        errors = []
+        # 個性化驗證
+        return errors
 
-class Article(Base):
+class Article(Base, BaseEntity):
     """文章模型
     
     欄位說明：
@@ -194,7 +200,7 @@ class Article(Base):
             return
 
         if key in ['id', 'link', 'created_at'] and hasattr(self, key):
-            raise AttributeError(f"{key} cannot be updated")
+            raise ValidationError(f"{key} cannot be updated")
 
         super().__setattr__(key, value)
 
@@ -243,3 +249,9 @@ class Article(Base):
     # 文章資料repr
     def __repr__(self):
         return f"<Article(id={self.id}, title='{self.title}', link='{self.link}')>"
+    
+    def validate(self, is_update: bool = False) -> List[str]:
+        """文章驗證"""
+        errors = []
+        # 個性化驗證
+        return errors
