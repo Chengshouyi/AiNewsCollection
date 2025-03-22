@@ -476,7 +476,9 @@ class ArticleService:
             logger.error(error_msg)
             session.rollback()  
             raise  
-    
+
+        
+    # 考慮刪除，使用dump_to_dict
     def _article_to_dict(self, article) -> Optional[Dict[str, Any]]:
         """
         將Article對象轉換為字典
