@@ -4,6 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from .base_models import Base
 from src.error.errors import ValidationError, NotFoundError
 from .base_entity import ValidatableEntity
+from sqlalchemy import desc, asc
 import logging
 import re
 # 設定 logger
@@ -337,10 +338,6 @@ class BaseRepository(Generic[T]):
         """根據ID獲取實體"""
         return self.session.get(self.model_class, entity_id)
     
-    def get_all(self) -> List[T]:
-        """獲取所有實體"""
-        return self.session.query(self.model_class).all()
-    
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[T]:
         """更新實體"""
         entity = self.get_by_id(entity_id)
@@ -380,3 +377,91 @@ class BaseRepository(Generic[T]):
             error_msg = f"Repository.delete: cannot delete {self.model_class.__name__}: {str(e)}"
             logger.error(error_msg)
             raise ValidationError(error_msg)
+        
+    def get_all(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List[T]:
+        """獲取所有實體，支援分頁和排序
+
+        Args:
+            limit: 限制返回結果數量
+            offset: 跳過結果數量
+            sort_by: 排序欄位名稱
+            sort_desc: 是否降序排列
+
+        Returns:
+            實體列表
+        """
+        query = self.session.query(self.model_class)
+        
+        # 處理排序
+        if sort_by and hasattr(self.model_class, sort_by):
+            order_column = getattr(self.model_class, sort_by)
+            if sort_desc:
+                query = query.order_by(desc(order_column))
+            else:
+                query = query.order_by(asc(order_column))
+        else:
+            # 預設按創建時間或ID降序排列
+            try:
+                # 嘗試使用 created_at
+                created_at_attr = getattr(self.model_class, 'created_at', None)
+                if created_at_attr is not None:
+                    query = query.order_by(desc(created_at_attr))
+                else:
+                    # 否則使用 id
+                    id_attr = getattr(self.model_class, 'id', None)
+                    if id_attr is not None:
+                        query = query.order_by(desc(id_attr))
+            except (AttributeError, TypeError):
+                # 如果無法訪問這些屬性，則不排序
+                pass
+        
+        # 處理分頁
+        if offset is not None:
+            query = query.offset(offset)
+        if limit is not None:
+            query = query.limit(limit)
+            
+        return query.all()
+    
+    def get_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
+        """獲取分頁資料
+
+        Args:
+            page: 當前頁碼，從1開始
+            per_page: 每頁數量
+            sort_by: 排序欄位
+            sort_desc: 是否降序排列
+
+        Returns:
+            包含分頁資訊和結果的字典
+        """
+        # 計算總記錄數
+        total = self.session.query(self.model_class).count()
+        
+        # 計算總頁數
+        total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
+        
+        # 確保頁碼有效
+        current_page = max(1, min(page, total_pages)) if total_pages > 0 else 1
+        
+        # 計算偏移量
+        offset = (current_page - 1) * per_page
+        
+        # 獲取當前頁數據
+        items = self.get_all(
+            limit=per_page, 
+            offset=offset,
+            sort_by=sort_by,
+            sort_desc=sort_desc
+        )
+        
+        # 構建分頁結果
+        return {
+            "items": items,
+            "page": current_page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "has_next": current_page < total_pages,
+            "has_prev": current_page > 1
+        }
