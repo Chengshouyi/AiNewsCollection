@@ -3,7 +3,7 @@ from typing import Optional
 from datetime import datetime
 from .base_models import ValidationError
 
-class CrawlerSettingsCreateSchema(BaseModel):
+class CrawlersCreateSchema(BaseModel):
     crawler_name: str = Field(..., min_length=1, max_length=255, description="爬蟲名稱")
     scrape_target: str = Field(..., min_length=1, max_length=1000, description="爬取目標")
     crawl_interval: int = Field(..., gt=0, description="爬取間隔")
@@ -64,7 +64,7 @@ class CrawlerSettingsCreateSchema(BaseModel):
         return value
 
 
-class CrawlerSettingsUpdateSchema(BaseModel):
+class CrawlersUpdateSchema(BaseModel):
     crawler_name: Optional[str] = Field(None, min_length=1, max_length=255, description="爬蟲名稱")
     scrape_target: Optional[str] = Field(None, min_length=1, max_length=1000, description="爬取目標")
     crawl_interval: Optional[int] = Field(None, gt=0, description="爬取間隔")

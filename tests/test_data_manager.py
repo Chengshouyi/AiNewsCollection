@@ -9,8 +9,8 @@ from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime
 from tests import create_in_memory_db, create_temp_file_db, create_database_session
-from src.model.article_models import Article, ArticleLinks
-from src.model.crawler_settings_models import CrawlerSettings
+from src.model.articles_models import Article, ArticleLinks
+from src.model.crawlers_models import Crawlers
 
 class TestDatabaseManager:
     """資料庫管理器測試類"""
@@ -54,7 +54,7 @@ class TestDatabaseManager:
             tables = session.execute(text("SELECT name FROM sqlite_master WHERE type='table';")).fetchall()
             table_names = [table[0] for table in tables]
             # 使用更靈活的方式驗證表格是否創建
-            expected_models = [Article, ArticleLinks, CrawlerSettings]
+            expected_models = [Article, ArticleLinks, Crawlers]
             for model in expected_models:
                 assert model.__tablename__ in table_names
 

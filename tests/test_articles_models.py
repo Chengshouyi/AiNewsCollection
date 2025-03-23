@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime, timezone
-from src.model.article_models import Article, ArticleLinks
+from src.model.articles_models import Article, ArticleLinks
 from src.model.base_models import ValidationError
 
 class TestArticleModel:

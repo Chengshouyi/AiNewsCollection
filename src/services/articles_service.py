@@ -1,11 +1,11 @@
 import logging
 from typing import Optional, Dict, Any, List, TypeVar, Type
-from ..model.article_models import Article, Base
+from ..model.articles_models import Article, Base
 from datetime import datetime
-from ..model.article_schema import ArticleCreateSchema, ArticleUpdateSchema
+from ..model.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from src.error.errors import ValidationError, DatabaseOperationError
 from ..database.database_manager import DatabaseManager
-from ..database.article_repository import ArticleRepository
+from ..database.articles_repository import ArticleRepository
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 

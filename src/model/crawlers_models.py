@@ -7,7 +7,7 @@ from typing import Optional, List
 from datetime import datetime, timezone
 from .base_entity import BaseEntity
 
-class CrawlerSettings(Base, BaseEntity):
+class Crawlers(Base, BaseEntity):
     """爬蟲設定模型
     
     欄位說明：
@@ -30,20 +30,20 @@ class CrawlerSettings(Base, BaseEntity):
         super().__init__(**kwargs)
         self.is_initialized = True
 
-    __tablename__ = 'crawler_settings'
+    __tablename__ = 'crawlers'
     __table_args__ = (
         # 驗證crawler_name長度
         CheckConstraint(
-            'length(crawler_name) >= 1 AND length(crawler_name) <= 100', name='chk_system_settings_crawler_name_length'
+            'length(crawler_name) >= 1 AND length(crawler_name) <= 100', name='chk_crawlers_crawler_name_length'
             ),
         # 驗證scrape_target長度
         CheckConstraint(
-            'length(scrape_target) >= 1 AND length(scrape_target) <= 1000', name='chk_system_settings_scrape_target_length'
+            'length(scrape_target) >= 1 AND length(scrape_target) <= 1000', name='chk_crawlers_scrape_target_length'
             ),
         # 驗證is_active類型
         CheckConstraint(
             'is_active IN (0, 1)', 
-            name='chk_system_settings_is_active_type'
+            name='chk_crawlers_is_active_type'
             )
     )
     def __setattr__(self, key, value):
@@ -95,7 +95,7 @@ class CrawlerSettings(Base, BaseEntity):
     # 系統設定資料repr  
     def __repr__(self):
         return (
-            f"<CrawlerSettings("
+            f"<Crawlers("
             f"id={self.id}, "
             f"crawler_name='{self.crawler_name}', "
             f"scrape_target='{self.scrape_target}', "

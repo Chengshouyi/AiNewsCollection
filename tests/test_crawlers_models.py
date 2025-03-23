@@ -1,14 +1,14 @@
 import pytest
 from datetime import datetime, timezone
-from src.model.crawler_settings_models import CrawlerSettings
+from src.model.crawlers_models import Crawlers
 from src.model.base_models import ValidationError
 
-class TestCrawlerSettingsModel:
-    """CrawlerSettings 模型的測試類"""
+class TestCrawlersModel:
+    """Crawlers 模型的測試類"""
     
-    def test_crawler_settings_creation_with_required_fields(self):
-        """測試使用必填欄位創建 CrawlerSettings"""
-        settings = CrawlerSettings(
+    def test_crawlers_creation_with_required_fields(self):
+        """測試使用必填欄位創建 Crawlers"""
+        settings = Crawlers(
             crawler_name="test_crawler",
             scrape_target="https://example.com",  # 添加必要的 scrape_target 字段
             crawl_interval=60,
@@ -25,7 +25,7 @@ class TestCrawlerSettingsModel:
     
     def test_default_values(self):
         """測試默認值設置"""
-        settings = CrawlerSettings(
+        settings = Crawlers(
             crawler_name="test_crawler",
             scrape_target="https://example.com",
             crawl_interval=60
@@ -37,7 +37,7 @@ class TestCrawlerSettingsModel:
     
     def test_created_at_cannot_update(self):
         """測試 created_at 屬性無法更新"""
-        settings = CrawlerSettings(
+        settings = Crawlers(
             crawler_name="test_crawler",
             scrape_target="https://example.com",
             crawl_interval=60
@@ -53,7 +53,7 @@ class TestCrawlerSettingsModel:
     
     def test_id_cannot_update(self):
         """測試 id 屬性無法更新"""
-        settings = CrawlerSettings(
+        settings = Crawlers(
             id=1,
             crawler_name="test_crawler",
             scrape_target="https://example.com",
@@ -66,9 +66,9 @@ class TestCrawlerSettingsModel:
         assert "id cannot be updated" in str(exc_info.value)
         assert settings.id == 1
     
-    def test_crawler_settings_repr(self):
-        """測試 CrawlerSettings 的 __repr__ 方法"""
-        settings = CrawlerSettings(
+    def test_crawlers_repr(self):
+        """測試 Crawlers 的 __repr__ 方法"""
+        settings = Crawlers(
             id=1,
             crawler_name="test_crawler",
             scrape_target="https://example.com",
@@ -76,5 +76,5 @@ class TestCrawlerSettingsModel:
             is_active=True
         )
         
-        expected_repr = "<CrawlerSettings(id=1, crawler_name='test_crawler', scrape_target='https://example.com', is_active=True)>"
+        expected_repr = "<Crawlers(id=1, crawler_name='test_crawler', scrape_target='https://example.com', is_active=True)>"
         assert repr(settings) == expected_repr

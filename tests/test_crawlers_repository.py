@@ -2,8 +2,8 @@ import pytest
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from src.model.crawler_settings_models import CrawlerSettings
-from src.database.crawler_settings_repository import CrawlerSettingsRepository
+from src.model.crawlers_models import Crawlers
+from src.database.crawlers_repository import CrawlersRepository
 from src.model.base_models import Base
 import uuid
 from src.services.model_utiles import get_model_info
@@ -36,26 +36,26 @@ def session(engine, tables):
 
 @pytest.fixture
 def crawler_settings_repo(session):
-    return CrawlerSettingsRepository(session, CrawlerSettings)
+    return CrawlersRepository(session, Crawlers)
 
 @pytest.fixture
 def sample_crawler_settings(session):
     settings = [
-        CrawlerSettings(
+        Crawlers(
             crawler_name="新聞爬蟲1",
             scrape_target="https://example.com/news1",
             crawl_interval=60,  # 60分鐘
             is_active=True,
             last_crawl_time=datetime.now() - timedelta(hours=2)
         ),
-        CrawlerSettings(
+        Crawlers(
             crawler_name="新聞爬蟲2",
             scrape_target="https://example.com/news2",
             crawl_interval=120,  # 120分鐘
             is_active=False,
             last_crawl_time=datetime.now() - timedelta(days=1)
         ),
-        CrawlerSettings(
+        Crawlers(
             crawler_name="RSS爬蟲",
             scrape_target="https://example.com/rss",
             crawl_interval=30,  # 30分鐘
@@ -70,13 +70,13 @@ def sample_crawler_settings(session):
 # CrawlerSettingsRepository 測試
 class TestCrawlerSettingsRepository:
     """
-    測試CrawlerSettings相關資料庫操作
+    測試Crawlers相關資料庫操作
     """
     def test_get_all(self, crawler_settings_repo, sample_crawler_settings):
         """測試獲取所有爬蟲設定"""
         settings = crawler_settings_repo.get_all()
         assert len(settings) == 3
-        assert isinstance(settings[0], CrawlerSettings)
+        assert isinstance(settings[0], Crawlers)
         
     def test_get_by_id(self, crawler_settings_repo, sample_crawler_settings):
         """測試通過ID獲取爬蟲設定"""
@@ -254,7 +254,7 @@ class TestCrawlerSettingsConstraints:
         session = test_session
         
         # 測試缺少crawler_name
-        setting1 = CrawlerSettings(
+        setting1 = Crawlers(
             # 缺少crawler_name
             scrape_target="https://example.com/test",
             crawl_interval=60,
@@ -269,7 +269,7 @@ class TestCrawlerSettingsConstraints:
         session.rollback()
         
         # 測試缺少scrape_target
-        setting2 = CrawlerSettings(
+        setting2 = Crawlers(
             crawler_name="測試爬蟲",
             # 缺少scrape_target
             crawl_interval=60,
@@ -284,7 +284,7 @@ class TestCrawlerSettingsConstraints:
         session.rollback()
         
         # 測試缺少crawl_interval
-        setting3 = CrawlerSettings(
+        setting3 = Crawlers(
             crawler_name="測試爬蟲",
             scrape_target="https://example.com/test",
             # 缺少crawl_interval
@@ -302,7 +302,7 @@ class TestCrawlerSettingsConstraints:
         session = test_session
         
         # 測試is_active和created_at的默認值
-        setting = CrawlerSettings(
+        setting = Crawlers(
             crawler_name="測試默認值",
             scrape_target="https://example.com/default",
             crawl_interval=60
@@ -328,7 +328,7 @@ class TestCrawlerSettingsConstraints:
         session = test_session
     
         # 測試crawler_name長度約束
-        setting1 = CrawlerSettings(
+        setting1 = Crawlers(
             crawler_name="a" * 101,  # 超過100字符
             scrape_target="https://example.com/test",
             crawl_interval=60,
@@ -343,7 +343,7 @@ class TestCrawlerSettingsConstraints:
         session.rollback()
     
         # 測試scrape_target長度約束
-        setting2 = CrawlerSettings(
+        setting2 = Crawlers(
             crawler_name="測試爬蟲",
             scrape_target="x" * 1001,  # 超過1000字符
             crawl_interval=60,
@@ -360,7 +360,7 @@ class TestCrawlerSettingsConstraints:
         # 測試is_active類型約束
         # 註：SQLite可能不會強制檢查這個約束，但在實際數據庫中會生效
         try:
-            setting3 = CrawlerSettings(
+            setting3 = Crawlers(
                 crawler_name="測試爬蟲",
                 scrape_target="https://example.com/test",
                 crawl_interval=60,
@@ -383,7 +383,7 @@ class TestCrawlerSettingsRepositoryQueries:
         """測試分頁功能"""
         # 添加更多測試數據以使分頁測試更有意義
         for i in range(5):
-            new_setting = CrawlerSettings(
+            new_setting = Crawlers(
                 crawler_name=f"額外爬蟲{i+1}",
                 scrape_target=f"https://example.com/extra{i+1}",
                 crawl_interval=60,
@@ -428,10 +428,10 @@ class TestModelStructure:
         from src.services.model_utiles import get_model_info
         
         # 獲取CrawlerSettings模型信息
-        settings_info = get_model_info(CrawlerSettings)
+        settings_info = get_model_info(Crawlers)
         
         # 1. 測試表名
-        assert settings_info["table"] == "crawler_settings"
+        assert settings_info["table"] == "crawlers"
         
         # 2. 測試主鍵
         assert "id" in settings_info["primary_key"]
@@ -482,10 +482,10 @@ class TestModelStructure:
         from src.services.model_utiles import get_model_info
         
         # 獲取模型信息
-        settings_info = get_model_info(CrawlerSettings)
+        settings_info = get_model_info(Crawlers)
         
         # 打印實際模型結構和約束
-        print("\n===== CrawlerSettings模型結構 =====")
+        print("\n===== Crawlers模型結構 =====")
         print(f"表名: {settings_info['table']}")
         print(f"主鍵: {settings_info['primary_key']}")
         

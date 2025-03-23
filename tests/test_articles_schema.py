@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime
-from src.model.article_schema import ArticleCreateSchema, ArticleUpdateSchema
+from src.model.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from src.model.base_models import ValidationError
 
 class TestArticleCreateSchema:

@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from src.model.base_models import Base, ValidationError
 from src.database.base_rerository import BaseRepository
-from src.model.article_models import Article
+from src.model.articles_models import Article
 from datetime import datetime, timezone
 
 class TestBaseRepository:
@@ -124,7 +124,7 @@ class TestBaseRepository:
     
     def test_validate_entity_with_schema(self, repo):
         """測試使用 schema 進行驗證"""
-        from src.model.article_schema import ArticleCreateSchema
+        from src.model.articles_schema import ArticleCreateSchema
         
         # 有效數據
         valid_data = {

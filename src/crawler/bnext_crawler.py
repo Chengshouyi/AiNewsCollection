@@ -8,7 +8,7 @@ from src.crawler.ai_filter_config import AI_KEYWORDS
 from src.crawler.bnext_scraper import BnextScraper
 from src.crawler.bnext_content_extractor import BnextContentExtractor
 from src.config import get_db_manager
-from src.services.article_service import ArticleService
+from src.services.articles_service import ArticleService
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 

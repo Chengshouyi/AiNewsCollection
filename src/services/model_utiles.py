@@ -1,12 +1,12 @@
-from src.model.article_models import Article, ArticleLinks
-from src.model.crawler_settings_models import CrawlerSettings
+from src.model.articles_models import Article, ArticleLinks
+from src.model.crawlers_models import Crawlers
 from sqlalchemy import inspect, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 
 
 def print_model_constraints():
     """顯示模型約束信息的工具函數"""
-    models = [Article, ArticleLinks, CrawlerSettings]
+    models = [Article, ArticleLinks, Crawlers]
     
     for model in models:
         # 打印表格相關資訊

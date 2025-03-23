@@ -1,6 +1,6 @@
 import pytest
 from datetime import datetime
-from src.services.crawler_settings_service import SystemSettingsService
+from src.services.crawlers_service import SystemSettingsService
 from tests import create_in_memory_db
 
 @pytest.fixture(scope="function")

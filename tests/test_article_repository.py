@@ -2,8 +2,8 @@ import pytest
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from src.database.article_repository import ArticleRepository, ArticleLinksRepository
-from src.model.article_models import Article, ArticleLinks
+from src.database.articles_repository import ArticleRepository, ArticleLinksRepository
+from src.model.articles_models import Article, ArticleLinks
 from src.model.base_models import Base
 import uuid
 from src.services.model_utiles import get_model_info

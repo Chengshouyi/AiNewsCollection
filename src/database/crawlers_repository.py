@@ -1,22 +1,22 @@
-from ..database.base_rerository import BaseRepository
-from ..model.crawler_settings_models import CrawlerSettings
+from .base_rerository import BaseRepository
+from ..model.crawlers_models import Crawlers
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 
-class CrawlerSettingsRepository(BaseRepository['CrawlerSettings']):
-    """CrawlerSettings 特定的Repository"""
+class CrawlersRepository(BaseRepository['Crawlers']):
+    """Crawlers 特定的Repository"""
     
-    def find_active_crawlers(self) -> List['CrawlerSettings']:
+    def find_active_crawlers(self) -> List['Crawlers']:
         """查詢活動中的爬蟲"""
         return self.session.query(self.model_class).filter_by(is_active=True).all()
     
-    def find_by_crawler_name(self, crawler_name: str) -> List['CrawlerSettings']:
+    def find_by_crawler_name(self, crawler_name: str) -> List['Crawlers']:
         """根據爬蟲名稱模糊查詢，回傳匹配的列表"""
         return self.session.query(self.model_class).filter(
             self.model_class.crawler_name.like(f"%{crawler_name}%")
         ).all()
     
-    def find_pending_crawlers(self, current_time: datetime) -> List['CrawlerSettings']:
+    def find_pending_crawlers(self, current_time: datetime) -> List['Crawlers']:
         """查找需要執行的爬蟲（已激活且超過上次爬蟲時間+間隔的爬蟲）"""
         query = self.session.query(self.model_class).filter(
             self.model_class.is_active == True
@@ -63,7 +63,7 @@ class CrawlerSettingsRepository(BaseRepository['CrawlerSettings']):
         self.session.commit()
         return True
     
-    def get_sorted_by_interval(self) -> List['CrawlerSettings']:
+    def get_sorted_by_interval(self) -> List['Crawlers']:
         """按爬取間隔排序的爬蟲設定"""
         return self.session.query(self.model_class).order_by(
             self.model_class.crawl_interval
