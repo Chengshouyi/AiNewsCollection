@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.model.database_manager import DatabaseManager
+from src.database.database_manager import DatabaseManager
 from src.model.base_models import Base
 import tempfile
 import os

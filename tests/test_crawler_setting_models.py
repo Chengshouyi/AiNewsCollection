@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timezone
 from src.model.crawler_settings_models import CrawlerSettings
-
+from src.model.base_models import ValidationError
 
 class TestCrawlerSettingsModel:
     """CrawlerSettings 模型的測試類"""
@@ -45,7 +45,7 @@ class TestCrawlerSettingsModel:
         
         original_time = settings.created_at
         
-        with pytest.raises(AttributeError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             settings.created_at = datetime.now(timezone.utc)
         
         assert "created_at cannot be updated" in str(exc_info.value)
@@ -60,7 +60,7 @@ class TestCrawlerSettingsModel:
             crawl_interval=60
         )
         
-        with pytest.raises(AttributeError) as exc_info:
+        with pytest.raises(ValidationError) as exc_info:
             settings.id = 2
         
         assert "id cannot be updated" in str(exc_info.value)

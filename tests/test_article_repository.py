@@ -2,11 +2,11 @@ import pytest
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from src.model.article_repository import ArticleRepository, ArticleLinksRepository
+from src.database.article_repository import ArticleRepository, ArticleLinksRepository
 from src.model.article_models import Article, ArticleLinks
 from src.model.base_models import Base
 import uuid
-from src.model.model_utiles import get_model_info
+from src.services.model_utiles import get_model_info
 
 # 設置測試資料庫
 @pytest.fixture
@@ -174,7 +174,7 @@ class TestArticleRepository:
         (None, True, "Python編程技巧分享"),  # 預設排序
     ])
     def test_get_all_articles_sorting(self, article_repo, sample_articles, sort_by, sort_desc, expected_first):
-        articles = article_repo.get_all_articles(sort_by=sort_by, sort_desc=sort_desc)
+        articles = article_repo.get_all(sort_by=sort_by, sort_desc=sort_desc)
         assert articles[0].title == expected_first
     
     def test_get_paginated(self, article_repo, sample_articles):
@@ -434,7 +434,7 @@ class TestArticleRepositorySorting:
     ])
     def test_sorting(self, article_repo, sample_articles, sort_by, sort_desc, expected_titles):
         """測試不同排序方式的結果"""
-        articles = article_repo.get_all_articles(sort_by=sort_by, sort_desc=sort_desc)
+        articles = article_repo.get_all(sort_by=sort_by, sort_desc=sort_desc)
         actual_titles = [article.title for article in articles]
         assert actual_titles == expected_titles, f"排序方式：{sort_by}, 降序：{sort_desc}"
 
@@ -561,7 +561,7 @@ class TestModelStructure:
     
     def test_article_model_structure(self, session):
         """測試Article模型結構是否符合預期"""
-        from src.model.model_utiles import get_model_info
+        from src.services.model_utiles import get_model_info
         
         # 獲取Article模型信息
         article_info = get_model_info(Article)
@@ -615,7 +615,7 @@ class TestModelStructure:
     
     def test_article_links_model_structure(self, session):
         """測試ArticleLinks模型結構是否符合預期"""
-        from src.model.model_utiles import get_model_info
+        from src.services.model_utiles import get_model_info
         
         # 獲取ArticleLinks模型信息
         links_info = get_model_info(ArticleLinks)
@@ -724,7 +724,7 @@ class TestModelStructure:
     
     def test_model_constraints_discovery(self):
         """使用print_model_constraints演示模型約束"""
-        from src.model.model_utiles import print_model_constraints
+        from src.services.model_utiles import print_model_constraints
         
         # 這個測試主要是為了演示，不需要實際斷言
         # 實際運行時會輸出模型約束信息到控制台
@@ -735,7 +735,7 @@ class TestModelStructure:
 
     def test_discover_model_structure(self):
         """發現並輸出實際模型結構，用於調整測試斷言"""
-        from src.model.model_utiles import get_model_info
+        from src.services.model_utiles import get_model_info
         
         # 獲取模型信息
         article_info = get_model_info(Article)

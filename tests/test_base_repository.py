@@ -2,7 +2,7 @@ import pytest
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from src.model.base_models import Base, ValidationError
-from src.model.base_rerository import BaseRepository
+from src.database.base_rerository import BaseRepository
 from src.model.article_models import Article
 from datetime import datetime, timezone
 

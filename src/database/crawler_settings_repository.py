@@ -1,5 +1,5 @@
-from .base_rerository import BaseRepository
-from .crawler_settings_models import CrawlerSettings
+from ..database.base_rerository import BaseRepository
+from ..model.crawler_settings_models import CrawlerSettings
 from typing import Optional, List, Dict, Any, Union
 from datetime import datetime
 

@@ -221,7 +221,7 @@ class BnextContentExtractor:
         # 如果提供了資料庫管理器，創建文章服務
         article_service = None
         if db_manager:
-            from src.model.article_service import ArticleService
+            from src.services.article_service import ArticleService
             article_service = ArticleService(db_manager)
         
         for i, (_, article) in enumerate(articles_df.head(num_articles).iterrows(), 1):

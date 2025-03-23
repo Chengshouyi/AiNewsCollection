@@ -1,9 +1,9 @@
 from typing import List, Optional, TypeVar, Generic, Type, Dict, Any, Union, Set, cast, Protocol
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from .base_models import Base
+from ..model.base_models import Base
 from src.error.errors import ValidationError, NotFoundError
-from .base_entity import ValidatableEntity
+from ..model.base_entity import ValidatableEntity
 from sqlalchemy import desc, asc
 import logging
 import re

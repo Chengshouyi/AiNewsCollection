@@ -1,5 +1,5 @@
 from .base_rerository import BaseRepository
-from .article_models import ArticleLinks, Article
+from ..model.article_models import ArticleLinks, Article
 from typing import Optional, List, Dict, Any
 
 

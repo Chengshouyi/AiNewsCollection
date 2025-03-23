@@ -1,4 +1,4 @@
-from src.model.database_manager import DatabaseManager
+from src.database.database_manager import DatabaseManager
 from src.model.base_models import Base
 from typing import Optional
 

@@ -2,8 +2,8 @@ from pydantic import ValidationError
 import pytest
 from datetime import datetime, timedelta
 from src.model.base_models import Base, Article
-from src.model.database_manager import DatabaseManager
-from src.model.article_service import ArticleService
+from src.database.database_manager import DatabaseManager
+from src.services.article_service import ArticleService
 from src.model.repository import Repository
 from src.model.article_schema import ArticleCreateSchema, ArticleUpdateSchema
 from tests import create_in_memory_db, create_database_session

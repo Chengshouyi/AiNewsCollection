@@ -3,10 +3,10 @@ from datetime import datetime, timedelta
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from src.model.crawler_settings_models import CrawlerSettings
-from src.model.crawler_settings_repository import CrawlerSettingsRepository
+from src.database.crawler_settings_repository import CrawlerSettingsRepository
 from src.model.base_models import Base
 import uuid
-from src.model.model_utiles import get_model_info
+from src.services.model_utiles import get_model_info
 
 # 設置測試資料庫
 @pytest.fixture
@@ -425,7 +425,7 @@ class TestModelStructure:
     
     def test_crawler_settings_model_structure(self, session):
         """測試CrawlerSettings模型結構是否符合預期"""
-        from src.model.model_utiles import get_model_info
+        from src.services.model_utiles import get_model_info
         
         # 獲取CrawlerSettings模型信息
         settings_info = get_model_info(CrawlerSettings)
@@ -479,7 +479,7 @@ class TestModelStructure:
     
     def test_model_constraints_discovery(self):
         """發現並輸出CrawlerSettings模型約束"""
-        from src.model.model_utiles import get_model_info
+        from src.services.model_utiles import get_model_info
         
         # 獲取模型信息
         settings_info = get_model_info(CrawlerSettings)

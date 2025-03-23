@@ -3,7 +3,7 @@ import os
 import schedule
 import time
 import logging
-from src.model.article_service import ArticleService
+from src.services.article_service import ArticleService
 from src.model.base_models import Base
 from src.config import get_db_manager
 

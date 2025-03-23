@@ -2,7 +2,7 @@ import logging
 from typing import Optional, Type, Any, Dict, List, TypeVar
 from datetime import datetime
 from src.model.base_models import Base
-from src.model.database_manager import DatabaseManager
+from src.database.database_manager import DatabaseManager
 from src.model.crawler_settings_schema import CrawlerSettingsCreateSchema, CrawlerSettingsUpdateSchema
 from src.error.errors import ValidationError
 from src.model.crawler_settings_models import CrawlerSettings

@@ -1,6 +1,7 @@
 import pytest
 from datetime import datetime, timezone
 from src.model.article_models import Article, ArticleLinks
+from src.model.base_models import ValidationError
 
 class TestArticleModel:
     """Article 模型的測試類"""
@@ -56,15 +57,15 @@ class TestArticleModel:
         )
         
         # 測試不可修改 id
-        with pytest.raises(AttributeError, match="id cannot be updated"):
+        with pytest.raises(ValidationError, match="id cannot be updated"):
             article.id = 100
             
         # 測試不可修改 link
-        with pytest.raises(AttributeError, match="link cannot be updated"):
+        with pytest.raises(ValidationError, match="link cannot be updated"):
             article.link = "https://test.com/new-link"
             
         # 測試不可修改 created_at
-        with pytest.raises(AttributeError, match="created_at cannot be updated"):
+        with pytest.raises(ValidationError, match="created_at cannot be updated"):
             article.created_at = datetime.now(timezone.utc)
 
     def test_article_update_mutable_fields(self):
@@ -121,15 +122,15 @@ class TestArticleLinksModel:
         )
         
         # 測試不可修改 id
-        with pytest.raises(AttributeError, match="id cannot be updated"):
+        with pytest.raises(ValidationError, match="id cannot be updated"):
             article_link.id = 100
             
         # 測試不可修改 article_link
-        with pytest.raises(AttributeError, match="article_link cannot be updated"):
+        with pytest.raises(ValidationError, match="article_link cannot be updated"):
             article_link.article_link = "https://test.com/new-article"
             
         # 測試不可修改 created_at
-        with pytest.raises(AttributeError, match="created_at cannot be updated"):
+        with pytest.raises(ValidationError, match="created_at cannot be updated"):
             article_link.created_at = datetime.now()
 
     def test_article_links_update_mutable_fields(self):
@@ -189,7 +190,7 @@ class TestArticleLinksModel:
 
     def test_article_relationship_with_db(self):
         """測試 ArticleLinks 和 Article 之間的關係 (使用內存資料庫)"""
-        from src.model.database_manager import DatabaseManager
+        from src.database.database_manager import DatabaseManager
         from src.model.base_models import Base
         
         # 創建內存資料庫管理器

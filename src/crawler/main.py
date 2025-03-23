@@ -20,7 +20,7 @@ def main(pages=3, category=None, all=False, content=False, content_limit=10, min
     ai_only = not all
     
     # 初始化資料庫管理器
-    from src.model.database_manager import DatabaseManager
+    from src.database.database_manager import DatabaseManager
     db_manager = DatabaseManager()
     
     # 如果指定了輸入文件，則從文件讀取
