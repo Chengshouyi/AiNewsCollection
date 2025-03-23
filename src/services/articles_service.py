@@ -1,11 +1,11 @@
 import logging
-from typing import Optional, Dict, Any, List, TypeVar, Type
-from ..model.articles_models import Article, Base
+from typing import Optional, Dict, Any, List, TypeVar
+from src.models.articles_model import Base, Articles
 from datetime import datetime
-from ..model.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
-from src.error.errors import ValidationError, DatabaseOperationError
-from ..database.database_manager import DatabaseManager
-from ..database.articles_repository import ArticleRepository
+from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
+from src.error.errors import DatabaseOperationError, ValidationError
+from src.database.database_manager import DatabaseManager
+from src.database.articles_repository import ArticleRepository
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -25,14 +25,14 @@ class ArticleService:
         """取得儲存庫的上下文管理器"""
         session = self.db_manager.Session()
         try:
-            return ArticleRepository(session, Article), session
+            return ArticleRepository(session, Articles), session
         except Exception as e:
             error_msg = f"取得儲存庫失敗: {e}"
             logger.error(error_msg)
             session.close()
             raise DatabaseOperationError(error_msg) from e
     
-    def insert_article(self, article_data: Dict[str, Any]) -> Optional[Article]:
+    def insert_article(self, article_data: Dict[str, Any]) -> Optional[Articles]:
         """
         創建新文章
         
@@ -47,7 +47,7 @@ class ArticleService:
             if 'link' in article_data and article_data['link']:
                existing = self.get_article_by_link(article_data['link'])
                if existing:
-                   raise CustomValidationError(f"已存在具有相同連結的文章: {article_data['link']}")
+                    raise ValidationError(f"已存在具有相同連結的文章: {article_data['link']}")
             # 添加必要的欄位
             now = datetime.now()
             article_data.update({
@@ -66,7 +66,7 @@ class ArticleService:
             if repo.find_by_link(validated_data['link']):
                 error_msg = f"文章已存在: {validated_data['link']}"
                 logger.error(error_msg)
-                raise CustomValidationError(error_msg)
+                raise ValidationError(error_msg)
             try:
                 result = repo.create(**validated_data)
             except Exception as e:
@@ -80,7 +80,7 @@ class ArticleService:
             logger.error(error_msg)
             raise e
 
-    def batch_insert_articles(self, articles_data: List[Dict[str, Any]]) -> Optional[List[Article]]:
+    def batch_insert_articles(self, articles_data: List[Dict[str, Any]]) -> Optional[List[Articles]]:
         """
         批量創建新文章
         
@@ -108,7 +108,7 @@ class ArticleService:
                     # 創建所有文章實體
                 article_entities = []
                 for article_data in validated_articles:
-                    article = Article(**article_data)
+                    article = Articles(**article_data)
                     article_entities.append(article)
                 
                 # 批量添加
@@ -123,7 +123,7 @@ class ArticleService:
                 raise e
         return None
 
-    def get_all_articles(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List[Article]:
+    def get_all_articles(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List[Articles]:
         """
         獲取所有文章，支持分頁和排序
         
@@ -139,7 +139,7 @@ class ArticleService:
         try:
             repo, session = self._get_repository()
             # 獲取所有文章
-            articles = repo.get_all_articles(
+            articles = repo.get_all(
                 limit=limit,
                 offset=offset,
                 sort_by=sort_by,
@@ -153,7 +153,7 @@ class ArticleService:
             logger.error(error_msg)
             raise e
     
-    def search_articles(self, search_terms: Dict[str, Any], limit: Optional[int] = None, offset: Optional[int] = None) -> List[Article]:
+    def search_articles(self, search_terms: Dict[str, Any], limit: Optional[int] = None, offset: Optional[int] = None) -> List[Articles]:
         """
         搜尋文章
         
@@ -168,20 +168,20 @@ class ArticleService:
         try:
             repo, session = self._get_repository()
             # 建立查詢
-            query = session.query(Article)
+            query = session.query(Articles)
             
             # 應用搜尋條件
             if "title" in search_terms and search_terms["title"]:
-                query = query.filter(Article.title.like(f"%{search_terms['title']}%"))
+                query = query.filter(Articles.title.like(f"%{search_terms['title']}%"))
                 
             if "content" in search_terms and search_terms["content"]:
-                query = query.filter(Article.content.like(f"%{search_terms['content']}%"))
+                query = query.filter(Articles.content.like(f"%{search_terms['content']}%"))
                 
             if "published_at_start" in search_terms and search_terms["published_at_start"]:
-                query = query.filter(Article.published_at >= search_terms["published_at_start"])
+                query = query.filter(Articles.published_at >= search_terms["published_at_start"])
                 
             if "published_at_end" in search_terms and search_terms["published_at_end"]:
-                query = query.filter(Article.published_at <= search_terms["published_at_end"])
+                query = query.filter(Articles.published_at <= search_terms["published_at_end"])
             
             # 分頁
             if offset is not None:
@@ -197,7 +197,7 @@ class ArticleService:
             logger.error(error_msg)
             raise e
     
-    def get_article_by_id(self, article_id: int) -> Optional[Article]:
+    def get_article_by_id(self, article_id: int) -> Optional[Articles]:
         """
         根據ID獲取文章
         
@@ -257,7 +257,7 @@ class ArticleService:
 
 
 
-    def update_article(self, article_id: int, article_data: Dict[str, Any]) -> Optional[Article]:
+    def update_article(self, article_id: int, article_data: Dict[str, Any]) -> Optional[Articles]:
         """
         更新文章
         
@@ -300,7 +300,7 @@ class ArticleService:
             except Exception as e:
                 error_msg = f"文章更新資料驗證失敗: {str(e)}"
                 logger.error(error_msg)
-                raise CustomValidationError(error_msg, e)
+                raise ValidationError(error_msg, e)
             
             result = repo.update(article, **validated_data)
             if not result:
@@ -344,7 +344,7 @@ class ArticleService:
                 
             repo, session = self._get_repository()
             # 批量查詢所有文章
-            articles_to_update = session.query(Article).filter(Article.id.in_(article_ids)).all()
+            articles_to_update = session.query(Articles).filter(Articles.id.in_(article_ids)).all()
             
             # 追蹤找到的文章ID
             found_article_ids = [article.id for article in articles_to_update]
@@ -405,7 +405,7 @@ class ArticleService:
         try:
             repo, session = self._get_repository()
             # 直接執行刪除操作並返回受影響的行數
-            result = session.query(Article).filter(Article.id == article_id).delete()
+            result = session.query(Articles).filter(Articles.id == article_id).delete()
             
             if result == 0:
                 error_msg = f"欲刪除的文章不存在，ID={article_id}"
@@ -444,7 +444,7 @@ class ArticleService:
         try:
             repo, session = self._get_repository()
             # 先查詢所有需要刪除的文章
-            articles_to_delete = session.query(Article).filter(Article.id.in_(article_ids)).all()
+            articles_to_delete = session.query(Articles).filter(Articles.id.in_(article_ids)).all()
             
             # 追蹤找到的文章ID
             found_ids = [article.id for article in articles_to_delete]

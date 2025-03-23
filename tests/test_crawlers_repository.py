@@ -1,12 +1,11 @@
 import pytest
 from datetime import datetime, timedelta
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
-from src.model.crawlers_models import Crawlers
+from sqlalchemy.orm import Session
+from src.models.crawlers_model import Crawlers
 from src.database.crawlers_repository import CrawlersRepository
-from src.model.base_models import Base
+from src.models.base_model import Base
 import uuid
-from src.services.model_utiles import get_model_info
 
 # 設置測試資料庫
 @pytest.fixture
@@ -35,11 +34,11 @@ def session(engine, tables):
         connection.close()
 
 @pytest.fixture
-def crawler_settings_repo(session):
+def crawlers_repo(session):
     return CrawlersRepository(session, Crawlers)
 
 @pytest.fixture
-def sample_crawler_settings(session):
+def sample_crawlers(session):
     settings = [
         Crawlers(
             crawler_name="新聞爬蟲1",
@@ -68,53 +67,53 @@ def sample_crawler_settings(session):
     return settings
 
 # CrawlerSettingsRepository 測試
-class TestCrawlerSettingsRepository:
+class TestCrawlersRepository:
     """
     測試Crawlers相關資料庫操作
     """
-    def test_get_all(self, crawler_settings_repo, sample_crawler_settings):
+    def test_get_all(self, crawlers_repo, sample_crawlers):
         """測試獲取所有爬蟲設定"""
-        settings = crawler_settings_repo.get_all()
+        settings = crawlers_repo.get_all()
         assert len(settings) == 3
         assert isinstance(settings[0], Crawlers)
         
-    def test_get_by_id(self, crawler_settings_repo, sample_crawler_settings):
+    def test_get_by_id(self, crawlers_repo, sample_crawlers):
         """測試通過ID獲取爬蟲設定"""
         # 測試存在的ID
-        setting = crawler_settings_repo.get_by_id(1)
+        setting = crawlers_repo.get_by_id(1)
         assert setting is not None
         assert setting.id == 1
         
         # 測試不存在的ID
-        setting = crawler_settings_repo.get_by_id(999)
+        setting = crawlers_repo.get_by_id(999)
         assert setting is None
     
-    def test_find_by_name(self, crawler_settings_repo, sample_crawler_settings):
+    def test_find_by_name(self, crawlers_repo, sample_crawlers):
         """測試通過爬蟲名稱查找設定"""
         # 測試存在的名稱
-        settings = crawler_settings_repo.find_by_crawler_name("新聞爬蟲1")
+        settings = crawlers_repo.find_by_crawler_name("新聞爬蟲1")
         assert len(settings) == 1
         assert settings[0].crawler_name == "新聞爬蟲1"
         
         # 測試部分匹配的名稱
-        settings = crawler_settings_repo.find_by_crawler_name("爬蟲")
+        settings = crawlers_repo.find_by_crawler_name("爬蟲")
         assert len(settings) == 3
         
         # 測試不存在的名稱
-        settings = crawler_settings_repo.find_by_crawler_name("不存在的爬蟲")
+        settings = crawlers_repo.find_by_crawler_name("不存在的爬蟲")
         assert len(settings) == 0
     
-    def test_find_active_crawlers(self, crawler_settings_repo, sample_crawler_settings):
+    def test_find_active_crawlers(self, crawlers_repo, sample_crawlers):
         """測試查找活躍的爬蟲"""
-        settings = crawler_settings_repo.find_active_crawlers()
+        settings = crawlers_repo.find_active_crawlers()
         assert len(settings) == 2
         assert all(setting.is_active for setting in settings)
     
-    def test_find_pending_crawlers(self, crawler_settings_repo, sample_crawler_settings):
+    def test_find_pending_crawlers(self, crawlers_repo, sample_crawlers):
         """測試查找需要執行的爬蟲"""
         # 找出所有超過爬蟲間隔時間的爬蟲設定
         now = datetime.now()
-        settings = crawler_settings_repo.find_pending_crawlers(now)
+        settings = crawlers_repo.find_pending_crawlers(now)
         assert len(settings) > 0
         
         # 檢查所有返回的爬蟲都是活躍的
@@ -130,27 +129,27 @@ class TestCrawlerSettingsRepository:
             interval = now - setting.last_crawl_time
             assert interval.total_seconds() >= setting.crawl_interval * 60
 
-    def test_update_last_crawl_time(self, crawler_settings_repo, sample_crawler_settings):
+    def test_update_last_crawl_time(self, crawlers_repo, sample_crawlers):
         """測試更新最後爬蟲時間"""
         # 獲取第一個爬蟲設定
-        setting_id = sample_crawler_settings[0].id
-        old_time = sample_crawler_settings[0].last_crawl_time
+        setting_id = sample_crawlers[0].id
+        old_time = sample_crawlers[0].last_crawl_time
         
         # 更新最後爬蟲時間
         new_time = datetime.now()
-        result = crawler_settings_repo.update_last_crawl_time(setting_id, new_time)
+        result = crawlers_repo.update_last_crawl_time(setting_id, new_time)
         assert result is True
         
         # 驗證更新成功
-        updated_setting = crawler_settings_repo.get_by_id(setting_id)
+        updated_setting = crawlers_repo.get_by_id(setting_id)
         assert updated_setting.last_crawl_time != old_time
         assert updated_setting.last_crawl_time == new_time
         
         # 測試更新不存在的ID
-        result = crawler_settings_repo.update_last_crawl_time(999, new_time)
+        result = crawlers_repo.update_last_crawl_time(999, new_time)
         assert result is False
 
-    def test_create(self, crawler_settings_repo):
+    def test_create(self, crawlers_repo):
         """測試創建新的爬蟲設定"""
         new_crawler_data = {
             "crawler_name": "測試爬蟲",
@@ -160,22 +159,22 @@ class TestCrawlerSettingsRepository:
         }
         
         # 創建新爬蟲設定
-        new_crawler = crawler_settings_repo.create(new_crawler_data)
+        new_crawler = crawlers_repo.create(new_crawler_data)
         assert new_crawler is not None
         assert new_crawler.id is not None
         assert new_crawler.crawler_name == "測試爬蟲"
         assert new_crawler.created_at is not None
         
         # 從資料庫中檢索並驗證
-        retrieved = crawler_settings_repo.get_by_id(new_crawler.id)
+        retrieved = crawlers_repo.get_by_id(new_crawler.id)
         assert retrieved is not None
         assert retrieved.crawler_name == "測試爬蟲"
         assert retrieved.scrape_target == "https://example.com/test"
     
-    def test_update(self, crawler_settings_repo, sample_crawler_settings):
+    def test_update(self, crawlers_repo, sample_crawlers):
         """測試更新爬蟲設定"""
         # 獲取第一個爬蟲設定的ID
-        setting_id = sample_crawler_settings[0].id
+        setting_id = sample_crawlers[0].id
         
         # 準備更新數據
         update_data = {
@@ -185,7 +184,7 @@ class TestCrawlerSettingsRepository:
         }
         
         # 執行更新
-        updated = crawler_settings_repo.update(setting_id, update_data)
+        updated = crawlers_repo.update(setting_id, update_data)
         assert updated is not None
         assert updated.crawler_name == "已更新爬蟲名稱"
         assert updated.crawl_interval == 90
@@ -193,54 +192,54 @@ class TestCrawlerSettingsRepository:
         assert updated.updated_at is not None
         
         # 確認只更新了指定欄位
-        assert updated.scrape_target == sample_crawler_settings[0].scrape_target
+        assert updated.scrape_target == sample_crawlers[0].scrape_target
         
         # 測試更新不存在的ID
-        result = crawler_settings_repo.update(999, update_data)
+        result = crawlers_repo.update(999, update_data)
         assert result is None
     
-    def test_delete(self, crawler_settings_repo, sample_crawler_settings):
+    def test_delete(self, crawlers_repo, sample_crawlers):
         """測試刪除爬蟲設定"""
         # 獲取第三個爬蟲設定的ID
-        setting_id = sample_crawler_settings[2].id
+        setting_id = sample_crawlers[2].id
         
         # 執行刪除
-        result = crawler_settings_repo.delete(setting_id)
+        result = crawlers_repo.delete(setting_id)
         assert result is True
         
         # 確認已從資料庫中刪除
-        deleted = crawler_settings_repo.get_by_id(setting_id)
+        deleted = crawlers_repo.get_by_id(setting_id)
         assert deleted is None
         
         # 測試刪除不存在的ID
-        result = crawler_settings_repo.delete(999)
+        result = crawlers_repo.delete(999)
         assert result is False
 
-    def test_toggle_active_status(self, crawler_settings_repo, sample_crawler_settings):
+    def test_toggle_active_status(self, crawlers_repo, sample_crawlers):
         """測試切換爬蟲活躍狀態"""
         # 獲取第一個爬蟲設定
-        setting_id = sample_crawler_settings[0].id
-        original_status = sample_crawler_settings[0].is_active
+        setting_id = sample_crawlers[0].id
+        original_status = sample_crawlers[0].is_active
         
         # 執行切換
-        result = crawler_settings_repo.toggle_active_status(setting_id)
+        result = crawlers_repo.toggle_active_status(setting_id)
         assert result is True
         
         # 確認狀態已切換
-        updated = crawler_settings_repo.get_by_id(setting_id)
+        updated = crawlers_repo.get_by_id(setting_id)
         assert updated.is_active != original_status
         
         # 再次切換
-        crawler_settings_repo.toggle_active_status(setting_id)
-        updated_again = crawler_settings_repo.get_by_id(setting_id)
+        crawlers_repo.toggle_active_status(setting_id)
+        updated_again = crawlers_repo.get_by_id(setting_id)
         assert updated_again.is_active == original_status
         
         # 測試切換不存在的ID
-        result = crawler_settings_repo.toggle_active_status(999)
+        result = crawlers_repo.toggle_active_status(999)
         assert result is False
 
-class TestCrawlerSettingsConstraints:
-    """測試CrawlerSettings的模型約束"""
+class TestCrawlersConstraints:
+    """測試Crawlers的模型約束"""
     
     @pytest.fixture
     def test_session(self, engine, tables):
@@ -375,11 +374,11 @@ class TestCrawlerSettingsConstraints:
             assert "Value 2 is not None, True, or False" in str(e) or "CONSTRAINT" in str(e) or "CHECK" in str(e)
             session.rollback()
 
-class TestCrawlerSettingsRepositoryQueries:
+class TestCrawlersRepositoryQueries:
     """測試CrawlerSettingsRepository的查詢功能"""
     
     
-    def test_pagination(self, crawler_settings_repo, sample_crawler_settings):
+    def test_pagination(self, crawlers_repo, sample_crawlers):
         """測試分頁功能"""
         # 添加更多測試數據以使分頁測試更有意義
         for i in range(5):
@@ -389,11 +388,11 @@ class TestCrawlerSettingsRepositoryQueries:
                 crawl_interval=60,
                 is_active=True
             )
-            crawler_settings_repo.session.add(new_setting)
-        crawler_settings_repo.session.commit()
+            crawlers_repo.session.add(new_setting)
+        crawlers_repo.session.commit()
         
         # 測試第一頁
-        page1 = crawler_settings_repo.get_paginated(page=1, per_page=3)
+        page1 = crawlers_repo.get_paginated(page=1, per_page=3)
         assert page1["page"] == 1
         assert page1["per_page"] == 3
         assert len(page1["items"]) == 3
@@ -403,31 +402,31 @@ class TestCrawlerSettingsRepositoryQueries:
         assert page1["has_prev"] is False
         
         # 測試第二頁
-        page2 = crawler_settings_repo.get_paginated(page=2, per_page=3)
+        page2 = crawlers_repo.get_paginated(page=2, per_page=3)
         assert page2["page"] == 2
         assert len(page2["items"]) == 3
         assert page2["has_next"] is True
         assert page2["has_prev"] is True
         
         # 測試第三頁（最後一頁）
-        page3 = crawler_settings_repo.get_paginated(page=3, per_page=3)
+        page3 = crawlers_repo.get_paginated(page=3, per_page=3)
         assert page3["page"] == 3
         assert len(page3["items"]) == 2
         assert page3["has_next"] is False
         assert page3["has_prev"] is True
         
         # 測試超出範圍的頁碼
-        page_out = crawler_settings_repo.get_paginated(page=10, per_page=3)
+        page_out = crawlers_repo.get_paginated(page=10, per_page=3)
         assert page_out["page"] == 3  # 自動調整為最後一頁
 
 class TestModelStructure:
     """使用model_utiles測試模型結構"""
     
-    def test_crawler_settings_model_structure(self, session):
-        """測試CrawlerSettings模型結構是否符合預期"""
+    def test_crawlers_model_structure(self, session):
+        """測試Crawlers模型結構是否符合預期"""
         from src.services.model_utiles import get_model_info
         
-        # 獲取CrawlerSettings模型信息
+        # 獲取Crawlers模型信息
         settings_info = get_model_info(Crawlers)
         
         # 1. 測試表名
@@ -478,7 +477,7 @@ class TestModelStructure:
         assert has_is_active_type_check
     
     def test_model_constraints_discovery(self):
-        """發現並輸出CrawlerSettings模型約束"""
+        """發現並輸出Crawlers模型約束"""
         from src.services.model_utiles import get_model_info
         
         # 獲取模型信息

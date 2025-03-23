@@ -266,7 +266,7 @@ class TestSystemSettingsUtilities:
         assert populated_system_settings._sys_settings_to_dict(None) is None
         
         with populated_system_settings.db_manager.session_scope() as session:
-            from src.model.base_models import SystemSettings
+            from src.model.base_model import SystemSettings
             setting_entity = session.query(SystemSettings).filter_by(id=setting['id']).first()
             result = populated_system_settings._sys_settings_to_dict(setting_entity)
             assert result is not None

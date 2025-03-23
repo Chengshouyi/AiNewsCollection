@@ -4,7 +4,7 @@ import schedule
 import time
 import logging
 from src.services.articles_service import ArticleService
-from src.model.base_models import Base
+from src.model.base_model import Base
 from src.config import get_db_manager
 
 # 配置日誌

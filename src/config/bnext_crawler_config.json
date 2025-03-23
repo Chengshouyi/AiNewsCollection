@@ -1,0 +1,385 @@
+{
+    "name": "bnext",
+    "base_url": "https://www.bnext.com.tw",
+    "list_url_template": "{base_url}/categories/{category}",
+    "valid_domains": [
+        "https://www.bnext.com.tw"
+    ],
+    "url_patterns": [
+        "/categories/",
+        "/articles/"
+    ],
+    "url_file_extensions": [
+        ".html",
+        ""
+    ],
+    "date_format": "%Y-%m-%d",
+    "selectors": {
+        "focus_articles": [
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "grid grid-cols-6 gap-4 relative h-full"
+                },
+                "parent": {
+                    "class": "pc hidden lg:block"
+                }
+            },
+            {
+                "tag": "h2",
+                "attrs": {},
+                "parent": {
+                    "class": "col-span-3 flex flex-col flex-grow gap-y-3 m-4"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "flex-grow pt-4 text-lg text-gray-500"
+                },
+                "parent": {
+                    "class": "col-span-3 flex flex-col flex-grow gap-y-3 m-4"
+                }
+            },
+            {
+                "tag": "a",
+                "attrs": {},
+                "parent": {
+                    "class": "flex relative items-center gap-2 text-gray-500 text-sm"
+                }
+            },
+            {
+                "tag": "span",
+                "attrs": {},
+                "parent": {
+                    "class": "flex relative items-center gap-2 text-gray-500 text-sm"
+                },
+                "nth_child": 3
+            }
+        ],
+        "regular_articles": [
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "grid grid-cols-4 gap-8 xl:gap-6"
+                },
+                "parent": {
+                    "class": "pc hidden lg:block"
+                }
+            },
+            {
+                "tag": "h2",
+                "attrs": {},
+                "parent": {
+                    "class": "flex flex-col"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "text-sm text-justify font-normal text-gray-500 three-line-text tracking-wide"
+                }
+            },
+            {
+                "tag": "a",
+                "attrs": {},
+                "parent": {
+                    "class": "flex relative items-center gap-2 text-xs text-gray-500 font-normal"
+                }
+            },
+            {
+                "tag": "span",
+                "attrs": {},
+                "parent": {
+                    "class": "flex relative items-center gap-2 text-xs text-gray-500 font-normal"
+                },
+                "nth_child": 3
+            }
+        ],
+        "article_detail": [
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "pc h-full hidden lg:flex flex-col gap-2 tracking-wide leading-normal"
+                },
+                "parent": {
+                    "id": "hero"
+                },
+                "purpose": "header"
+            },
+            {
+                "tag": "span",
+                "attrs": {},
+                "parent": {
+                    "class": "flex gap-1 items-center text-sm text-gray-800"
+                },
+                "nth_child": 1,
+                "purpose": "publish_date"
+            },
+            {
+                "tag": "a",
+                "attrs": {},
+                "parent": {
+                    "class": "flex gap-1 items-center text-sm text-gray-800"
+                },
+                "purpose": "category"
+            },
+            {
+                "tag": "h1",
+                "attrs": {},
+                "purpose": "title"
+            },
+            {
+                "tag": "div",
+                "attrs": {},
+                "nth_child": 3,
+                "purpose": "summary"
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "flex gap-1 flex-wrap"
+                },
+                "purpose": "tags_container"
+            },
+            {
+                "tag": "a",
+                "attrs": {},
+                "purpose": "tag"
+            },
+            {
+                "tag": "a",
+                "attrs": {},
+                "parent": {
+                    "class": "flex gap-2 items-center text-sm text-gray-800"
+                },
+                "purpose": "author"
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "htmlview article-content"
+                },
+                "purpose": "content"
+            },
+            {
+                "tag": "p",
+                "attrs": {},
+                "purpose": "content_paragraph"
+            },
+            {
+                "tag": "h2",
+                "attrs": {},
+                "purpose": "content_heading"
+            },
+            {
+                "tag": "a",
+                "attrs": {},
+                "parent": {
+                    "tag": "blockquote"
+                },
+                "purpose": "related_links"
+            }
+        ],
+        "common_elements": [
+            {
+                "tag": "time",
+                "attrs": {}
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "author"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "read-count"
+                }
+            },
+            {
+                "tag": "a",
+                "attrs": {
+                    "href": "/article/"
+                }
+            }
+        ],
+        "backup_articles": [
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "article-card"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "article-item"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "article-list-item"
+                }
+            },
+            {
+                "tag": "a",
+                "attrs": {
+                    "href": "/article/"
+                }
+            }
+        ],
+        "list": [
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "article-list"
+                }
+            },
+            {
+                "tag": "a",
+                "attrs": {
+                    "class": "article-link"
+                }
+            }
+        ],
+        "content": [
+            {
+                "tag": "article",
+                "attrs": {
+                    "class": "post-content"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "article-content"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "article-body"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "id": "article-content"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "post-content"
+                }
+            }
+        ],
+        "date": [
+            {
+                "tag": "time",
+                "attrs": {
+                    "class": "published-date"
+                }
+            },
+            {
+                "tag": "span",
+                "attrs": {
+                    "class": "date"
+                }
+            },
+            {
+                "tag": "time",
+                "attrs": {}
+            }
+        ],
+        "title": [
+            {
+                "tag": "h1",
+                "attrs": {
+                    "class": "article-title"
+                }
+            },
+            {
+                "tag": "h1",
+                "attrs": {
+                    "class": "post-title"
+                }
+            }
+        ],
+        "author": [
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "article-author"
+                }
+            }
+        ],
+        "tags": [
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "tags"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "article-tags"
+                }
+            },
+            {
+                "tag": "a",
+                "attrs": {
+                    "class": "tag"
+                }
+            }
+        ],
+        "related_articles": [
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "related-article"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "related-post"
+                }
+            },
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": "more-article"
+                }
+            }
+        ],
+        "pagination": [
+            {
+                "tag": "a",
+                "attrs": {
+                    "class": "next-page"
+                }
+            }
+        ]
+    },
+    "default_categories": [
+        "ai",
+        "tech",
+        "iot",
+        "smartmedical",
+        "smartcity",
+        "cloudcomputing",
+        "security",
+        "articles",
+        "5g",
+        "car",
+        "blockchain",
+        "energy",
+        "semiconductor",
+        "manufacture"
+    ]
+}

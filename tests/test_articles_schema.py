@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime
 from src.model.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
-from src.model.base_models import ValidationError
+from src.model.base_model import ValidationError
 
 class TestArticleCreateSchema:
     """ArticleCreateSchema 的測試類"""

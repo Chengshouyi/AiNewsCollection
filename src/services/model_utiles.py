@@ -1,5 +1,5 @@
-from src.model.articles_models import Article, ArticleLinks
-from src.model.crawlers_models import Crawlers
+from src.model.articles_model import Article, ArticleLinks
+from src.model.crawlers_model import Crawlers
 from sqlalchemy import inspect, create_engine
 from sqlalchemy.ext.declarative import declarative_base
 

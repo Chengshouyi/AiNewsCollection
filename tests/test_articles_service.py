@@ -1,7 +1,7 @@
 from pydantic import ValidationError
 import pytest
 from datetime import datetime, timedelta
-from src.model.base_models import Base, Article
+from src.model.base_model import Base, Article
 from src.database.database_manager import DatabaseManager
 from src.services.articles_service import ArticleService
 from src.model.repository import Repository

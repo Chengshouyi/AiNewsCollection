@@ -1,7 +1,7 @@
 from sqlalchemy import Integer, String, DateTime, Boolean
 from sqlalchemy import CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column
-from src.model.base_models import Base
+from src.models.base_model import Base
 from src.error.errors import ValidationError
 from typing import Optional, List
 from datetime import datetime, timezone

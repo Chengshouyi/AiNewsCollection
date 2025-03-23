@@ -1,9 +1,9 @@
 import pytest
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
-from src.model.base_models import Base, ValidationError
+from src.model.base_model import Base, ValidationError
 from src.database.base_rerository import BaseRepository
-from src.model.articles_models import Article
+from src.model.articles_model import Article
 from datetime import datetime, timezone
 
 class TestBaseRepository:

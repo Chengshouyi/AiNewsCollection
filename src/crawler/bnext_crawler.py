@@ -7,7 +7,7 @@ from src.crawler.bnext_config import BNEXT_CONFIG
 from src.crawler.ai_filter_config import AI_KEYWORDS
 from src.crawler.bnext_scraper import BnextScraper
 from src.crawler.bnext_content_extractor import BnextContentExtractor
-from src.config import get_db_manager
+from src.database.database_manager import DatabaseManager
 from src.services.articles_service import ArticleService
 
 # 設定 logger
@@ -40,7 +40,7 @@ class BnextCrawler(BaseCrawler):
         """
         保存網頁內容
         """
-        db_manager = get_db_manager()
+        db_manager = DatabaseManager()
         article_service = ArticleService(db_manager)
         for _, row in data.iterrows():
             article_service.insert_article(row.to_dict())

@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime
 from src.model.article_links_schema import ArticleLinksCreateSchema, ArticleLinksUpdateSchema
-from src.model.base_models import ValidationError
+from src.model.base_model import ValidationError
 
 class TestArticleLinksCreateSchema:
     def test_valid_article_links_create(self):

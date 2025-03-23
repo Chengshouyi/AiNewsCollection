@@ -1,6 +1,17 @@
 from src.database.database_manager import DatabaseManager
-from src.model.base_models import Base
+from src.models.base_model import Base
 from typing import Optional
+import os
+
+# 專案根目錄
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# 配置檔案路徑
+CONFIG_DIR = os.path.join(BASE_DIR, 'src', 'config')
+BNEXT_CONFIG_PATH = os.path.join(CONFIG_DIR, 'bnext_crawler_config.json')
+
+# 確保配置目錄存在
+os.makedirs(CONFIG_DIR, exist_ok=True)
 
 def create_database_manager(db_path: Optional[str] = None) -> DatabaseManager:
     """

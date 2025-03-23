@@ -4,13 +4,14 @@ from src.database.database_manager import (
     DatabaseManager, DatabaseConnectionError, 
     DatabaseConfigError, DatabaseOperationError
 )
-from src.model.base_models import Base
+from src.models.base_model import Base
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime
 from tests import create_in_memory_db, create_temp_file_db, create_database_session
-from src.model.articles_models import Article, ArticleLinks
-from src.model.crawlers_models import Crawlers
+from src.models.articles_model import Articles
+from src.models.article_links_model import ArticleLinks
+from src.models.crawlers_model import Crawlers
 
 class TestDatabaseManager:
     """資料庫管理器測試類"""
@@ -54,7 +55,7 @@ class TestDatabaseManager:
             tables = session.execute(text("SELECT name FROM sqlite_master WHERE type='table';")).fetchall()
             table_names = [table[0] for table in tables]
             # 使用更靈活的方式驗證表格是否創建
-            expected_models = [Article, ArticleLinks, Crawlers]
+            expected_models = [Articles, ArticleLinks, Crawlers]
             for model in expected_models:
                 assert model.__tablename__ in table_names
 
@@ -66,7 +67,7 @@ class TestDatabaseManager:
         # 測試事務提交
         with create_in_memory_db.session_scope() as session:
             # 使用模型類而非硬編碼SQL
-            article = Article(
+            article = Articles(
                 title="測試文章",
                 link="https://example.com/test",
                 published_at=datetime.now(),
@@ -77,7 +78,7 @@ class TestDatabaseManager:
         
         # 驗證數據是否已提交
         with create_in_memory_db.session_scope() as session:
-            result = session.query(Article).filter(Article.link == "https://example.com/test").first()
+            result = session.query(Articles).filter(Articles.link == "https://example.com/test").first()
             assert result is not None
             assert result.title == "測試文章"
 
@@ -88,7 +89,7 @@ class TestDatabaseManager:
         
         # 先插入一些數據
         with create_in_memory_db.session_scope() as session:
-            article = Article(
+            article = Articles(
                 title="初始文章",
                 link="https://example.com/initial",
                 published_at=datetime.now(),
@@ -101,7 +102,7 @@ class TestDatabaseManager:
         with pytest.raises(DatabaseOperationError):
             with create_in_memory_db.session_scope() as session:
                 # 正常插入
-                article = Article(
+                article = Articles(
                     title="測試文章",
                     link="https://example.com/test",
                     published_at=datetime.now(),
@@ -114,11 +115,11 @@ class TestDatabaseManager:
         
         # 驗證回滾是否成功（新插入的數據不應該存在）
         with create_in_memory_db.session_scope() as session:
-            result = session.query(Article).filter(Article.link == "https://example.com/test").first()
+            result = session.query(Articles).filter(Articles.link == "https://example.com/test").first()
             assert result is None
             
             # 原有數據應該仍然存在
-            result = session.query(Article).filter(Article.link == "https://example.com/initial").first()
+            result = session.query(Articles).filter(Articles.link == "https://example.com/initial").first()
             assert result is not None
             assert result.title == "初始文章"
 

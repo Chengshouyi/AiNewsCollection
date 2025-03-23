@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from datetime import datetime
-from .base_models import ValidationError
+from src.error.errors import ValidationError
 
 class CrawlersCreateSchema(BaseModel):
     crawler_name: str = Field(..., min_length=1, max_length=255, description="爬蟲名稱")

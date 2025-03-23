@@ -1,6 +1,6 @@
 from .base_rerository import BaseRepository
-from ..model.crawlers_models import Crawlers
-from typing import Optional, List, Dict, Any, Union
+from src.models.crawlers_model import Crawlers
+from typing import List
 from datetime import datetime
 
 class CrawlersRepository(BaseRepository['Crawlers']):
