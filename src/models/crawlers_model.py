@@ -1,6 +1,6 @@
 from sqlalchemy import Integer, String, DateTime, Boolean
 from sqlalchemy import CheckConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from src.error.errors import ValidationError
 from typing import Optional, List
@@ -21,7 +21,7 @@ class Crawlers(Base, BaseEntity):
     - last_crawl_time: 最後爬取時間
     """
     def __init__(self, **kwargs):
-        # 設置預設的 created_at
+        
         if 'created_at' not in kwargs:
             kwargs['created_at'] = datetime.now(timezone.utc)
         if 'is_active' not in kwargs:
@@ -108,4 +108,6 @@ class Crawlers(Base, BaseEntity):
         errors = []
         # 個性化驗證
         return errors
+
+    tasks = relationship("CrawlerTasks", back_populates="crawler", lazy="joined")
 

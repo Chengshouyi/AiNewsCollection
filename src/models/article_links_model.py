@@ -1,7 +1,7 @@
 from sqlalchemy import UniqueConstraint, CheckConstraint, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from src.models.base_model import Base
-from typing import Optional, List
+from typing import List
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship
 from sqlalchemy import Integer, String, Boolean, DateTime
@@ -100,7 +100,7 @@ class ArticleLinks(Base, BaseEntity):
     )
     
     # 使用字串參考而不是直接引用類別
-    article = relationship("Articles", back_populates="article_links")
+    articles = relationship("Articles", back_populates="article_links", lazy="joined")
     
     # 文章連結資料repr
     def __repr__(self):

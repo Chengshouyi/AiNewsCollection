@@ -132,7 +132,7 @@ class Articles(Base, BaseEntity):
     )
 
     # 使用字串參考避免循環引用
-    article_links = relationship("ArticleLinks", back_populates="article")
+    article_links = relationship("ArticleLinks", back_populates="articles", lazy="joined")
 
     # 文章資料repr
     def __repr__(self):
