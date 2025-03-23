@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timezone
-from src.model.crawlers_models import Crawlers
-from src.model.base_model import ValidationError
+from src.models.crawlers_model import Crawlers
+from src.error.errors import ValidationError
 
 class TestCrawlersModel:
     """Crawlers 模型的測試類"""

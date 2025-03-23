@@ -2,7 +2,7 @@ import uuid
 import pytest
 from sqlalchemy.orm import Session
 from src.models.article_links_model import ArticleLinks
-from src.models.articles_model import Article
+from src.models.articles_model import Articles
 from src.models.base_model import Base
 from src.database.article_links_repository import ArticleLinksRepository
 from src.database.articles_repository import ArticleRepository
@@ -40,7 +40,7 @@ def article_links_repo(session):
 
 @pytest.fixture
 def article_repo(session):
-    return ArticleRepository(session, Article)
+    return ArticleRepository(session, Articles)
 
 @pytest.fixture
 def sample_article_links(session):

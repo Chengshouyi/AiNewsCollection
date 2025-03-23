@@ -4,7 +4,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from src.database.articles_repository import ArticleRepository
 from src.database.article_links_repository import ArticleLinksRepository
-from src.models.articles_model import Article
+from src.models.articles_model import Articles
 from src.models.article_links_model import ArticleLinks
 from src.models.base_model import Base
 import uuid
@@ -42,13 +42,13 @@ def article_links_repo(session):
 
 @pytest.fixture
 def article_repo(session):
-    return ArticleRepository(session, Article)
+    return ArticleRepository(session, Articles)
 
 
 @pytest.fixture
 def sample_articles(session):
     articles = [
-        Article(
+        Articles(
             title="科技新聞：AI研究突破",
             link="https://example.com/article1",
             content="這是關於AI研究的文章內容",
@@ -56,7 +56,7 @@ def sample_articles(session):
             published_at=datetime(2023, 1, 1),
             created_at=datetime(2023, 1, 2)
         ),
-        Article(
+        Articles(
             title="財經報導：股市走勢分析",
             link="https://example.com/article2",
             content="這是股市分析的內容",
@@ -64,7 +64,7 @@ def sample_articles(session):
             published_at=datetime(2023, 1, 3),
             created_at=datetime(2023, 1, 4)
         ),
-        Article(
+        Articles(
             title="Python編程技巧分享",
             link="https://example.com/article3",
             content="這是Python相關教學",
@@ -170,7 +170,7 @@ class TestArticleRepository:
     def test_empty_results(self, article_repo):
         """測試在資料庫為空時的結果"""
         # 清空資料庫中的文章
-        article_repo.session.query(Article).delete()
+        article_repo.session.query(Articles).delete()
         article_repo.session.commit()
         
         # 測試各方法返回空結果
@@ -204,7 +204,7 @@ class TestArticleRepository:
     def test_created_at_default(self, session):
         """測試created_at欄位的預設值"""
         # 創建沒有指定created_at的文章
-        article = Article(
+        article = Articles(
             title="測試默認時間",
             link="https://example.com/test-default-time",
             content="測試内容"
@@ -219,7 +219,7 @@ class TestArticleRepository:
     def test_model_constraints_and_structure(self, session):
         """測試資料庫結構和約束"""
         # 獲取模型信息
-        article_info = get_model_info(Article)
+        article_info = get_model_info(Articles)
         links_info = get_model_info(ArticleLinks)
         
         # 檢查主鍵
@@ -260,7 +260,7 @@ class TestArticleConstraints:
         session = test_session
         
         # 測試缺少title
-        article1 = Article(
+        article1 = Articles(
             # 缺少title
             link="https://example.com/test1",
             content="測試內容1",
@@ -275,7 +275,7 @@ class TestArticleConstraints:
         session.rollback()
         
         # 測試缺少link
-        article2 = Article(
+        article2 = Articles(
             title="測試文章2",
             # 缺少link
             content="測試內容2",
@@ -293,7 +293,7 @@ class TestArticleConstraints:
         session = test_session
         
         # 創建第一篇文章
-        article1 = Article(
+        article1 = Articles(
             title="第一篇文章",
             link="https://example.com/same-unique-link",
             content="第一篇內容",
@@ -303,7 +303,7 @@ class TestArticleConstraints:
         session.flush()
         
         # 創建具有相同link的第二篇文章
-        article2 = Article(
+        article2 = Articles(
             title="第二篇文章",
             link="https://example.com/same-unique-link",  # 相同的link
             content="第二篇內容",
@@ -322,7 +322,7 @@ class TestArticleConstraints:
         session = test_session
         
         # 創建沒有指定created_at的文章
-        article = Article(
+        article = Articles(
             title="測試默認時間",
             link="https://example.com/test-default-time",
             content="測試內容"
@@ -402,7 +402,7 @@ class TestSpecialCases:
     def test_empty_database(self, article_repo):
         """測試在資料庫為空時的結果"""
         # 清空資料庫中的文章
-        article_repo.session.query(Article).delete()
+        article_repo.session.query(Articles).delete()
         article_repo.session.commit()
         
         # 測試各種查詢方法
@@ -445,7 +445,7 @@ class TestModelStructure:
         from src.services.model_utiles import get_model_info
         
         # 獲取Article模型信息
-        article_info = get_model_info(Article)
+        article_info = get_model_info(Articles)
         
         # 1. 測試表名
         assert article_info["table"] == "articles"
@@ -498,7 +498,7 @@ class TestModelStructure:
     def test_model_relationships(self, session):
         """測試模型間關係是否符合預期"""
         # 創建一篇文章和對應的連結
-        article = Article(
+        article = Articles(
             title="關係測試",
             link="https://example.com/relation-test-" + str(uuid.uuid4()),
             content="測試內容"
@@ -516,7 +516,7 @@ class TestModelStructure:
         session.flush()
         
         # 測試能否通過連結找到文章
-        found_article = session.query(Article).filter_by(link=article_link.article_link).first()
+        found_article = session.query(Articles).filter_by(link=article_link.article_link).first()
         assert found_article is not None
         assert found_article.id == article.id
         
@@ -541,7 +541,7 @@ class TestModelStructure:
         from src.services.model_utiles import get_model_info
         
         # 獲取模型信息
-        article_info = get_model_info(Article)
+        article_info = get_model_info(Articles)
         
         # 打印實際模型結構
         print("\n===== Article模型結構 =====")

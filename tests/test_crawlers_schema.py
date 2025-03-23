@@ -1,5 +1,5 @@
-from src.model.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
-from src.model.base_model import ValidationError
+from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
+from src.error.errors import ValidationError
 import pytest
 from datetime import datetime
 

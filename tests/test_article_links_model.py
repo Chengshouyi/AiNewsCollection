@@ -1,5 +1,5 @@
 from src.models.article_links_model import ArticleLinks
-from src.models.articles_model import Article
+from src.models.articles_model import Articles
 from src.error.errors import ValidationError
 from datetime import datetime
 import pytest
@@ -72,7 +72,7 @@ class TestArticleLinksModel:
     def test_article_relationship(self):
         """測試 ArticleLinks 和 Article 之間的關係"""
         # 創建 Article
-        article = Article(
+        article = Articles(
             title="測試文章",
             link="https://test.com/article"
         )
@@ -111,7 +111,7 @@ class TestArticleLinksModel:
         # 在資料庫中創建和測試關聯
         with db_manager.session_scope() as session:
             # 創建 Article
-            article = Article(
+            article = Articles(
                 title="測試文章",
                 link="https://test.com/article"
             )
@@ -120,7 +120,8 @@ class TestArticleLinksModel:
             article_link = ArticleLinks(
                 source_name="測試來源",
                 source_url="https://test.com",
-                article_link="https://test.com/article"
+                article_link="https://test.com/article",
+                article=article  # 直接設定關聯
             )
             
             # 保存到資料庫
@@ -130,7 +131,7 @@ class TestArticleLinksModel:
             session.expire_all()  # 強制刷新所有物件
             
             # 重新從資料庫讀取
-            db_article = session.query(Article).filter_by(link="https://test.com/article").first()
+            db_article = session.query(Articles).filter_by(link="https://test.com/article").first()
             db_article_link = session.query(ArticleLinks).filter_by(article_link="https://test.com/article").first()
             
             # 檢查是否獲取到資料
@@ -148,4 +149,5 @@ class TestArticleLinksModel:
             
             # 測試反向關聯
             assert db_article.article_links is not None
-            assert db_article.article_links.source_name == "測試來源"
+            assert len(db_article.article_links) > 0, "Article 沒有關聯的 ArticleLinks"
+            assert db_article.article_links[0].source_name == "測試來源"  # 檢查第一個關聯的 ArticleLink
