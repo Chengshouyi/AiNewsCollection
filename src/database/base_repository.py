@@ -330,9 +330,49 @@ class BaseRepository(Generic[T]):
             return entity
         except IntegrityError as e:
             self.session.rollback()
-            error_msg = f"Repository.create: data unique error: {str(e)}"
-            logger.error(error_msg)
+            # 提取更具體的錯誤訊息
+            error_msg = self._extract_integrity_error_message(e, entity_data)
+            logger.error(f"Repository.create: {error_msg}")
             raise ValidationError(error_msg)
+        except Exception as e:
+            self.session.rollback()
+            error_msg = f"Repository.create: unexpected error: {str(e)}"
+            logger.error(error_msg)
+            raise e
+
+    def _extract_integrity_error_message(self, error: IntegrityError, data: Dict[str, Any]) -> str:
+        """從完整性錯誤中提取更具體的錯誤訊息"""
+        error_str = str(error).lower()
+        
+        # 處理唯一性約束錯誤
+        if 'unique' in error_str or 'duplicate' in error_str:
+            # 嘗試識別涉及哪個欄位
+            if hasattr(self.model_class, '__table_args__'):
+                for arg in self.model_class.__table_args__:
+                    if hasattr(arg, 'name') and 'uq_' in getattr(arg, 'name', '').lower():
+                        # 從約束名稱中提取欄位名稱
+                        constraint_name = getattr(arg, 'name')
+                        field_name = constraint_name.replace('uq_', '').replace(self.model_class.__tablename__, '').strip('_')
+                        
+                        if field_name in data:
+                            return f"已存在具有相同{field_name}的記錄: {data.get(field_name)}"
+            
+            # 從錯誤訊息中試著提取欄位名
+            for key in data.keys():
+                if key.lower() in error_str:
+                    return f"已存在具有相同{key}的記錄: {data.get(key)}"
+            
+            return f"資料唯一性錯誤，可能已存在相同記錄"
+        
+        # NOT NULL constraint 錯誤
+        if 'not null constraint' in error_str:
+            for key in self.model_class.__table__.columns.keys():
+                if key.lower() in error_str:
+                    return f"欄位'{key}'不能為空"
+            return f"必填欄位不可為空: {str(error)}"
+        
+        # 其他完整性錯誤
+        return f"資料完整性錯誤: {str(error)}"
     
     def get_by_id(self, entity_id: Any) -> Optional[T]:
         """根據ID獲取實體"""
@@ -349,7 +389,6 @@ class BaseRepository(Generic[T]):
         
         try:
             # 更新實體 - 無需再檢查欄位是否可修改，因為驗證已確保所有欄位都可以安全設置
-            # 驗證已檢查了不可修改的欄位，所以這裡可以放心設置所有欄位
             for key, value in entity_data.items():
                 if key != 'id':  # ID不更新
                     setattr(entity, key, value)
@@ -358,9 +397,15 @@ class BaseRepository(Generic[T]):
             return entity
         except IntegrityError as e:
             self.session.rollback()
-            error_msg = f"Repository.update: data unique error: {str(e)}"
-            logger.error(error_msg)
+            # 提取更具體的錯誤訊息
+            error_msg = self._extract_integrity_error_message(e, entity_data)
+            logger.error(f"Repository.update: {error_msg}")
             raise ValidationError(error_msg)
+        except Exception as e:
+            self.session.rollback()
+            error_msg = f"Repository.update: unknown error: {str(e)}"
+            logger.error(error_msg)
+            raise e
     
     def delete(self, entity_id: Any) -> bool:
         """刪除實體"""

@@ -5,7 +5,7 @@ from src.models.article_links_model import ArticleLinks
 from src.models.articles_model import Articles
 from src.models.base_model import Base
 from src.database.article_links_repository import ArticleLinksRepository
-from src.database.articles_repository import ArticleRepository
+from src.database.articles_repository import ArticlesRepository
 from sqlalchemy import create_engine
 
 # 設置測試資料庫
@@ -40,7 +40,7 @@ def article_links_repo(session):
 
 @pytest.fixture
 def article_repo(session):
-    return ArticleRepository(session, Articles)
+    return ArticlesRepository(session, Articles)
 
 @pytest.fixture
 def sample_article_links(session):

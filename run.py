@@ -3,8 +3,8 @@ import os
 import schedule
 import time
 import logging
-from src.services.articles_service import ArticleService
-from src.model.base_model import Base
+from src.services.article_service import ArticleService
+from src.models.base_model import Base
 from src.config import get_db_manager
 
 # 配置日誌

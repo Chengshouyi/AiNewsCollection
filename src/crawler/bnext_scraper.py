@@ -24,7 +24,7 @@ class BnextScraper:
         """
         self.db_manager = db_manager
         if db_manager:
-            from src.services.articles_service import ArticleService
+            from src.services.article_service import ArticleService
             self.article_service = ArticleService(db_manager)
         else:
             self.article_service = None

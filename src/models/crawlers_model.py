@@ -91,7 +91,8 @@ class Crawlers(Base, BaseEntity):
     last_crawl_time: Mapped[Optional[datetime]] = mapped_column(
         DateTime
     )
-
+    crawler_tasks = relationship("CrawlerTasks", back_populates="crawlers", lazy="joined")
+    
     # 系統設定資料repr  
     def __repr__(self):
         return (
@@ -109,5 +110,5 @@ class Crawlers(Base, BaseEntity):
         # 個性化驗證
         return errors
 
-    tasks = relationship("CrawlerTasks", back_populates="crawler", lazy="joined")
+    
 

@@ -355,6 +355,41 @@ class TestArticleCreateSchema:
             ArticleCreateSchema.model_validate(data)
         assert "tags: length must be between 1 and 500" in str(exc_info.value)
 
+    def test_article_with_is_ai_related(self):
+        """測試包含 is_ai_related 欄位的文章資料"""
+        data = {
+            "title": "測試文章",
+            "link": "https://test.com/article",
+            "published_at": datetime.now().isoformat(),
+            "source": "test_source",
+            "is_ai_related": True
+        }
+        schema = ArticleCreateSchema.model_validate(data)
+        assert schema.is_ai_related is True
+
+    def test_article_with_is_ai_related_default(self):
+        """測試 is_ai_related 欄位的預設值"""
+        data = {
+            "title": "測試文章",
+            "link": "https://test.com/article",
+            "published_at": datetime.now().isoformat(),
+            "source": "test_source"
+        }
+        schema = ArticleCreateSchema.model_validate(data)
+        assert schema.is_ai_related is None
+
+    def test_article_with_invalid_is_ai_related(self):
+        """測試 is_ai_related 欄位的無效值"""
+        data = {
+            "title": "測試文章",
+            "link": "https://test.com/article",
+            "published_at": datetime.now().isoformat(),
+            "source": "test_source",
+            "is_ai_related": "not_a_boolean"  # 無效的布林值
+        }
+        with pytest.raises(Exception):  # Pydantic 會自動驗證型別
+            ArticleCreateSchema.model_validate(data)
+
 
 class TestArticleUpdateSchema:
     """ArticleUpdateSchema 的測試類"""
@@ -470,3 +505,31 @@ class TestArticleUpdateSchema:
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
         assert "published_at: do not be empty" in str(exc_info.value)
+
+    def test_update_is_ai_related(self):
+        """測試更新 is_ai_related 欄位"""
+        data = {
+            "is_ai_related": True
+        }
+        schema = ArticleUpdateSchema.model_validate(data)
+        assert schema.is_ai_related is True
+
+    def test_update_is_ai_related_with_invalid_value(self):
+        """測試使用無效值更新 is_ai_related 欄位"""
+        data = {
+            "is_ai_related": "not_a_boolean"  # 無效的布林值
+        }
+        with pytest.raises(Exception):  # Pydantic 會自動驗證型別
+            ArticleUpdateSchema.model_validate(data)
+
+    def test_update_multiple_fields_with_is_ai_related(self):
+        """測試同時更新多個欄位包含 is_ai_related"""
+        data = {
+            "title": "更新的文章標題",
+            "summary": "更新的文章摘要",
+            "is_ai_related": True
+        }
+        schema = ArticleUpdateSchema.model_validate(data)
+        assert schema.title == "更新的文章標題"
+        assert schema.summary == "更新的文章摘要"
+        assert schema.is_ai_related is True

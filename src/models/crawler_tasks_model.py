@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, String, DateTime, Boolean, ForeignKey, Text
+from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text
 from sqlalchemy import CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
@@ -91,9 +91,7 @@ class CrawlerTasks(Base, BaseEntity):
         DateTime,
         onupdate=lambda: datetime.now(timezone.utc)
     )
-
-    # 關聯到爬蟲模型
-    crawler = relationship("Crawlers", back_populates="tasks", lazy="joined")
+    crawlers = relationship("Crawlers", back_populates="crawler_tasks", lazy="joined")
 
     # 系統設定資料repr  
     def __repr__(self):

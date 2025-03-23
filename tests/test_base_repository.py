@@ -1,9 +1,11 @@
 import pytest
 from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
-from src.model.base_model import Base, ValidationError
-from src.database.base_rerository import BaseRepository
-from src.model.articles_model import Article
+from src.models.base_model import Base
+from src.database.base_repository import BaseRepository
+from src.models.articles_schema import ArticleCreateSchema
+from src.models.articles_model import Articles
+from src.error.errors import ValidationError
 from datetime import datetime, timezone
 
 class TestBaseRepository:
@@ -25,7 +27,7 @@ class TestBaseRepository:
     @pytest.fixture
     def repo(self, session):
         """創建 Article 的 Repository 實例"""
-        return BaseRepository(session, Article)
+        return BaseRepository(session, Articles)
     
     @pytest.fixture
     def sample_article_data(self):
@@ -124,7 +126,6 @@ class TestBaseRepository:
     
     def test_validate_entity_with_schema(self, repo):
         """測試使用 schema 進行驗證"""
-        from src.model.articles_schema import ArticleCreateSchema
         
         # 有效數據
         valid_data = {

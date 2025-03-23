@@ -1,4 +1,4 @@
-from .base_rerository import BaseRepository
+from .base_repository import BaseRepository
 from src.models.crawler_tasks_model import CrawlerTasks
 from typing import List
 from datetime import datetime

@@ -1,4 +1,4 @@
-from .base_rerository import BaseRepository
+from .base_repository import BaseRepository
 from src.models.article_links_model import ArticleLinks
 from typing import Optional, List
 

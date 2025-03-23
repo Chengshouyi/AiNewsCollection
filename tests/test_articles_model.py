@@ -19,6 +19,7 @@ class TestArticleModel:
         assert article.summary is None
         assert article.content is None
         assert article.source is None
+        assert article.is_ai_related is False
         assert article.created_at is not None
 
     def test_article_creation_with_all_fields(self):
@@ -33,7 +34,8 @@ class TestArticleModel:
             author="測試作者",
             source="測試來源",
             article_type="新聞",
-            tags="AI,科技,測試"
+            tags="AI,科技,測試",
+            is_ai_related=True
         )
         
         assert article.title == "完整測試文章"
@@ -46,8 +48,31 @@ class TestArticleModel:
         assert article.source == "測試來源"
         assert article.article_type == "新聞"
         assert article.tags == "AI,科技,測試"
+        assert article.is_ai_related is True
         assert article.created_at is not None
         assert article.updated_at is None
+
+    def test_article_is_ai_related_default(self):
+        """測試 Article 的 is_ai_related 預設值"""
+        article = Articles(
+            title="測試文章",
+            link="https://test.com/article"
+        )
+        
+        assert article.is_ai_related is False  # 測試預設值為 False
+
+    def test_article_is_ai_related_update(self):
+        """測試 Article 的 is_ai_related 欄位更新"""
+        article = Articles(
+            title="測試文章",
+            link="https://test.com/article"
+        )
+        
+        article.is_ai_related = True
+        assert article.is_ai_related is True
+        
+        article.is_ai_related = False
+        assert article.is_ai_related is False
 
     def test_article_immutable_fields(self):
         """測試 Article 的不可變欄位"""

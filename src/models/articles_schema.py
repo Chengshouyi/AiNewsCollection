@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field, field_validator, model_validator
 from typing import Optional
 from src.error.errors import ValidationError
+from datetime import datetime
 
 class ArticleCreateSchema(BaseModel):
     title: str = Field(..., min_length=1, max_length=500, description="文章標題")
@@ -8,11 +9,12 @@ class ArticleCreateSchema(BaseModel):
     content: Optional[str] = Field(None, max_length=65536, description="文章內容")
     link: str = Field(..., min_length=1, max_length=1000, description="文章連結")
     category: Optional[str] = Field(None, max_length=100, description="文章類別")
-    published_at: str = Field(..., description="發布時間")
+    published_at: datetime = Field(..., description="發布時間")
     author: Optional[str] = Field(None, max_length=100, description="作者")
     source: str = Field(..., min_length=1, max_length=50, description="來源")
     article_type: Optional[str] = Field(None, max_length=20, description="文章類型")
     tags: Optional[str] = Field(None, max_length=500, description="標籤")
+    is_ai_related: Optional[bool] = Field(None, description="是否與AI相關")
 
     @model_validator(mode='before') 
     @classmethod
@@ -63,9 +65,21 @@ class ArticleCreateSchema(BaseModel):
     @field_validator('published_at', mode='before')
     @classmethod
     def validate_published_at(cls, value):
-        if not value or not value.strip():
+        if value is None or value == "":
             raise ValidationError("published_at: do not be empty.")
-        return value
+        
+        # 如果是字串，嘗試轉換為 datetime
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                raise ValidationError("published_at: invalid datetime format. Use ISO format.")
+        
+        # 如果已經是 datetime，直接返回
+        if isinstance(value, datetime):
+            return value
+            
+        raise ValidationError("published_at: must be string or datetime.")
     
     @field_validator('author', mode='before')
     @classmethod
@@ -110,11 +124,12 @@ class ArticleUpdateSchema(BaseModel):
     content: Optional[str] = Field(None, max_length=65536, description="文章內容")
     link: Optional[str] = Field(None, min_length=1, max_length=1000, description="文章連結")
     category: Optional[str] = Field(None, max_length=100, description="文章類別")
-    published_at: Optional[str] = Field(None, description="發布時間")
+    published_at: Optional[datetime] = Field(None, description="發布時間")
     author: Optional[str] = Field(None, max_length=100, description="作者")
     source: Optional[str] = Field(None, min_length=1, max_length=50, description="來源")
     article_type: Optional[str] = Field(None, max_length=20, description="文章類型")
     tags: Optional[str] = Field(None, max_length=500, description="標籤")
+    is_ai_related: Optional[bool] = Field(None, description="是否與AI相關")
     
     @model_validator(mode='before')
     @classmethod
@@ -179,9 +194,24 @@ class ArticleUpdateSchema(BaseModel):
     @field_validator('published_at', mode='before')
     @classmethod
     def validate_published_at(cls, value):
-        if not value or not value.strip():
+        if value == "":
             raise ValidationError("published_at: do not be empty.")
-        return value
+            
+        if value is None:
+            return None
+            
+        # 如果是字串，嘗試轉換為 datetime
+        if isinstance(value, str):
+            try:
+                return datetime.fromisoformat(value)
+            except ValueError:
+                raise ValidationError("published_at: invalid datetime format. Use ISO format.")
+        
+        # 如果已經是 datetime，直接返回
+        if isinstance(value, datetime):
+            return value
+            
+        raise ValidationError("published_at: must be string or datetime.")
     
     @field_validator('author', mode='before')
     @classmethod

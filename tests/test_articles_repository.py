@@ -2,7 +2,7 @@ import pytest
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
-from src.database.articles_repository import ArticleRepository
+from src.database.articles_repository import ArticlesRepository
 from src.database.article_links_repository import ArticleLinksRepository
 from src.models.articles_model import Articles
 from src.models.article_links_model import ArticleLinks
@@ -42,7 +42,7 @@ def article_links_repo(session):
 
 @pytest.fixture
 def article_repo(session):
-    return ArticleRepository(session, Articles)
+    return ArticlesRepository(session, Articles)
 
 
 @pytest.fixture
@@ -54,7 +54,8 @@ def sample_articles(session):
             content="這是關於AI研究的文章內容",
             category="科技",
             published_at=datetime(2023, 1, 1),
-            created_at=datetime(2023, 1, 2)
+            created_at=datetime(2023, 1, 2),
+            is_ai_related=True
         ),
         Articles(
             title="財經報導：股市走勢分析",
@@ -62,7 +63,8 @@ def sample_articles(session):
             content="這是股市分析的內容",
             category="財經",
             published_at=datetime(2023, 1, 3),
-            created_at=datetime(2023, 1, 4)
+            created_at=datetime(2023, 1, 4),
+            is_ai_related=False
         ),
         Articles(
             title="Python編程技巧分享",
@@ -70,7 +72,8 @@ def sample_articles(session):
             content="這是Python相關教學",
             category="科技",
             published_at=datetime(2023, 1, 5),
-            created_at=datetime(2023, 1, 6)
+            created_at=datetime(2023, 1, 6),
+            is_ai_related=False
         )
     ]
     session.add_all(articles)
@@ -242,6 +245,146 @@ class TestArticleRepository:
                 article_unique_fields.append(col_name)
         
         assert "link" in article_unique_fields
+
+    def test_get_by_filter_is_ai_related(self, article_repo, session):
+        """測試根據 is_ai_related 過濾文章"""
+        # 創建測試資料
+        articles = [
+            Articles(
+                title="AI相關文章",
+                link="https://example.com/ai-article",
+                content="AI內容",
+                is_ai_related=True
+            ),
+            Articles(
+                title="非AI文章",
+                link="https://example.com/non-ai-article",
+                content="一般內容",
+                is_ai_related=False
+            )
+        ]
+        session.add_all(articles)
+        session.commit()
+
+        # 測試過濾 AI 相關文章
+        ai_articles = article_repo.get_by_filter({"is_ai_related": True})
+        assert len(ai_articles) == 1
+        assert ai_articles[0].title == "AI相關文章"
+        assert ai_articles[0].is_ai_related is True
+
+        # 測試過濾非 AI 相關文章
+        non_ai_articles = article_repo.get_by_filter({"is_ai_related": False})
+        assert len(non_ai_articles) == 1
+        assert non_ai_articles[0].title == "非AI文章"
+        assert non_ai_articles[0].is_ai_related is False
+
+    def test_count_with_is_ai_related(self, article_repo, session):
+        """測試計算 AI 相關文章數量"""
+        # 創建測試資料
+        articles = [
+            Articles(
+                title="AI文章1",
+                link="https://example.com/ai-1",
+                is_ai_related=True
+            ),
+            Articles(
+                title="AI文章2",
+                link="https://example.com/ai-2",
+                is_ai_related=True
+            ),
+            Articles(
+                title="非AI文章",
+                link="https://example.com/non-ai",
+                is_ai_related=False
+            )
+        ]
+        session.add_all(articles)
+        session.commit()
+
+        # 測試計算 AI 相關文章數量
+        ai_count = article_repo.count({"is_ai_related": True})
+        assert ai_count == 2
+
+        # 測試計算非 AI 相關文章數量
+        non_ai_count = article_repo.count({"is_ai_related": False})
+        assert non_ai_count == 1
+
+    def test_get_by_filter_combined_conditions(self, article_repo, session):
+        """測試組合條件過濾，包含 is_ai_related"""
+        # 創建測試資料
+        articles = [
+            Articles(
+                title="AI科技新聞",
+                link="https://example.com/ai-tech",
+                category="科技",
+                is_ai_related=True
+            ),
+            Articles(
+                title="AI財經分析",
+                link="https://example.com/ai-finance",
+                category="財經",
+                is_ai_related=True
+            ),
+            Articles(
+                title="一般科技新聞",
+                link="https://example.com/tech",
+                category="科技",
+                is_ai_related=False
+            )
+        ]
+        session.add_all(articles)
+        session.commit()
+
+        # 測試組合條件：AI相關 + 科技類別
+        results = article_repo.get_by_filter({
+            "is_ai_related": True,
+            "category": "科技"
+        })
+        assert len(results) == 1
+        assert results[0].title == "AI科技新聞"
+        assert results[0].is_ai_related is True
+        assert results[0].category == "科技"
+
+    def test_get_category_distribution(self, article_repo, session):
+        """測試獲取文章分類分布"""
+        # 創建測試資料
+        articles = [
+            Articles(
+                title="科技文章1",
+                link="https://example.com/tech1",
+                category="科技",
+                content="內容1"
+            ),
+            Articles(
+                title="科技文章2",
+                link="https://example.com/tech2",
+                category="科技",
+                content="內容2"
+            ),
+            Articles(
+                title="財經文章",
+                link="https://example.com/finance",
+                category="財經",
+                content="內容3"
+            ),
+            Articles(
+                title="無分類文章",
+                link="https://example.com/no-category",
+                category=None,
+                content="內容4"
+            )
+        ]
+        session.add_all(articles)
+        session.commit()
+
+        # 獲取分類分布
+        distribution = article_repo.get_category_distribution()
+
+        # 驗證結果
+        assert distribution["科技"] == 2
+        assert distribution["財經"] == 1
+        assert distribution["未分類"] == 1  # None 值會被轉換為 "未分類"
+        assert len(distribution) == 3  # 總共三個分類（包括未分類）
 
 
 

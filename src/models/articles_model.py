@@ -4,7 +4,7 @@ from src.models.base_model import Base
 from typing import Optional, List
 from datetime import datetime, timezone
 from sqlalchemy.orm import relationship
-from sqlalchemy import Integer, String, DateTime, Text
+from sqlalchemy import Integer, String, DateTime, Text, Boolean
 from src.models.base_entity import BaseEntity
 from src.error.errors import ValidationError
 
@@ -30,6 +30,8 @@ class Articles(Base, BaseEntity):
         # 設置預設的 created_at
         if 'created_at' not in kwargs:
             kwargs['created_at'] = datetime.now(timezone.utc)
+        if 'is_ai_related' not in kwargs:
+            kwargs['is_ai_related'] = False
             
         super().__init__(**kwargs)
         self.is_initialized = True
@@ -121,6 +123,11 @@ class Articles(Base, BaseEntity):
     source: Mapped[Optional[str]] = mapped_column(String(50))
     article_type: Mapped[Optional[str]] = mapped_column(String(20))
     tags: Mapped[Optional[str]] = mapped_column(String(500))
+    is_ai_related: Mapped[bool] = mapped_column(
+        Boolean,
+        default=lambda: False,
+        nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 
         default=lambda: datetime.now(timezone.utc),
