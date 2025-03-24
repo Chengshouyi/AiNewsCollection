@@ -5,9 +5,10 @@ from src.crawlers.site_config import SiteConfig
 from datetime import datetime
 
 class BaseCrawler(ABC):
-    def __init__(self, config: SiteConfig):
+    def __init__(self, config: SiteConfig, crawler_type: str):
         self.site_config = config
         self.task_status = {}
+        self.crawler_type = crawler_type
 
     @abstractmethod
     def fetch_article_list(self, args: dict, **kwargs) -> pd.DataFrame:

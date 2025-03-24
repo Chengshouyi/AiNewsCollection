@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class BnextCrawler(BaseCrawler):
     def __init__(self, config: SiteConfig = BNEXT_CONFIG):
-        super().__init__(config)
+        super().__init__(config,"BnextCrawler")
 
 
     def fetch_article_list(self, args: dict, **kwargs) -> pd.DataFrame:

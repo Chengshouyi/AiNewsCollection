@@ -70,17 +70,19 @@ class CrawlersUpdateSchema(BaseModel):
     crawl_interval: Optional[int] = Field(None, gt=0, description="爬取間隔")
     is_active: Optional[bool] = Field(None, description="是否啟用")
     last_crawl_time: Optional[datetime] = Field(default=None, description="最後爬取時間")
+    updated_at: Optional[datetime] = Field(default=None, description="更新時間")
 
     @model_validator(mode='before')
     @classmethod
     def validate_update(cls, data):
         if isinstance(data, dict):
-            # 防止更新 created_at
-            if 'created_at' in data:
-                raise ValidationError("do not allow to update created_at field.")
+            # 防止更新 created_at 和 id
+            for immutable_field in ['created_at', 'id']:
+                if immutable_field in data:
+                    raise ValidationError(f"do not allow to update {immutable_field} field.")
             
             # 確保至少有一個欄位被更新
-            update_fields = [k for k in data.keys() if k not in ['updated_at', 'created_at']]
+            update_fields = [k for k in data.keys() if k not in ['updated_at', 'created_at', 'id']]
             if not update_fields:
                 raise ValidationError("must provide at least one field to update.")
         
