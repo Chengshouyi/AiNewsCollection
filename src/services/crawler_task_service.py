@@ -233,7 +233,7 @@ class CrawlerTaskService:
                 logger.error(error_msg)
                 raise ValueError(error_msg)
 
-            crawler_instance = self.crawler_factory.get_crawler(crawler.crawler_type, crawler.config)
+            crawler_instance = self.crawler_factory.get_crawler(crawler.crawler_type)
             
             # 準備任務參數
             task_args = {
@@ -316,7 +316,7 @@ class CrawlerTaskService:
             self._update_task_status(task_id, 'completed', 100, completion_msg)
             
             # 更新任務在數據庫中的狀態
-            tasks_repo.update_last_run(task_id, True)
+            tasks_repo.update_last_run(task_id, True, completion_msg)
             
             # 更新任務歷史記錄
             if history_id:
@@ -343,7 +343,7 @@ class CrawlerTaskService:
             # 更新數據庫中的失敗狀態
             try:
                 if tasks_repo:
-                    tasks_repo.update_last_run(task_id, False, str(e))
+                    tasks_repo.update_last_run(task_id, False, failure_msg)
                 
                 # 更新任務歷史記錄
                 if history_id and history_repo:
@@ -471,7 +471,7 @@ class CrawlerTaskService:
                         
                     # 檢查是否達到執行條件
                     if self._should_execute_task(task):
-                        log_info = f"自動執行任務: {task.name} (ID: {task.id})"
+                        log_info = f"自動執行任務(ID: {task.id})"
                         logger.info(log_info)
                         self.execute_task(task.id)
                         
@@ -493,7 +493,7 @@ class CrawlerTaskService:
         
         # 如果從未運行過，立即執行
         if not task.last_run_at:
-            log_info = f"任務從未運行過，準備執行: {task.name} (ID: {task.id})"
+            log_info = f"任務從未運行過，準備執行(ID: {task.id})"
             logger.info(log_info)
             return True
             

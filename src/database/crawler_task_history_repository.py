@@ -2,33 +2,58 @@ from .base_repository import BaseRepository
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from typing import List, Optional
 from datetime import datetime, timedelta
+import logging
+
+# 設定 logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
     """CrawlerTaskHistory 特定的Repository"""
     
     def find_by_task_id(self, task_id: int) -> List['CrawlerTaskHistory']:
         """根據任務ID查詢相關的歷史記錄"""
-        return self.session.query(self.model_class).filter_by(
-            task_id=task_id
-        ).all()
+        try:
+            return self.session.query(self.model_class).filter_by(
+                task_id=task_id
+            ).all()
+        except Exception as e:
+            error_msg = f"查詢任務歷史記錄時發生錯誤: {e}"
+            logger.error(error_msg)
+            raise e
     
     def find_successful_histories(self) -> List['CrawlerTaskHistory']:
         """查詢所有成功的任務歷史記錄"""
-        return self.session.query(self.model_class).filter_by(
-            success=True
-        ).all()
+        try:
+            return self.session.query(self.model_class).filter_by(
+                success=True
+            ).all()
+        except Exception as e:
+            error_msg = f"查詢成功任務歷史記錄時發生錯誤: {e}"
+            logger.error(error_msg)
+            raise e
     
     def find_failed_histories(self) -> List['CrawlerTaskHistory']:
         """查詢所有失敗的任務歷史記錄"""
-        return self.session.query(self.model_class).filter_by(
-            success=False
-        ).all()
+        try:
+            return self.session.query(self.model_class).filter_by(
+                success=False
+            ).all()
+        except Exception as e:
+            error_msg = f"查詢失敗任務歷史記錄時發生錯誤: {e}"
+            logger.error(error_msg)
+            raise e
     
     def find_histories_with_articles(self, min_articles: int = 1) -> List['CrawlerTaskHistory']:
         """查詢文章數量大於指定值的歷史記錄"""
-        return self.session.query(self.model_class).filter(
-            self.model_class.articles_count >= min_articles
-        ).all()
+        try:
+            return self.session.query(self.model_class).filter(
+                self.model_class.articles_count >= min_articles
+            ).all()
+        except Exception as e:
+            error_msg = f"查詢文章數量大於指定值的歷史記錄時發生錯誤: {e}"
+            logger.error(error_msg)
+            raise e
     
     def find_histories_by_date_range(
         self, 
@@ -36,15 +61,20 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         end_date: Optional[datetime] = None
     ) -> List['CrawlerTaskHistory']:
         """根據日期範圍查詢歷史記錄"""
-        query = self.session.query(self.model_class)
-        
-        if start_date:
-            query = query.filter(self.model_class.start_time >= start_date)
-        
-        if end_date:
-            query = query.filter(self.model_class.start_time <= end_date)
-        
-        return query.all()
+        try:
+            query = self.session.query(self.model_class)
+            
+            if start_date:
+                query = query.filter(self.model_class.start_time >= start_date)
+            
+            if end_date:
+                query = query.filter(self.model_class.start_time <= end_date)
+            
+            return query.all()
+        except Exception as e:
+            error_msg = f"根據日期範圍查詢歷史記錄時發生錯誤: {e}"
+            logger.error(error_msg)
+            raise e
     
     def get_total_articles_count(self, task_id: Optional[int] = None) -> int:
         """
@@ -53,12 +83,17 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         :param task_id: 可選的任務ID，如果提供則只計算該任務的文章數
         :return: 文章總數
         """
-        query = self.session.query(self.model_class)
-        
-        if task_id is not None:
-            query = query.filter_by(task_id=task_id)
-        
-        return sum(history.articles_count for history in query.all())
+        try:
+            query = self.session.query(self.model_class)
+            
+            if task_id is not None:
+                query = query.filter_by(task_id=task_id)
+            
+            return sum(history.articles_count for history in query.all())
+        except Exception as e:
+            error_msg = f"獲取總文章數量時發生錯誤: {e}"
+            logger.error(error_msg)
+            raise e
     
     def get_latest_history(self, task_id: int) -> Optional['CrawlerTaskHistory']:
         """
@@ -67,12 +102,17 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         :param task_id: 任務ID
         :return: 最新的歷史記錄，如果不存在則返回 None
         """
-        return (
-            self.session.query(self.model_class)
-            .filter_by(task_id=task_id)
-            .order_by(self.model_class.start_time.desc())
-            .first()
-        )
+        try:
+            return (
+                self.session.query(self.model_class)
+                .filter_by(task_id=task_id)
+                .order_by(self.model_class.start_time.desc())
+                .first()
+            )
+        except Exception as e:
+            error_msg = f"獲取指定任務的最新歷史記錄時發生錯誤: {e}"
+            logger.error(error_msg)
+            raise e
     
     def get_histories_older_than(self, days: int) -> List['CrawlerTaskHistory']:
         """
@@ -81,12 +121,17 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         :param days: 天數
         :return: 超過指定天數的歷史記錄列表
         """
-        threshold_date = datetime.now() - timedelta(days=days)
-        return (
-            self.session.query(self.model_class)
-            .filter(self.model_class.start_time < threshold_date)
-            .all()
-        )
+        try:
+            threshold_date = datetime.now() - timedelta(days=days)
+            return (
+                self.session.query(self.model_class)
+                .filter(self.model_class.start_time < threshold_date)
+                .all()
+            )
+        except Exception as e:
+            error_msg = f"獲取超過指定天數的歷史記錄時發生錯誤: {e}"
+            logger.error(error_msg)
+            raise e
     
     def update_history_status(
         self, 
@@ -104,18 +149,23 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         :param articles_count: 可選的文章數量
         :return: 是否更新成功
         """
-        history = self.get_by_id(history_id)
-        if not history:
-            return False
-        
-        history.success = success
-        history.end_time = datetime.now()
-        
-        if message is not None:
-            history.message = message
-        
-        if articles_count is not None:
-            history.articles_count = articles_count
-        
-        self.session.commit()
-        return True 
+        try:
+            history = self.get_by_id(history_id)
+            if not history:
+                return False
+            
+            history.success = success
+            history.end_time = datetime.now()
+            
+            if message is not None:
+                history.message = message
+            
+            if articles_count is not None:
+                history.articles_count = articles_count
+            
+            self.session.commit()
+            return True
+        except Exception as e:
+            self.session.rollback()
+            logger.error(f"更新歷史記錄狀態時發生錯誤: {e}")
+            return False 

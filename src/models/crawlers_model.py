@@ -19,8 +19,11 @@ class Crawlers(Base, BaseEntity):
     - created_at: 建立時間
     - updated_at: 更新時間
     - last_crawl_time: 最後爬取時間
+    - crawler_type: 爬蟲類型
     """
     def __init__(self, **kwargs):
+        # 新增驗證邏輯
+        self._validate_input(**kwargs)
         
         if 'created_at' not in kwargs:
             kwargs['created_at'] = datetime.now(timezone.utc)
@@ -29,6 +32,23 @@ class Crawlers(Base, BaseEntity):
             
         super().__init__(**kwargs)
         self.is_initialized = True
+
+    def _validate_input(self, **kwargs):
+        """輸入驗證方法"""
+        # 驗證 crawler_name
+        crawler_name = kwargs.get('crawler_name', '')
+        if not (1 <= len(crawler_name) <= 100):
+            raise ValidationError("crawler_name 長度必須在 1-100 字元之間")
+
+        # 驗證 scrape_target
+        scrape_target = kwargs.get('scrape_target', '')
+        if not (1 <= len(scrape_target) <= 1000):
+            raise ValidationError("scrape_target 長度必須在 1-1000 字元之間")
+
+        # 驗證 crawler_type
+        crawler_type = kwargs.get('crawler_type', '')
+        if not (1 <= len(crawler_type) <= 100):
+            raise ValidationError("crawler_type 長度必須在 1-100 字元之間")
 
     __tablename__ = 'crawlers'
     __table_args__ = (
@@ -44,7 +64,7 @@ class Crawlers(Base, BaseEntity):
         CheckConstraint(
             'is_active IN (0, 1)', 
             name='chk_crawlers_is_active_type'
-            )
+            ),
         #驗證crawler_type長度
         CheckConstraint(
             'length(crawler_type) >= 1 AND length(crawler_type) <= 100', name='chk_crawlers_crawler_type_length'
@@ -129,7 +149,17 @@ class Crawlers(Base, BaseEntity):
     def validate(self, is_update: bool = False) -> List[str]:
         """爬蟲設定驗證"""
         errors = []
-        # 個性化驗證
+        
+        # 長度驗證
+        if len(self.crawler_name) < 1 or len(self.crawler_name) > 100:
+            errors.append("crawler_name 長度必須在 1-100 字元之間")
+        
+        if len(self.scrape_target) < 1 or len(self.scrape_target) > 1000:
+            errors.append("scrape_target 長度必須在 1-1000 字元之間")
+        
+        if len(self.crawler_type) < 1 or len(self.crawler_type) > 100:
+            errors.append("crawler_type 長度必須在 1-100 字元之間")
+        
         return errors
 
     

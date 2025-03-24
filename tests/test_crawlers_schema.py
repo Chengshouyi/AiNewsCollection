@@ -12,13 +12,15 @@ class TestCrawlersCreateSchema:
             "crawler_name": "test_crawler",
             "scrape_target": "https://example.com",
             "crawl_interval": 60,
-            "is_active": True
+            "is_active": True,
+            "crawler_type": "web"
         }
         schema = CrawlersCreateSchema.model_validate(data)
         assert schema.crawler_name == "test_crawler"
         assert schema.scrape_target == "https://example.com"
         assert schema.crawl_interval == 60
         assert schema.is_active is True
+        assert schema.crawler_type == "web"
         assert schema.created_at is not None
     
     def test_crawlers_required_fields(self):
@@ -26,158 +28,171 @@ class TestCrawlersCreateSchema:
         # 缺少 crawler_name
         data1 = {
             "scrape_target": "https://example.com",
-            "crawl_interval": 60
+            "crawl_interval": 60,
+            "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data1)
-        assert "crawler_name: do not be empty." in str(exc_info.value)
+        assert "crawler_name: 不能為空" in str(exc_info.value)
         
         # 缺少 scrape_target
         data2 = {
             "crawler_name": "test_crawler",
-            "crawl_interval": 60
+            "crawl_interval": 60,
+            "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data2)
-        assert "scrape_target: do not be empty." in str(exc_info.value)
+        assert "scrape_target: 不能為空" in str(exc_info.value)
         
         # 缺少 crawl_interval
         data3 = {
             "crawler_name": "test_crawler",
-            "scrape_target": "https://example.com"
+            "scrape_target": "https://example.com",
+            "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data3)
-        assert "crawl_interval: do not be empty." in str(exc_info.value)
+        assert "crawl_interval: 不能為空" in str(exc_info.value)
     
-    def test_crawlers_crawler_name_empty_validation(self):
-        """測試爬蟲名稱為空的驗證"""
-        data = {
+    def test_crawlers_crawler_name_validation(self):
+        """測試爬蟲名稱的驗證"""
+        # 空值
+        data_empty = {
             "crawler_name": "",
             "scrape_target": "https://example.com",
             "crawl_interval": 60,
-            "is_active": True
+            "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
-            CrawlersCreateSchema.model_validate(data)
-        assert "crawler_name: do not be empty." in str(exc_info.value)
-    
-    def test_crawlers_crawler_name_too_long_validation(self):
-        """測試爬蟲名稱過長的驗證"""
-        data = {
-            "crawler_name": "a" * 256,
+            CrawlersCreateSchema.model_validate(data_empty)
+        assert "crawler_name: 不能為空" in str(exc_info.value)
+        
+        # 過長
+        data_too_long = {
+            "crawler_name": "a" * 101,
             "scrape_target": "https://example.com",
             "crawl_interval": 60,
-            "is_active": True
+            "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
-            CrawlersCreateSchema.model_validate(data)
-        assert "crawler_name: length must be between 1 and 255." in str(exc_info.value)
-    
-    def test_crawlers_crawler_name_boundary_values(self):
-        """測試爬蟲名稱長度的邊界值"""
-        # 測試最短有效長度
+            CrawlersCreateSchema.model_validate(data_too_long)
+        assert "crawler_name: 長度必須在 1-100 字元之間" in str(exc_info.value)
+        
+        # 邊界值
         data_min = {
             "crawler_name": "a",
             "scrape_target": "https://example.com",
             "crawl_interval": 60,
-            "is_active": True
+            "crawler_type": "web"
         }
         schema_min = CrawlersCreateSchema.model_validate(data_min)
         assert schema_min.crawler_name == "a"
         
-        # 測試最長有效長度
         data_max = {
-            "crawler_name": "a" * 255,
+            "crawler_name": "a" * 100,
             "scrape_target": "https://example.com",
             "crawl_interval": 60,
-            "is_active": True
+            "crawler_type": "web"
         }
         schema_max = CrawlersCreateSchema.model_validate(data_max)
-        assert len(schema_max.crawler_name) == 255
+        assert len(schema_max.crawler_name) == 100
     
     def test_crawlers_scrape_target_validation(self):
         """測試爬取目標的驗證"""
-        # 測試空值
+        # 空值
         data_empty = {
             "crawler_name": "test_crawler",
             "scrape_target": "",
             "crawl_interval": 60,
-            "is_active": True
+            "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_empty)
-        assert "scrape_target: do not be empty." in str(exc_info.value)
+        assert "scrape_target: 不能為空" in str(exc_info.value)
         
-        # 測試長度邊界值
-        data_max = {
-            "crawler_name": "test_crawler",
-            "scrape_target": "a" * 1000,
-            "crawl_interval": 60,
-            "is_active": True
-        }
-        schema_max = CrawlersCreateSchema.model_validate(data_max)
-        assert len(schema_max.scrape_target) == 1000
-        
-        # 測試超出最大長度
+        # 過長
         data_too_long = {
             "crawler_name": "test_crawler",
             "scrape_target": "a" * 1001,
             "crawl_interval": 60,
-            "is_active": True
+            "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_too_long)
-        assert "scrape_target: length must be between 1 and 1000." in str(exc_info.value)
+        assert "scrape_target: 長度必須在 1-1000 字元之間" in str(exc_info.value)
+        
+        # 邊界值
+        data_max = {
+            "crawler_name": "test_crawler",
+            "scrape_target": "a" * 1000,
+            "crawl_interval": 60,
+            "crawler_type": "web"
+        }
+        schema_max = CrawlersCreateSchema.model_validate(data_max)
+        assert len(schema_max.scrape_target) == 1000
     
-    def test_crawlers_crawl_interval_negative_validation(self):
-        """測試爬取間隔為負值的驗證"""
-        data = {
+    def test_crawlers_crawler_type_validation(self):
+        """測試爬蟲類型的驗證"""
+        # 空值
+        data_empty = {
+            "crawler_name": "test_crawler",
+            "scrape_target": "https://example.com",
+            "crawl_interval": 60,
+            "crawler_type": ""
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersCreateSchema.model_validate(data_empty)
+        assert "crawler_type: 不能為空" in str(exc_info.value)
+        
+        # 過長
+        data_too_long = {
+            "crawler_name": "test_crawler",
+            "scrape_target": "https://example.com",
+            "crawl_interval": 60,
+            "crawler_type": "a" * 101
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersCreateSchema.model_validate(data_too_long)
+        assert "crawler_type: 長度必須在 1-100 字元之間" in str(exc_info.value)
+    
+    def test_crawlers_crawl_interval_validation(self):
+        """測試爬取間隔的驗證"""
+        # 負值
+        data_negative = {
             "crawler_name": "test_crawler",
             "scrape_target": "https://example.com",
             "crawl_interval": -1,
-            "is_active": True
+            "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
-            CrawlersCreateSchema.model_validate(data)
-        assert "crawl_interval: must be greater than 0." in str(exc_info.value)
-    
-    def test_crawlers_crawl_interval_zero_validation(self):
-        """測試爬取間隔為零的驗證"""
-        data = {
+            CrawlersCreateSchema.model_validate(data_negative)
+        assert "crawl_interval: 必須大於 0" in str(exc_info.value)
+        
+        # 零值
+        data_zero = {
             "crawler_name": "test_crawler",
             "scrape_target": "https://example.com",
             "crawl_interval": 0,
-            "is_active": True
+            "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
-            CrawlersCreateSchema.model_validate(data)
-        assert "crawl_interval: must be greater than 0." in str(exc_info.value)
+            CrawlersCreateSchema.model_validate(data_zero)
+        assert "crawl_interval: 必須大於 0" in str(exc_info.value)
     
-    def test_crawlers_is_active_type_validation(self):
-        """測試是否啟用的類型驗證"""
-        data = {
+    def test_crawlers_is_active_validation(self):
+        """測試是否啟用的驗證"""
+        # 非布林值
+        data_not_bool = {
             "crawler_name": "test_crawler",
             "scrape_target": "https://example.com",
             "crawl_interval": 60,
+            "crawler_type": "web",
             "is_active": "not_a_boolean"
         }
         with pytest.raises(ValidationError) as exc_info:
-            CrawlersCreateSchema.model_validate(data)
-        assert "is_active: must be a boolean value." in str(exc_info.value)
-
-    def test_crawlers_created_at_empty_validation(self):
-        """測試建立時間為空的驗證"""
-        data = {
-            "crawler_name": "test_crawler",
-            "scrape_target": "https://example.com",
-            "crawl_interval": 60,
-            "is_active": True,
-            "created_at": None
-        }
-        with pytest.raises(ValidationError) as exc_info:
-            CrawlersCreateSchema.model_validate(data)
-        assert "created_at: do not be empty." in str(exc_info.value)
+            CrawlersCreateSchema.model_validate(data_not_bool)
+        assert "is_active: 必須是布爾值" in str(exc_info.value)
 
 class TestCrawlersUpdateSchema:
     """CrawlersUpdateSchema 的測試類"""
@@ -228,17 +243,36 @@ class TestCrawlersUpdateSchema:
         data = {}
         with pytest.raises(ValidationError) as exc_info:
             CrawlersUpdateSchema.model_validate(data)
-        assert "must provide at least one field to update." in str(exc_info.value)
+        assert "必須提供至少一個要更新的欄位" in str(exc_info.value)
     
-    def test_crawlers_update_created_at_validation(self):
-        """測試不允許更新 created_at 的驗證"""
-        data = {
+    def test_crawlers_update_immutable_fields_validation(self):
+        """測試不允許更新不可變欄位的驗證"""
+        # 不允許更新 created_at
+        data1 = {
             "crawler_name": "test_crawler",
             "created_at": datetime.now()
         }
         with pytest.raises(ValidationError) as exc_info:
-            CrawlersUpdateSchema.model_validate(data)
-        assert "do not allow to update created_at field." in str(exc_info.value)
+            CrawlersUpdateSchema.model_validate(data1)
+        assert "不允許更新 created_at 欄位" in str(exc_info.value)
+        
+        # 不允許更新 id
+        data2 = {
+            "crawler_name": "test_crawler",
+            "id": 1
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersUpdateSchema.model_validate(data2)
+        assert "不允許更新 id 欄位" in str(exc_info.value)
+        
+        # 不允許更新 crawler_type
+        data3 = {
+            "crawler_name": "test_crawler",
+            "crawler_type": "mobile"
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersUpdateSchema.model_validate(data3)
+        assert "不允許更新 crawler_type 欄位" in str(exc_info.value)
     
     def test_crawlers_update_crawler_name_validation(self):
         """測試更新爬蟲名稱的驗證"""
@@ -248,15 +282,15 @@ class TestCrawlersUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersUpdateSchema.model_validate(data_empty)
-        assert "crawler_name: do not be empty." in str(exc_info.value)
+        assert "crawler_name: 不能為空" in str(exc_info.value)
         
         # 過長
         data_too_long = {
-            "crawler_name": "a" * 256
+            "crawler_name": "a" * 101
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersUpdateSchema.model_validate(data_too_long)
-        assert "crawler_name: length must be between 1 and 255." in str(exc_info.value)
+        assert "crawler_name: 長度必須在 1-100 字元之間" in str(exc_info.value)
         
         # None值是允許的
         data_none = {
@@ -274,7 +308,7 @@ class TestCrawlersUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersUpdateSchema.model_validate(data_negative)
-        assert "crawl_interval: must be greater than 0." in str(exc_info.value)
+        assert "crawl_interval: 必須大於 0" in str(exc_info.value)
         
         # 零值
         data_zero = {
@@ -282,7 +316,7 @@ class TestCrawlersUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersUpdateSchema.model_validate(data_zero)
-        assert "crawl_interval: must be greater than 0." in str(exc_info.value)
+        assert "crawl_interval: 必須大於 0" in str(exc_info.value)
         
         # None值是允許的
         data_none = {
@@ -300,4 +334,4 @@ class TestCrawlersUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersUpdateSchema.model_validate(data_not_bool)
-        assert "is_active: must be a boolean value." in str(exc_info.value)
+        assert "is_active: 必須是布爾值" in str(exc_info.value)

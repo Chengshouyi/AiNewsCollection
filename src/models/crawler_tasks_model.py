@@ -16,22 +16,38 @@ class CrawlerTasks(Base, BaseEntity):
     - is_auto: 是否自動爬取
     - ai_only: 是否僅收集 AI 相關
     - notes: 備註
+    - max_pages: 最大爬取頁數
+    - num_articles: 最大爬取文章數
+    - min_keywords: 最小關鍵字數
+    - fetch_details: 是否抓取詳細資料
     - created_at: 建立時間
     - updated_at: 更新時間
+    - last_run_at: 上次執行時間
+    - last_run_success: 上次執行成功與否
+    - last_run_message: 上次執行訊息
+    - schedule: 排程
     """
     def __init__(self, **kwargs):
         # 檢查必填欄位
         if 'crawler_id' not in kwargs:
             raise ValidationError("crawler_id is required")
             
-        # 設置預設的 created_at
+        # 設置預設的設定
         if 'created_at' not in kwargs:
             kwargs['created_at'] = datetime.now(timezone.utc)
         if 'is_auto' not in kwargs:
             kwargs['is_auto'] = True
         if 'ai_only' not in kwargs:
             kwargs['ai_only'] = False
-            
+        if 'max_pages' not in kwargs:   
+            kwargs['max_pages'] = 3
+        if 'num_articles' not in kwargs:
+            kwargs['num_articles'] = 10
+        if 'min_keywords' not in kwargs:
+            kwargs['min_keywords'] = 3
+        if 'fetch_details' not in kwargs:
+            kwargs['fetch_details'] = False
+        
         super().__init__(**kwargs)
         self.is_initialized = True
 
@@ -91,6 +107,39 @@ class CrawlerTasks(Base, BaseEntity):
         DateTime,
         onupdate=lambda: datetime.now(timezone.utc)
     )
+    max_pages: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        default=lambda: 3,
+        nullable=False
+    )
+    num_articles: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        default=lambda: 10,
+        nullable=False
+    )
+    min_keywords: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        default=lambda: 3,
+        nullable=False
+    )
+    fetch_details: Mapped[Optional[bool]] = mapped_column(
+        Boolean,
+        default=lambda: False,
+        nullable=False
+    )
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime
+    )
+    last_run_success: Mapped[Optional[bool]] = mapped_column(
+        Boolean
+    )
+    last_run_message: Mapped[Optional[str]] = mapped_column(
+        Text
+    )
+    schedule: Mapped[Optional[str]] = mapped_column(
+        Text
+    )
+    
     crawlers = relationship("Crawlers", back_populates="crawler_tasks", lazy="joined")
     history = relationship("CrawlerTaskHistory", back_populates="task", lazy="joined")
 
@@ -101,15 +150,36 @@ class CrawlerTasks(Base, BaseEntity):
             f"id={self.id}, "
             f"crawler_id={self.crawler_id}, "
             f"is_auto={self.is_auto}, "
-            f"ai_only={self.ai_only}"
+            f"ai_only={self.ai_only}, "
+            f"max_pages={self.max_pages}, "
+            f"num_articles={self.num_articles}, "
+            f"min_keywords={self.min_keywords}, "
+            f"fetch_details={self.fetch_details}, "
+            f"notes={self.notes}, "
+            f"schedule={self.schedule}, "
+            f"last_run_at={self.last_run_at}, "
+            f"last_run_success={self.last_run_success}, "
+            f"last_run_message={self.last_run_message}"
             f")>"
         )
+    
     def to_dict(self):
         return {
             'id': self.id,
             'crawler_id': self.crawler_id,
             'is_auto': self.is_auto,
-            'ai_only': self.ai_only
+            'ai_only': self.ai_only,
+            'max_pages': self.max_pages,
+            'num_articles': self.num_articles,
+            'min_keywords': self.min_keywords,
+            'fetch_details': self.fetch_details,
+            'notes': self.notes,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at,
+            'last_run_at': self.last_run_at,
+            'last_run_success': self.last_run_success,
+            'last_run_message': self.last_run_message,
+            'schedule': self.schedule
         }
     
     def validate(self, is_update: bool = False) -> List[str]:

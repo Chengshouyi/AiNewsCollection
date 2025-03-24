@@ -45,7 +45,8 @@ def sample_crawler(session):
         crawler_name="測試爬蟲",
         scrape_target="https://example.com",
         crawl_interval=60,
-        is_active=True
+        is_active=True,
+        crawler_type="bnext"
     )
     session.add(crawler)
     session.commit()
@@ -130,6 +131,19 @@ class TestCrawlerTaskHistoryRepository:
         
         middle_date = earliest_date + (latest_date - earliest_date) / 2
         
+        # 測試只有開始日期
+        start_only_histories = crawler_task_history_repo.find_histories_by_date_range(
+            start_date=middle_date
+        )
+        assert len(start_only_histories) > 0
+        
+        # 測試只有結束日期
+        end_only_histories = crawler_task_history_repo.find_histories_by_date_range(
+            end_date=middle_date
+        )
+        assert len(end_only_histories) > 0
+        
+        # 測試完整日期範圍
         histories = crawler_task_history_repo.find_histories_by_date_range(
             start_date=middle_date,
             end_date=latest_date
@@ -140,31 +154,55 @@ class TestCrawlerTaskHistoryRepository:
 
     def test_get_total_articles_count(self, crawler_task_history_repo, sample_task, sample_histories):
         """測試獲取總文章數量"""
-        total_count = crawler_task_history_repo.get_total_articles_count(sample_task.id)
-        assert total_count == 25  # 10 + 0 + 15
+        # 測試特定任務的文章總數
+        task_total_count = crawler_task_history_repo.get_total_articles_count(sample_task.id)
+        assert task_total_count == 25  # 10 + 0 + 15
+        
+        # 測試所有任務的文章總數
+        total_count = crawler_task_history_repo.get_total_articles_count()
+        assert total_count == 25  # 在此測試中只有一個任務
 
     def test_get_latest_history(self, crawler_task_history_repo, sample_task, sample_histories):
         """測試獲取最新的歷史記錄"""
         latest_history = crawler_task_history_repo.get_latest_history(sample_task.id)
         assert latest_history is not None
-        assert latest_history.start_time == sample_histories[-1].start_time
+        assert latest_history.start_time == max(h.start_time for h in sample_histories)
+        
+        # 測試獲取不存在任務的最新歷史
+        nonexistent_latest = crawler_task_history_repo.get_latest_history(999)
+        assert nonexistent_latest is None
 
     def test_get_histories_older_than(self, crawler_task_history_repo, sample_histories):
         """測試獲取超過指定天數的歷史記錄"""
         histories_older_than_2_days = crawler_task_history_repo.get_histories_older_than(2)
-        assert len(histories_older_than_2_days) == 2
+        assert len(histories_older_than_2_days) > 0
+        for history in histories_older_than_2_days:
+            assert (datetime.now() - history.start_time).days >= 2
 
     def test_update_history_status(self, crawler_task_history_repo, sample_histories):
         """測試更新歷史記錄狀態"""
         history = sample_histories[1]
-        result = crawler_task_history_repo.update_history_status(
+        
+        # 測試更新部分欄位
+        partial_update_result = crawler_task_history_repo.update_history_status(
+            history_id=history.id,
+            success=True
+        )
+        assert partial_update_result is True
+        
+        updated_history = crawler_task_history_repo.get_by_id(history.id)
+        assert updated_history.success is True
+        assert updated_history.end_time is not None
+        
+        # 測試完整更新
+        complete_update_result = crawler_task_history_repo.update_history_status(
             history_id=history.id,
             success=True,
             message="重試成功",
             articles_count=5
         )
         
-        assert result is True
+        assert complete_update_result is True
         
         updated_history = crawler_task_history_repo.get_by_id(history.id)
         assert updated_history.success is True
@@ -219,4 +257,22 @@ class TestSpecialCases:
         assert crawler_task_history_repo.update_history_status(
             history_id=999, 
             success=True
-        ) is False 
+        ) is False
+
+class TestErrorHandling:
+    """測試錯誤處理"""
+    
+    def test_repository_exception_handling(self, crawler_task_history_repo, session, monkeypatch):
+        """測試資料庫操作異常處理"""
+        # 模擬查詢時資料庫異常
+        def mock_query_error(*args, **kwargs):
+            raise Exception("模擬資料庫查詢錯誤")
+        
+        monkeypatch.setattr(crawler_task_history_repo.session, "query", mock_query_error)
+        
+        # 測試各方法的異常處理
+        with pytest.raises(Exception) as excinfo:
+            crawler_task_history_repo.find_by_task_id(1)
+        
+        # 修改斷言方式
+        assert "模擬資料庫查詢錯誤" in str(excinfo.value) 

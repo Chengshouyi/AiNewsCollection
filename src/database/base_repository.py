@@ -5,8 +5,9 @@ from src.models.base_model import Base
 from src.error.errors import ValidationError, NotFoundError
 from src.models.base_entity import ValidatableEntity
 from sqlalchemy import desc, asc
-import logging
 import re
+import logging
+
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -186,12 +187,18 @@ class BaseRepository(Generic[T]):
         
         # 基於模型類型的精確匹配
         class_name = entity.__class__.__name__
-        if class_name == 'Article':
+        if class_name == 'Articles':
             immutable_fields.update(['link', 'created_at'])
         elif class_name == 'ArticleLinks':
             immutable_fields.update(['article_link', 'created_at'])
-        elif class_name == 'CrawlerSettings':
-            immutable_fields.update(['created_at'])
+        elif class_name == 'Crawlers':
+            immutable_fields.update(['created_at', 'crawler_type'])
+        elif class_name == 'CrawlerTasks':
+            immutable_fields.update(['created_at', 'crawler_id'])
+        elif class_name == 'CrawlerTasks':
+            immutable_fields.update(['created_at', 'crawler_id'])
+        elif class_name == 'CrawlerTaskHistories':
+            immutable_fields.update(['created_at', 'crawler_task_id'])
         else:
             # 對於未知模型，則嘗試分析 __setattr__ 方法
             if hasattr(entity.__class__, '__setattr__'):

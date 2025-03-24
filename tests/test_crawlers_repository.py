@@ -6,7 +6,7 @@ from src.models.crawlers_model import Crawlers
 from src.database.crawlers_repository import CrawlersRepository
 from src.models.base_model import Base
 import uuid
-
+from src.error.errors import ValidationError
 # 設置測試資料庫
 @pytest.fixture
 def engine():
@@ -45,21 +45,24 @@ def sample_crawlers(session):
             scrape_target="https://example.com/news1",
             crawl_interval=60,  # 60分鐘
             is_active=True,
-            last_crawl_time=datetime.now() - timedelta(hours=2)
+            last_crawl_time=datetime.now() - timedelta(hours=2),
+            crawler_type="web"
         ),
         Crawlers(
             crawler_name="新聞爬蟲2",
             scrape_target="https://example.com/news2",
             crawl_interval=120,  # 120分鐘
             is_active=False,
-            last_crawl_time=datetime.now() - timedelta(days=1)
+            last_crawl_time=datetime.now() - timedelta(days=1),
+            crawler_type="web"
         ),
         Crawlers(
             crawler_name="RSS爬蟲",
             scrape_target="https://example.com/rss",
             crawl_interval=30,  # 30分鐘
             is_active=True,
-            last_crawl_time=None  # 從未執行過
+            last_crawl_time=None,  # 從未執行過
+            crawler_type="web"
         )
     ]
     session.add_all(settings)
@@ -155,7 +158,8 @@ class TestCrawlersRepository:
             "crawler_name": "測試爬蟲",
             "scrape_target": "https://example.com/test",
             "crawl_interval": 45,
-            "is_active": True
+            "is_active": True,
+            "crawler_type": "web"
         }
         
         # 創建新爬蟲設定
@@ -170,6 +174,7 @@ class TestCrawlersRepository:
         assert retrieved is not None
         assert retrieved.crawler_name == "測試爬蟲"
         assert retrieved.scrape_target == "https://example.com/test"
+        assert retrieved.crawler_type == "web"
     
     def test_update(self, crawlers_repo, sample_crawlers):
         """測試更新爬蟲設定"""
@@ -180,7 +185,8 @@ class TestCrawlersRepository:
         update_data = {
             "crawler_name": "已更新爬蟲名稱",
             "crawl_interval": 90,
-            "is_active": False
+            "is_active": False,
+            "scrape_target": sample_crawlers[0].scrape_target,
         }
         
         # 執行更新
@@ -252,49 +258,38 @@ class TestCrawlersConstraints:
         """測試必填欄位約束"""
         session = test_session
         
-        # 測試缺少crawler_name
-        setting1 = Crawlers(
-            # 缺少crawler_name
-            scrape_target="https://example.com/test",
-            crawl_interval=60,
-            is_active=True
-        )
-        session.add(setting1)
+        # 測試缺少 crawler_name
+        with pytest.raises(ValidationError) as excinfo:
+            Crawlers(
+                crawler_name="",  # 空字串
+                scrape_target="https://example.com/test",
+                crawl_interval=60,
+                is_active=True,
+                crawler_type="web"
+            )
+        assert "crawler_name 長度必須在 1-100 字元之間" in str(excinfo.value)
         
-        with pytest.raises(Exception) as excinfo:
-            session.flush()
+        # 測試缺少 scrape_target
+        with pytest.raises(ValidationError) as excinfo:
+            Crawlers(
+                crawler_name="測試爬蟲",
+                scrape_target="",  # 空字串
+                crawl_interval=60,
+                is_active=True,
+                crawler_type="web"
+            )
+        assert "scrape_target 長度必須在 1-1000 字元之間" in str(excinfo.value)
         
-        assert "NOT NULL constraint failed" in str(excinfo.value)
-        session.rollback()
-        
-        # 測試缺少scrape_target
-        setting2 = Crawlers(
-            crawler_name="測試爬蟲",
-            # 缺少scrape_target
-            crawl_interval=60,
-            is_active=True
-        )
-        session.add(setting2)
-        
-        with pytest.raises(Exception) as excinfo:
-            session.flush()
-        
-        assert "NOT NULL constraint failed" in str(excinfo.value)
-        session.rollback()
-        
-        # 測試缺少crawl_interval
-        setting3 = Crawlers(
-            crawler_name="測試爬蟲",
-            scrape_target="https://example.com/test",
-            # 缺少crawl_interval
-            is_active=True
-        )
-        session.add(setting3)
-        
-        with pytest.raises(Exception) as excinfo:
-            session.flush()
-        
-        assert "NOT NULL constraint failed" in str(excinfo.value)
+        # 測試缺少 crawler_type
+        with pytest.raises(ValidationError) as excinfo:
+            Crawlers(
+                crawler_name="測試爬蟲",
+                scrape_target="https://example.com/test",
+                crawl_interval=60,
+                is_active=True,
+                crawler_type=""  # 空字串
+            )
+        assert "crawler_type 長度必須在 1-100 字元之間" in str(excinfo.value)
     
     def test_default_values(self, test_session):
         """測試默認值"""
@@ -304,7 +299,8 @@ class TestCrawlersConstraints:
         setting = Crawlers(
             crawler_name="測試默認值",
             scrape_target="https://example.com/default",
-            crawl_interval=60
+            crawl_interval=60,
+            crawler_type="web"
             # 不設置is_active和created_at
         )
         session.add(setting)
@@ -326,53 +322,38 @@ class TestCrawlersConstraints:
         """測試CHECK約束"""
         session = test_session
     
-        # 測試crawler_name長度約束
-        setting1 = Crawlers(
-            crawler_name="a" * 101,  # 超過100字符
-            scrape_target="https://example.com/test",
-            crawl_interval=60,
-            is_active=True
-        )
-        session.add(setting1)
+        # 測試 crawler_name 長度約束
+        with pytest.raises(ValidationError) as excinfo:
+            Crawlers(
+                crawler_name="a" * 101,  # 超過100字符
+                scrape_target="https://example.com/test",
+                crawl_interval=60,
+                is_active=True,
+                crawler_type="web"
+            )
+        assert "crawler_name 長度必須在 1-100 字元之間" in str(excinfo.value)
     
-        with pytest.raises(Exception) as excinfo:
-            session.flush()
+        # 測試 scrape_target 長度約束
+        with pytest.raises(ValidationError) as excinfo:
+            Crawlers(
+                crawler_name="測試爬蟲",
+                scrape_target="x" * 1001,  # 超過1000字符
+                crawl_interval=60,
+                is_active=True,
+                crawler_type="web"
+            )
+        assert "scrape_target 長度必須在 1-1000 字元之間" in str(excinfo.value)
     
-        assert "CONSTRAINT" in str(excinfo.value) or "CHECK" in str(excinfo.value)
-        session.rollback()
-    
-        # 測試scrape_target長度約束
-        setting2 = Crawlers(
-            crawler_name="測試爬蟲",
-            scrape_target="x" * 1001,  # 超過1000字符
-            crawl_interval=60,
-            is_active=True
-        )
-        session.add(setting2)
-    
-        with pytest.raises(Exception) as excinfo:
-            session.flush()
-    
-        assert "CONSTRAINT" in str(excinfo.value) or "CHECK" in str(excinfo.value)
-        session.rollback()
-    
-        # 測試is_active類型約束
-        # 註：SQLite可能不會強制檢查這個約束，但在實際數據庫中會生效
-        try:
-            setting3 = Crawlers(
+        # 測試 crawler_type 長度約束
+        with pytest.raises(ValidationError) as excinfo:
+            Crawlers(
                 crawler_name="測試爬蟲",
                 scrape_target="https://example.com/test",
                 crawl_interval=60,
-                is_active=2  # 不是0或1
+                is_active=True,
+                crawler_type="a" * 101  # 超過100字符
             )
-            session.add(setting3)
-            session.flush()
-        except Exception as e:
-            # 如果出現異常，則約束生效了
-            # is_active 使用 SQLAlchemy Boolean 類型，所以會引發 ValueError
-            # 而不是常規的 CHECK 約束錯誤
-            assert "Value 2 is not None, True, or False" in str(e) or "CONSTRAINT" in str(e) or "CHECK" in str(e)
-            session.rollback()
+        assert "crawler_type 長度必須在 1-100 字元之間" in str(excinfo.value)
 
 class TestCrawlersRepositoryQueries:
     """測試CrawlerSettingsRepository的查詢功能"""
@@ -386,7 +367,8 @@ class TestCrawlersRepositoryQueries:
                 crawler_name=f"額外爬蟲{i+1}",
                 scrape_target=f"https://example.com/extra{i+1}",
                 crawl_interval=60,
-                is_active=True
+                is_active=True,
+                crawler_type="web"
             )
             crawlers_repo.session.add(new_setting)
         crawlers_repo.session.commit()
