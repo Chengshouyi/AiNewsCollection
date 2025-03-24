@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from src.database.articles_repository import ArticlesRepository
@@ -564,7 +564,10 @@ class TestSpecialCases:
         unicode_data = {
             "title": "Unicode測試：中文、日文、emoji 😊",
             "link": "https://example.com/unicode-test",
-            "content": "這是一個包含特殊字符的測試：\n中文、日文（テスト）、韓文（테스트）、emoji（🔍📚🌏）"
+            "content": "這是一個包含特殊字符的測試：\n中文、日文（テスト）、韓文（테스트）、emoji（🔍📚🌏）",
+            "is_ai_related": True,
+            "source": "測試來源",
+            "published_at": datetime.now(timezone.utc)
         }
         
         article = article_repo.create(unicode_data)

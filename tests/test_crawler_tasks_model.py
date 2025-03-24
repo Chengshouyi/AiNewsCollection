@@ -1,7 +1,6 @@
 import pytest
 from datetime import datetime, timezone
 from src.models.crawler_tasks_model import CrawlerTasks
-from src.models.crawlers_model import Crawlers
 from src.error.errors import ValidationError
 
 class TestCrawlerTasksModel:
@@ -108,4 +107,4 @@ class TestCrawlerTasksModel:
     def test_relationship_attribute_exists(self):
         """測試關聯屬性存在"""
         task = CrawlerTasks(crawler_id=1)
-        assert hasattr(task, 'crawler') 
+        assert hasattr(task, 'crawlers') 

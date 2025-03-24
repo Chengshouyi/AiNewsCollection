@@ -21,13 +21,25 @@ class BnextCrawler(BaseCrawler):
 
 
     def fetch_article_list(self, args: dict, **kwargs) -> pd.DataFrame:
+        """
+        抓取文章列表
+        
+        Args:
+            args (dict): 包含以下參數：
+                - max_pages (int): 最大頁數，預設為 3
+                - categories (list): 文章類別列表，預設為 None
+                - ai_only (bool): 是否只抓取 AI 相關文章，預設為 True
+            
+        Returns:
+            pd.DataFrame: 包含文章列表的資料框
+        """
         scraper = BnextScraper()
         max_pages = args.get("max_pages", 3)
         categories = args.get("categories", None)
         ai_only = args.get("ai_only", True)
         return scraper.scrape_article_list(max_pages, categories, ai_only)
 
-    def fectch_artcle_details(self, args: dict, **kwargs) -> pd.DataFrame:
+    def fetch_article_details(self, args: dict, **kwargs) -> pd.DataFrame:
         extractor = BnextContentExtractor()
         articles_df = args.get("articles_df", None)
         num_articles = args.get("num_articles", 10)
@@ -38,7 +50,7 @@ class BnextCrawler(BaseCrawler):
 
     def save_data(self, data: pd.DataFrame):
         """
-        保存網頁內容
+        保存網頁內容，需要重新設計
         """
         db_manager = DatabaseManager()
         article_service = ArticleService(db_manager)

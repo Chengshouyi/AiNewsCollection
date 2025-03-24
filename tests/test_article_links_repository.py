@@ -1,5 +1,6 @@
 import uuid
 import pytest
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from src.models.article_links_model import ArticleLinks
 from src.models.articles_model import Articles
@@ -147,7 +148,10 @@ class TestArticleLinksRelationship:
         article_data = {
             "title": "關係測試文章",
             "link": "https://example.com/relation-test",
-            "content": "測試文章和連結關係"
+            "content": "測試文章和連結關係",
+            "is_ai_related": True,
+            "source": "測試來源",
+            "published_at": datetime.now(timezone.utc)
         }
         article = article_repo.create(article_data)
         session.flush()

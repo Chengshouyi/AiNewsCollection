@@ -1,7 +1,7 @@
 from src.models.article_links_model import ArticleLinks
 from src.models.articles_model import Articles
 from src.error.errors import ValidationError
-from datetime import datetime
+from datetime import datetime, timezone
 import pytest
 
 
@@ -40,7 +40,7 @@ class TestArticleLinksModel:
             
         # 測試不可修改 created_at
         with pytest.raises(ValidationError, match="created_at cannot be updated"):
-            article_link.created_at = datetime.now()
+            article_link.created_at = datetime.now(timezone.utc)
 
     def test_article_links_update_mutable_fields(self):
         """測試 ArticleLinks 的可變欄位更新"""
@@ -88,11 +88,11 @@ class TestArticleLinksModel:
         assert article_link.article_link == article.link
         
         # 模擬資料庫操作後的關聯
-        article_link.article = article
+        article_link.articles = article
         
         # 檢查關聯是否正確設置
-        assert article_link.article is not None
-        assert article_link.article.title == "測試文章"
+        assert article_link.articles is not None
+        assert article_link.articles.title == "測試文章"
         
         # 註：在測試環境中，反向關聯 article.article_links 需要實際資料庫支援
         # 因此，這裡不測試反向關聯
@@ -121,7 +121,7 @@ class TestArticleLinksModel:
                 source_name="測試來源",
                 source_url="https://test.com",
                 article_link="https://test.com/article",
-                article=article  # 直接設定關聯
+                articles=article  # 直接設定關聯
             )
             
             # 保存到資料庫
@@ -144,8 +144,8 @@ class TestArticleLinksModel:
             assert db_article.title == "測試文章"
             
             # 檢查 ArticleLinks -> Article 關聯
-            assert db_article_link.article is not None, "ArticleLinks 未建立關聯到 Article"
-            assert db_article_link.article.title == "測試文章"
+            assert db_article_link.articles is not None, "ArticleLinks 未建立關聯到 Article"
+            assert db_article_link.articles.title == "測試文章"
             
             # 測試反向關聯
             assert db_article.article_links is not None
