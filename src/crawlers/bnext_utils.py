@@ -4,7 +4,7 @@
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from src.crawler.bnext_config import BNEXT_CONFIG
+from src.crawlers.bnext_config import BNEXT_CONFIG
 
 class BnextUtils:
     """提供 Bnext 爬蟲共用的功能"""

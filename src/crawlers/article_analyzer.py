@@ -2,7 +2,7 @@
 # 用於分析文章是否與AI相關的
 
 import pandas as pd
-from src.crawler.ai_filter_config import AI_KEYWORDS, AI_CATEGORIES
+from src.crawlers.ai_filter_config import AI_KEYWORDS, AI_CATEGORIES
 
 class ArticleAnalyzer:
     def __init__(self):

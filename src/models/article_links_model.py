@@ -111,3 +111,14 @@ class ArticleLinks(Base, BaseEntity):
         errors = []
         # 個性化驗證
         return errors
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'source_name': self.source_name,
+            'source_url': self.source_url,
+            'article_link': self.article_link,
+            'is_scraped': self.is_scraped,
+            'created_at': self.created_at
+        }
+    

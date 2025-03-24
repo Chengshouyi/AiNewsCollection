@@ -150,3 +150,21 @@ class Articles(Base, BaseEntity):
         errors = []
         # 個性化驗證
         return errors
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'title': self.title,
+            'summary': self.summary,
+            'content': self.content,
+            'link': self.link,
+            'category': self.category,
+            'published_at': self.published_at,
+            'author': self.author,
+            'source': self.source,
+            'article_type': self.article_type,
+            'tags': self.tags,
+            'is_ai_related': self.is_ai_related,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at
+        }

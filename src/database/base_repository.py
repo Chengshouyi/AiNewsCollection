@@ -1,4 +1,4 @@
-from typing import List, Optional, TypeVar, Generic, Type, Dict, Any, Union, Set, cast, Protocol
+from typing import List, Optional, TypeVar, Generic, Type, Dict, Any, Union, Set
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from src.models.base_model import Base

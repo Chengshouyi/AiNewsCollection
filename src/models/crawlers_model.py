@@ -103,7 +103,19 @@ class Crawlers(Base, BaseEntity):
             f"is_active={self.is_active}"
             f")>"
         )
-  
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'crawler_name': self.crawler_name,
+            'scrape_target': self.scrape_target,
+            'is_active': self.is_active,
+            'crawl_interval': self.crawl_interval,
+            'created_at': self.created_at,
+            'updated_at': self.updated_at,
+            'last_crawl_time': self.last_crawl_time
+        }
+    
     def validate(self, is_update: bool = False) -> List[str]:
         """爬蟲設定驗證"""
         errors = []

@@ -9,10 +9,10 @@ import random
 import re
 from urllib.parse import urljoin
 
-from src.crawler.base_config import DEFAULT_HEADERS
-from src.crawler.bnext_config import BNEXT_CONFIG, BNEXT_DEFAULT_CATEGORIES
-from src.crawler.article_analyzer import ArticleAnalyzer
-from src.crawler.bnext_utils import BnextUtils
+from src.crawlers.base_config import DEFAULT_HEADERS
+from src.crawlers.bnext_config import BNEXT_CONFIG, BNEXT_DEFAULT_CATEGORIES
+from src.crawlers.article_analyzer import ArticleAnalyzer
+from src.crawlers.bnext_utils import BnextUtils
 
 class BnextScraper:
     def __init__(self, db_manager=None):

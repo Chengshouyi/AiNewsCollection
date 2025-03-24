@@ -1,4 +1,4 @@
-from src.crawler.site_config import SiteConfig
+from src.crawlers.site_config import SiteConfig
 import json
 import os
 from src.config import BNEXT_CONFIG_PATH

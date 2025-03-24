@@ -92,6 +92,7 @@ class CrawlerTasks(Base, BaseEntity):
         onupdate=lambda: datetime.now(timezone.utc)
     )
     crawlers = relationship("Crawlers", back_populates="crawler_tasks", lazy="joined")
+    history = relationship("CrawlerTaskHistory", back_populates="task", lazy="joined")
 
     # 系統設定資料repr  
     def __repr__(self):
@@ -103,7 +104,14 @@ class CrawlerTasks(Base, BaseEntity):
             f"ai_only={self.ai_only}"
             f")>"
         )
-  
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'crawler_id': self.crawler_id,
+            'is_auto': self.is_auto,
+            'ai_only': self.ai_only
+        }
+    
     def validate(self, is_update: bool = False) -> List[str]:
         """爬蟲任務驗證"""
         errors = []

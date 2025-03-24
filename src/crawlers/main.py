@@ -1,8 +1,8 @@
 import pandas as pd
 import os
 
-from src.crawler.bnext_scraper import BnextScraper
-from src.crawler.bnext_content_extractor import BnextContentExtractor
+from src.crawlers.bnext_scraper import BnextScraper
+from src.crawlers.bnext_content_extractor import BnextContentExtractor
 
 
 def main(pages=3, category=None, all=False, content=False, content_limit=10, min_keywords=3, input_file=None, analyze=False):
