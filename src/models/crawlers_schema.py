@@ -11,12 +11,13 @@ class CrawlersCreateSchema(BaseModel):
     created_at: datetime = Field(default_factory=datetime.now, description="建立時間")
     updated_at: Optional[datetime] = Field(default=None, description="更新時間")
     last_crawl_time: Optional[datetime] = Field(default=None, description="最後爬取時間")
-    
+    crawler_type: str = Field(..., min_length=1, max_length=100, description="爬蟲類型")
+
     @model_validator(mode='before')
     @classmethod
     def validate_required_fields(cls, data):
         if isinstance(data, dict):
-            required_fields = ['crawler_name', 'scrape_target', 'crawl_interval']
+            required_fields = ['crawler_name', 'scrape_target', 'crawl_interval', 'crawler_type']
             for field in required_fields:
                 if field not in data:
                     raise ValidationError(f"{field}: do not be empty.")
@@ -62,6 +63,15 @@ class CrawlersCreateSchema(BaseModel):
         if 1 > len(value) or len(value) > 1000:
             raise ValidationError("scrape_target: length must be between 1 and 1000.")
         return value
+    
+    @field_validator('crawler_type', mode='before')
+    @classmethod
+    def validate_crawler_type(cls, value):
+        if not value or not value.strip():
+            raise ValidationError("crawler_type: do not be empty.")
+        if 1 > len(value) or len(value) > 100:
+            raise ValidationError("crawler_type: length must be between 1 and 100.")
+        return value
 
 
 class CrawlersUpdateSchema(BaseModel):
@@ -77,12 +87,12 @@ class CrawlersUpdateSchema(BaseModel):
     def validate_update(cls, data):
         if isinstance(data, dict):
             # 防止更新 created_at 和 id
-            for immutable_field in ['created_at', 'id']:
+            for immutable_field in ['created_at', 'id', 'crawler_type']:
                 if immutable_field in data:
                     raise ValidationError(f"do not allow to update {immutable_field} field.")
             
             # 確保至少有一個欄位被更新
-            update_fields = [k for k in data.keys() if k not in ['updated_at', 'created_at', 'id']]
+            update_fields = [k for k in data.keys() if k not in ['updated_at', 'created_at', 'id', 'crawler_type']]
             if not update_fields:
                 raise ValidationError("must provide at least one field to update.")
         

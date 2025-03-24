@@ -45,13 +45,17 @@ class Crawlers(Base, BaseEntity):
             'is_active IN (0, 1)', 
             name='chk_crawlers_is_active_type'
             )
+        #驗證crawler_type長度
+        CheckConstraint(
+            'length(crawler_type) >= 1 AND length(crawler_type) <= 100', name='chk_crawlers_crawler_type_length'
+            )
     )
     def __setattr__(self, key, value):
         if not hasattr(self, 'is_initialized'):
             super().__setattr__(key, value)
             return
 
-        if key in ['id', 'created_at'] and hasattr(self, key):
+        if key in ['id', 'created_at', 'crawler_type'] and hasattr(self, key):
             raise ValidationError(f"{key} cannot be updated")
 
         super().__setattr__(key, value)
@@ -91,6 +95,10 @@ class Crawlers(Base, BaseEntity):
     last_crawl_time: Mapped[Optional[datetime]] = mapped_column(
         DateTime
     )
+    crawler_type: Mapped[str] = mapped_column(
+        String(100), 
+        nullable=False
+    )
     crawler_tasks = relationship("CrawlerTasks", back_populates="crawlers", lazy="joined")
     
     # 系統設定資料repr  
@@ -100,6 +108,7 @@ class Crawlers(Base, BaseEntity):
             f"id={self.id}, "
             f"crawler_name='{self.crawler_name}', "
             f"scrape_target='{self.scrape_target}', "
+            f"crawler_type='{self.crawler_type}', "
             f"is_active={self.is_active}"
             f")>"
         )
@@ -113,7 +122,8 @@ class Crawlers(Base, BaseEntity):
             'crawl_interval': self.crawl_interval,
             'created_at': self.created_at,
             'updated_at': self.updated_at,
-            'last_crawl_time': self.last_crawl_time
+            'last_crawl_time': self.last_crawl_time,
+            'crawler_type': self.crawler_type
         }
     
     def validate(self, is_update: bool = False) -> List[str]:
