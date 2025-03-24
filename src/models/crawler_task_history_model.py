@@ -63,8 +63,7 @@ class CrawlerTaskHistory(Base, BaseEntity):
     )
     start_time: Mapped[datetime] = mapped_column(
         DateTime, 
-        nullable=False, 
-        default=lambda: datetime.now(timezone.utc)
+        nullable=False
     )
     end_time: Mapped[Optional[datetime]] = mapped_column(
         DateTime
