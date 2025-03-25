@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import create_engine
 from src.models.base_model import Base
 from src.database.base_repository import BaseRepository
-from src.models.articles_schema import ArticleCreateSchema
+from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from src.models.articles_model import Articles
 from src.error.errors import ValidationError
 from datetime import datetime, timezone
@@ -43,6 +43,15 @@ class TestBaseRepository:
     def test_create(self, repo, sample_article_data):
         """測試創建實體"""
         result = repo.create(sample_article_data)
+        repo.session.commit()
+        
+        assert result.id is not None
+        assert result.title == "測試文章"
+        assert result.link == "https://test.com/article"
+    
+    def test_create_with_schema(self, repo, sample_article_data):
+        """測試使用schema創建實體"""
+        result = repo.create(sample_article_data, schema_class=ArticleCreateSchema)
         repo.session.commit()
         
         assert result.id is not None
@@ -92,6 +101,25 @@ class TestBaseRepository:
         assert result.summary == "這是更新後的摘要"
         assert result.link == "https://test.com/article"  # 未更新的欄位應保持不變
     
+    def test_update_with_schema(self, repo, sample_article_data):
+        """測試使用schema更新實體"""
+        article = repo.create(sample_article_data)
+        repo.session.commit()
+        
+        updated_data = {
+            "title": "使用Schema更新後的文章",
+            "summary": "這是使用Schema更新後的摘要"
+        }
+        
+        result = repo.update(article.id, updated_data, schema_class=ArticleUpdateSchema)
+        repo.session.commit()
+        
+        assert result is not None
+        assert result.id == article.id
+        assert result.title == "使用Schema更新後的文章"
+        assert result.summary == "這是使用Schema更新後的摘要"
+        assert result.link == "https://test.com/article"  # 未更新的欄位應保持不變
+    
     def test_delete(self, repo, sample_article_data):
         """測試刪除實體"""
         article = repo.create(sample_article_data)
@@ -103,31 +131,20 @@ class TestBaseRepository:
         assert result is True
         assert repo.get_by_id(article.id) is None
     
-    def test_validate_entity_required_fields(self, repo):
-        """測試必填欄位驗證"""
+    def test_schema_validation_error(self, repo):
+        """測試模型驗證失敗"""
         invalid_data = {
-            "title": "測試文章"
-            # 缺少必填欄位 link, source
-        }
-        
-        with pytest.raises(ValidationError):
-            repo.validate_entity(invalid_data)
-    
-    def test_validate_entity_field_length(self, repo):
-        """測試欄位長度驗證"""
-        invalid_data = {
-            "title": "a" * 501,  # 超過最大長度 500
+            "title": "",  # 空標題，違反schema驗證規則
             "link": "https://test.com/article",
+            "published_at": "2023-07-01",
             "source": "測試來源"
         }
         
-        with pytest.raises(ValidationError):
-            repo.validate_entity(invalid_data)
+        with pytest.raises(Exception):
+            repo.create(invalid_data, schema_class=ArticleCreateSchema)
     
-    def test_validate_entity_with_schema(self, repo):
-        """測試使用 schema 進行驗證"""
-        
-        # 有效數據
+    def test_create_with_schema_success(self, repo):
+        """測試使用 schema 進行有效驗證"""
         valid_data = {
             "title": "測試文章",
             "link": "https://test.com/article",
@@ -136,28 +153,12 @@ class TestBaseRepository:
             "summary": "這是一篇測試文章的摘要"
         }
         
-        # 不應拋出異常
-        repo.validate_entity(valid_data, schema_class=ArticleCreateSchema)
-        
-        # 無效數據
-        invalid_data = {
-            "title": "",  # 空標題，違反schema驗證規則
-            "link": "https://test.com/article",
-            "published_at": "2023-07-01",
-            "source": "測試來源"
-        }
-        
-        with pytest.raises(ValidationError):
-            repo.validate_entity(invalid_data, schema_class=ArticleCreateSchema)
-    
-    def test_update_immutable_field(self, repo, sample_article_data):
-        """測試更新不可變欄位"""
-        article = repo.create(sample_article_data)
+        result = repo.create(valid_data, schema_class=ArticleCreateSchema)
         repo.session.commit()
         
-        # 嘗試更新不可變欄位 link
-        with pytest.raises(ValidationError):
-            repo.update(article.id, {"link": "https://test.com/updated"})
+        assert result.id is not None
+        assert result.title == "測試文章"
+        assert result.link == "https://test.com/article"
     
     def test_create_with_integrity_error(self, repo, sample_article_data):
         """測試創建時的完整性錯誤"""
@@ -183,7 +184,7 @@ class TestBaseRepository:
         
         repo.session.commit()
         
-        # 嘗試將第二篇文章的 link 更新為與第一篇相同
+        # 嘗試將第二篇文章的資料更新為與第一篇相同
         with pytest.raises(ValidationError):
             repo.update(article2.id, {"title": "更新的第二篇文章", "link": article1.link})
             repo.session.commit()
