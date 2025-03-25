@@ -1,113 +1,80 @@
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional
+from typing import Annotated, Optional, Any
+from pydantic import BaseModel, BeforeValidator, model_validator
 from src.error.errors import ValidationError
+from src.models.model_utiles import validate_optional_str
+
+def validate_source_name(value: str) -> str:
+    """來源名稱驗證"""
+    if not value or not value.strip():
+        raise ValidationError("source_name: 不能為空")
+    value = value.strip()
+    if len(value) > 50:
+        raise ValidationError("source_name: 長度不能超過 50 字元")
+    return value
+
+def validate_source_url(value: str) -> str:
+    """來源URL驗證"""
+    if not value or not value.strip():
+        raise ValidationError("source_url: 不能為空")
+    value = value.strip()
+    if len(value) > 1000:
+        raise ValidationError("source_url: 長度不能超過 1000 字元")
+    return value
+
+def validate_article_link(value: str) -> str:
+    """文章連結驗證"""
+    if not value or not value.strip():
+        raise ValidationError("article_link: 不能為空")
+    value = value.strip()
+    if len(value) > 1000:
+        raise ValidationError("article_link: 長度不能超過 1000 字元")
+    return value
+
+# 通用字段定義
+SourceName = Annotated[str, BeforeValidator(validate_source_name)]
+SourceUrl = Annotated[str, BeforeValidator(validate_source_url)]
+ArticleLink = Annotated[str, BeforeValidator(validate_article_link)]
 
 class ArticleLinksCreateSchema(BaseModel):
-    article_link: str = Field(..., min_length=1, max_length=1000, description="文章連結")
-    source_name: str = Field(..., min_length=1, max_length=50, description="來源名稱")
-    source_url: str = Field(..., min_length=1, max_length=1000, description="來源URL")
-    is_scraped: bool = Field(..., description="是否已爬取")
+    """文章連結創建模型"""
+    source_name: SourceName
+    source_url: SourceUrl
+    article_link: ArticleLink
+    is_scraped: bool = False
 
     @model_validator(mode='before')
     @classmethod
     def validate_required_fields(cls, data):
+        """驗證必填欄位"""
         if isinstance(data, dict):
-            required_fields = ['article_link', 'source_name', 'source_url', 'is_scraped']
+            required_fields = ['source_name', 'source_url', 'article_link']
             for field in required_fields:
                 if field not in data:
-                    raise ValidationError(f"{field}: do not be empty.")
+                    raise ValidationError(f"{field}: 不能為空")
         return data
 
-    @field_validator('article_link', mode='before')
-    @classmethod
-    def validate_article_link(cls, value):
-        if not value or not value.strip():
-            raise ValidationError("article_link: do not be empty.")
-        if 1 > len(value) or len(value) > 1000:
-            raise ValidationError("article_link: length must be between 1 and 1000.")
-        return value
-
-    @field_validator('source_name', mode='before')
-    @classmethod
-    def validate_source_name(cls, value):
-        if not value or not value.strip():
-            raise ValidationError("source_name: do not be empty.")
-        if 1 > len(value) or len(value) > 50:
-            raise ValidationError("source_name: length must be between 1 and 50.")
-        return value
-
-    @field_validator('source_url', mode='before')
-    @classmethod
-    def validate_source_url(cls, value):
-        if not value or not value.strip():
-            raise ValidationError("source_url: do not be empty.")
-        if 1 > len(value) or len(value) > 1000:
-            raise ValidationError("source_url: length must be between 1 and 1000.")
-        return value
-    
-    @field_validator('is_scraped', mode='before')
-    @classmethod
-    def validate_is_scraped(cls, value):
-        if value is None:
-            raise ValidationError("is_scraped: do not be empty.")
-        return value
-
-
 class ArticleLinksUpdateSchema(BaseModel):
-    article_link: Optional[str] = Field(None, min_length=1, max_length=1000, description="文章連結")
-    source_name: Optional[str] = Field(None, min_length=1, max_length=50, description="來源名稱")
-    source_url: Optional[str] = Field(None, min_length=1, max_length=1000, description="來源URL")
-    is_scraped: Optional[bool] = Field(None, description="是否已爬取")
+    """文章連結更新模型"""
+    source_name: Optional[SourceName] = None
+    source_url: Optional[SourceUrl] = None
+    is_scraped: Optional[bool] = None
 
     @model_validator(mode='before')
     @classmethod
     def validate_update(cls, data):
+        """驗證更新操作"""
         if isinstance(data, dict):
-            # 防止更新 article_link
-            if 'article_link' in data:
-                raise ValidationError("do not allow to update article_link field.")
-            # 防止更新 created_at
-            if 'created_at' in data:
-                raise ValidationError("do not allow to update created_at field.")
-            # 確保至少有一個欄位被更新
-            update_fields = [k for k in data.keys() if k not in ['article_link','created_at']]
+            immutable_fields = ['created_at', 'id', 'article_link']
+            for field in immutable_fields:
+                if field in data:
+                    raise ValidationError(f"不允許更新 {field} 欄位")
+            
+            update_fields = [
+                field for field in data.keys()
+                if field not in immutable_fields
+            ]
             if not update_fields:
-                raise ValidationError("must provide at least one field to update.")
-        
+                raise ValidationError("必須提供至少一個要更新的欄位")
         return data
-
-    @field_validator('article_link', mode='before')
-    @classmethod
-    def validate_article_link(cls, value):
-        if not value or not value.strip():
-            raise ValidationError("article_link: do not be empty.")
-        if 1 > len(value) or len(value) > 1000:
-            raise ValidationError("article_link: length must be between 1 and 1000.")
-        return value
-
-    @field_validator('source_name', mode='before')
-    @classmethod
-    def validate_source_name(cls, value):
-        if not value or not value.strip():
-            raise ValidationError("source_name: do not be empty.")
-        if 1 > len(value) or len(value) > 50:
-            raise ValidationError("source_name: length must be between 1 and 50.")
-        return value
-
-    @field_validator('source_url', mode='before')
-    @classmethod
-    def validate_source_url(cls, value):
-        if not value or not value.strip():
-            raise ValidationError("source_url: do not be empty.")
-        if 1 > len(value) or len(value) > 1000:
-            raise ValidationError("source_url: length must be between 1 and 1000.")
-        return value
-    
-    @field_validator('is_scraped', mode='before')
-    @classmethod
-    def validate_is_scraped(cls, value):
-        if value is None:
-            raise ValidationError("is_scraped: do not be empty.")
-        return value
     
     

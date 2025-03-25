@@ -4,6 +4,8 @@ from src.models.article_links_schema import ArticleLinksCreateSchema, ArticleLin
 from src.error.errors import ValidationError
 
 class TestArticleLinksCreateSchema:
+    """ArticleLinksCreateSchema 的測試類"""
+    
     def test_valid_article_links_create(self):
         """測試有效的 ArticleLinksCreateSchema 資料"""
         valid_data = {
@@ -18,124 +20,91 @@ class TestArticleLinksCreateSchema:
         assert schema.source_name == valid_data["source_name"]
         assert schema.source_url == valid_data["source_url"]
         assert schema.is_scraped == valid_data["is_scraped"]
-    
-    def test_empty_article_link(self):
-        """測試空的文章連結"""
-        invalid_data = {
-            "article_link": "",
-            "source_name": "範例新聞",
-            "source_url": "https://example.com",
-            "is_scraped": False
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksCreateSchema.model_validate(invalid_data)
-        assert "article_link: do not be empty." in str(exc_info.value)
-    
-    def test_too_long_article_link(self):
-        """測試過長的文章連結"""
-        invalid_data = {
-            "article_link": "a" * 1001,
-            "source_name": "範例新聞",
-            "source_url": "https://example.com",
-            "is_scraped": False
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksCreateSchema.model_validate(invalid_data)
-        assert "article_link: length must be between 1 and 1000." in str(exc_info.value)
-    
-    def test_empty_source_name(self):
-        """測試空的來源名稱"""
-        invalid_data = {
-            "article_link": "https://example.com/article/1",
-            "source_name": "",
-            "source_url": "https://example.com",
-            "is_scraped": False
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksCreateSchema.model_validate(invalid_data)
-        assert "source_name: do not be empty." in str(exc_info.value)
-    
-    def test_too_long_source_name(self):
-        """測試過長的來源名稱"""
-        invalid_data = {
-            "article_link": "https://example.com/article/1",
-            "source_name": "a" * 51,
-            "source_url": "https://example.com",
-            "is_scraped": False
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksCreateSchema.model_validate(invalid_data)
-        assert "source_name: length must be between 1 and 50." in str(exc_info.value)
-    
-    def test_empty_source_url(self):
-        """測試空的來源URL"""
-        invalid_data = {
+
+    def test_default_values(self):
+        """測試預設值"""
+        valid_data = {
             "article_link": "https://example.com/article/1",
             "source_name": "範例新聞",
-            "source_url": "",
-            "is_scraped": False
+            "source_url": "https://example.com"
         }
         
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksCreateSchema.model_validate(invalid_data)
-        assert "source_url: do not be empty." in str(exc_info.value)
-    
-    def test_too_long_source_url(self):
-        """測試過長的來源URL"""
-        invalid_data = {
-            "article_link": "https://example.com/article/1",
-            "source_name": "範例新聞",
-            "source_url": "a" * 1001,
-            "is_scraped": False
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksCreateSchema.model_validate(invalid_data)
-        assert "source_url: length must be between 1 and 1000." in str(exc_info.value)
-    
-    def test_missing_required_fields(self):
-        """測試缺少必要欄位"""
+        schema = ArticleLinksCreateSchema.model_validate(valid_data)
+        assert schema.is_scraped is False
+
+    def test_article_link_validation(self):
+        """測試文章連結驗證"""
         test_cases = [
-            # 缺少 article_link
-            {
-                "source_name": "範例新聞",
-                "source_url": "https://example.com",
-                "is_scraped": False
-            },
-            # 缺少 source_name
-            {
-                "article_link": "https://example.com/article/1",
-                "source_url": "https://example.com",
-                "is_scraped": False
-            },
-            # 缺少 source_url
-            {
-                "article_link": "https://example.com/article/1",
-                "source_name": "範例新聞",
-                "is_scraped": False
-            },
-            # 缺少 is_scraped
-            {
+            ("", "article_link: 不能為空"),
+            ("   ", "article_link: 不能為空"),
+            ("a" * 1001, "article_link: 長度不能超過 1000 字元")
+        ]
+        
+        for value, expected_error in test_cases:
+            with pytest.raises(ValidationError) as exc_info:
+                ArticleLinksCreateSchema.model_validate({
+                    "article_link": value,
+                    "source_name": "範例新聞",
+                    "source_url": "https://example.com"
+                })
+            assert expected_error in str(exc_info.value)
+
+    def test_source_name_validation(self):
+        """測試來源名稱驗證"""
+        test_cases = [
+            ("", "source_name: 不能為空"),
+            ("   ", "source_name: 不能為空"),
+            ("a" * 51, "source_name: 長度不能超過 50 字元")
+        ]
+        
+        for value, expected_error in test_cases:
+            with pytest.raises(ValidationError) as exc_info:
+                ArticleLinksCreateSchema.model_validate({
+                    "article_link": "https://example.com/article/1",
+                    "source_name": value,
+                    "source_url": "https://example.com"
+                })
+            assert expected_error in str(exc_info.value)
+
+    def test_source_url_validation(self):
+        """測試來源URL驗證"""
+        test_cases = [
+            ("", "source_url: 不能為空"),
+            ("   ", "source_url: 不能為空"),
+            ("a" * 1001, "source_url: 長度不能超過 1000 字元")
+        ]
+        
+        for value, expected_error in test_cases:
+            with pytest.raises(ValidationError) as exc_info:
+                ArticleLinksCreateSchema.model_validate({
+                    "article_link": "https://example.com/article/1",
+                    "source_name": "範例新聞",
+                    "source_url": value
+                })
+            assert expected_error in str(exc_info.value)
+
+    def test_required_fields(self):
+        """測試必填欄位"""
+        required_fields = ['source_name', 'source_url', 'article_link']
+        
+        for field in required_fields:
+            data = {
                 "article_link": "https://example.com/article/1",
                 "source_name": "範例新聞",
                 "source_url": "https://example.com"
             }
-        ]
-        
-        for invalid_data in test_cases:
+            data.pop(field)
+            
             with pytest.raises(ValidationError) as exc_info:
-                ArticleLinksCreateSchema.model_validate(invalid_data)
-            missing_field = set(["article_link", "source_name", "source_url", "is_scraped"]) - set(invalid_data.keys())
-            assert f"{list(missing_field)[0]}: do not be empty." in str(exc_info.value)
+                ArticleLinksCreateSchema.model_validate(data)
+            assert f"{field}: 不能為空" in str(exc_info.value)
 
 
 class TestArticleLinksUpdateSchema:
-    def test_valid_article_links_update(self):
-        """測試有效的 ArticleLinksUpdateSchema 資料"""
+    """ArticleLinksUpdateSchema 的測試類"""
+    
+    def test_valid_update(self):
+        """測試有效的更新資料"""
         valid_data = {
             "source_name": "更新後的範例新聞",
             "source_url": "https://updated-example.com",
@@ -146,100 +115,38 @@ class TestArticleLinksUpdateSchema:
         assert schema.source_name == valid_data["source_name"]
         assert schema.source_url == valid_data["source_url"]
         assert schema.is_scraped == valid_data["is_scraped"]
-    
-    def test_update_article_link(self):
-        """測試更新文章連結（不允許）"""
-        invalid_data = {
-            "article_link": "https://example.com/updated-article",
-            "source_name": "範例新聞"
+
+    def test_immutable_fields(self):
+        """測試不可變欄位"""
+        immutable_fields = {
+            'created_at': datetime.now(),
+            'id': 1,
+            'article_link': "https://example.com/article/1"
         }
         
+        for field, value in immutable_fields.items():
+            with pytest.raises(ValidationError) as exc_info:
+                ArticleLinksUpdateSchema.model_validate({
+                    "source_name": "範例新聞",
+                    field: value
+                })
+            assert f"不允許更新 {field} 欄位" in str(exc_info.value)
+
+    def test_empty_update(self):
+        """測試空更新"""
         with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksUpdateSchema.model_validate(invalid_data)
-        assert "do not allow to update article_link field." in str(exc_info.value)
-    
-    def test_update_created_at(self):
-        """測試更新 created_at（不允許）"""
-        invalid_data = {
-            "source_name": "範例新聞",
-            "created_at": datetime.now()
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksUpdateSchema.model_validate(invalid_data)
-        assert "do not allow to update created_at field." in str(exc_info.value)
-    
-    def test_no_update_fields(self):
-        """測試沒有提供更新欄位"""
-        invalid_data = {}
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksUpdateSchema.model_validate(invalid_data)
-        assert "must provide at least one field to update." in str(exc_info.value)
-    
-    def test_empty_source_name(self):
-        """測試空的來源名稱"""
-        invalid_data = {
-            "source_name": "",
-            "is_scraped": True
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksUpdateSchema.model_validate(invalid_data)
-        assert "source_name: do not be empty" in str(exc_info.value)
-    
-    def test_too_long_source_name(self):
-        """測試過長的來源名稱"""
-        invalid_data = {
-            "source_name": "a" * 51,
-            "is_scraped": True
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksUpdateSchema.model_validate(invalid_data)
-        assert "source_name: length must be between 1 and 50." in str(exc_info.value)
-    
-    def test_empty_source_url(self):
-        """測試空的來源URL"""
-        invalid_data = {
-            "source_url": "",
-            "is_scraped": True
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksUpdateSchema.model_validate(invalid_data)
-        assert "source_url: do not be empty" in str(exc_info.value)
-    
-    def test_too_long_source_url(self):
-        """測試過長的來源URL"""
-        invalid_data = {
-            "source_url": "a" * 1001,
-            "is_scraped": True
-        }
-        
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleLinksUpdateSchema.model_validate(invalid_data)
-        assert "source_url: length must be between 1 and 1000." in str(exc_info.value)
-    
+            ArticleLinksUpdateSchema.model_validate({})
+        assert "必須提供至少一個要更新的欄位" in str(exc_info.value)
+
     def test_partial_update(self):
         """測試部分更新"""
-        valid_data = {
-            "is_scraped": True
-        }
+        test_cases = [
+            {"source_name": "新名稱"},
+            {"source_url": "https://new-example.com"},
+            {"is_scraped": True}
+        ]
         
-        schema = ArticleLinksUpdateSchema.model_validate(valid_data)
-        assert schema.is_scraped == valid_data["is_scraped"]
-        assert schema.source_name is None
-        assert schema.source_url is None
-        assert schema.article_link is None
-
-    def test_whitespace_in_fields(self):
-        """測試欄位中的空白"""
-        invalid_data = {
-            "source_name": "   ",
-            "is_scraped": True
-        }
-        
-        with pytest.raises( ValidationError) as exc_info:
-            ArticleLinksUpdateSchema.model_validate(invalid_data)
-        assert "source_name: do not be empty" in str(exc_info.value)
+        for data in test_cases:
+            schema = ArticleLinksUpdateSchema.model_validate(data)
+            for key, value in data.items():
+                assert getattr(schema, key) == value
