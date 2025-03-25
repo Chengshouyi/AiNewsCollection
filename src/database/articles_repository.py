@@ -227,7 +227,7 @@ class ArticlesRepository(BaseRepository['Articles']):
             logger.error(error_msg)
             raise e
 
-    def create(self, entity_data: Dict[str, Any]) -> Articles:
+    def create(self, entity_data: Dict[str, Any], schema_class=None) -> Articles:
         """
         重寫基類的 create 方法，添加針對 Articles 的特殊驗證
         """
@@ -243,14 +243,14 @@ class ArticlesRepository(BaseRepository['Articles']):
             if missing_fields:
                 raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
         
-            # 呼叫基類方法
-            return super().create(entity_data)
+            # 呼叫基類方法，加入對 schema_class 的支援
+            return super().create(entity_data, schema_class)
         except Exception as e:
             error_msg = f"創建文章時發生錯誤: {e}"
             logger.error(error_msg)
             raise e
 
-    def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[Articles]:
+    def update(self, entity_id: Any, entity_data: Dict[str, Any], schema_class=None) -> Optional[Articles]:
         """
         重寫基類的 update 方法，添加針對 Articles 的特殊驗證
         """
@@ -275,8 +275,8 @@ class ArticlesRepository(BaseRepository['Articles']):
                 if field not in entity_data and hasattr(existing_entity, field):
                     entity_data[field] = getattr(existing_entity, field)
         
-            # 呼叫基類方法
-            return super().update(entity_id, entity_data)
+            # 呼叫基類方法，加入對 schema_class 的支援
+            return super().update(entity_id, entity_data, schema_class)
         except Exception as e:
             error_msg = f"更新文章時發生錯誤: {e}"
             logger.error(error_msg)
@@ -378,4 +378,53 @@ class ArticlesRepository(BaseRepository['Articles']):
             "missing_ids": missing_ids,
             "error_ids": error_ids
         }
+    
+    def get_paginated_by_filter(self, filter_dict: Dict[str, Any], page: int, per_page: int, 
+                               sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
+        """根據過濾條件獲取分頁資料
+        
+        Args:
+            filter_dict: 過濾條件字典
+            page: 當前頁碼，從1開始
+            per_page: 每頁數量
+            sort_by: 排序欄位
+            sort_desc: 是否降序排列
+            
+        Returns:
+            包含分頁資訊和結果的字典
+        """
+        try:
+            # 計算符合過濾條件的總記錄數
+            total = self.count(filter_dict)
+            
+            # 計算總頁數
+            total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
+            
+            # 確保頁碼有效
+            current_page = max(1, min(page, total_pages)) if total_pages > 0 else 1
+            
+            # 計算偏移量
+            offset = (current_page - 1) * per_page
+            
+            # 獲取當前頁數據
+            items = self.get_by_filter(
+                filter_dict=filter_dict,
+                limit=per_page, 
+                offset=offset
+            )
+            
+            # 構建分頁結果
+            return {
+                "items": items,
+                "page": current_page,
+                "per_page": per_page,
+                "total": total,
+                "total_pages": total_pages,
+                "has_next": current_page < total_pages,
+                "has_prev": current_page > 1
+            }
+        except Exception as e:
+            error_msg = f"根據過濾條件獲取分頁資料時發生錯誤: {e}"
+            logger.error(error_msg)
+            raise e
     
