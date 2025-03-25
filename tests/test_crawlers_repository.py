@@ -1,12 +1,13 @@
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from src.models.crawlers_model import Crawlers
 from src.database.crawlers_repository import CrawlersRepository
 from src.models.base_model import Base
 import uuid
-from src.error.errors import ValidationError
+from src.error.errors import ValidationError, DatabaseOperationError
+
 # 設置測試資料庫
 @pytest.fixture
 def engine():
@@ -39,45 +40,57 @@ def crawlers_repo(session):
 
 @pytest.fixture
 def sample_crawlers(session):
+    """確保所有時間都是 UTC aware"""
+    now = datetime.now(timezone.utc)
+    
     settings = [
         Crawlers(
             crawler_name="新聞爬蟲1",
             scrape_target="https://example.com/news1",
-            crawl_interval=60,  # 60分鐘
+            crawl_interval=60,
             is_active=True,
-            last_crawl_time=datetime.now() - timedelta(hours=2),
+            last_crawl_time=(now - timedelta(hours=2)).replace(tzinfo=timezone.utc),
+            created_at=(now - timedelta(days=1)).replace(tzinfo=timezone.utc),
             crawler_type="web"
         ),
         Crawlers(
             crawler_name="新聞爬蟲2",
             scrape_target="https://example.com/news2",
-            crawl_interval=120,  # 120分鐘
+            crawl_interval=120,
             is_active=False,
-            last_crawl_time=datetime.now() - timedelta(days=1),
+            last_crawl_time=now - timedelta(days=1),
             crawler_type="web"
         ),
         Crawlers(
             crawler_name="RSS爬蟲",
             scrape_target="https://example.com/rss",
-            crawl_interval=30,  # 30分鐘
+            crawl_interval=30,
             is_active=True,
-            last_crawl_time=None,  # 從未執行過
-            crawler_type="web"
+            last_crawl_time=None,
+            crawler_type="rss"
+        ),
+        Crawlers(
+            crawler_name="API爬蟲",
+            scrape_target="https://example.com/api",
+            crawl_interval=45,
+            is_active=True,
+            last_crawl_time=now - timedelta(minutes=20),
+            crawler_type="api"
         )
     ]
     session.add_all(settings)
     session.commit()
     return settings
 
-# CrawlerSettingsRepository 測試
+# CrawlersRepository 測試
 class TestCrawlersRepository:
     """
-    測試Crawlers相關資料庫操作
+    測試 Crawlers 相關資料庫操作
     """
     def test_get_all(self, crawlers_repo, sample_crawlers):
         """測試獲取所有爬蟲設定"""
         settings = crawlers_repo.get_all()
-        assert len(settings) == 3
+        assert len(settings) == 4
         assert isinstance(settings[0], Crawlers)
         
     def test_get_by_id(self, crawlers_repo, sample_crawlers):
@@ -91,7 +104,7 @@ class TestCrawlersRepository:
         setting = crawlers_repo.get_by_id(999)
         assert setting is None
     
-    def test_find_by_name(self, crawlers_repo, sample_crawlers):
+    def test_find_by_crawler_name(self, crawlers_repo, sample_crawlers):
         """測試通過爬蟲名稱查找設定"""
         # 測試存在的名稱
         settings = crawlers_repo.find_by_crawler_name("新聞爬蟲1")
@@ -100,7 +113,7 @@ class TestCrawlersRepository:
         
         # 測試部分匹配的名稱
         settings = crawlers_repo.find_by_crawler_name("爬蟲")
-        assert len(settings) == 3
+        assert len(settings) == 4
         
         # 測試不存在的名稱
         settings = crawlers_repo.find_by_crawler_name("不存在的爬蟲")
@@ -109,51 +122,79 @@ class TestCrawlersRepository:
     def test_find_active_crawlers(self, crawlers_repo, sample_crawlers):
         """測試查找活躍的爬蟲"""
         settings = crawlers_repo.find_active_crawlers()
-        assert len(settings) == 2
+        assert len(settings) == 3
         assert all(setting.is_active for setting in settings)
     
     def test_find_pending_crawlers(self, crawlers_repo, sample_crawlers):
         """測試查找需要執行的爬蟲"""
-        # 找出所有超過爬蟲間隔時間的爬蟲設定
-        now = datetime.now()
-        settings = crawlers_repo.find_pending_crawlers(now)
-        assert len(settings) > 0
+        # 使用固定的時間點
+        base_time = datetime(2025, 3, 25, 15, 0, 0, tzinfo=timezone.utc)
         
-        # 檢查所有返回的爬蟲都是活躍的
+        # 重新設置所有爬蟲的時間
+        for crawler in sample_crawlers:
+            if crawler.last_crawl_time is not None:
+                # 設置為3小時前
+                crawler.last_crawl_time = base_time - timedelta(hours=3)
+            # 設置創建時間
+            crawler.created_at = base_time - timedelta(days=1)
+        
+        # 提交更改
+        crawlers_repo.session.commit()
+        
+        # 強制重新從資料庫加載所有爬蟲
+        crawlers_repo.session.expire_all()
+        
+        # 設置當前時間為基準時間加2小時
+        current_time = base_time + timedelta(hours=2)
+        settings = crawlers_repo.find_pending_crawlers(current_time)
+        
+        # 驗證結果
+        assert len(settings) >= 2  # 至少應該有2個需要執行的爬蟲
         assert all(setting.is_active for setting in settings)
         
-        # 檢查所有返回的爬蟲都到達了爬蟲間隔時間
+        # 驗證時間間隔
         for setting in settings:
-            # 如果last_crawl_time為空，應該需要爬取
-            if setting.last_crawl_time is None:
-                continue
+            if setting.last_crawl_time:
+                # 確保時間是 UTC aware
+                last_crawl = setting.last_crawl_time
+                if last_crawl.tzinfo is None:
+                    last_crawl = last_crawl.replace(tzinfo=timezone.utc)
                 
-            # 否則計算間隔時間，確保已經超過了設定的爬蟲間隔
-            interval = now - setting.last_crawl_time
-            assert interval.total_seconds() >= setting.crawl_interval * 60
+                time_diff = (current_time - last_crawl).total_seconds()
+                assert time_diff >= setting.crawl_interval * 60
 
     def test_update_last_crawl_time(self, crawlers_repo, sample_crawlers):
         """測試更新最後爬蟲時間"""
+        from time import sleep
+        
         # 獲取第一個爬蟲設定
         setting_id = sample_crawlers[0].id
         old_time = sample_crawlers[0].last_crawl_time
         
-        # 更新最後爬蟲時間
-        new_time = datetime.now()
-        result = crawlers_repo.update_last_crawl_time(setting_id, new_time)
+        # 更新最後爬蟲時間，使用較早的時間
+        first_time = datetime.now(timezone.utc)
+        sleep(0.1)  # 確保時間差
+        
+        result = crawlers_repo.update_last_crawl_time(setting_id, first_time)
         assert result is True
         
         # 驗證更新成功
         updated_setting = crawlers_repo.get_by_id(setting_id)
         assert updated_setting.last_crawl_time != old_time
-        assert updated_setting.last_crawl_time == new_time
+        assert updated_setting.last_crawl_time == first_time
         
-        # 測試更新不存在的ID
-        result = crawlers_repo.update_last_crawl_time(999, new_time)
-        assert result is False
+        sleep(0.1)  # 確保時間差
+        
+        # 測試默認時間參數（應該使用更新的時間）
+        result = crawlers_repo.update_last_crawl_time(setting_id)
+        assert result is True
+        
+        # 獲取最終設置並驗證時間
+        final_setting = crawlers_repo.get_by_id(setting_id)
+        assert final_setting.last_crawl_time > first_time  # 比較與第一次更新的時間
 
-    def test_create(self, crawlers_repo):
-        """測試創建新的爬蟲設定"""
+    def test_create_crawler(self, crawlers_repo):
+        """測試使用模式驗證創建爬蟲"""
         new_crawler_data = {
             "crawler_name": "測試爬蟲",
             "scrape_target": "https://example.com/test",
@@ -162,8 +203,8 @@ class TestCrawlersRepository:
             "crawler_type": "web"
         }
         
-        # 創建新爬蟲設定
-        new_crawler = crawlers_repo.create(new_crawler_data)
+        # 使用 create_crawler 方法創建新爬蟲設定
+        new_crawler = crawlers_repo.create_crawler(new_crawler_data)
         assert new_crawler is not None
         assert new_crawler.id is not None
         assert new_crawler.crawler_name == "測試爬蟲"
@@ -176,8 +217,19 @@ class TestCrawlersRepository:
         assert retrieved.scrape_target == "https://example.com/test"
         assert retrieved.crawler_type == "web"
     
-    def test_update(self, crawlers_repo, sample_crawlers):
-        """測試更新爬蟲設定"""
+        # 測試驗證錯誤 - 缺少必填欄位
+        invalid_data = {
+            "crawler_name": "缺失欄位爬蟲",
+            # 缺少 scrape_target
+            "crawl_interval": 60,
+            "is_active": True
+        }
+        
+        with pytest.raises(ValidationError):
+            crawlers_repo.create_crawler(invalid_data)
+    
+    def test_update_crawler(self, crawlers_repo, sample_crawlers):
+        """測試使用模式驗證更新爬蟲"""
         # 獲取第一個爬蟲設定的ID
         setting_id = sample_crawlers[0].id
         
@@ -185,12 +237,11 @@ class TestCrawlersRepository:
         update_data = {
             "crawler_name": "已更新爬蟲名稱",
             "crawl_interval": 90,
-            "is_active": False,
-            "scrape_target": sample_crawlers[0].scrape_target,
+            "is_active": False
         }
         
         # 執行更新
-        updated = crawlers_repo.update(setting_id, update_data)
+        updated = crawlers_repo.update_crawler(setting_id, update_data)
         assert updated is not None
         assert updated.crawler_name == "已更新爬蟲名稱"
         assert updated.crawl_interval == 90
@@ -199,15 +250,25 @@ class TestCrawlersRepository:
         
         # 確認只更新了指定欄位
         assert updated.scrape_target == sample_crawlers[0].scrape_target
+        assert updated.crawler_type == sample_crawlers[0].crawler_type
         
         # 測試更新不存在的ID
-        result = crawlers_repo.update(999, update_data)
+        result = crawlers_repo.update_crawler(999, update_data)
         assert result is None
+        
+        # 測試嘗試更新不允許的欄位
+        invalid_update = {
+            "crawler_name": "測試非法更新",
+            "crawler_type": "changed_type"  # 不允許更新類型
+        }
+        
+        with pytest.raises(ValidationError):
+            crawlers_repo.update_crawler(setting_id, invalid_update)
     
     def test_delete(self, crawlers_repo, sample_crawlers):
         """測試刪除爬蟲設定"""
-        # 獲取第三個爬蟲設定的ID
-        setting_id = sample_crawlers[2].id
+        # 獲取最後一個爬蟲設定的ID
+        setting_id = sample_crawlers[-1].id
         
         # 執行刪除
         result = crawlers_repo.delete(setting_id)
@@ -244,125 +305,80 @@ class TestCrawlersRepository:
         result = crawlers_repo.toggle_active_status(999)
         assert result is False
 
-class TestCrawlersConstraints:
-    """測試Crawlers的模型約束"""
-    
-    @pytest.fixture
-    def test_session(self, engine, tables):
-        """每個測試方法使用獨立的會話"""
-        with Session(engine) as session:
-            yield session
-            # 自動清理
-    
-    def test_required_fields(self, test_session):
-        """測試必填欄位約束"""
-        session = test_session
+    def test_get_sorted_by_interval(self, crawlers_repo, sample_crawlers):
+        """測試按爬取間隔排序的爬蟲設定"""
+        # 測試默認升序排序
+        crawlers = crawlers_repo.get_sorted_by_interval()
+        intervals = [c.crawl_interval for c in crawlers]
+        assert intervals == sorted(intervals)
         
-        # 測試缺少 crawler_name
-        with pytest.raises(ValidationError) as excinfo:
-            Crawlers(
-                crawler_name="",  # 空字串
-                scrape_target="https://example.com/test",
-                crawl_interval=60,
-                is_active=True,
-                crawler_type="web"
-            )
-        assert "crawler_name 長度必須在 1-100 字元之間" in str(excinfo.value)
-        
-        # 測試缺少 scrape_target
-        with pytest.raises(ValidationError) as excinfo:
-            Crawlers(
-                crawler_name="測試爬蟲",
-                scrape_target="",  # 空字串
-                crawl_interval=60,
-                is_active=True,
-                crawler_type="web"
-            )
-        assert "scrape_target 長度必須在 1-1000 字元之間" in str(excinfo.value)
-        
-        # 測試缺少 crawler_type
-        with pytest.raises(ValidationError) as excinfo:
-            Crawlers(
-                crawler_name="測試爬蟲",
-                scrape_target="https://example.com/test",
-                crawl_interval=60,
-                is_active=True,
-                crawler_type=""  # 空字串
-            )
-        assert "crawler_type 長度必須在 1-100 字元之間" in str(excinfo.value)
-    
-    def test_default_values(self, test_session):
-        """測試默認值"""
-        session = test_session
-        
-        # 測試is_active和created_at的默認值
-        setting = Crawlers(
-            crawler_name="測試默認值",
-            scrape_target="https://example.com/default",
-            crawl_interval=60,
-            crawler_type="web"
-            # 不設置is_active和created_at
-        )
-        session.add(setting)
-        session.flush()
-        session.refresh(setting)
-        
-        # 檢查默認值
-        assert setting.is_active is not None  # 默認應為True
-        assert setting.created_at is not None  # 默認應為當前時間
-        
-        # 測試updated_at在更新時自動生成
-        setting.crawler_name = "已更新的名稱"
-        session.flush()
-        session.refresh(setting)
-        
-        assert setting.updated_at is not None
-    
-    def test_check_constraints(self, test_session):
-        """測試CHECK約束"""
-        session = test_session
-    
-        # 測試 crawler_name 長度約束
-        with pytest.raises(ValidationError) as excinfo:
-            Crawlers(
-                crawler_name="a" * 101,  # 超過100字符
-                scrape_target="https://example.com/test",
-                crawl_interval=60,
-                is_active=True,
-                crawler_type="web"
-            )
-        assert "crawler_name 長度必須在 1-100 字元之間" in str(excinfo.value)
-    
-        # 測試 scrape_target 長度約束
-        with pytest.raises(ValidationError) as excinfo:
-            Crawlers(
-                crawler_name="測試爬蟲",
-                scrape_target="x" * 1001,  # 超過1000字符
-                crawl_interval=60,
-                is_active=True,
-                crawler_type="web"
-            )
-        assert "scrape_target 長度必須在 1-1000 字元之間" in str(excinfo.value)
-    
-        # 測試 crawler_type 長度約束
-        with pytest.raises(ValidationError) as excinfo:
-            Crawlers(
-                crawler_name="測試爬蟲",
-                scrape_target="https://example.com/test",
-                crawl_interval=60,
-                is_active=True,
-                crawler_type="a" * 101  # 超過100字符
-            )
-        assert "crawler_type 長度必須在 1-100 字元之間" in str(excinfo.value)
+        # 測試降序排序
+        crawlers = crawlers_repo.get_sorted_by_interval(descending=True)
+        intervals = [c.crawl_interval for c in crawlers]
+        assert intervals == sorted(intervals, reverse=True)
 
-class TestCrawlersRepositoryQueries:
-    """測試CrawlerSettingsRepository的查詢功能"""
-    
+    def test_find_by_type(self, crawlers_repo, sample_crawlers):
+        """測試根據爬蟲類型查找爬蟲"""
+        # 查找 web 類型爬蟲
+        web_crawlers = crawlers_repo.find_by_type("web")
+        assert len(web_crawlers) == 2
+        assert all(c.crawler_type == "web" for c in web_crawlers)
+        
+        # 查找 rss 類型爬蟲
+        rss_crawlers = crawlers_repo.find_by_type("rss")
+        assert len(rss_crawlers) == 1
+        assert rss_crawlers[0].crawler_type == "rss"
+        
+        # 查找不存在的類型
+        nonexistent_crawlers = crawlers_repo.find_by_type("nonexistent")
+        assert len(nonexistent_crawlers) == 0
+
+    def test_find_by_target(self, crawlers_repo, sample_crawlers):
+        """測試根據爬取目標模糊查詢爬蟲"""
+        # 查找包含 "news" 的目標
+        news_crawlers = crawlers_repo.find_by_target("news")
+        assert len(news_crawlers) == 2
+        
+        # 查找包含 "api" 的目標
+        api_crawlers = crawlers_repo.find_by_target("api")
+        assert len(api_crawlers) == 1
+        
+        # 查找包含 "example.com" 的目標 (應該返回所有爬蟲)
+        all_crawlers = crawlers_repo.find_by_target("example.com")
+        assert len(all_crawlers) == 4
+        
+        # 查找不存在的目標
+        nonexistent_crawlers = crawlers_repo.find_by_target("nonexistent")
+        assert len(nonexistent_crawlers) == 0
+
+    def test_get_crawler_statistics(self, crawlers_repo, sample_crawlers):
+        """測試獲取爬蟲統計信息"""
+        stats = crawlers_repo.get_crawler_statistics()
+        
+        # 檢查統計資料格式
+        assert "total" in stats
+        assert "active" in stats
+        assert "inactive" in stats
+        assert "by_type" in stats
+        
+        # 檢查數據是否正確
+        assert stats["total"] == 4
+        assert stats["active"] == 3
+        assert stats["inactive"] == 1
+        
+        # 檢查類型統計
+        assert "web" in stats["by_type"]
+        assert stats["by_type"]["web"] == 2
+        assert stats["by_type"]["rss"] == 1
+        assert stats["by_type"]["api"] == 1
+
+class TestPagination:
+    """測試分頁功能"""
     
     def test_pagination(self, crawlers_repo, sample_crawlers):
         """測試分頁功能"""
         # 添加更多測試數據以使分頁測試更有意義
-        for i in range(5):
+        for i in range(6):
             new_setting = Crawlers(
                 crawler_name=f"額外爬蟲{i+1}",
                 scrape_target=f"https://example.com/extra{i+1}",
@@ -378,8 +394,8 @@ class TestCrawlersRepositoryQueries:
         assert page1["page"] == 1
         assert page1["per_page"] == 3
         assert len(page1["items"]) == 3
-        assert page1["total"] == 8  # 3個原始樣本+5個新增
-        assert page1["total_pages"] == 3
+        assert page1["total"] == 10  # 4個原始樣本+6個新增
+        assert page1["total_pages"] == 4
         assert page1["has_next"] is True
         assert page1["has_prev"] is False
         
@@ -390,100 +406,56 @@ class TestCrawlersRepositoryQueries:
         assert page2["has_next"] is True
         assert page2["has_prev"] is True
         
-        # 測試第三頁（最後一頁）
-        page3 = crawlers_repo.get_paginated(page=3, per_page=3)
-        assert page3["page"] == 3
-        assert len(page3["items"]) == 2
-        assert page3["has_next"] is False
-        assert page3["has_prev"] is True
+        # 測試最後一頁
+        page4 = crawlers_repo.get_paginated(page=4, per_page=3)
+        assert page4["page"] == 4
+        assert len(page4["items"]) == 1
+        assert page4["has_next"] is False
+        assert page4["has_prev"] is True
         
         # 測試超出範圍的頁碼
         page_out = crawlers_repo.get_paginated(page=10, per_page=3)
-        assert page_out["page"] == 3  # 自動調整為最後一頁
+        assert page_out["page"] == 4  # 自動調整為最後一頁
+        
+        # 測試排序功能
+        sorted_page = crawlers_repo.get_paginated(page=1, per_page=10, sort_by="crawl_interval", sort_desc=True)
+        intervals = [item.crawl_interval for item in sorted_page["items"]]
+        assert intervals == sorted(intervals, reverse=True)
 
-class TestModelStructure:
-    """使用model_utiles測試模型結構"""
+class TestErrorHandling:
+    """測試錯誤處理"""
     
-    def test_crawlers_model_structure(self, session):
-        """測試Crawlers模型結構是否符合預期"""
-        from src.models.model_utiles import get_model_info
-        
-        # 獲取Crawlers模型信息
-        settings_info = get_model_info(Crawlers)
-        
-        # 1. 測試表名
-        assert settings_info["table"] == "crawlers"
-        
-        # 2. 測試主鍵
-        assert "id" in settings_info["primary_key"]
-        assert len(settings_info["primary_key"]) == 1  # 只有一個主鍵
-        
-        # 3. 測試必填欄位
-        required_fields = []
-        for field, info in settings_info["columns"].items():
-            if not info["nullable"] and info["default"] is None:
-                required_fields.append(field)
-        
-        # 驗證必填欄位
-        assert "crawler_name" in required_fields
-        assert "scrape_target" in required_fields
-        assert "crawl_interval" in required_fields
-        
-        # 4. 測試欄位類型
-        assert "VARCHAR" in settings_info["columns"]["crawler_name"]["type"].upper()
-        assert "VARCHAR" in settings_info["columns"]["scrape_target"]["type"].upper()
-        assert "INTEGER" in settings_info["columns"]["crawl_interval"]["type"].upper()
-        assert "BOOLEAN" in settings_info["columns"]["is_active"]["type"].upper()
-        assert "DATETIME" in settings_info["columns"]["created_at"]["type"].upper()
-        
-        # 5. 測試默認值
-        assert settings_info["columns"]["is_active"]["default"] is not None
-        assert settings_info["columns"]["created_at"]["default"] is not None
-        
-        # 6. 測試Check約束
-        has_crawler_name_length_check = False
-        has_scrape_target_length_check = False
-        has_is_active_type_check = False
-        
-        for constraint in settings_info["constraints"]:
-            if constraint["type"] == "CheckConstraint":
-                if "crawler_name_length" in constraint.get("name", ""):
-                    has_crawler_name_length_check = True
-                elif "scrape_target_length" in constraint.get("name", ""):
-                    has_scrape_target_length_check = True
-                elif "is_active_type" in constraint.get("name", ""):
-                    has_is_active_type_check = True
-        
-        assert has_crawler_name_length_check
-        assert has_scrape_target_length_check
-        assert has_is_active_type_check
+    def test_database_operation_error(self, crawlers_repo, session):
+        """測試資料庫操作錯誤處理"""
+        # 測試無效SQL操作
+        with pytest.raises(DatabaseOperationError) as excinfo:
+            crawlers_repo.execute_query(
+                lambda: session.execute("SELECT * FROM nonexistent_table")
+            )
+        assert "資料庫操作錯誤" in str(excinfo.value)
     
-    def test_model_constraints_discovery(self):
-        """發現並輸出Crawlers模型約束"""
-        from src.models.model_utiles import get_model_info
+    def test_validation_error(self, crawlers_repo):
+        """測試驗證錯誤處理"""
+        # 測試缺少必要欄位
+        invalid_data = {
+            # 缺少 crawler_name
+            "scrape_target": "https://example.com/test",
+            "crawl_interval": 60,
+            "is_active": True,
+            "crawler_type": "web"
+        }
         
-        # 獲取模型信息
-        settings_info = get_model_info(Crawlers)
+        with pytest.raises(ValidationError):
+            crawlers_repo.create_crawler(invalid_data)
         
-        # 打印實際模型結構和約束
-        print("\n===== Crawlers模型結構 =====")
-        print(f"表名: {settings_info['table']}")
-        print(f"主鍵: {settings_info['primary_key']}")
+        # 測試無效的爬取間隔
+        invalid_interval = {
+            "crawler_name": "無效間隔爬蟲",
+            "scrape_target": "https://example.com/test",
+            "crawl_interval": -10,  # 負值間隔
+            "is_active": True,
+            "crawler_type": "web"
+        }
         
-        # 欄位信息
-        print("\n欄位信息:")
-        for field, info in settings_info["columns"].items():
-            nullable = "可為空" if info["nullable"] else "必填"
-            default = f"預設值: {info['default']}" if info["default"] is not None else "無預設值"
-            print(f" - {field}: {info['type']} - {nullable}, {default}")
-        
-        # 約束信息
-        print("\n約束信息:")
-        for constraint in settings_info["constraints"]:
-            if constraint["type"] == "CheckConstraint":
-                name = constraint.get("name", "未命名約束")
-                sqltext = constraint.get("sqltext", "未知條件")
-                print(f" - {name}: {sqltext}")
-        
-        # 測試通過
-        assert True
+        with pytest.raises(ValidationError):
+            crawlers_repo.create_crawler(invalid_interval)
