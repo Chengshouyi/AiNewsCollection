@@ -1,7 +1,6 @@
 import pytest
 from datetime import datetime, timezone
 from src.models.crawlers_model import Crawlers
-from src.error.errors import ValidationError
 
 class TestCrawlersModel:
     """Crawlers 模型的測試類"""
@@ -12,21 +11,21 @@ class TestCrawlersModel:
             crawler_name="test_crawler",
             scrape_target="https://example.com",
             crawl_interval=60,
-            is_active=True,
-            crawler_type="web"  # 新增 crawler_type
+            crawler_type="web"
         )
         
         assert crawler.crawler_name == "test_crawler"
         assert crawler.scrape_target == "https://example.com"
         assert crawler.crawl_interval == 60
-        assert crawler.is_active is True
+        assert crawler.is_active is True  # 測試默認值
         assert crawler.crawler_type == "web"
-        assert crawler.created_at is not None
+        assert isinstance(crawler.created_at, datetime)
         assert crawler.updated_at is None
         assert crawler.last_crawl_time is None
+        assert crawler.crawler_tasks == []  # 測試關聯關係
     
-    def test_default_values(self):
-        """測試默認值設置"""
+    def test_timestamps_behavior(self):
+        """測試時間戳行為"""
         crawler = Crawlers(
             crawler_name="test_crawler",
             scrape_target="https://example.com",
@@ -34,128 +33,55 @@ class TestCrawlersModel:
             crawler_type="web"
         )
         
-        assert crawler.is_active is True
-        assert crawler.created_at is not None
-        assert isinstance(crawler.created_at, datetime)
+        # 只測試創建時間是 UTC
+        assert crawler.created_at.tzinfo == timezone.utc
+        
+        # 確認 updated_at 初始為 None
+        assert crawler.updated_at is None
     
-    def test_created_at_cannot_update(self):
-        """測試 created_at 屬性無法更新"""
-        crawler = Crawlers(
-            crawler_name="test_crawler",
-            scrape_target="https://example.com",
-            crawl_interval=60,
-            crawler_type="web"
-        )
-        
-        original_time = crawler.created_at
-        
-        with pytest.raises(ValidationError) as exc_info:
-            crawler.created_at = datetime.now(timezone.utc)
-        
-        assert "created_at cannot be updated" in str(exc_info.value)
-        assert crawler.created_at == original_time
-    
-    def test_id_cannot_update(self):
-        """測試 id 屬性無法更新"""
+    def test_to_dict_method(self):
+        """測試 to_dict 方法"""
+        test_time = datetime(2024, 1, 1, tzinfo=timezone.utc)
         crawler = Crawlers(
             id=1,
             crawler_name="test_crawler",
             scrape_target="https://example.com",
             crawl_interval=60,
-            crawler_type="web"
+            crawler_type="web",
+            last_crawl_time=test_time
         )
         
-        with pytest.raises(ValidationError) as exc_info:
-            crawler.id = 2
+        dict_data = crawler.to_dict()
         
-        assert "id cannot be updated" in str(exc_info.value)
-        assert crawler.id == 1
+        assert dict_data['id'] == 1
+        assert dict_data['crawler_name'] == "test_crawler"
+        assert dict_data['scrape_target'] == "https://example.com"
+        assert dict_data['crawl_interval'] == 60
+        assert dict_data['crawler_type'] == "web"
+        assert dict_data['is_active'] is True
+        assert dict_data['last_crawl_time'] == test_time
     
-    def test_crawler_type_cannot_update(self):
-        """測試 crawler_type 屬性無法更新"""
-        crawler = Crawlers(
-            crawler_name="test_crawler",
-            scrape_target="https://example.com",
-            crawl_interval=60,
-            crawler_type="web"
-        )
-        
-        with pytest.raises(ValidationError) as exc_info:
-            crawler.crawler_type = "mobile"
-        
-        assert "crawler_type cannot be updated" in str(exc_info.value)
-        assert crawler.crawler_type == "web"
-    
-    def test_crawlers_repr(self):
-        """測試 Crawlers 的 __repr__ 方法"""
+    def test_repr_method(self):
+        """測試 __repr__ 方法"""
         crawler = Crawlers(
             id=1,
             crawler_name="test_crawler",
             scrape_target="https://example.com",
-            crawl_interval=60,
-            is_active=True,
             crawler_type="web"
         )
         
         expected_repr = "<Crawlers(id=1, crawler_name='test_crawler', scrape_target='https://example.com', crawler_type='web', is_active=True)>"
         assert repr(crawler) == expected_repr
     
-    def test_crawler_name_length_validation(self):
-        """測試 crawler_name 長度驗證"""
-        # 測試太短的名稱
-        with pytest.raises(Exception):
-            Crawlers(
-                crawler_name="",
-                scrape_target="https://example.com",
-                crawl_interval=60,
-                crawler_type="web"
-            )
+    def test_relationship_behavior(self):
+        """測試關聯關係行為"""
+        crawler = Crawlers(
+            crawler_name="test_crawler",
+            scrape_target="https://example.com",
+            crawl_interval=60,
+            crawler_type="web"
+        )
         
-        # 測試太長的名稱
-        with pytest.raises(Exception):
-            Crawlers(
-                crawler_name="a" * 101,
-                scrape_target="https://example.com",
-                crawl_interval=60,
-                crawler_type="web"
-            )
-    
-    def test_scrape_target_length_validation(self):
-        """測試 scrape_target 長度驗證"""
-        # 測試太短的目標
-        with pytest.raises(Exception):
-            Crawlers(
-                crawler_name="test_crawler",
-                scrape_target="",
-                crawl_interval=60,
-                crawler_type="web"
-            )
-        
-        # 測試太長的目標
-        with pytest.raises(Exception):
-            Crawlers(
-                crawler_name="test_crawler",
-                scrape_target="a" * 1001,
-                crawl_interval=60,
-                crawler_type="web"
-            )
-    
-    def test_crawler_type_length_validation(self):
-        """測試 crawler_type 長度驗證"""
-        # 測試太短的類型
-        with pytest.raises(Exception):
-            Crawlers(
-                crawler_name="test_crawler",
-                scrape_target="https://example.com",
-                crawl_interval=60,
-                crawler_type=""
-            )
-        
-        # 測試太長的類型
-        with pytest.raises(Exception):
-            Crawlers(
-                crawler_name="test_crawler",
-                scrape_target="https://example.com",
-                crawl_interval=60,
-                crawler_type="a" * 101
-            )
+        assert hasattr(crawler, 'crawler_tasks')
+        assert isinstance(crawler.crawler_tasks, list)
+        assert len(crawler.crawler_tasks) == 0

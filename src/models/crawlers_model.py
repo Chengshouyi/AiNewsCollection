@@ -1,9 +1,7 @@
 from sqlalchemy import Integer, String, DateTime, Boolean
-from sqlalchemy import CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
-from src.error.errors import ValidationError
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timezone
 from .base_entity import BaseEntity
 
@@ -21,65 +19,7 @@ class Crawlers(Base, BaseEntity):
     - last_crawl_time: 最後爬取時間
     - crawler_type: 爬蟲類型
     """
-    def __init__(self, **kwargs):
-        # 新增驗證邏輯
-        self._validate_input(**kwargs)
-        
-        if 'created_at' not in kwargs:
-            kwargs['created_at'] = datetime.now(timezone.utc)
-        if 'is_active' not in kwargs:
-            kwargs['is_active'] = True
-            
-        super().__init__(**kwargs)
-        self.is_initialized = True
-
-    def _validate_input(self, **kwargs):
-        """輸入驗證方法"""
-        # 驗證 crawler_name
-        crawler_name = kwargs.get('crawler_name', '')
-        if not (1 <= len(crawler_name) <= 100):
-            raise ValidationError("crawler_name 長度必須在 1-100 字元之間")
-
-        # 驗證 scrape_target
-        scrape_target = kwargs.get('scrape_target', '')
-        if not (1 <= len(scrape_target) <= 1000):
-            raise ValidationError("scrape_target 長度必須在 1-1000 字元之間")
-
-        # 驗證 crawler_type
-        crawler_type = kwargs.get('crawler_type', '')
-        if not (1 <= len(crawler_type) <= 100):
-            raise ValidationError("crawler_type 長度必須在 1-100 字元之間")
-
     __tablename__ = 'crawlers'
-    __table_args__ = (
-        # 驗證crawler_name長度
-        CheckConstraint(
-            'length(crawler_name) >= 1 AND length(crawler_name) <= 100', name='chk_crawlers_crawler_name_length'
-            ),
-        # 驗證scrape_target長度
-        CheckConstraint(
-            'length(scrape_target) >= 1 AND length(scrape_target) <= 1000', name='chk_crawlers_scrape_target_length'
-            ),
-        # 驗證is_active類型
-        CheckConstraint(
-            'is_active IN (0, 1)', 
-            name='chk_crawlers_is_active_type'
-            ),
-        #驗證crawler_type長度
-        CheckConstraint(
-            'length(crawler_type) >= 1 AND length(crawler_type) <= 100', name='chk_crawlers_crawler_type_length'
-            )
-    )
-    def __setattr__(self, key, value):
-        if not hasattr(self, 'is_initialized'):
-            super().__setattr__(key, value)
-            return
-
-        if key in ['id', 'created_at', 'crawler_type'] and hasattr(self, key):
-            raise ValidationError(f"{key} cannot be updated")
-
-        super().__setattr__(key, value)
-
 
     id: Mapped[int] = mapped_column(
         Integer, 
@@ -100,27 +40,37 @@ class Crawlers(Base, BaseEntity):
     )
     is_active: Mapped[bool] = mapped_column(
         Boolean, 
-        default=lambda: True, 
-        nullable=False
+        default=True, 
+        nullable=False,
+        server_default="1"
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         onupdate=lambda: datetime.now(timezone.utc)
     )
     last_crawl_time: Mapped[Optional[datetime]] = mapped_column(
-        DateTime
+        DateTime(timezone=True)
     )
     crawler_type: Mapped[str] = mapped_column(
         String(100), 
         nullable=False
     )
     crawler_tasks = relationship("CrawlerTasks", back_populates="crawlers", lazy="joined")
-    
+
+    def __init__(self, **kwargs):
+        # 設置默認值
+        if 'created_at' not in kwargs:
+            kwargs['created_at'] = datetime.now(timezone.utc)
+        if 'is_active' not in kwargs:
+            kwargs['is_active'] = True
+            
+        super().__init__(**kwargs)
+
     # 系統設定資料repr  
     def __repr__(self):
         return (
@@ -145,22 +95,6 @@ class Crawlers(Base, BaseEntity):
             'last_crawl_time': self.last_crawl_time,
             'crawler_type': self.crawler_type
         }
-    
-    def validate(self, is_update: bool = False) -> List[str]:
-        """爬蟲設定驗證"""
-        errors = []
-        
-        # 長度驗證
-        if len(self.crawler_name) < 1 or len(self.crawler_name) > 100:
-            errors.append("crawler_name 長度必須在 1-100 字元之間")
-        
-        if len(self.scrape_target) < 1 or len(self.scrape_target) > 1000:
-            errors.append("scrape_target 長度必須在 1-1000 字元之間")
-        
-        if len(self.crawler_type) < 1 or len(self.crawler_type) > 100:
-            errors.append("crawler_type 長度必須在 1-100 字元之間")
-        
-        return errors
 
     
 

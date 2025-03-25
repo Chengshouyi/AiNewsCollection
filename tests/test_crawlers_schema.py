@@ -110,27 +110,38 @@ class TestCrawlersCreateSchema:
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_empty)
         assert "scrape_target: 不能為空" in str(exc_info.value)
-        
+
         # 過長
         data_too_long = {
             "crawler_name": "test_crawler",
-            "scrape_target": "a" * 1001,
+            "scrape_target": "http://example.com/" + "a" * 1000,
             "crawl_interval": 60,
             "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_too_long)
         assert "scrape_target: 長度必須在 1-1000 字元之間" in str(exc_info.value)
-        
+
         # 邊界值
         data_max = {
             "crawler_name": "test_crawler",
-            "scrape_target": "a" * 1000,
+            "scrape_target": "http://example.com/" + "a" * 980,  # 確保總長度不超過1000
             "crawl_interval": 60,
             "crawler_type": "web"
         }
         schema_max = CrawlersCreateSchema.model_validate(data_max)
-        assert len(schema_max.scrape_target) == 1000
+        assert schema_max.scrape_target == data_max["scrape_target"]
+
+        # 無效的 URL 格式
+        data_invalid_url = {
+            "crawler_name": "test_crawler",
+            "scrape_target": "invalid_url",
+            "crawl_interval": 60,
+            "crawler_type": "web"
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersCreateSchema.model_validate(data_invalid_url)
+        assert "scrape_target: 無效的URL格式" in str(exc_info.value)
     
     def test_crawlers_crawler_type_validation(self):
         """測試爬蟲類型的驗證"""
