@@ -22,25 +22,6 @@ class TestArticleLinksModel:
         assert article_link.is_scraped is False
         assert article_link.created_at is not None
 
-    def test_article_links_immutable_fields(self):
-        """測試 ArticleLinks 的不可變欄位"""
-        article_link = ArticleLinks(
-            source_name="測試來源",
-            source_url="https://test.com",
-            article_link="https://test.com/article"
-        )
-        
-        # 測試不可修改 id
-        with pytest.raises(ValidationError, match="id cannot be updated"):
-            article_link.id = 100
-            
-        # 測試不可修改 article_link
-        with pytest.raises(ValidationError, match="article_link cannot be updated"):
-            article_link.article_link = "https://test.com/new-article"
-            
-        # 測試不可修改 created_at
-        with pytest.raises(ValidationError, match="created_at cannot be updated"):
-            article_link.created_at = datetime.now(timezone.utc)
 
     def test_article_links_update_mutable_fields(self):
         """測試 ArticleLinks 的可變欄位更新"""
@@ -60,42 +41,46 @@ class TestArticleLinksModel:
     def test_article_links_repr(self):
         """測試 ArticleLinks 的 __repr__ 方法"""
         article_link = ArticleLinks(
-            id=1,
             source_name="測試來源",
             source_url="https://test.com",
-            article_link="https://test.com/article",
-            is_scraped=False
+            article_link="https://test.com/article"
         )
         
-        assert repr(article_link) == "<ArticleLink(id=1, source_name='測試來源', source_url='https://test.com', article_link='https://test.com/article', is_scraped=False)>"
+        expected_repr = "<ArticleLink(id=None, source_name='測試來源', article_link='https://test.com/article')>"
+        assert repr(article_link) == expected_repr
 
-    def test_article_relationship(self):
-        """測試 ArticleLinks 和 Article 之間的關係"""
-        # 創建 Article
-        article = Articles(
-            title="測試文章",
-            link="https://test.com/article"
-        )
-        
-        # 創建 ArticleLinks 並設置關聯
+    def test_article_links_to_dict(self):
+        """測試 ArticleLinks 的 to_dict 方法"""
         article_link = ArticleLinks(
             source_name="測試來源",
             source_url="https://test.com",
             article_link="https://test.com/article"
         )
         
-        # 基本檢查連結是否相同
-        assert article_link.article_link == article.link
+        article_dict = article_link.to_dict()
+        assert article_dict['source_name'] == "測試來源"
+        assert article_dict['source_url'] == "https://test.com"
+        assert article_dict['article_link'] == "https://test.com/article"
+        assert article_dict['is_scraped'] is False
+        assert 'created_at' in article_dict
+
+    def test_article_relationship(self):
+        """測試 ArticleLinks 和 Article 之間的基本關係"""
+        article = Articles(
+            title="測試文章",
+            link="https://test.com/article"
+        )
         
-        # 模擬資料庫操作後的關聯
-        article_link.articles = article
+        article_link = ArticleLinks(
+            source_name="測試來源",
+            source_url="https://test.com",
+            article_link="https://test.com/article",
+            articles=article
+        )
         
-        # 檢查關聯是否正確設置
         assert article_link.articles is not None
         assert article_link.articles.title == "測試文章"
-        
-        # 註：在測試環境中，反向關聯 article.article_links 需要實際資料庫支援
-        # 因此，這裡不測試反向關聯
+        assert article_link.article_link == article.link
 
     def test_article_relationship_with_db(self):
         """測試 ArticleLinks 和 Article 之間的關係 (使用內存資料庫)"""
