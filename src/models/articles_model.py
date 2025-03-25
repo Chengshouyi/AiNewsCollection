@@ -1,12 +1,9 @@
-from sqlalchemy import UniqueConstraint, CheckConstraint, ForeignKey
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import UniqueConstraint, Integer, String, DateTime, Text, Boolean
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime, timezone
-from sqlalchemy.orm import relationship
-from sqlalchemy import Integer, String, DateTime, Text, Boolean
-from src.models.base_entity import BaseEntity
-from src.error.errors import ValidationError
+from .base_entity import BaseEntity
 
 class Articles(Base, BaseEntity):
     """文章模型
@@ -26,89 +23,21 @@ class Articles(Base, BaseEntity):
     - created_at: 建立時間
     - updated_at: 更新時間
     """
-    def __init__(self, **kwargs):
-        # 設置預設的 created_at
-        if 'created_at' not in kwargs:
-            kwargs['created_at'] = datetime.now(timezone.utc)
-        if 'is_ai_related' not in kwargs:
-            kwargs['is_ai_related'] = False
-            
-        super().__init__(**kwargs)
-        self.is_initialized = True
-
     __tablename__ = 'articles'
     __table_args__ = (
         # 保留資料庫層面的唯一性約束
-        UniqueConstraint(
-            'link', 
-            name='uq_article_link'
-            ),
-        # 驗證title長度
-        CheckConstraint(
-            'length(title) >= 1 AND length(title) <= 500', 
-            name='chk_article_title_length'
-            ),
-        # 驗證summary長度
-        CheckConstraint(
-            'length(summary) >= 1 AND length(summary) <= 10000', 
-            name='chk_article_summary_length'
-            ),
-        # 驗證content長度
-        CheckConstraint(
-            'length(content) >= 1 AND length(content) <= 65536', 
-            name='chk_article_content_length'
-            ),
-        # 驗證tags長度
-        CheckConstraint(
-            'length(tags) >= 1 AND length(tags) <= 500', 
-            name='chk_article_tags_length'
-            ),
-        # 驗證category長度
-        CheckConstraint(
-            'length(category) >= 1 AND length(category) <= 20', 
-            name='chk_article_category_length'
-            ),
-        # 驗證author長度
-        CheckConstraint(
-            'length(author) >= 1 AND length(author) <= 100', 
-            name='chk_article_author_length'
-            ),
-        # 驗證source長度
-        CheckConstraint(
-            'length(source) >= 1 AND length(source) <= 50', 
-            name='chk_article_source_length'
-            ),
-        # 驗證article_type長度
-        CheckConstraint(
-            'length(article_type) >= 1 AND length(article_type) <= 20',             name='chk_article_article_type_length'
-            ),
-        # 驗證link長度
-        CheckConstraint(
-            'length(link) >= 1 AND length(link) <= 1000', 
-            name='chk_article_link_length'
-            )
+        UniqueConstraint('link', name='uq_article_link'),
     )
-    def __setattr__(self, key, value):
-        if not hasattr(self, 'is_initialized'):
-            super().__setattr__(key, value)
-            return
 
-        if key in ['id', 'link', 'created_at'] and hasattr(self, key):
-            raise ValidationError(f"{key} cannot be updated")
-
-        super().__setattr__(key, value)
-
-
-    # 設定資料庫欄位
     id: Mapped[int] = mapped_column(
         Integer, 
         primary_key=True, 
         autoincrement=True
-        )
+    )
     title: Mapped[str] = mapped_column(
         String(500), 
         nullable=False
-        )
+    )
     summary: Mapped[Optional[str]] = mapped_column(Text)
     content: Mapped[Optional[str]] = mapped_column(Text)
     link: Mapped[str] = mapped_column(
@@ -116,7 +45,7 @@ class Articles(Base, BaseEntity):
         unique=True, 
         nullable=False, 
         index=True
-        )
+    )
     category: Mapped[Optional[str]] = mapped_column(String(100))
     published_at: Mapped[Optional[str]] = mapped_column(String(100))
     author: Mapped[Optional[str]] = mapped_column(String(100))
@@ -125,7 +54,7 @@ class Articles(Base, BaseEntity):
     tags: Mapped[Optional[str]] = mapped_column(String(500))
     is_ai_related: Mapped[bool] = mapped_column(
         Boolean,
-        default=lambda: False,
+        default=False,
         nullable=False
     )
     created_at: Mapped[datetime] = mapped_column(
@@ -138,18 +67,20 @@ class Articles(Base, BaseEntity):
         onupdate=lambda: datetime.now(timezone.utc)
     )
 
-    # 使用字串參考避免循環引用
     article_links = relationship("ArticleLinks", back_populates="articles", lazy="joined")
 
+
+    def __init__(self, **kwargs):
+        # 設置默認值
+        if 'created_at' not in kwargs:
+            kwargs['created_at'] = datetime.now(timezone.utc)
+        if 'is_ai_related' not in kwargs:
+            kwargs['is_ai_related'] = False
+            
+        super().__init__(**kwargs)
     # 文章資料repr
     def __repr__(self):
         return f"<Article(id={self.id}, title='{self.title}', link='{self.link}')>"
-    
-    def validate(self, is_update: bool = False) -> List[str]:
-        """文章驗證"""
-        errors = []
-        # 個性化驗證
-        return errors
     
     def to_dict(self):
         return {
