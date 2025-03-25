@@ -2,6 +2,7 @@ from src.models.articles_model import Articles
 from src.models.article_links_model import ArticleLinks
 from src.models.crawlers_model import Crawlers
 from typing import Optional, Any
+from datetime import datetime
 from src.error.errors import ValidationError
 import re
 
@@ -27,6 +28,36 @@ def validate_boolean(field_name: str):
             raise ValidationError(f"{field_name}: 必須是布林值")
         return value
     return validator
+
+def validate_positive_int(field_name: str):
+    """正整數驗證"""
+    def validator(value: Any) -> int:
+        if value is None:
+            raise ValidationError(f"{field_name}: 不能為空")
+        try:
+            value = int(value)
+            if value <= 0:
+                raise ValidationError(f"{field_name}: 必須大於0")
+            return value
+        except ValueError:
+            raise ValidationError(f"{field_name}: 必須是整數")
+    return validator
+
+def validate_datetime(field_name: str, value: Any) -> Optional[datetime]:
+    """日期時間驗證"""
+    if value is None:
+        return None
+    
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            raise ValidationError(f"{field_name}: 無效的日期時間格式。請使用 ISO 格式。")
+    
+    if isinstance(value, datetime):
+        return value
+    
+    raise ValidationError(f"{field_name}: 必須是字串或日期時間。")
 
 def validate_url(value: str) -> str:
     """URL驗證"""

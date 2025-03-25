@@ -2,7 +2,7 @@ from typing import Annotated, Optional, Any
 from pydantic import BaseModel, BeforeValidator, model_validator
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.models.model_utiles import validate_optional_str, validate_boolean
+from src.models.model_utiles import validate_optional_str, validate_boolean, validate_positive_int
 
 def validate_crawler_id(value: Any) -> int:
     """爬蟲ID驗證"""
@@ -15,21 +15,6 @@ def validate_crawler_id(value: Any) -> int:
         return value
     except ValueError:
         raise ValidationError("crawler_id: 必須是整數")
-
-def validate_positive_int(field_name: str):
-    """正整數驗證"""
-    def validator(value: Any) -> int:
-        if value is None:
-            raise ValidationError(f"{field_name}: 不能為空")
-        try:
-            value = int(value)
-            if value <= 0:
-                raise ValidationError(f"{field_name}: 必須大於0")
-            return value
-        except ValueError:
-            raise ValidationError(f"{field_name}: 必須是整數")
-    return validator
-
 
 def validate_schedule(value: Optional[str]) -> Optional[str]:
     """排程驗證"""
