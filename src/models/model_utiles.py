@@ -1,7 +1,7 @@
 from src.models.articles_model import Articles
 from src.models.article_links_model import ArticleLinks
 from src.models.crawlers_model import Crawlers
-from typing import Optional
+from typing import Optional, Any
 from src.error.errors import ValidationError
 import re
 
@@ -15,6 +15,16 @@ def validate_optional_str(field_name: str, max_length: int):
         value = value.strip()
         if len(value) > max_length:
             raise ValidationError(f"{field_name}: 長度不能超過 {max_length} 字元")
+        return value
+    return validator
+
+def validate_boolean(field_name: str):
+    """布林值驗證"""
+    def validator(value: Any) -> bool:
+        if value is None:
+            raise ValidationError(f"{field_name}: 不能為空")
+        if not isinstance(value, bool):
+            raise ValidationError(f"{field_name}: 必須是布林值")
         return value
     return validator
 

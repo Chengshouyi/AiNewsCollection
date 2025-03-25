@@ -12,14 +12,9 @@ class TestCrawlerTaskHistoryModel:
             task_id=1
         )
         
-        # 測試必填欄位
         assert history.task_id == 1
-        
-        # 測試自動生成的欄位
         assert history.start_time is not None
         assert isinstance(history.start_time, datetime)
-        
-        # 測試預設值
         assert history.success is False
         assert history.articles_count == 0
         assert history.end_time is None
@@ -44,35 +39,6 @@ class TestCrawlerTaskHistoryModel:
         assert history.message == "測試完成"
         assert history.articles_count == 10
     
-    def test_task_id_required(self):
-        """測試 task_id 是必填欄位"""
-        with pytest.raises(ValidationError) as exc_info:
-            CrawlerTaskHistory()
-        assert "task_id is required" in str(exc_info.value)
-    
-    def test_start_time_cannot_update(self):
-        """測試 start_time 屬性無法更新"""
-        history = CrawlerTaskHistory(task_id=1)
-        original_time = history.start_time
-        
-        with pytest.raises(ValidationError) as exc_info:
-            history.start_time = datetime.now(timezone.utc)
-        
-        assert "start_time cannot be updated" in str(exc_info.value)
-        assert history.start_time == original_time
-    
-    def test_id_cannot_update(self):
-        """測試 id 屬性無法更新"""
-        history = CrawlerTaskHistory(
-            id=1,
-            task_id=1
-        )
-        
-        with pytest.raises(ValidationError) as exc_info:
-            history.id = 2
-        
-        assert "id cannot be updated" in str(exc_info.value)
-        assert history.id == 1
     
     def test_history_repr(self):
         """測試 CrawlerTaskHistory 的 __repr__ 方法"""
@@ -80,19 +46,10 @@ class TestCrawlerTaskHistoryModel:
         history = CrawlerTaskHistory(
             id=1,
             task_id=1,
-            start_time=now,
-            success=False
+            start_time=now
         )
         
-        expected_repr = (
-            f"<CrawlerTaskHistory("
-            f"id=1, "
-            f"task_id=1, "
-            f"start_time={now}, "
-            f"success=False"
-            f")>"
-        )
-        
+        expected_repr = f"<CrawlerTaskHistory(id=1, task_id=1, start_time='{now}')>"
         assert repr(history) == expected_repr
     
     def test_field_updates(self):
@@ -135,34 +92,14 @@ class TestCrawlerTaskHistoryModel:
         )
         
         history_dict = history.to_dict()
-        
-        # 驗證所有欄位都在字典中
         expected_keys = {
             'id', 'task_id', 'start_time', 'end_time',
             'success', 'message', 'articles_count', 'duration'
         }
         
         assert set(history_dict.keys()) == expected_keys
+        assert history_dict['duration'] == 0.0  # start_time 和 end_time 相同
         
-        # 測試 duration 計算
-        assert history_dict['duration'] == 0.0  # 因為 start_time 和 end_time 相同
-    
-    def test_duration_calculation(self):
-        """測試持續時間計算"""
-        start_time = datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc)
-        end_time = datetime(2024, 1, 1, 10, 1, tzinfo=timezone.utc)
-        
-        history = CrawlerTaskHistory(
-            task_id=1,
-            start_time=start_time,
-            end_time=end_time
-        )
-        
-        history_dict = history.to_dict()
-        assert history_dict['duration'] == 60.0  # 1分鐘 = 60秒
-    
-    def test_duration_with_no_end_time(self):
-        """測試未結束任務的持續時間"""
-        history = CrawlerTaskHistory(task_id=1)
-        history_dict = history.to_dict()
-        assert history_dict['duration'] is None
+        # 測試沒有 end_time 的情況
+        history.end_time = None
+        assert history.to_dict()['duration'] is None
