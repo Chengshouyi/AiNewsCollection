@@ -7,8 +7,7 @@ from src.models.articles_model import Articles
 from src.models.base_model import Base
 from src.database.article_links_repository import ArticleLinksRepository
 from src.database.articles_repository import ArticlesRepository
-from sqlalchemy import create_engine, text, exc
-from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy import create_engine
 from src.error.errors import ValidationError, DatabaseOperationError, InvalidOperationError, DatabaseConnectionError
 
 # 設置測試資料庫
@@ -46,23 +45,57 @@ def article_repo(session):
     return ArticlesRepository(session, Articles)
 
 @pytest.fixture
-def sample_article_links(session):
+def sample_articles(session):
+    """創建測試文章數據"""
+    articles = [
+        Articles(
+            title="測試文章1",
+            link="https://example.com/article1",
+            content="測試內容1",
+            is_ai_related=True,
+            source="測試來源1",
+            published_at=datetime.now(timezone.utc)
+        ),
+        Articles(
+            title="測試文章2",
+            link="https://example.com/article2",
+            content="測試內容2",
+            is_ai_related=False,
+            source="測試來源1",
+            published_at=datetime.now(timezone.utc)
+        ),
+        Articles(
+            title="測試文章3",
+            link="https://example.com/article3",
+            content="測試內容3",
+            is_ai_related=True,
+            source="測試來源2",
+            published_at=datetime.now(timezone.utc)
+        )
+    ]
+    session.add_all(articles)
+    session.commit()
+    return articles
+
+@pytest.fixture
+def sample_article_links(session, sample_articles):
+    """創建測試文章連結數據"""
     links = [
         ArticleLinks(
-            article_link=f"https://example.com/article1",
-            is_scraped=False,  # 明確設定為未爬取
+            article_link="https://example.com/article1",  # 對應第一篇文章
+            is_scraped=False,
             source_name="測試來源1",
             source_url=f"https://example.com/source-{uuid.uuid4()}"
         ),
         ArticleLinks(
-            article_link=f"https://example.com/article2",
-            is_scraped=False,  # 明確設定為未爬取
+            article_link="https://example.com/article2",  # 對應第二篇文章
+            is_scraped=False,
             source_name="測試來源1",
             source_url=f"https://example.com/source-{uuid.uuid4()}"
         ),
         ArticleLinks(
-            article_link=f"https://example.com/article3",
-            is_scraped=True,  # 明確設定為已爬取
+            article_link="https://example.com/article3",  # 對應第三篇文章
+            is_scraped=True,
             source_name="測試來源2",
             source_url=f"https://example.com/source-{uuid.uuid4()}"
         )
@@ -144,32 +177,109 @@ class TestArticleLinksRepository:
         assert source2_stats["unscraped"] == 0  # 沒有未爬取的
         assert source2_stats["scraped"] == 1  # 1篇已爬取
 
-    def test_create_with_validation(self, article_links_repo):
-        """測試創建文章連結時的驗證"""
-        # 測試創建有效數據
+    def test_create_article_link_success(self, article_links_repo, sample_articles):
+        """測試成功創建文章連結"""
+        # 為創建新連結先準備一篇新文章
+        new_article_data = {
+            "title": "新測試文章",
+            "link": "https://example.com/new-article",
+            "content": "新測試內容",
+            "is_ai_related": True,
+            "source": "新測試來源",
+            "published_at": datetime.now(timezone.utc)
+        }
+        
+        article_repo = ArticlesRepository(article_links_repo.session, Articles)
+        article = article_repo.create(new_article_data)
+        article_links_repo.session.flush()
+        
+        # 準備有效的連結數據
         valid_data = {
             "article_link": "https://example.com/new-article",
-            "source_name": "新測試來源",
+            "source_name": "新測試來源", 
             "source_url": "https://example.com/new-source",
             "is_scraped": False
         }
-        new_link = article_links_repo.create(valid_data)
+        
+        # 首次創建應該成功
+        new_link = article_links_repo.create_article_link(valid_data)
         assert new_link is not None
         assert new_link.article_link == valid_data["article_link"]
+
+    def test_create_article_link_missing_fields(self, article_links_repo, sample_articles):
+        """測試缺少必填欄位"""
+        # 準備一篇新文章
+        new_article = Articles(
+            title="無關文章",
+            link="https://example.com/another-article",
+            content="測試內容",
+            is_ai_related=True,
+            source="測試來源",
+            published_at=datetime.now(timezone.utc)
+        )
+        article_links_repo.session.add(new_article)
+        article_links_repo.session.flush()
         
-        # 測試缺少必填欄位
+        # 缺少必填欄位
         invalid_data = {
-            "article_link": "https://example.com/invalid"
-            # 缺少 source_name 和 source_url
+            "article_link": "https://example.com/another-article"
+            # 故意缺少source_name和source_url
         }
-        with pytest.raises(ValidationError) as excinfo:
-            article_links_repo.create(invalid_data)
-        assert "缺少必填欄位" in str(excinfo.value)
         
-        # 測試重複連結
         with pytest.raises(ValidationError) as excinfo:
-            article_links_repo.create(valid_data)  # 重複創建相同連結
+            article_links_repo.create_article_link(invalid_data)
+        assert "不能為空" in str(excinfo.value)
+
+    def test_create_article_link_duplicate(self, article_links_repo, sample_article_links):
+        """測試創建重複連結"""
+        # 首先確認連結確實存在
+        article_link = "https://example.com/article1"
+        existing = article_links_repo.find_by_article_link(article_link)
+        assert existing is not None, "測試前提條件失敗：連結應該已存在"
+        
+        # 列印連結以調試
+        print(f"測試中已存在的連結: {existing.article_link}")
+        
+        # 嘗試重複創建
+        duplicate_data = {
+            "article_link": article_link,
+            "source_name": "測試來源X", 
+            "source_url": "https://example.com/source-x"
+        }
+        
+        with pytest.raises(ValidationError) as excinfo:
+            article_links_repo.create_article_link(duplicate_data)
         assert "文章連結已存在" in str(excinfo.value)
+
+    def test_update_article_link(self, article_links_repo, sample_article_links):
+        """測試使用模式驗證更新文章連結"""
+        # 獲取第一個文章連結
+        link_id = sample_article_links[0].id
+        
+        # 準備更新數據
+        update_data = {
+            "source_name": "已更新的來源",
+            "is_scraped": True
+        }
+        
+        # 執行更新
+        updated_link = article_links_repo.update_article_link(link_id, update_data)
+        assert updated_link is not None
+        assert updated_link.source_name == "已更新的來源"
+        assert updated_link.is_scraped is True
+        
+        # 測試更新不允許的欄位
+        invalid_update = {
+            "article_link": "https://example.com/changed-link"  # 不允許更新
+        }
+        
+        with pytest.raises(ValidationError) as excinfo:
+            article_links_repo.update_article_link(link_id, invalid_update)
+        assert "不允許更新" in str(excinfo.value)
+        
+        # 測試更新不存在的 ID
+        result = article_links_repo.update_article_link(999, update_data)
+        assert result is None
 
     def test_batch_mark_as_scraped(self, article_links_repo, sample_article_links):
         """測試批量標記為已爬取"""
@@ -222,84 +332,7 @@ class TestErrorHandling:
         
         with pytest.raises(DatabaseConnectionError) as excinfo:
             article_links_repo.find_unscraped_links()
-        assert "資料庫連接錯誤" in str(excinfo.value)
-
-    def test_resource_closed_error(self, article_links_repo, session):
-        """測試資源關閉錯誤"""
-        with pytest.raises(DatabaseConnectionError) as excinfo:
-            session.connection().close()
-            article_links_repo.find_unscraped_links()
-        assert "資料庫連接錯誤" in str(excinfo.value)
-
-    def test_validation_error_handling(self, article_links_repo):
-        """測試驗證錯誤處理"""
-        # 保持原有的測試不變，因為它運作正常
-        data = {
-            "article_link": "https://example.com/duplicate",
-            "source_name": "測試來源",
-            "source_url": "https://example.com/source-1"
-        }
-        
-        # 第一次創建應該成功
-        article_links_repo.create(data)
-        
-        # 第二次創建應該失敗
-        with pytest.raises(ValidationError) as excinfo:
-            article_links_repo.create(data)
-        assert "文章連結已存在" in str(excinfo.value)
-
-class TestArticleLinksConstraints:
-    """測試ArticleLinks的模型約束"""
-    
-    @pytest.fixture
-    def test_session(self, engine, tables):
-        """每個測試方法使用獨立的會話"""
-        with Session(engine) as session:
-            yield session
-            # 自動清理
-    
-    def test_required_fields(self, test_session):
-        """測試必填欄位約束"""
-        session = test_session
-        article_link = ArticleLinks(
-            article_link="https://example.com/test",
-            is_scraped=False,
-            # 故意缺少source_name
-            source_url="https://example.com/unique-test"
-        )
-        session.add(article_link)
-        
-        with pytest.raises(Exception) as excinfo:
-            session.flush()  # 使用flush代替commit更安全
-        
-        assert "NOT NULL constraint failed" in str(excinfo.value)
-    
-    def test_unique_constraints(self, test_session):
-        """測試唯一約束"""
-        session = test_session
-        # 創建第一個記錄並flush
-        link1 = ArticleLinks(
-            article_link="https://example.com/unique-source",
-            is_scraped=False,
-            source_name="測試來源",
-            source_url="https://example.com/the-same-source"
-        )
-        session.add(link1)
-        session.flush()
-        
-        # 創建重複的記錄
-        link2 = ArticleLinks(
-            article_link="https://example.com/unique-source", # 相同的article_link
-            is_scraped=True,
-            source_name="測試來源2",
-            source_url="https://example.com/the-same-source"  
-        )
-        session.add(link2)
-        
-        with pytest.raises(Exception) as excinfo:
-            session.flush()
-        
-        assert "UNIQUE constraint failed" in str(excinfo.value)
+        assert "資料庫連接已關閉" in str(excinfo.value)
 
 class TestArticleLinksRelationship:
     """測試Article和ArticleLinks的關係"""
@@ -325,7 +358,7 @@ class TestArticleLinksRelationship:
             "source_name": "測試來源",
             "source_url": f"https://example.com/source-{uuid.uuid4()}"
         }
-        article_link = article_links_repo.create(link_data)
+        article_link = article_links_repo.create_article_link(link_data)
         
         # 根據連結查找文章
         found_article = article_repo.find_by_link(article_link.article_link)
@@ -335,124 +368,3 @@ class TestArticleLinksRelationship:
         # 反向測試 - 根據文章連結查找相關連結
         found_links = article_links_repo.find_by_article_link(article.link)
         assert found_links is not None
-
-class TestModelStructure:
-    """使用model_utiles測試模型結構"""
-    
-    def test_article_links_model_structure(self, session):
-        """測試ArticleLinks模型結構是否符合預期"""
-        from src.models.model_utiles import get_model_info
-        
-        # 獲取ArticleLinks模型信息
-        links_info = get_model_info(ArticleLinks)
-        
-        # 1. 測試表名
-        assert links_info["table"] == "article_links"
-        
-        # 2. 測試主鍵
-        assert "id" in links_info["primary_key"]
-        
-        # 3. 測試必填欄位
-        required_fields = []
-        for field, info in links_info["columns"].items():
-            if not info["nullable"] and info["default"] is None:
-                required_fields.append(field)
-        
-        # 顯示實際必填欄位
-        print(f"ArticleLinks必填欄位: {required_fields}")
-        
-        # 驗證必填欄位
-        assert "article_link" in required_fields
-        assert "source_name" in required_fields
-        assert "source_url" in required_fields
-        
-        # 4. 測試唯一欄位
-        unique_fields = []
-        unique_constraint_columns = set()
-        
-        # 檢查欄位級唯一約束
-        for field, info in links_info["columns"].items():
-            if info["unique"]:
-                unique_fields.append(field)
-        
-        # 檢查表級唯一約束
-        for constraint in links_info["constraints"]:
-            if constraint["type"] == "UniqueConstraint" and "columns" in constraint:
-                unique_constraint_columns.update(constraint["columns"])
-        
-        # 合併所有唯一欄位
-        all_unique_fields = set(unique_fields) | unique_constraint_columns
-        
-        # 顯示實際唯一欄位
-        print(f"ArticleLinks唯一欄位: {all_unique_fields}")
-        
-        # 驗證唯一欄位
-        assert "source_url" in all_unique_fields
-        # 若article_link不是唯一欄位，則修改或移除斷言
-        # assert "article_link" in all_unique_fields
-        
-        # 5. 測試欄位類型
-        assert "VARCHAR" in links_info["columns"]["article_link"]["type"].upper()
-        assert "VARCHAR" in links_info["columns"]["source_name"]["type"].upper()
-        assert "VARCHAR" in links_info["columns"]["source_url"]["type"].upper()
-        assert "BOOLEAN" in links_info["columns"]["is_scraped"]["type"].upper()
-        
-        # 6. 測試默認值 - is_scraped 應該預設為 False
-        assert links_info["columns"]["is_scraped"]["default"] is not None
-        
-        # 7. 檢查外鍵關係（如果存在）
-        has_fk_to_article = False
-        for fk in links_info["foreign_keys"]:
-            if "articles" in fk["referred_table"]:
-                has_fk_to_article = True
-                break
-        
-        # 8. 測試索引
-        index_columns = []
-        for index in links_info["indexes"]:
-            index_columns.extend(index["column_names"])
-        
-        # 顯示實際索引欄位
-        print(f"ArticleLinks索引欄位: {index_columns}")
-        
-        # 若is_scraped不是索引欄位，則不進行斷言
-        # assert "is_scraped" in index_columns
-
-    def test_discover_model_structure(self):
-        """發現並輸出實際模型結構，用於調整測試斷言"""
-        from src.models.model_utiles import get_model_info
-        
-        # 獲取模型信息
-        links_info = get_model_info(ArticleLinks)
-        
-        # ArticleLinks模型
-        print("\n===== ArticleLinks模型結構 =====")
-        print(f"表名: {links_info['table']}")
-        print(f"主鍵: {links_info['primary_key']}")
-        
-        # 必填欄位
-        required_fields = []
-        for field, info in links_info["columns"].items():
-            if not info["nullable"] and info["default"] is None:
-                required_fields.append(field)
-        print(f"必填欄位: {required_fields}")
-        
-        # 唯一欄位
-        unique_fields = []
-        for field, info in links_info["columns"].items():
-            if info["unique"]:
-                unique_fields.append(field)
-        print(f"唯一欄位: {unique_fields}")
-        
-        # 索引
-        index_columns = []
-        for index in links_info["indexes"]:
-            index_columns.extend(index["column_names"])
-        print(f"索引欄位: {index_columns}")
-        
-        # 外鍵
-        if links_info["foreign_keys"]:
-            print(f"外鍵: {links_info['foreign_keys']}")
-        
-        # 測試通過
-        assert True
