@@ -7,7 +7,9 @@ from src.models.articles_model import Articles
 from src.models.base_model import Base
 from src.database.article_links_repository import ArticleLinksRepository
 from src.database.articles_repository import ArticlesRepository
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text, exc
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from src.error.errors import ValidationError, DatabaseOperationError, InvalidOperationError, DatabaseConnectionError
 
 # 設置測試資料庫
 @pytest.fixture
@@ -45,28 +47,36 @@ def article_repo(session):
 
 @pytest.fixture
 def sample_article_links(session):
-    links = []
-    for i in range(3):
-        is_scraped = i == 2  # 讓第三個記錄為已爬取
-        links.append(
-            ArticleLinks(
-                article_link=f"https://example.com/article{i+1}",
-                is_scraped=is_scraped,
-                source_name=f"測試來源{1 if i < 2 else 2}",
-                source_url=f"https://example.com/source-{uuid.uuid4()}"  # 確保唯一
-            )
+    links = [
+        ArticleLinks(
+            article_link=f"https://example.com/article1",
+            is_scraped=False,  # 明確設定為未爬取
+            source_name="測試來源1",
+            source_url=f"https://example.com/source-{uuid.uuid4()}"
+        ),
+        ArticleLinks(
+            article_link=f"https://example.com/article2",
+            is_scraped=False,  # 明確設定為未爬取
+            source_name="測試來源1",
+            source_url=f"https://example.com/source-{uuid.uuid4()}"
+        ),
+        ArticleLinks(
+            article_link=f"https://example.com/article3",
+            is_scraped=True,  # 明確設定為已爬取
+            source_name="測試來源2",
+            source_url=f"https://example.com/source-{uuid.uuid4()}"
         )
+    ]
     session.add_all(links)
     session.commit()
     return links
 
 # ArticleLinksRepository 測試
 class TestArticleLinksRepository:
-    """
-    測試ArticleLinks相關資料庫操作
-    注意：ArticleLinks.source_url有唯一約束
-    """
+    """測試 ArticleLinks Repository 的所有功能"""
+    
     def test_find_by_article_link(self, article_links_repo, sample_article_links):
+        """測試根據文章連結查詢"""
         # 測試存在的連結
         result = article_links_repo.find_by_article_link("https://example.com/article1")
         assert result is not None
@@ -75,8 +85,10 @@ class TestArticleLinksRepository:
         # 測試不存在的連結
         result = article_links_repo.find_by_article_link("https://nonexistent.com")
         assert result is None
-    
+
     def test_find_unscraped_links(self, article_links_repo, sample_article_links):
+        """測試查詢未爬取的連結"""
+        # 測試無過濾條件
         results = article_links_repo.find_unscraped_links()
         assert len(results) == 2
         assert all(not link.is_scraped for link in results)
@@ -84,7 +96,157 @@ class TestArticleLinksRepository:
         # 測試限制數量
         results = article_links_repo.find_unscraped_links(limit=1)
         assert len(results) == 1
-        assert not results[0].is_scraped
+        
+        # 測試來源過濾
+        results = article_links_repo.find_unscraped_links(source_name="測試來源1")
+        assert all(link.source_name == "測試來源1" for link in results)
+
+    def test_count_unscraped_links(self, article_links_repo, sample_article_links):
+        """測試計算未爬取的連結數量"""
+        # 測試總數
+        count = article_links_repo.count_unscraped_links()
+        assert count == 2
+        
+        # 測試特定來源的數量
+        count = article_links_repo.count_unscraped_links(source_name="測試來源1")
+        assert count > 0
+
+    def test_mark_as_scraped(self, article_links_repo, sample_article_links):
+        """測試標記文章為已爬取"""
+        # 測試標記存在的連結
+        success = article_links_repo.mark_as_scraped("https://example.com/article1")
+        assert success is True
+        
+        # 驗證狀態已更新
+        link = article_links_repo.find_by_article_link("https://example.com/article1")
+        assert link.is_scraped is True
+        
+        # 測試標記不存在的連結
+        success = article_links_repo.mark_as_scraped("https://nonexistent.com")
+        assert success is False
+
+    def test_get_source_statistics(self, article_links_repo, sample_article_links):
+        """測試獲取來源統計"""
+        stats = article_links_repo.get_source_statistics()
+        
+        # 驗證統計結果格式
+        assert isinstance(stats, dict)
+        
+        # 驗證測試來源1的統計
+        source1_stats = stats.get("測試來源1", {})
+        assert source1_stats["total"] == 2  # 應該有2篇文章
+        assert source1_stats["unscraped"] == 2  # 都未爬取
+        assert source1_stats["scraped"] == 0  # 沒有已爬取的
+        
+        # 驗證測試來源2的統計
+        source2_stats = stats.get("測試來源2", {})
+        assert source2_stats["total"] == 1  # 應該有1篇文章
+        assert source2_stats["unscraped"] == 0  # 沒有未爬取的
+        assert source2_stats["scraped"] == 1  # 1篇已爬取
+
+    def test_create_with_validation(self, article_links_repo):
+        """測試創建文章連結時的驗證"""
+        # 測試創建有效數據
+        valid_data = {
+            "article_link": "https://example.com/new-article",
+            "source_name": "新測試來源",
+            "source_url": "https://example.com/new-source",
+            "is_scraped": False
+        }
+        new_link = article_links_repo.create(valid_data)
+        assert new_link is not None
+        assert new_link.article_link == valid_data["article_link"]
+        
+        # 測試缺少必填欄位
+        invalid_data = {
+            "article_link": "https://example.com/invalid"
+            # 缺少 source_name 和 source_url
+        }
+        with pytest.raises(ValidationError) as excinfo:
+            article_links_repo.create(invalid_data)
+        assert "缺少必填欄位" in str(excinfo.value)
+        
+        # 測試重複連結
+        with pytest.raises(ValidationError) as excinfo:
+            article_links_repo.create(valid_data)  # 重複創建相同連結
+        assert "文章連結已存在" in str(excinfo.value)
+
+    def test_batch_mark_as_scraped(self, article_links_repo, sample_article_links):
+        """測試批量標記為已爬取"""
+        links_to_mark = [
+            "https://example.com/article1",
+            "https://example.com/article2",
+            "https://nonexistent.com"  # 不存在的連結
+        ]
+        
+        result = article_links_repo.batch_mark_as_scraped(links_to_mark)
+        
+        # 驗證結果格式
+        assert "success_count" in result
+        assert "fail_count" in result
+        assert "failed_links" in result
+        
+        # 驗證處理結果
+        assert result["success_count"] == 2  # 兩個有效連結
+        assert result["fail_count"] == 1     # 一個無效連結
+        assert "https://nonexistent.com" in result["failed_links"]
+        
+        # 驗證更新後的狀態
+        for link in links_to_mark[:-1]:  # 排除不存在的連結
+            article_link = article_links_repo.find_by_article_link(link)
+            assert article_link.is_scraped is True
+
+class TestErrorHandling:
+    """測試錯誤處理情況"""
+    
+    def test_database_error_handling(self, article_links_repo):
+        """測試資料庫錯誤處理"""
+        with pytest.raises(DatabaseOperationError) as excinfo:
+            article_links_repo.execute_query(
+                lambda: article_links_repo.session.execute("SELECT * FROM nonexistent_table")
+            )
+        assert "資料庫操作錯誤" in str(excinfo.value)
+
+    def test_invalid_operation_handling(self, article_links_repo):
+        """測試無效操作處理"""
+        with pytest.raises(InvalidOperationError) as excinfo:
+            article_links_repo.get_all(sort_by="nonexistent_column")
+        assert "無效的排序欄位" in str(excinfo.value)
+
+    def test_database_connection_error(self, article_links_repo, session):
+        """測試資料庫連接錯誤"""
+        # 先關閉 session
+        session.close()
+        # 移除 session 的綁定
+        session.bind = None
+        
+        with pytest.raises(DatabaseConnectionError) as excinfo:
+            article_links_repo.find_unscraped_links()
+        assert "資料庫連接錯誤" in str(excinfo.value)
+
+    def test_resource_closed_error(self, article_links_repo, session):
+        """測試資源關閉錯誤"""
+        with pytest.raises(DatabaseConnectionError) as excinfo:
+            session.connection().close()
+            article_links_repo.find_unscraped_links()
+        assert "資料庫連接錯誤" in str(excinfo.value)
+
+    def test_validation_error_handling(self, article_links_repo):
+        """測試驗證錯誤處理"""
+        # 保持原有的測試不變，因為它運作正常
+        data = {
+            "article_link": "https://example.com/duplicate",
+            "source_name": "測試來源",
+            "source_url": "https://example.com/source-1"
+        }
+        
+        # 第一次創建應該成功
+        article_links_repo.create(data)
+        
+        # 第二次創建應該失敗
+        with pytest.raises(ValidationError) as excinfo:
+            article_links_repo.create(data)
+        assert "文章連結已存在" in str(excinfo.value)
 
 class TestArticleLinksConstraints:
     """測試ArticleLinks的模型約束"""

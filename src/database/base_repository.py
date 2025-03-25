@@ -2,9 +2,11 @@ from typing import List, Optional, TypeVar, Generic, Type, Dict, Any, Union
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from src.models.base_model import Base
-from src.error.errors import ValidationError, NotFoundError
+from src.error.errors import ValidationError, InvalidOperationError, DatabaseOperationError
 from sqlalchemy import desc, asc
 import logging
+from sqlalchemy.exc import SQLAlchemyError
+from src.database.database_manager import check_session
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -149,38 +151,45 @@ class BaseRepository(Generic[T]):
         Returns:
             實體列表
         """
-        query = self.session.query(self.model_class)
-        
-        # 處理排序
-        if sort_by and hasattr(self.model_class, sort_by):
-            order_column = getattr(self.model_class, sort_by)
-            if sort_desc:
-                query = query.order_by(desc(order_column))
-            else:
-                query = query.order_by(asc(order_column))
-        else:
-            # 預設按創建時間或ID降序排列
-            try:
-                # 嘗試使用 created_at
-                created_at_attr = getattr(self.model_class, 'created_at', None)
-                if created_at_attr is not None:
-                    query = query.order_by(desc(created_at_attr))
-                else:
-                    # 否則使用 id
-                    id_attr = getattr(self.model_class, 'id', None)
-                    if id_attr is not None:
-                        query = query.order_by(desc(id_attr))
-            except (AttributeError, TypeError):
-                # 如果無法訪問這些屬性，則不排序
-                pass
-        
-        # 處理分頁
-        if offset is not None:
-            query = query.offset(offset)
-        if limit is not None:
-            query = query.limit(limit)
+        try:
+            query = self.session.query(self.model_class)
             
-        return query.all()
+            # 處理排序
+            if sort_by:
+                if not hasattr(self.model_class, sort_by):
+                    raise InvalidOperationError(f"無效的排序欄位: {sort_by}")
+                order_column = getattr(self.model_class, sort_by)
+                if sort_desc:
+                    query = query.order_by(desc(order_column))
+                else:
+                    query = query.order_by(asc(order_column))
+            else:
+                # 預設按創建時間或ID降序排列
+                try:
+                    # 嘗試使用 created_at
+                    created_at_attr = getattr(self.model_class, 'created_at', None)
+                    if created_at_attr is not None:
+                        query = query.order_by(desc(created_at_attr))
+                    else:
+                        # 否則使用 id
+                        id_attr = getattr(self.model_class, 'id', None)
+                        if id_attr is not None:
+                            query = query.order_by(desc(id_attr))
+                except (AttributeError, TypeError):
+                    # 如果無法訪問這些屬性，則不排序
+                    pass
+            
+            # 處理分頁
+            if offset is not None:
+                query = query.offset(offset)
+            if limit is not None:
+                query = query.limit(limit)
+            
+            return query.all()
+        except SQLAlchemyError as e:
+            error_msg = f"查詢資料時發生錯誤: {e}"
+            logger.error(error_msg)
+            raise DatabaseOperationError(error_msg) from e
     
     def get_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
         """獲取分頁資料
@@ -224,3 +233,17 @@ class BaseRepository(Generic[T]):
             "has_next": current_page < total_pages,
             "has_prev": current_page > 1
         }
+
+    @check_session
+    def execute_query(self, query_func):
+        """執行查詢的通用包裝器"""
+        try:
+            return query_func()
+        except SQLAlchemyError as e:
+            error_msg = f"資料庫操作錯誤: {e}"
+            logger.error(error_msg)
+            raise DatabaseOperationError(error_msg) from e
+
+    @check_session
+    def find_all(self, *args, **kwargs):
+        return self.execute_query(lambda: self.get_all(*args, **kwargs))

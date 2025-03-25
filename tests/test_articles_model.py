@@ -76,4 +76,57 @@ class TestArticleModel:
         
         assert repr(article) == "<Article(id=1, title='測試文章', link='https://test.com/article')>"
 
+    def test_article_to_dict(self):
+        """測試 Article 的 to_dict 方法"""
+        test_time = datetime.now(timezone.utc)
+        article = Articles(
+            id=1,
+            title="測試文章",
+            link="https://test.com/article",
+            summary="測試摘要",
+            content="測試內容",
+            category="測試分類",
+            published_at=test_time,
+            author="測試作者",
+            source="測試來源",
+            article_type="測試類型",
+            tags="測試標籤",
+            is_ai_related=True,
+            created_at=test_time,
+            updated_at=test_time
+        )
+        
+        article_dict = article.to_dict()
+        assert article_dict == {
+            'id': 1,
+            'title': "測試文章",
+            'summary': "測試摘要",
+            'content': "測試內容",
+            'link': "https://test.com/article",
+            'category': "測試分類",
+            'published_at': test_time,
+            'author': "測試作者",
+            'source': "測試來源",
+            'article_type': "測試類型",
+            'tags': "測試標籤",
+            'is_ai_related': True,
+            'created_at': test_time,
+            'updated_at': test_time
+        }
+
+    def test_article_default_timestamps(self):
+        """測試 Article 的時間戳記預設值"""
+        article = Articles(
+            title="測試文章",
+            link="https://test.com/article"
+        )
+        
+        assert isinstance(article.created_at, datetime)
+        assert article.created_at.tzinfo == timezone.utc
+        assert article.updated_at is None
+        
+        # 模擬更新操作
+        article.title = "新標題"
+        # 注意：實際更新時間需要透過 SQLAlchemy session 的操作才會觸發
+
 

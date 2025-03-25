@@ -6,7 +6,9 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.decl_api import DeclarativeBase
+from sqlalchemy.exc import OperationalError
 from src.error.errors import DatabaseError, DatabaseConnectionError, DatabaseConfigError, DatabaseOperationError
+from functools import wraps
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -55,7 +57,7 @@ class DatabaseManager:
             # 連接驗證
             self._verify_connection()
         
-        except SQLAlchemyError as e:
+        except OperationalError as e:
             error_msg = f"數據庫連接驗證失敗: {e}"
             logger.error(error_msg)
             raise DatabaseConnectionError(error_msg) from e
@@ -89,16 +91,18 @@ class DatabaseManager:
             
             if not db_path.startswith('sqlite:///'):
                 db_path = f"sqlite:///{db_path}"
-                
+            
             file_path = db_path.replace('sqlite:///', '')
             db_dir = os.path.dirname(file_path)
             
             if db_dir:
+                if not os.access(db_dir, os.W_OK):
+                    raise DatabaseConfigError(f"資料庫目錄沒有寫入權限: {db_dir}")
                 os.makedirs(db_dir, exist_ok=True)
-                
+            
             return db_path
-        except Exception as e:
-            error_msg = f"數據庫路徑解析錯誤: {e}"
+        except OSError as e:
+            error_msg = f"資料庫目錄沒有寫入權限: {e}"
             logger.error(error_msg)
             raise DatabaseConfigError(error_msg) from e
     
@@ -113,10 +117,10 @@ class DatabaseManager:
             # 嘗試建立連接並執行簡單查詢
             with self.engine.connect() as conn:
                 conn.execute(text("SELECT 1"))
-        except SQLAlchemyError as e:
+        except OperationalError as e:
             error_msg = f"數據庫連接驗證失敗: {e}"
             logger.error(error_msg)
-            raise DatabaseConnectionError(error_msg) from e  
+            raise DatabaseConnectionError(error_msg) from e
     
     @contextmanager
     def session_scope(self):
@@ -139,7 +143,10 @@ class DatabaseManager:
             logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e
         finally:
-            session.close()
+            if session.is_active:
+                session.close()
+                session.expire_all()
+                session.bind = None
     
     def create_tables(self, base: Type[DeclarativeBase]) -> None:
         """
@@ -157,3 +164,17 @@ class DatabaseManager:
             error_msg = f"創建表格失敗: {e}"
             logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e
+
+def check_session(func):
+    @wraps(func)
+    def wrapper(self, *args, **kwargs):
+        try:
+            # 檢查 session 是否有效
+            if not self.session.bind:
+                raise DatabaseConnectionError("資料庫連接已關閉")
+            return func(self, *args, **kwargs)
+        except OperationalError as e:
+            error_msg = f"資料庫連接錯誤: {e}"
+            logger.error(error_msg)
+            raise DatabaseConnectionError(error_msg) from e
+    return wrapper

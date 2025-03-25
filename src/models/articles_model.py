@@ -47,7 +47,10 @@ class Articles(Base, BaseEntity):
         index=True
     )
     category: Mapped[Optional[str]] = mapped_column(String(100))
-    published_at: Mapped[Optional[str]] = mapped_column(String(100))
+    published_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime, 
+        default=lambda: datetime.now(timezone.utc)
+    )
     author: Mapped[Optional[str]] = mapped_column(String(100))
     source: Mapped[Optional[str]] = mapped_column(String(50))
     article_type: Mapped[Optional[str]] = mapped_column(String(20))

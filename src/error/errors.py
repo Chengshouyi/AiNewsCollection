@@ -1,18 +1,18 @@
 # 自定義應用程式錯誤層級
 class DataOperationError(Exception):
-    """Base application error"""
+    """基礎應用程式錯誤"""
     pass
 
 class OptionError(DataOperationError):
-    """Option error"""
+    """選項錯誤"""
     pass
 
 class ValidationError(DataOperationError):
-    """Validation error"""
+    """驗證錯誤"""
     pass
 
 class NotFoundError(DataOperationError):
-    """Resource not found error"""
+    """沒有找到資料"""
     pass
 
 
@@ -33,4 +33,14 @@ class DatabaseConfigError(DatabaseError):
 
 class DatabaseOperationError(DatabaseError):
     """資料庫操作異常"""
+    pass
+
+
+class InvalidOperationError(DatabaseError):
+    """無效的操作異常"""
+    pass
+
+
+class InvalidQueryError(DatabaseError):
+    """無效的查詢異常"""
     pass
