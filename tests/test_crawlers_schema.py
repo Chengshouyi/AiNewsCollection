@@ -77,7 +77,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_too_long)
-        assert "crawler_name: 長度必須在 1-100 字元之間" in str(exc_info.value)
+        assert "crawler_name: 長度不能超過 100 字元" in str(exc_info.value)
         
         # 邊界值
         data_min = {
@@ -109,7 +109,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_empty)
-        assert "scrape_target: 不能為空" in str(exc_info.value)
+        assert "scrape_target: URL不能為空" in str(exc_info.value)
 
         # 過長
         data_too_long = {
@@ -120,7 +120,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_too_long)
-        assert "scrape_target: 長度必須在 1-1000 字元之間" in str(exc_info.value)
+        assert "scrape_target: 長度不能超過 1000 字元" in str(exc_info.value)
 
         # 邊界值
         data_max = {
@@ -165,7 +165,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_too_long)
-        assert "crawler_type: 長度必須在 1-100 字元之間" in str(exc_info.value)
+        assert "crawler_type: 長度不能超過 100 字元" in str(exc_info.value)
     
     def test_crawlers_crawl_interval_validation(self):
         """測試爬取間隔的驗證"""
@@ -301,7 +301,7 @@ class TestCrawlersUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersUpdateSchema.model_validate(data_too_long)
-        assert "crawler_name: 長度必須在 1-100 字元之間" in str(exc_info.value)
+        assert "crawler_name: 長度不能超過 100 字元" in str(exc_info.value)
         
         # None值是允許的
         data_none = {

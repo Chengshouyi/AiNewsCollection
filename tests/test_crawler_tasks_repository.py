@@ -6,7 +6,7 @@ from src.database.crawler_tasks_repository import CrawlerTasksRepository
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
-from src.services.model_utiles import get_model_info
+from src.models.model_utiles import get_model_info
 from src.error.errors import ValidationError
 
 # 設置測試資料庫

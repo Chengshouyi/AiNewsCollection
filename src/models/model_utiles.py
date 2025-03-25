@@ -1,7 +1,45 @@
 from src.models.articles_model import Articles
 from src.models.article_links_model import ArticleLinks
 from src.models.crawlers_model import Crawlers
+from typing import Optional
+from src.error.errors import ValidationError
+import re
 
+def validate_optional_str(field_name: str, max_length: int):
+    """可選字串欄位驗證"""
+    def validator(value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        if not value.strip():
+            raise ValidationError(f"{field_name}: 不能為空")
+        value = value.strip()
+        if len(value) > max_length:
+            raise ValidationError(f"{field_name}: 長度不能超過 {max_length} 字元")
+        return value
+    return validator
+
+def validate_url(value: str) -> str:
+    """URL驗證"""
+    if not value:
+        raise ValidationError("scrape_target: URL不能為空")
+    
+    # 先檢查長度
+    if len(value) > 1000:
+        raise ValidationError("scrape_target: 長度不能超過 1000 字元")
+    
+    # 檢查 URL 格式
+    url_pattern = re.compile(
+        r'^https?://'
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'
+        r'localhost|'
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+        r'(?::\d+)?'
+        r'(?:/?|[/?]\S+)?$', re.IGNORECASE)
+    
+    if not url_pattern.match(value):
+        raise ValidationError("scrape_target: 無效的URL格式")
+    
+    return value
 
 def print_model_constraints():
     """顯示模型約束信息的工具函數"""

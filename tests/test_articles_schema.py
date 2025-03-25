@@ -51,7 +51,7 @@ class TestArticleCreateSchema:
             with pytest.raises(ValidationError) as exc_info:
                 ArticleCreateSchema.model_validate(test_case)   
             missing_field = set(["title", "link", "published_at", "source"]) - set(test_case.keys())
-            assert f"{list(missing_field)[0]}: do not be empty" in str(exc_info.value)
+            assert f"{list(missing_field)[0]}: 不能為空" in str(exc_info.value)
 
 
     def test_article_with_all_optional_fields(self):
@@ -90,7 +90,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "title: do not be empty" in str(exc_info.value)
+        assert "title: 不能為空" in str(exc_info.value)
     
     def test_article_title_too_long_validation(self):
         """測試標題過長的驗證"""
@@ -102,7 +102,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "title: length must be between 1 and 500" in str(exc_info.value)
+        assert "title: 長度不能超過 500 字元" in str(exc_info.value)
     
     def test_article_title_boundary_values(self):
         """測試標題長度的邊界值"""
@@ -137,7 +137,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "link: do not be empty" in str(exc_info.value)
+        assert "link: 不能為空" in str(exc_info.value)
     
     def test_article_link_too_long_validation(self):
         """測試連結過長的驗證"""
@@ -149,7 +149,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "link: length must be between 1 and 1000" in str(exc_info.value)
+        assert "link: 長度不能超過 1000 字元" in str(exc_info.value)
     
     def test_article_link_boundary_values(self):
         """測試連結長度的邊界值"""
@@ -185,21 +185,10 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "summary: length must be between 1 and 10000" in str(exc_info.value)
+        assert "summary: 長度不能超過 10000 字元" in str(exc_info.value)
     
     def test_article_summary_boundary_values(self):
         """測試摘要長度的邊界值"""
-        # 測試空值
-        data_empty = {
-            "title": "測試文章",
-            "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
-            "source": "test_source",
-            "summary": None
-        }
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleCreateSchema.model_validate(data_empty)
-        assert "summary: do not be empty" in str(exc_info.value)
         
         # 測試最長有效長度
         data_max = {
@@ -225,22 +214,10 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "content: length must be between 1 and 65536" in str(exc_info.value)
+        assert "content: 長度不能超過 65536 字元" in str(exc_info.value)
     
     def test_article_content_boundary_values(self):
-        """測試內容長度的邊界值"""
-        # 測試空值
-        data_empty = {
-            "title": "測試文章",
-            "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
-            "source": "test_source",
-            "content": None
-        }
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleCreateSchema.model_validate(data_empty)
-        assert "content: do not be empty" in str(exc_info.value)
-        
+        """測試內容長度的邊界值"""  
         # 測試最長有效長度
         data_max = {
             "title": "測試文章",
@@ -264,7 +241,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "source: do not be empty" in str(exc_info.value)
+        assert "source: 不能為空" in str(exc_info.value)
     
     def test_article_source_too_long_validation(self):
         """測試來源過長的驗證"""
@@ -276,7 +253,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "source: length must be between 1 and 50" in str(exc_info.value)
+        assert "source: 長度不能超過 50 字元" in str(exc_info.value)
     
     def test_article_source_boundary_values(self):
         """測試來源長度的邊界值"""
@@ -311,7 +288,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "published_at: do not be empty" in str(exc_info.value)
+        assert "published_at: 不能為空" in str(exc_info.value)
     
     # 作者欄位測試
     def test_article_author_too_long_validation(self):
@@ -325,7 +302,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "author: length must be between 1 and 100" in str(exc_info.value)
+        assert "author: 長度不能超過 100 字元" in str(exc_info.value)
     
     # 文章類型欄位測試
     def test_article_type_too_long_validation(self):
@@ -339,7 +316,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "article_type: length must be between 1 and 20" in str(exc_info.value)
+        assert "article_type: 長度不能超過 20 字元" in str(exc_info.value)
     
     # 標籤欄位測試
     def test_article_tags_too_long_validation(self):
@@ -353,7 +330,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "tags: length must be between 1 and 500" in str(exc_info.value)
+        assert "tags: 長度不能超過 500 字元" in str(exc_info.value)
 
     def test_article_with_is_ai_related(self):
         """測試包含 is_ai_related 欄位的文章資料"""
@@ -376,7 +353,7 @@ class TestArticleCreateSchema:
             "source": "test_source"
         }
         schema = ArticleCreateSchema.model_validate(data)
-        assert schema.is_ai_related is None
+        assert schema.is_ai_related is False
 
     def test_article_with_invalid_is_ai_related(self):
         """測試 is_ai_related 欄位的無效值"""
@@ -419,7 +396,7 @@ class TestArticleUpdateSchema:
         data = {}
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "must provide at least one field to update" in str(exc_info.value)
+        assert "必須提供至少一個要更新的欄位" in str(exc_info.value)
     
     def test_update_created_at_not_allowed(self):
         """測試不允許更新 created_at 欄位"""
@@ -429,7 +406,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "do not allow to update created_at field" in str(exc_info.value)
+        assert "不允許更新 created_at 欄位" in str(exc_info.value)
     
     # 更新標題欄位測試
     def test_update_title_empty_validation(self):
@@ -439,7 +416,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "title: do not be empty" in str(exc_info.value)
+        assert "title: 不能為空" in str(exc_info.value)
     
     def test_update_title_too_long_validation(self):
         """測試更新標題過長的驗證"""
@@ -448,7 +425,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "title: length must be between 1 and 500" in str(exc_info.value)
+        assert "title: 長度不能超過 500 字元" in str(exc_info.value)
     
     # 更新連結欄位測試
     def test_update_link_empty_validation(self):
@@ -458,7 +435,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "link: do not be empty" in str(exc_info.value)
+        assert "link: 不能為空" in str(exc_info.value)
     
     def test_update_link_too_long_validation(self):
         """測試更新連結過長的驗證"""
@@ -467,7 +444,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "link: length must be between 1 and 1000" in str(exc_info.value)
+        assert "link: 長度不能超過 1000 字元" in str(exc_info.value)
     
     # 更新其他欄位的測試
     def test_update_summary_too_long_validation(self):
@@ -477,7 +454,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "summary: length must be between 1 and 10000" in str(exc_info.value)
+        assert "summary: 長度不能超過 10000 字元" in str(exc_info.value)
     
     def test_update_content_too_long_validation(self):
         """測試更新內容過長的驗證"""
@@ -486,7 +463,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "content: length must be between 1 and 65536" in str(exc_info.value)
+        assert "content: 長度不能超過 65536 字元" in str(exc_info.value)
     
     def test_update_source_empty_validation(self):
         """測試更新來源為空的驗證"""
@@ -495,7 +472,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "source: do not be empty" in str(exc_info.value)
+        assert "source: 不能為空" in str(exc_info.value)
     
     def test_update_published_at_empty_validation(self):
         """測試更新發布時間為空的驗證"""
@@ -504,7 +481,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "published_at: do not be empty" in str(exc_info.value)
+        assert "published_at: 不能為空" in str(exc_info.value)
 
     def test_update_is_ai_related(self):
         """測試更新 is_ai_related 欄位"""

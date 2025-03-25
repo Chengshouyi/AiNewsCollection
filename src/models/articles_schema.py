@@ -1,244 +1,119 @@
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import Optional
-from src.error.errors import ValidationError
+from typing import Annotated, Optional, Any
+from pydantic import BaseModel,BeforeValidator, model_validator
 from datetime import datetime
+from src.error.errors import ValidationError
+from src.models.model_utiles import validate_optional_str
+
+
+def validate_title(value: str) -> str:
+    """標題驗證"""
+    if not value or not value.strip():
+        raise ValidationError("title: 不能為空")
+    value = value.strip()
+    if len(value) > 500:
+        raise ValidationError("title: 長度不能超過 500 字元")
+    return value
+
+def validate_link(value: str) -> str:
+    """連結驗證"""
+    if not value or not value.strip():
+        raise ValidationError("link: 不能為空")
+    value = value.strip()
+    if len(value) > 1000:
+        raise ValidationError("link: 長度不能超過 1000 字元")
+    return value
+
+def validate_source(value: str) -> str:
+    """來源驗證"""
+    if not value or not value.strip():
+        raise ValidationError("source: 不能為空")
+    value = value.strip()
+    if len(value) > 50:
+        raise ValidationError("source: 長度不能超過 50 字元")
+    return value
+
+def validate_published_at(value: Any) -> datetime:
+    """發布時間驗證"""
+    if value is None or value == "":
+        raise ValidationError("published_at: 不能為空")
+    
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value)
+        except ValueError:
+            raise ValidationError("published_at: 無效的日期時間格式。請使用 ISO 格式。")
+    
+    if isinstance(value, datetime):
+        return value
+    
+    raise ValidationError("published_at: 必須是字串或日期時間。")
+
+
+# 通用字段定義
+Title = Annotated[str, BeforeValidator(validate_title)]
+Link = Annotated[str, BeforeValidator(validate_link)]
+Source = Annotated[str, BeforeValidator(validate_source)]
+PublishedAt = Annotated[datetime, BeforeValidator(validate_published_at)]
+Summary = Annotated[Optional[str], BeforeValidator(validate_optional_str("summary", 10000))]
+Content = Annotated[Optional[str], BeforeValidator(validate_optional_str("content", 65536))]
+Category = Annotated[Optional[str], BeforeValidator(validate_optional_str("category", 100))]
+Author = Annotated[Optional[str], BeforeValidator(validate_optional_str("author", 100))]
+ArticleType = Annotated[Optional[str], BeforeValidator(validate_optional_str("article_type", 20))]
+Tags = Annotated[Optional[str], BeforeValidator(validate_optional_str("tags", 500))]
 
 class ArticleCreateSchema(BaseModel):
-    title: str = Field(..., min_length=1, max_length=500, description="文章標題")
-    summary: Optional[str] = Field(None, max_length=10000, description="文章摘要")
-    content: Optional[str] = Field(None, max_length=65536, description="文章內容")
-    link: str = Field(..., min_length=1, max_length=1000, description="文章連結")
-    category: Optional[str] = Field(None, max_length=100, description="文章類別")
-    published_at: datetime = Field(..., description="發布時間")
-    author: Optional[str] = Field(None, max_length=100, description="作者")
-    source: str = Field(..., min_length=1, max_length=50, description="來源")
-    article_type: Optional[str] = Field(None, max_length=20, description="文章類型")
-    tags: Optional[str] = Field(None, max_length=500, description="標籤")
-    is_ai_related: Optional[bool] = Field(None, description="是否與AI相關")
+    """文章創建模型"""
+    title: Title
+    link: Link
+    summary: Summary = None
+    content: Content = None
+    source: Source
+    published_at: PublishedAt
+    category: Category = None
+    author: Author = None
+    article_type: ArticleType = None
+    tags: Tags = None
+    is_ai_related: bool = False
 
-    @model_validator(mode='before') 
+    @model_validator(mode='before')
     @classmethod
     def validate_required_fields(cls, data):
+        """驗證必填欄位"""
         if isinstance(data, dict):
             required_fields = ['title', 'link', 'published_at', 'source']
             for field in required_fields:
                 if field not in data:
-                    raise ValidationError(f"{field}: do not be empty.")
+                    raise ValidationError(f"{field}: 不能為空")
         return data
-    
-    @field_validator('title', mode='before')
-    @classmethod
-    def validate_title(cls, value):
-        if not value or not value.strip():
-            raise ValidationError("title: do not be empty.")
-        if 1 > len(value) or len(value) > 500:
-            raise ValidationError("title: length must be between 1 and 500.")
-        return value
-
-    @field_validator('link', mode='before')
-    @classmethod
-    def validate_link(cls, value):
-        if not value or not value.strip():
-            raise ValidationError("link: do not be empty.")
-        if 1 > len(value) or len(value) > 1000:
-            raise ValidationError("link: length must be between 1 and 1000.")
-        return value
-
-    @field_validator('summary', mode='before')
-    @classmethod
-    def validate_summary(cls, value):
-        if value is None:
-            raise ValidationError("summary: do not be empty.")
-        if 1 > len(value) or len(value) > 10000:
-            raise ValidationError("summary: length must be between 1 and 10000.")
-        return value
-
-    @field_validator('source', mode='before')
-    @classmethod
-    def validate_source(cls, value):
-        if not value or not value.strip():
-            raise ValidationError("source: do not be empty.")
-        if 1 > len(value) or len(value) > 50:
-            raise ValidationError("source: length must be between 1 and 50.")
-        return value
-    
-    @field_validator('published_at', mode='before')
-    @classmethod
-    def validate_published_at(cls, value):
-        if value is None or value == "":
-            raise ValidationError("published_at: do not be empty.")
-        
-        # 如果是字串，嘗試轉換為 datetime
-        if isinstance(value, str):
-            try:
-                return datetime.fromisoformat(value)
-            except ValueError:
-                raise ValidationError("published_at: invalid datetime format. Use ISO format.")
-        
-        # 如果已經是 datetime，直接返回
-        if isinstance(value, datetime):
-            return value
-            
-        raise ValidationError("published_at: must be string or datetime.")
-    
-    @field_validator('author', mode='before')
-    @classmethod
-    def validate_author(cls, value):
-        if value is None:
-            raise ValidationError("author: do not be empty.")
-        if 1 > len(value) or len(value) > 100:
-            raise ValidationError("author: length must be between 1 and 100.")
-        return value    
-        
-    @field_validator('article_type', mode='before')
-    @classmethod
-    def validate_article_type(cls, value):
-        if value is None:
-            raise ValidationError("article_type: do not be empty.")
-        if 1 > len(value) or len(value) > 20:
-            raise ValidationError("article_type: length must be between 1 and 20.")
-        return value        
-        
-    @field_validator('tags', mode='before')
-    @classmethod
-    def validate_tags(cls, value):
-        if value is None:
-            raise ValidationError("tags: do not be empty.")
-        if 1 > len(value) or len(value) > 500:
-            raise ValidationError("tags: length must be between 1 and 500.")
-        return value    
-    
-    @field_validator('content', mode='before')
-    @classmethod
-    def validate_content(cls, value):
-        if value is None:
-            raise ValidationError("content: do not be empty.")
-        if 1 > len(value) or len(value) > 65536:
-            raise ValidationError("content: length must be between 1 and 65536.")
-        return value
-
 
 class ArticleUpdateSchema(BaseModel):
-    title: Optional[str] = Field(None, min_length=1, max_length=500, description="文章標題")
-    summary: Optional[str] = Field(None, max_length=10000, description="文章摘要")
-    content: Optional[str] = Field(None, max_length=65536, description="文章內容")
-    link: Optional[str] = Field(None, min_length=1, max_length=1000, description="文章連結")
-    category: Optional[str] = Field(None, max_length=100, description="文章類別")
-    published_at: Optional[datetime] = Field(None, description="發布時間")
-    author: Optional[str] = Field(None, max_length=100, description="作者")
-    source: Optional[str] = Field(None, min_length=1, max_length=50, description="來源")
-    article_type: Optional[str] = Field(None, max_length=20, description="文章類型")
-    tags: Optional[str] = Field(None, max_length=500, description="標籤")
-    is_ai_related: Optional[bool] = Field(None, description="是否與AI相關")
-    
+    """文章更新模型"""
+    title: Optional[Title] = None
+    link: Optional[Link] = None
+    summary: Optional[Summary] = None
+    content: Optional[Content] = None
+    source: Optional[Source] = None
+    published_at: Optional[PublishedAt] = None
+    category: Optional[Category] = None
+    author: Optional[Author] = None
+    article_type: Optional[ArticleType] = None
+    tags: Optional[Tags] = None
+    is_ai_related: Optional[bool] = None
+
     @model_validator(mode='before')
     @classmethod
     def validate_update(cls, data):
+        """驗證更新操作"""
         if isinstance(data, dict):
-            # 防止更新 created_at
-            if 'created_at' in data:
-                raise ValidationError("do not allow to update created_at field.")
+            immutable_fields = ['created_at', 'id']
+            for field in immutable_fields:
+                if field in data:
+                    raise ValidationError(f"不允許更新 {field} 欄位")
             
-            # 確保至少有一個欄位被更新
-            update_fields = [k for k in data.keys() if k not in ['updated_at', 'created_at']]
+            update_fields = [
+                field for field in data.keys()
+                if field not in ['updated_at'] + immutable_fields
+            ]
             if not update_fields:
-                raise ValidationError("must provide at least one field to update.")
-        
+                raise ValidationError("必須提供至少一個要更新的欄位")
         return data
-
-    @field_validator('title', mode='before')
-    @classmethod
-    def validate_title(cls, value):
-        if not value or not value.strip():
-            raise ValidationError("title: do not be empty.")
-        if 1 > len(value) or len(value) > 500:
-            raise ValidationError("title: length must be between 1 and 500.")
-        return value
-    
-    @field_validator('link', mode='before')
-    @classmethod
-    def validate_link(cls, value):  
-        if not value or not value.strip():
-            raise ValidationError("link: do not be empty.")
-        if 1 > len(value) or len(value) > 1000:
-            raise ValidationError("link: length must be between 1 and 1000.")
-        return value
-    
-    @field_validator('summary', mode='before')
-    @classmethod
-    def validate_summary(cls, value):
-        if value is None:
-            raise ValidationError("summary: do not be empty.")
-        if 1 > len(value) or len(value) > 10000:
-            raise ValidationError("summary: length must be between 1 and 10000.")
-        return value
-    
-    @field_validator('content', mode='before')
-    @classmethod
-    def validate_content(cls, value):
-        if value is None:
-            raise ValidationError("content: do not be empty.")
-        if 1 > len(value) or len(value) > 65536:
-            raise ValidationError("content: length must be between 1 and 65536.")
-        return value
-    
-    @field_validator('source', mode='before')
-    @classmethod
-    def validate_source(cls, value):
-        if not value or not value.strip():
-            raise ValidationError("source: do not be empty.")
-        if 1 > len(value) or len(value) > 50:
-            raise ValidationError("source: length must be between 1 and 50.")
-        return value    
-    
-    @field_validator('published_at', mode='before')
-    @classmethod
-    def validate_published_at(cls, value):
-        if value == "":
-            raise ValidationError("published_at: do not be empty.")
-            
-        if value is None:
-            return None
-            
-        # 如果是字串，嘗試轉換為 datetime
-        if isinstance(value, str):
-            try:
-                return datetime.fromisoformat(value)
-            except ValueError:
-                raise ValidationError("published_at: invalid datetime format. Use ISO format.")
-        
-        # 如果已經是 datetime，直接返回
-        if isinstance(value, datetime):
-            return value
-            
-        raise ValidationError("published_at: must be string or datetime.")
-    
-    @field_validator('author', mode='before')
-    @classmethod
-    def validate_author(cls, value):
-        if value is None:
-            raise ValidationError("author: do not be empty.")
-        if 1 > len(value) or len(value) > 100:
-            raise ValidationError("author: length must be between 1 and 100.")
-        return value    
-    
-    @field_validator('article_type', mode='before')
-    @classmethod
-    def validate_article_type(cls, value):
-        if value is None:
-            raise ValidationError("article_type: do not be empty.")
-        if 1 > len(value) or len(value) > 20:
-            raise ValidationError("article_type: length must be between 1 and 20.")
-        return value    
-    
-    @field_validator('tags', mode='before')
-    @classmethod
-    def validate_tags(cls, value):
-        if value is None:
-            raise ValidationError("tags: do not be empty.")
-        if 1 > len(value) or len(value) > 500:
-            raise ValidationError("tags: length must be between 1 and 500.")
-        return value    
-        
-
-

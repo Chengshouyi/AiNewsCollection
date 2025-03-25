@@ -179,7 +179,7 @@ class TestModelStructure:
     
     def test_article_links_model_structure(self, session):
         """測試ArticleLinks模型結構是否符合預期"""
-        from src.services.model_utiles import get_model_info
+        from src.models.model_utiles import get_model_info
         
         # 獲取ArticleLinks模型信息
         links_info = get_model_info(ArticleLinks)
@@ -258,7 +258,7 @@ class TestModelStructure:
 
     def test_discover_model_structure(self):
         """發現並輸出實際模型結構，用於調整測試斷言"""
-        from src.services.model_utiles import get_model_info
+        from src.models.model_utiles import get_model_info
         
         # 獲取模型信息
         links_info = get_model_info(ArticleLinks)

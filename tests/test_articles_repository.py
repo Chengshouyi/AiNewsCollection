@@ -8,7 +8,7 @@ from src.models.articles_model import Articles
 from src.models.article_links_model import ArticleLinks
 from src.models.base_model import Base
 import uuid
-from src.services.model_utiles import get_model_info
+from src.models.model_utiles import get_model_info
 
 # 設置測試資料庫
 @pytest.fixture
@@ -588,7 +588,7 @@ class TestModelStructure:
     
     def test_article_model_structure(self, session):
         """測試Article模型結構是否符合預期"""
-        from src.services.model_utiles import get_model_info
+        from src.models.model_utiles import get_model_info
         
         # 獲取Article模型信息
         article_info = get_model_info(Articles)
@@ -673,7 +673,7 @@ class TestModelStructure:
     
     def test_model_constraints_discovery(self):
         """使用print_model_constraints演示模型約束"""
-        from src.services.model_utiles import print_model_constraints
+        from src.models.model_utiles import print_model_constraints
         
         # 這個測試主要是為了演示，不需要實際斷言
         # 實際運行時會輸出模型約束信息到控制台
@@ -684,7 +684,7 @@ class TestModelStructure:
 
     def test_discover_model_structure(self):
         """發現並輸出實際模型結構，用於調整測試斷言"""
-        from src.services.model_utiles import get_model_info
+        from src.models.model_utiles import get_model_info
         
         # 獲取模型信息
         article_info = get_model_info(Articles)

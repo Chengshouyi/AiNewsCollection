@@ -406,7 +406,7 @@ class TestModelStructure:
     
     def test_crawlers_model_structure(self, session):
         """測試Crawlers模型結構是否符合預期"""
-        from src.services.model_utiles import get_model_info
+        from src.models.model_utiles import get_model_info
         
         # 獲取Crawlers模型信息
         settings_info = get_model_info(Crawlers)
@@ -460,7 +460,7 @@ class TestModelStructure:
     
     def test_model_constraints_discovery(self):
         """發現並輸出Crawlers模型約束"""
-        from src.services.model_utiles import get_model_info
+        from src.models.model_utiles import get_model_info
         
         # 獲取模型信息
         settings_info = get_model_info(Crawlers)
