@@ -7,7 +7,7 @@ from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
-from src.models.model_utiles import get_model_info
+from src.utiles.model_utiles import get_model_info
 from src.error.errors import ValidationError, DatabaseOperationError
 
 # 設置測試資料庫

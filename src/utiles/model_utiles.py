@@ -1,6 +1,8 @@
 from src.models.articles_model import Articles
 from src.models.article_links_model import ArticleLinks
 from src.models.crawlers_model import Crawlers
+from src.models.crawler_tasks_model import CrawlerTasks
+from src.models.crawler_task_history_model import CrawlerTaskHistory
 from typing import Optional, Any
 from datetime import datetime
 from src.error.errors import ValidationError
@@ -84,7 +86,7 @@ def validate_url(value: str) -> str:
 
 def print_model_constraints():
     """顯示模型約束信息的工具函數"""
-    models = [Articles, ArticleLinks, Crawlers]
+    models = [Articles, ArticleLinks, Crawlers, CrawlerTasks, CrawlerTaskHistory]
     
     for model in models:
         # 打印表格相關資訊
@@ -142,6 +144,29 @@ def print_model_constraints():
             for check in check_constraints:
                 print(f" - {check.name}: {check.sqltext}")
 
+def print_all_model_info():
+    """打印所有模型信息"""
+    all_model_info = get_all_model_info()
+    for model_info in all_model_info:
+        print(f"\n模型: {model_info['name']}")
+        print(f"表名: {model_info['table']}")
+        print(f"主鍵: {model_info['primary_key']}")
+        print(f"外鍵: {model_info['foreign_keys']}")
+        print(f"索引: {model_info['indexes']}")
+        print(f"約束: {model_info['constraints']}")
+        
+        print("欄位:")
+        for col_name, col_details in model_info['columns'].items():
+            print(f" - {col_name}:")
+            print(f"   類型: {col_details['type']}")
+            print(f"   可為空: {col_details['nullable']}")
+            print(f"   唯一: {col_details['unique']}")
+            print(f"   預設值: {col_details['default']}")
+
+def get_all_model_info():
+    """獲取所有模型信息並返回字典結構，便於程式化處理"""
+    models = [Articles, ArticleLinks, Crawlers, CrawlerTasks, CrawlerTaskHistory]
+    return [get_model_info(model) for model in models]
 
 def get_model_info(model_class):
     """獲取模型信息並返回字典結構，便於程式化處理"""
@@ -203,7 +228,8 @@ def get_model_info(model_class):
 
 
 if __name__ == "__main__":
-    print_model_constraints()
+    print_all_model_info()
+    #print_model_constraints()
     
     # 示範如何獲取和處理模型信息
     #article_info = get_model_info(Article)

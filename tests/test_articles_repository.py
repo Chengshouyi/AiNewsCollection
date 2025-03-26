@@ -9,7 +9,7 @@ from src.models.article_links_model import ArticleLinks
 from src.models.base_model import Base
 from src.database.base_repository import SchemaType
 import uuid
-from src.models.model_utiles import get_model_info
+from src.utiles.model_utiles import get_model_info
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from src.error.errors import ValidationError, DatabaseOperationError
 

@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, BeforeValidator, model_validator, field_v
 from datetime import datetime
 import re
 from src.error.errors import ValidationError
-from src.models.model_utiles import validate_url
+from src.utiles.model_utiles import validate_url
 
 
 def validate_crawler_name(value: str) -> str:

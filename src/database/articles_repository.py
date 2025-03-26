@@ -1,4 +1,4 @@
-from .base_repository import BaseRepository, SchemaType
+from src.database.base_repository import BaseRepository, SchemaType
 from src.models.articles_model import Articles
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from typing import Optional, List, Dict, Any, Type

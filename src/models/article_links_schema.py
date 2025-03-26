@@ -1,7 +1,7 @@
 from typing import Annotated, Optional, Any
 from pydantic import BaseModel, BeforeValidator, model_validator
 from src.error.errors import ValidationError
-from src.models.model_utiles import validate_optional_str
+from src.utiles.model_utiles import validate_optional_str
 
 def validate_source_name(value: str) -> str:
     """來源名稱驗證"""
