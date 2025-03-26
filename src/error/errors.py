@@ -44,3 +44,27 @@ class InvalidOperationError(DatabaseError):
 class InvalidQueryError(DatabaseError):
     """無效的查詢異常"""
     pass
+
+class IntegrityValidationError(ValidationError):
+    """完整性約束驗證錯誤"""
+    pass
+
+class ForeignKeyValidationError(ValidationError):
+    """外鍵約束驗證錯誤"""
+    pass
+
+class NotNullValidationError(ValidationError):
+    """非空約束驗證錯誤"""
+    pass
+
+
+class UniqueValidationError(ValidationError):
+    """唯一性約束驗證錯誤"""
+    pass
+
+
+
+
+
+
+

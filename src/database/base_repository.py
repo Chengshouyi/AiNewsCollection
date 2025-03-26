@@ -1,11 +1,10 @@
-from typing import List, Optional, TypeVar, Generic, Type, Dict, Any, Union
+from typing import List, Optional, TypeVar, Generic, Type, Dict, Any, Union, Callable
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from src.models.base_model import Base
-from src.error.errors import ValidationError, InvalidOperationError, DatabaseOperationError
+from src.error.errors import ValidationError, InvalidOperationError, DatabaseOperationError, IntegrityValidationError
 from sqlalchemy import desc, asc
 import logging
-from sqlalchemy.exc import SQLAlchemyError
 from src.database.database_manager import check_session
 
 # 設定 logger
@@ -23,8 +22,64 @@ class BaseRepository(Generic[T]):
         self.session = session
         self.model_class = model_class
     
+    @check_session
+    def execute_query(self, query_func: Callable, exception_class=DatabaseOperationError, err_msg=None, preserve_exceptions=None):
+        """執行查詢的通用包裝器
+        
+        Args:
+            query_func: 要執行的查詢函式
+            exception_class: 發生異常時要拋出的異常類型
+            err_msg: 自定義錯誤訊息
+            preserve_exceptions: 需要保留原始異常的異常類型列表
+        """
+        preserve_exceptions = preserve_exceptions or [IntegrityError]
+        try:
+            return query_func()
+        except Exception as e:
+            error_msg = f"{err_msg if err_msg else '資料庫操作錯誤'}: {e}"
+            logger.error(error_msg)
+            
+            # 如果是需要保留的異常類型，直接重新拋出
+            if any(isinstance(e, exc) for exc in preserve_exceptions):
+                raise
+            
+            raise exception_class(error_msg) from e
+        
+    def _handle_integrity_error(self, e: IntegrityError, context: str) -> None:
+        """處理完整性錯誤並記錄日誌
+        
+        Args:
+            e: 完整性錯誤異常
+            context: 錯誤發生的上下文描述
+        """
+        error_msg = None
+        error_type = None
+        
+        if "UNIQUE constraint" in str(e):
+            error_type = "唯一性約束錯誤"
+            error_msg = f"{context}: 資料重複"
+        elif "NOT NULL constraint" in str(e):
+            error_type = "非空約束錯誤"
+            error_msg = f"{context}: 必填欄位不可為空"
+        elif "FOREIGN KEY constraint" in str(e):
+            error_type = "外鍵約束錯誤"
+            error_msg = f"{context}: 關聯資料不存在或無法刪除"
+        else:
+            error_type = "其他完整性錯誤"
+            error_msg = f"{context}: {str(e)}"
+        
+        # 記錄詳細的錯誤日誌
+        logger.error(
+            f"完整性錯誤 - 類型: {error_type}, "
+            f"上下文: {context}, "
+            f"詳細訊息: {str(e)}, "
+            f"模型: {self.model_class.__name__}"
+        )
+        
+        # 拋出異常
+        raise IntegrityValidationError(error_msg)
     # CRUD 操作
-    def create(self, entity_data: Dict[str, Any], schema_class=None) -> T:
+    def create(self, entity_data: Dict[str, Any], schema_class=None) -> Optional[T]:
         """創建實體"""
         try:
             # 使用 Pydantic schema 進行驗證
@@ -33,59 +88,48 @@ class BaseRepository(Generic[T]):
                 entity = self.model_class(**validated_data)
             else:
                 entity = self.model_class(**entity_data)
-                
-            self.session.add(entity)
-            self.session.flush()
+            
+            self.execute_query(
+                lambda: self.session.add(entity),
+                err_msg="添加資料庫物件到session時發生錯誤"
+            )
+            self.execute_query(
+                lambda: self.session.flush(),
+                err_msg="刷新session時發生錯誤"
+            )
             return entity
         except IntegrityError as e:
-            self.session.rollback()
-            # 提取更具體的錯誤訊息
-            error_msg = self._extract_integrity_error_message(e, entity_data)
-            logger.error(f"Repository.create: {error_msg}")
-            raise ValidationError(error_msg)
+            self.execute_query(
+                lambda: self.session.rollback(),
+                err_msg="回滾session時發生錯誤",
+                preserve_exceptions=[]
+            )
+            # 使用新的處理方法
+            self._handle_integrity_error(e, f"創建{self.model_class.__name__}時")
+        except ValidationError as e:
+            # 直接重新拋出驗證錯誤
+            self.execute_query(
+                lambda: self.session.rollback(),
+                err_msg="驗證錯誤時回滾session時發生錯誤"
+            )
+            logger.error(f"Repository.create: 驗證錯誤: {str(e)}")
+            raise
         except Exception as e:
-            self.session.rollback()
-            error_msg = f"Repository.create: unexpected error: {str(e)}"
+            self.execute_query(
+                lambda: self.session.rollback(),
+                err_msg="未預期錯誤時回滾session時發生錯誤"
+            )
+            error_msg = f"Repository.create: 未預期錯誤: {str(e)}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
 
-    def _extract_integrity_error_message(self, error: IntegrityError, data: Dict[str, Any]) -> str:
-        """從完整性錯誤中提取更具體的錯誤訊息"""
-        error_str = str(error).lower()
-        
-        # 處理唯一性約束錯誤
-        if 'unique' in error_str or 'duplicate' in error_str:
-            # 嘗試識別涉及哪個欄位
-            if hasattr(self.model_class, '__table_args__'):
-                for arg in self.model_class.__table_args__:
-                    if hasattr(arg, 'name') and 'uq_' in getattr(arg, 'name', '').lower():
-                        # 從約束名稱中提取欄位名稱
-                        constraint_name = getattr(arg, 'name')
-                        field_name = constraint_name.replace('uq_', '').replace(self.model_class.__tablename__, '').strip('_')
-                        
-                        if field_name in data:
-                            return f"已存在具有相同{field_name}的記錄: {data.get(field_name)}"
-            
-            # 從錯誤訊息中試著提取欄位名
-            for key in data.keys():
-                if key.lower() in error_str:
-                    return f"已存在具有相同{key}的記錄: {data.get(key)}"
-            
-            return f"資料唯一性錯誤，可能已存在相同記錄"
-        
-        # NOT NULL constraint 錯誤
-        if 'not null constraint' in error_str:
-            for key in self.model_class.__table__.columns.keys():
-                if key.lower() in error_str:
-                    return f"欄位'{key}'不能為空"
-            return f"必填欄位不可為空: {str(error)}"
-        
-        # 其他完整性錯誤
-        return f"資料完整性錯誤: {str(error)}"
     
     def get_by_id(self, entity_id: Any) -> Optional[T]:
         """根據ID獲取實體"""
-        return self.session.get(self.model_class, entity_id)
+        return self.execute_query(
+            lambda: self.session.get(self.model_class, entity_id),
+            err_msg=f"獲取ID為{entity_id}的資料庫物件時發生錯誤"
+        )
     
     def update(self, entity_id: Any, entity_data: Dict[str, Any], schema_class=None) -> Optional[T]:
         """更新實體"""
@@ -109,19 +153,35 @@ class BaseRepository(Generic[T]):
                     if key != 'id':  # ID不更新
                         setattr(entity, key, value)
             
-            self.session.flush()
+            self.execute_query(
+                lambda: self.session.flush(),
+                err_msg=f"更新ID為{entity_id}的資料庫物件時刷新session時發生錯誤"
+            )
             return entity
         except IntegrityError as e:
-            self.session.rollback()
-            # 提取更具體的錯誤訊息
-            error_msg = self._extract_integrity_error_message(e, entity_data)
-            logger.error(f"Repository.update: {error_msg}")
-            raise ValidationError(error_msg)
+            self.execute_query(
+                lambda: self.session.rollback(),
+                err_msg=f"更新ID為{entity_id}的資料庫物件時回滾session時發生錯誤",
+                preserve_exceptions=[]
+            )
+            # 使用新的處理方法
+            self._handle_integrity_error(e, f"更新{self.model_class.__name__}時")
+        except ValidationError as e:
+            # 直接重新拋出驗證錯誤
+            self.execute_query(
+                lambda: self.session.rollback(),
+                err_msg="當更新ID為{entity_id}的資料庫物件時驗證錯誤時回滾session時發生錯誤"
+            )
+            logger.error(f"Repository.update: 驗證錯誤: {str(e)}")
+            raise
         except Exception as e:
-            self.session.rollback()
-            error_msg = f"Repository.update: unknown error: {str(e)}"
+            self.execute_query(
+                lambda: self.session.rollback(),
+                err_msg="當更新ID為{entity_id}的資料庫物件時未預期錯誤時回滾session時發生錯誤"
+            )
+            error_msg = f"Repository.update: 未預期錯誤: {str(e)}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
     
     def delete(self, entity_id: Any) -> bool:
         """刪除實體"""
@@ -130,14 +190,33 @@ class BaseRepository(Generic[T]):
             return False
         
         try:
-            self.session.delete(entity)
-            self.session.flush()
+            self.execute_query(
+                lambda: self.session.delete(entity),
+                err_msg=f"刪除ID為{entity_id}的資料庫物件時發生錯誤"
+            )
+            self.execute_query(
+                lambda: self.session.flush(),
+                err_msg=f"刪除ID為{entity_id}的資料庫物件時刷新session時發生錯誤"
+            )
             return True
         except IntegrityError as e:
-            self.session.rollback()
-            error_msg = f"Repository.delete: cannot delete {self.model_class.__name__}: {str(e)}"
+            self.execute_query(
+                lambda: self.session.rollback(),
+                err_msg=f"刪除ID為{entity_id}的資料庫物件時回滾session時發生錯誤",
+                preserve_exceptions=[]
+            )
+            # 使用新的處理方法
+            self._handle_integrity_error(e, f"刪除{self.model_class.__name__}時")
+        except Exception as e:
+            self.execute_query(
+                lambda: self.session.rollback(),
+                err_msg="刪除ID為{entity_id}的資料庫物件時未預期錯誤時回滾session時發生錯誤"
+            )
+            error_msg = f"Repository.delete: 未預期錯誤: {str(e)}"
             logger.error(error_msg)
-            raise ValidationError(error_msg)
+            raise DatabaseOperationError(error_msg) from e
+        
+        return False
         
     def get_all(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List[T]:
         """獲取所有實體，支援分頁和排序
@@ -151,7 +230,7 @@ class BaseRepository(Generic[T]):
         Returns:
             實體列表
         """
-        try:
+        def query_builder():
             query = self.session.query(self.model_class)
             
             # 處理排序
@@ -186,10 +265,12 @@ class BaseRepository(Generic[T]):
                 query = query.limit(limit)
             
             return query.all()
-        except SQLAlchemyError as e:
-            error_msg = f"查詢資料時發生錯誤: {e}"
-            logger.error(error_msg)
-            raise DatabaseOperationError(error_msg) from e
+            
+        return self.execute_query(
+            query_builder,
+            err_msg="獲取所有資料庫物件時發生錯誤",
+            exception_class=DatabaseOperationError
+        )
     
     def get_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
         """獲取分頁資料
@@ -204,7 +285,10 @@ class BaseRepository(Generic[T]):
             包含分頁資訊和結果的字典
         """
         # 計算總記錄數
-        total = self.session.query(self.model_class).count()
+        total = self.execute_query(
+            lambda: self.session.query(self.model_class).count(),
+            err_msg="獲取分頁資料時計算總記錄數時發生錯誤"
+        )
         
         # 計算總頁數
         total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
@@ -215,7 +299,7 @@ class BaseRepository(Generic[T]):
         # 計算偏移量
         offset = (current_page - 1) * per_page
         
-        # 獲取當前頁數據
+        # 獲取當前頁數據（避免嵌套 execute_query）
         items = self.get_all(
             limit=per_page, 
             offset=offset,
@@ -234,16 +318,8 @@ class BaseRepository(Generic[T]):
             "has_prev": current_page > 1
         }
 
-    @check_session
-    def execute_query(self, query_func):
-        """執行查詢的通用包裝器"""
-        try:
-            return query_func()
-        except SQLAlchemyError as e:
-            error_msg = f"資料庫操作錯誤: {e}"
-            logger.error(error_msg)
-            raise DatabaseOperationError(error_msg) from e
-
-    @check_session
     def find_all(self, *args, **kwargs):
-        return self.execute_query(lambda: self.get_all(*args, **kwargs))
+        """找出所有實體的別名方法"""
+        # 避免嵌套使用 execute_query
+        return self.get_all(*args, **kwargs)
+

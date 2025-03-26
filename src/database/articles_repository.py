@@ -1,8 +1,9 @@
 from .base_repository import BaseRepository
 from src.models.articles_model import Articles
-from typing import Optional, List, Dict, Any
-from sqlalchemy import func, or_
-from src.error.errors import ValidationError
+from typing import Optional, List, Dict, Any, Union, Tuple
+from sqlalchemy import func, or_, and_
+from sqlalchemy.orm import Query
+from src.error.errors import ValidationError, DatabaseOperationError
 import logging
 
 # 設定 logger
@@ -16,21 +17,12 @@ class ArticlesRepository(BaseRepository['Articles']):
     
     def find_by_link(self, link: str) -> Optional['Articles']:
         """根據文章連結查詢"""
-        try:
-            return self.session.query(self.model_class).filter_by(link=link).first()
-        except Exception as e:
-            error_msg = f"查詢文章連結時發生錯誤: {e}"
-            logger.error(error_msg)
-            raise e
+        return self.execute_query(lambda: self.session.query(self.model_class).filter_by(link=link).first())
+
     
     def find_by_category(self, category: str) -> List['Articles']:
         """根據分類查詢文章"""
-        try:
-            return self.session.query(self.model_class).filter_by(category=category).all()
-        except Exception as e:
-            error_msg = f"查詢文章分類時發生錯誤: {e}"
-            logger.error(error_msg)
-            raise e
+        return self.execute_query(lambda: self.session.query(self.model_class).filter_by(category=category).all())
 
     def search_by_title(self, keyword: str, exact_match: bool = False) -> List['Articles']:
         """根據標題搜索文章
@@ -44,92 +36,83 @@ class ArticlesRepository(BaseRepository['Articles']):
         """
         if exact_match:
             # 精確匹配（區分大小寫）
-            try:
-                return self.session.query(self.model_class).filter(
-                    self.model_class.title == keyword
-                ).all()
-            except Exception as e:
-                error_msg = f"查詢文章標題時發生錯誤: {e}"
-                logger.error(error_msg)
-                raise e
+            return self.execute_query(lambda: self.session.query(self.model_class).filter(
+                self.model_class.title == keyword
+            ).all())
         else:
             # 模糊匹配
-            try:
-                return self.session.query(self.model_class).filter(
-                    self.model_class.title.like(f'%{keyword}%')
-                ).all()
-            except Exception as e:
-                error_msg = f"查詢文章標題時發生錯誤: {e}"
-                logger.error(error_msg)
-                raise e
+            return self.execute_query(lambda: self.session.query(self.model_class).filter(
+                self.model_class.title.like(f'%{keyword}%')
+            ).all())
+
+    
+    def _build_filter_query(self, query: Query, filter_dict: Dict[str, Any]) -> Query:
+        """構建過濾查詢"""
+        if not filter_dict:
+            return query
+        
+        for key, value in filter_dict.items():
+            if key == "is_ai_related":
+                query = query.filter(self.model_class.is_ai_related == value)
+            elif key == "tags":
+                query = query.filter(self.model_class.tags.like(value))
+            elif key == "published_at" and isinstance(value, dict):
+                if "$gte" in value:
+                    query = query.filter(self.model_class.published_at >= value["$gte"])
+                if "$lte" in value:
+                    query = query.filter(self.model_class.published_at <= value["$lte"])
+            elif key == "search_text" and value:
+                search_term = f"%{value}%"
+                query = query.filter(or_(
+                    self.model_class.title.like(search_term),
+                    self.model_class.content.like(search_term),
+                    self.model_class.summary.like(search_term)
+                ))
+            else:
+                if hasattr(self.model_class, key):
+                    query = query.filter(getattr(self.model_class, key) == value)
+        
+        return query
     
     def get_by_filter(self, filter_dict: Dict[str, Any], limit: Optional[int] = None, offset: Optional[int] = None) -> List['Articles']:
-        """根據過濾條件查詢文章
-        
-        Args:
-            filter_dict: 過濾條件字典
-            limit: 限制返回數量
-            offset: 起始偏移
-            
-        Returns:
-            符合條件的文章列表
-        """
+        """根據過濾條件查詢文章"""
         try:
-            query = self.session.query(self.model_class)
+            def query_builder():
+                query = self.session.query(self.model_class)
+                query = self._build_filter_query(query, filter_dict)
+                    
+                if offset is not None:
+                    query = query.offset(offset)
+                if limit is not None:
+                    query = query.limit(limit)
+                    
+                return query.all()
             
-            for key, value in filter_dict.items():
-                if key == "is_ai_related":
-                    query = query.filter(self.model_class.is_ai_related == value)
-                elif key == "tags":
-                    query = query.filter(self.model_class.tags.like(value))
-                elif key == "published_at" and isinstance(value, dict):
-                    if "$gte" in value:
-                        query = query.filter(self.model_class.published_at >= value["$gte"])
-                    if "$lte" in value:
-                        query = query.filter(self.model_class.published_at <= value["$lte"])
-                else:
-                    query = query.filter(getattr(self.model_class, key) == value)
-                    
-            if offset is not None:
-                query = query.offset(offset)
-            if limit is not None:
-                query = query.limit(limit)
-                    
-            return query.all()
+            return self.execute_query(
+                query_builder,
+                err_msg="根據過濾條件查詢文章時發生錯誤"
+            )
         except Exception as e:
             error_msg = f"根據過濾條件查詢文章時發生錯誤: {e}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
 
     def count(self, filter_dict: Optional[Dict[str, Any]] = None) -> int:
-        """計算符合條件的文章數量
-        
-        Args:
-            filter_dict: 過濾條件字典
-            
-        Returns:
-            文章數量
-        """
+        """計算符合條件的文章數量"""
         try:
-            query = self.session.query(func.count(self.model_class.id))
+            def query_builder():
+                query = self.session.query(func.count(self.model_class.id))
+                query = self._build_filter_query(query, filter_dict or {})
+                return query.scalar()
             
-            if filter_dict:
-                for key, value in filter_dict.items():
-                    if key == "is_ai_related":
-                        query = query.filter(self.model_class.is_ai_related == value)
-                    elif key == "published_at" and isinstance(value, dict):
-                        if "$gte" in value:
-                            query = query.filter(self.model_class.published_at >= value["$gte"])
-                        if "$lte" in value:
-                            query = query.filter(self.model_class.published_at <= value["$lte"])
-                    else:
-                        query = query.filter(getattr(self.model_class, key) == value)
-                        
-            return query.scalar()
+            return self.execute_query(
+                query_builder,
+                err_msg="計算符合條件的文章數量時發生錯誤"
+            )
         except Exception as e:
             error_msg = f"計算符合條件的文章數量時發生錯誤: {e}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
 
     def search_by_keywords(self, keywords: str) -> List['Articles']:
         """根據關鍵字搜索文章（標題和內容）
@@ -140,78 +123,63 @@ class ArticlesRepository(BaseRepository['Articles']):
         Returns:
             符合條件的文章列表
         """
-        try:
-            return self.session.query(self.model_class).filter(
-                or_(
-                    self.model_class.title.like(f'%{keywords}%'),
-                    self.model_class.content.like(f'%{keywords}%')
-                )
-            ).all()
-        except Exception as e:
-            error_msg = f"根據關鍵字搜索文章時發生錯誤: {e}"
-            logger.error(error_msg)
-            raise e
+        return self.get_by_filter({"search_text": keywords})
 
     def get_category_distribution(self) -> Dict[str, int]:
-        """獲取各分類的文章數量分布
-        
-        Returns:
-            分類及其對應的文章數量字典
-        """
+        """獲取各分類的文章數量分布"""
         try:
-            result = self.session.query(
-                self.model_class.category,
-                func.count(self.model_class.id)
-            ).group_by(self.model_class.category).all()
+            def query_builder():
+                return self.session.query(
+                    self.model_class.category,
+                    func.count(self.model_class.id)
+                ).group_by(self.model_class.category).all()
+            
+            result = self.execute_query(
+                query_builder,
+                err_msg="獲取各分類的文章數量分布時發生錯誤"
+            )
             return {str(category) if category else "未分類": count for category, count in result}
         except Exception as e:
             error_msg = f"獲取各分類的文章數量分布時發生錯誤: {e}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
 
     def find_by_tags(self, tags: List[str]) -> List['Articles']:
-        """根據標籤列表查詢文章
-        
-        Args:
-            tags: 標籤列表
-            
-        Returns:
-            包含指定標籤的文章列表
-        """
+        """根據標籤列表查詢文章"""
         try:
-            query = self.session.query(self.model_class)
-            for tag in tags:
-                query = query.filter(self.model_class.tags.like(f'%{tag}%'))
-            return query.all()
+            def query_builder():
+                query = self.session.query(self.model_class)
+                for tag in tags:
+                    query = query.filter(self.model_class.tags.like(f'%{tag}%'))
+                return query.all()
+            
+            return self.execute_query(
+                query_builder,
+                err_msg="根據標籤列表查詢文章時發生錯誤"
+            )
         except Exception as e:
             error_msg = f"根據標籤列表查詢文章時發生錯誤: {e}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
     
     def validate_unique_link(self, link: str, exclude_id: Optional[int] = None, raise_error: bool = True) -> bool:
-        """
-        驗證文章連結是否唯一
-        
-        Args:
-            link: 要檢查的連結
-            exclude_id: 要排除的文章ID (用於更新時)
-            raise_error: 是否在發現重複時引發錯誤
-        
-        Returns:
-            True 如果連結唯一，否則根據 raise_error 參數處理
-        """
-
+        """驗證文章連結是否唯一"""
         if not link:
-            return True  # 空連結不需檢查唯一性
+            return True
+
         try:
-            query = self.session.query(self.model_class).filter_by(link=link)
+            def query_builder():
+                query = self.session.query(self.model_class).filter_by(link=link)
+                if exclude_id is not None:
+                    query = query.filter(self.model_class.id != exclude_id)
+                return query.first()
             
-            if exclude_id is not None:
-                query = query.filter(self.model_class.id != exclude_id)
+            existing = self.execute_query(
+                query_builder,
+                err_msg="驗證文章連結唯一性時發生錯誤"
+            )
             
-            existing = query.first()
             if existing:
-                # 檢查是否為更新時的不存在ID問題
                 if exclude_id is not None and not self.get_by_id(exclude_id):
                     if raise_error:
                         raise ValidationError(f"文章不存在，ID={exclude_id}")
@@ -222,65 +190,111 @@ class ArticlesRepository(BaseRepository['Articles']):
                 return False
             
             return True
+        except ValidationError:
+            raise
         except Exception as e:
             error_msg = f"驗證文章連結唯一性時發生錯誤: {e}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
 
-    def create(self, entity_data: Dict[str, Any], schema_class=None) -> Articles:
+    def _validate_required_fields(self, entity_data: Dict[str, Any], existing_entity: Optional['Articles'] = None) -> Dict[str, Any]:
         """
-        重寫基類的 create 方法，添加針對 Articles 的特殊驗證
+        驗證並補充必填欄位
+        
+        Args:
+            entity_data: 實體資料
+            existing_entity: 現有實體 (用於更新時)
+            
+        Returns:
+            處理後的實體資料
+        """
+        # 深度複製避免修改原始資料
+        processed_data = entity_data.copy()
+        
+        # 檢查必填欄位
+        required_fields = ['is_ai_related', 'title', 'link', 'source', 'published_at']
+        
+        # 如果是更新操作，從現有實體中補充必填欄位
+        if existing_entity:
+            for field in required_fields:
+                if field not in processed_data and hasattr(existing_entity, field):
+                    processed_data[field] = getattr(existing_entity, field)
+        
+        # 檢查是否仍然缺少必填欄位
+        missing_fields = [field for field in required_fields if field not in processed_data or processed_data[field] is None]
+        if missing_fields:
+            raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
+            
+        return processed_data
+
+    def create(self, entity_data: Dict[str, Any], schema_class=None) -> Optional[Articles]:
+        """
+        創建文章，添加針對 Articles 的特殊驗證
+        
+        Args:
+            entity_data: 實體資料
+            schema_class: 用於驗證的Schema類 (可選)
+            
+        Returns:
+            創建的文章實體
         """
         try:
             # 驗證連結唯一性
             if 'link' in entity_data and entity_data['link']:
                 self.validate_unique_link(entity_data['link'])
-        
-            # 確保所有必填欄位都有值
-            required_fields = ['is_ai_related', 'title', 'link', 'source', 'published_at']
-            missing_fields = [field for field in required_fields if field not in entity_data or entity_data[field] is None]
             
-            if missing_fields:
-                raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
-        
-            # 呼叫基類方法，加入對 schema_class 的支援
-            return super().create(entity_data, schema_class)
+            # 驗證並補充必填欄位
+            validated_data = self._validate_required_fields(entity_data)
+            
+            # 呼叫基類方法
+            return super().create(validated_data, schema_class)
+        except ValidationError:
+            # 直接重新引發驗證錯誤
+            raise
         except Exception as e:
             error_msg = f"創建文章時發生錯誤: {e}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
 
     def update(self, entity_id: Any, entity_data: Dict[str, Any], schema_class=None) -> Optional[Articles]:
         """
-        重寫基類的 update 方法，添加針對 Articles 的特殊驗證
+        更新文章，添加針對 Articles 的特殊驗證
+        
+        Args:
+            entity_id: 實體ID
+            entity_data: 要更新的實體資料
+            schema_class: 用於驗證的Schema類 (可選)
+            
+        Returns:
+            更新後的文章實體，如果實體不存在則返回None
         """
         try:
-            # 先檢查實體是否存在
+            # 檢查實體是否存在
             existing_entity = self.get_by_id(entity_id)
             if not existing_entity:
                 logger.warning(f"更新文章失敗，ID不存在: {entity_id}")
                 return None
-        
+            
             # 如果更新資料為空，直接返回已存在的實體
             if not entity_data:
                 return existing_entity
-            
+                
             # 驗證連結唯一性（如果要更新連結）
             if 'link' in entity_data and entity_data['link'] != getattr(existing_entity, 'link', None):
                 self.validate_unique_link(entity_data['link'], exclude_id=entity_id)
+                
+            # 驗證並補充必填欄位
+            validated_data = self._validate_required_fields(entity_data, existing_entity)
             
-            # 處理可能缺少的必填欄位（從現有實體中補充）
-            required_fields = ['is_ai_related', 'title', 'link', 'source', 'published_at']
-            for field in required_fields:
-                if field not in entity_data and hasattr(existing_entity, field):
-                    entity_data[field] = getattr(existing_entity, field)
-        
-            # 呼叫基類方法，加入對 schema_class 的支援
-            return super().update(entity_id, entity_data, schema_class)
+            # 呼叫基類方法
+            return super().update(entity_id, validated_data, schema_class)
+        except ValidationError:
+            # 直接重新引發驗證錯誤
+            raise
         except Exception as e:
             error_msg = f"更新文章時發生錯誤: {e}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
 
     def batch_update(self, entity_ids: List[Any], entity_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -309,17 +323,17 @@ class ArticlesRepository(BaseRepository['Articles']):
         except Exception as e:
             error_msg = f"批量更新文章時檢查ID是否存在時發生錯誤: {e}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
         
         # 第二步：如果要更新link欄位，預先檢查連結是否已存在且屬於非更新範圍內的實體
         try:
             if 'link' in entity_data and entity_data['link']:
                 # 檢查連結是否存在於其他非更新實體中
                 link = entity_data['link']
-                query = self.session.query(self.model_class).filter_by(link=link)
+                query = self.execute_query(lambda: self.session.query(self.model_class).filter_by(link=link))
                 if entity_ids:
-                    query = query.filter(~self.model_class.id.in_(entity_ids))
-                existing_with_link = query.first()
+                    query = self.execute_query(lambda: query.filter(~self.model_class.id.in_(entity_ids)))
+                existing_with_link = self.execute_query(lambda: query.first())
                 
                 if existing_with_link:
                     # 發現連結衝突，但仍然繼續處理其他實體
@@ -327,7 +341,7 @@ class ArticlesRepository(BaseRepository['Articles']):
         except Exception as e:
             error_msg = f"批量更新文章時檢查連結是否存在時發生錯誤: {e}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
         
         # 第三步：逐一更新實體
         for entity_id, entity in existing_entities.items():
@@ -342,9 +356,9 @@ class ArticlesRepository(BaseRepository['Articles']):
                         pass  # 允許更新自己的連結
                     else:
                         # 檢查除自身外是否有其他實體具有此連結
-                        duplicate_query = self.session.query(self.model_class).filter_by(link=entity_data_copy['link'])
-                        duplicate_query = duplicate_query.filter(self.model_class.id != entity_id)
-                        duplicate = duplicate_query.first()
+                        duplicate_query = self.execute_query(lambda: self.session.query(self.model_class).filter_by(link=entity_data_copy['link']))
+                        duplicate_query = self.execute_query(lambda: duplicate_query.filter(self.model_class.id != entity_id))
+                        duplicate = self.execute_query(lambda: duplicate_query.first())
                         
                         if duplicate:
                             # 如果發現重複，則從更新資料中移除連結欄位
@@ -354,15 +368,12 @@ class ArticlesRepository(BaseRepository['Articles']):
                 # 如果沒有任何要更新的欄位，則跳過
                 if not entity_data_copy:
                     continue
-                    
-                # 處理可能缺少的必填欄位（從現有實體中補充）
-                required_fields = ['is_ai_related', 'title', 'link', 'source', 'published_at']
-                for field in required_fields:
-                    if field not in entity_data_copy and hasattr(entity, field):
-                        entity_data_copy[field] = getattr(entity, field)
+                
+                # 驗證並補充必填欄位
+                validated_data = self._validate_required_fields(entity_data_copy, entity)
                 
                 # 更新實體
-                result = super().update(entity_id, entity_data_copy)
+                result = super().update(entity_id, validated_data)
                 if result:
                     updated_entities.append(result)
                 
@@ -394,37 +405,55 @@ class ArticlesRepository(BaseRepository['Articles']):
             包含分頁資訊和結果的字典
         """
         try:
-            # 計算符合過濾條件的總記錄數
-            total = self.count(filter_dict)
+            def query_builder():
+                # 計算總記錄數
+                total = self.count(filter_dict)
+                
+                # 計算總頁數
+                total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
+                
+                # 確保頁碼有效
+                current_page = max(1, min(page, total_pages)) if total_pages > 0 else 1
+                
+                # 計算偏移量
+                offset = (current_page - 1) * per_page
+                
+                # 構建基本查詢
+                query = self.session.query(self.model_class)
+                query = self._build_filter_query(query, filter_dict)
+                
+                # 添加排序 - 使用兼容 SQLite 的方式
+                if sort_by and hasattr(self.model_class, sort_by):
+                    order_column = getattr(self.model_class, sort_by)
+                    # SQLite 兼容的排序方式
+                    query = query.order_by(order_column.desc() if sort_desc else order_column.asc())
+                else:
+                    # 默認按發布時間降序排列
+                    query = query.order_by(self.model_class.published_at.desc())
+                
+                # 應用分頁
+                query = query.offset(offset).limit(per_page)
+                
+                # 執行查詢
+                items = query.all()
+                
+                return {
+                    "items": items,
+                    "page": current_page,
+                    "per_page": per_page,
+                    "total": total,
+                    "total_pages": total_pages,
+                    "has_next": current_page < total_pages,
+                    "has_prev": current_page > 1
+                }
             
-            # 計算總頁數
-            total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
-            
-            # 確保頁碼有效
-            current_page = max(1, min(page, total_pages)) if total_pages > 0 else 1
-            
-            # 計算偏移量
-            offset = (current_page - 1) * per_page
-            
-            # 獲取當前頁數據
-            items = self.get_by_filter(
-                filter_dict=filter_dict,
-                limit=per_page, 
-                offset=offset
+            return self.execute_query(
+                query_builder,
+                err_msg="根據過濾條件獲取分頁資料時發生錯誤"
             )
             
-            # 構建分頁結果
-            return {
-                "items": items,
-                "page": current_page,
-                "per_page": per_page,
-                "total": total,
-                "total_pages": total_pages,
-                "has_next": current_page < total_pages,
-                "has_prev": current_page > 1
-            }
         except Exception as e:
             error_msg = f"根據過濾條件獲取分頁資料時發生錯誤: {e}"
             logger.error(error_msg)
-            raise e
+            raise DatabaseOperationError(error_msg) from e
     
