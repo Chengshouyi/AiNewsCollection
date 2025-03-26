@@ -1,4 +1,5 @@
 from typing import List, Optional, TypeVar, Generic, Type, Dict, Any, Union, Callable
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from src.models.base_model import Base
@@ -6,6 +7,8 @@ from src.error.errors import ValidationError, InvalidOperationError, DatabaseOpe
 from sqlalchemy import desc, asc
 import logging
 from src.database.database_manager import check_session
+from abc import ABC, abstractmethod
+from enum import Enum, auto
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -14,7 +17,13 @@ logger = logging.getLogger(__name__)
 # 將T綁定到Base，這樣可以訪問SQLAlchemy的屬性
 T = TypeVar('T', bound=Base)
 
-class BaseRepository(Generic[T]):
+class SchemaType(Enum):
+    CREATE = auto()
+    UPDATE = auto()
+    LIST = auto()
+    DETAIL = auto()
+
+class BaseRepository(Generic[T], ABC):
     """
     基礎Repository類別，提供通用CRUD操作
     """
@@ -78,16 +87,18 @@ class BaseRepository(Generic[T]):
         
         # 拋出異常
         raise IntegrityValidationError(error_msg)
-    # CRUD 操作
-    def create(self, entity_data: Dict[str, Any], schema_class=None) -> Optional[T]:
-        """創建實體"""
+    
+    @abstractmethod
+    def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
+        """子類必須實現此方法提供用於驗證的schema類"""
+        pass
+        
+    def _create_internal(self, entity_data: Dict[str, Any], schema_class: Type[BaseModel]) -> Optional[T]:
+        """內部方法：創建實體（需要提供schema）"""
         try:
             # 使用 Pydantic schema 進行驗證
-            if schema_class:
-                validated_data = schema_class(**entity_data).model_dump()
-                entity = self.model_class(**validated_data)
-            else:
-                entity = self.model_class(**entity_data)
+            validated_data = schema_class(**entity_data).model_dump()
+            entity = self.model_class(**validated_data)
             
             self.execute_query(
                 lambda: self.session.add(entity),
@@ -104,10 +115,8 @@ class BaseRepository(Generic[T]):
                 err_msg="回滾session時發生錯誤",
                 preserve_exceptions=[]
             )
-            # 使用新的處理方法
             self._handle_integrity_error(e, f"創建{self.model_class.__name__}時")
         except ValidationError as e:
-            # 直接重新拋出驗證錯誤
             self.execute_query(
                 lambda: self.session.rollback(),
                 err_msg="驗證錯誤時回滾session時發生錯誤"
@@ -122,36 +131,33 @@ class BaseRepository(Generic[T]):
             error_msg = f"Repository.create: 未預期錯誤: {str(e)}"
             logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e
-
     
-    def get_by_id(self, entity_id: Any) -> Optional[T]:
-        """根據ID獲取實體"""
-        return self.execute_query(
-            lambda: self.session.get(self.model_class, entity_id),
-            err_msg=f"獲取ID為{entity_id}的資料庫物件時發生錯誤"
-        )
+    @abstractmethod
+    def create(self, entity_data: Dict[str, Any]) -> Optional[T]:
+        """創建實體（強制子類實現）必須提供schema及調用_create_internal
+        
+        Args:
+            entity_data: 實體數據
+            
+        Returns:
+            創建的實體或 None
+        """
+        pass
     
-    def update(self, entity_id: Any, entity_data: Dict[str, Any], schema_class=None) -> Optional[T]:
-        """更新實體"""
+    def _update_internal(self, entity_id: Any, entity_data: Dict[str, Any], schema_class: Type[BaseModel]) -> Optional[T]:
+        """內部方法：更新實體（需要提供schema）"""
         entity = self.get_by_id(entity_id)
         if not entity:
             return None
         
         try:
             # 使用 Pydantic schema 進行驗證
-            if schema_class:
-                # 對於更新操作，通常會有專用的 UpdateSchema
-                validated_data = schema_class(**entity_data).model_dump(exclude_unset=True)
-                
-                # 更新實體
-                for key, value in validated_data.items():
-                    if key != 'id':  # ID不更新
-                        setattr(entity, key, value)
-            else:
-                # 無 schema 的情況下直接更新
-                for key, value in entity_data.items():
-                    if key != 'id':  # ID不更新
-                        setattr(entity, key, value)
+            validated_data = schema_class(**entity_data).model_dump(exclude_unset=True)
+            
+            # 更新實體
+            for key, value in validated_data.items():
+                if key != 'id':  # ID不更新
+                    setattr(entity, key, value)
             
             self.execute_query(
                 lambda: self.session.flush(),
@@ -164,10 +170,8 @@ class BaseRepository(Generic[T]):
                 err_msg=f"更新ID為{entity_id}的資料庫物件時回滾session時發生錯誤",
                 preserve_exceptions=[]
             )
-            # 使用新的處理方法
             self._handle_integrity_error(e, f"更新{self.model_class.__name__}時")
         except ValidationError as e:
-            # 直接重新拋出驗證錯誤
             self.execute_query(
                 lambda: self.session.rollback(),
                 err_msg="當更新ID為{entity_id}的資料庫物件時驗證錯誤時回滾session時發生錯誤"
@@ -182,6 +186,26 @@ class BaseRepository(Generic[T]):
             error_msg = f"Repository.update: 未預期錯誤: {str(e)}"
             logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e
+    
+    @abstractmethod
+    def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[T]:
+        """更新實體（強制子類實現）必須提供schema及調用_update_internal
+        
+        Args:
+            entity_id: 實體ID
+            entity_data: 實體數據
+            
+        Returns:
+            更新的實體或 None
+        """
+        pass
+    
+    def get_by_id(self, entity_id: Any) -> Optional[T]:
+        """根據ID獲取實體"""
+        return self.execute_query(
+            lambda: self.session.get(self.model_class, entity_id),
+            err_msg=f"獲取ID為{entity_id}的資料庫物件時發生錯誤"
+        )
     
     def delete(self, entity_id: Any) -> bool:
         """刪除實體"""
@@ -272,50 +296,49 @@ class BaseRepository(Generic[T]):
             exception_class=DatabaseOperationError
         )
     
-    def get_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
-        """獲取分頁資料
-
-        Args:
-            page: 當前頁碼，從1開始
-            per_page: 每頁數量
-            sort_by: 排序欄位
-            sort_desc: 是否降序排列
-
-        Returns:
-            包含分頁資訊和結果的字典
-        """
-        # 計算總記錄數
-        total = self.execute_query(
-            lambda: self.session.query(self.model_class).count(),
-            err_msg="獲取分頁資料時計算總記錄數時發生錯誤"
-        )
-        
-        # 計算總頁數
-        total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
-        
-        # 確保頁碼有效
-        current_page = max(1, min(page, total_pages)) if total_pages > 0 else 1
+    def get_paginated(self, page: int = 1, per_page: int = 10, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
+        """獲取分頁數據"""
+        # 驗證分頁參數
+        if per_page <= 0:
+            raise ValueError("每頁記錄數必須大於0")
+        if page <= 0:
+            page = 1
         
         # 計算偏移量
-        offset = (current_page - 1) * per_page
+        offset = (page - 1) * per_page
         
-        # 獲取當前頁數據（避免嵌套 execute_query）
-        items = self.get_all(
-            limit=per_page, 
-            offset=offset,
-            sort_by=sort_by,
-            sort_desc=sort_desc
-        )
+        # 構建查詢
+        query = self.session.query(self.model_class)
         
-        # 構建分頁結果
+        # 添加排序
+        if sort_by:
+            if not hasattr(self.model_class, sort_by):
+                raise DatabaseOperationError(f"無效的排序欄位: {sort_by}")
+            order_by = desc(getattr(self.model_class, sort_by)) if sort_desc else asc(getattr(self.model_class, sort_by))
+            query = query.order_by(order_by)
+        
+        # 獲取總記錄數
+        total = query.count()
+        
+        # 計算總頁數
+        total_pages = (total + per_page - 1) // per_page
+        
+        # 調整頁碼
+        if page > total_pages and total > 0:
+            page = total_pages
+            offset = (page - 1) * per_page
+        
+        # 獲取當前頁的記錄
+        items = query.offset(offset).limit(per_page).all()
+        
         return {
             "items": items,
-            "page": current_page,
+            "page": page,
             "per_page": per_page,
             "total": total,
             "total_pages": total_pages,
-            "has_next": current_page < total_pages,
-            "has_prev": current_page > 1
+            "has_next": page < total_pages,
+            "has_prev": page > 1
         }
 
     def find_all(self, *args, **kwargs):

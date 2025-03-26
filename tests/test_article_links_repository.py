@@ -8,6 +8,8 @@ from src.models.base_model import Base
 from src.database.article_links_repository import ArticleLinksRepository
 from src.database.articles_repository import ArticlesRepository
 from sqlalchemy import create_engine
+from src.database.base_repository import SchemaType
+from src.models.article_links_schema import ArticleLinksCreateSchema, ArticleLinksUpdateSchema
 from src.error.errors import ValidationError, DatabaseOperationError, InvalidOperationError, DatabaseConnectionError
 
 # 設置測試資料庫
@@ -108,6 +110,22 @@ def sample_article_links(session):
 class TestArticleLinksRepository:
     """測試 ArticleLinks Repository 的所有功能"""
     
+    def test_get_schema_class(self, article_links_repo):
+        """測試獲取schema類的方法"""
+        # 測試默認返回
+        schema = article_links_repo.get_schema_class()
+        assert schema == ArticleLinksCreateSchema
+        
+        # 測試各種類型的schema
+        create_schema = article_links_repo.get_schema_class(SchemaType.CREATE)
+        assert create_schema == ArticleLinksCreateSchema
+        
+        update_schema = article_links_repo.get_schema_class(SchemaType.UPDATE)
+        assert update_schema == ArticleLinksUpdateSchema
+        
+        list_schema = article_links_repo.get_schema_class(SchemaType.LIST)
+        assert list_schema == ArticleLinksCreateSchema  # 在測試中LIST和CREATE使用相同的schema
+    
     def test_find_by_article_link(self, article_links_repo, sample_article_links):
         """測試根據文章連結查詢"""
         # 測試存在的連結
@@ -179,7 +197,7 @@ class TestArticleLinksRepository:
         assert source2_stats["unscraped"] == 0
         assert source2_stats["scraped"] == 1
 
-    def test_create_article_link(self, article_links_repo):
+    def test_create(self, article_links_repo):
         """測試創建文章連結"""
         # 測試成功創建
         new_link_data = {
@@ -189,14 +207,14 @@ class TestArticleLinksRepository:
             "is_scraped": False
         }
         
-        new_link = article_links_repo.create_article_link(new_link_data)
+        new_link = article_links_repo.create(new_link_data)
         assert new_link is not None
         assert new_link.article_link == new_link_data["article_link"]
         assert new_link.source_name == new_link_data["source_name"]
         
         # 測試創建重複連結
         with pytest.raises(ValidationError) as exc_info:
-            article_links_repo.create_article_link(new_link_data)
+            article_links_repo.create(new_link_data)
         assert "文章連結已存在" in str(exc_info.value)
         
         # 測試缺少必填欄位
@@ -204,7 +222,30 @@ class TestArticleLinksRepository:
             "article_link": "https://example.com/another-article"
         }
         with pytest.raises(ValidationError):
-            article_links_repo.create_article_link(invalid_data)
+            article_links_repo.create(invalid_data)
+
+    def test_update(self, article_links_repo, sample_article_links):
+        """測試更新文章連結"""
+        # 獲取第一個連結的ID
+        link = article_links_repo.find_by_article_link("https://example.com/article1")
+        link_id = link.id
+        
+        # 更新數據
+        update_data = {
+            "is_scraped": True,
+            "source_name": "更新後的來源"
+        }
+        
+        updated_link = article_links_repo.update(link_id, update_data)
+        assert updated_link is not None
+        assert updated_link.is_scraped is True
+        assert updated_link.source_name == "更新後的來源"
+        assert updated_link.article_link == "https://example.com/article1"  # 未更新的欄位應保持不變
+        
+        # 測試更新不存在的ID
+        non_existent_id = 9999
+        result = article_links_repo.update(non_existent_id, update_data)
+        assert result is None
 
     def test_batch_mark_as_scraped(self, article_links_repo, sample_article_links):
         """測試批量標記為已爬取"""
@@ -289,7 +330,7 @@ class TestArticleLinksRelationship:
             "source_name": "測試來源",
             "source_url": f"https://example.com/source-{uuid.uuid4()}"
         }
-        article_link = article_links_repo.create_article_link(link_data)
+        article_link = article_links_repo.create(link_data)
         
         # 根據連結查找文章
         found_article = article_repo.find_by_link(article_link.article_link)

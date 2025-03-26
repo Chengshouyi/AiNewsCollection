@@ -7,6 +7,7 @@ from src.database.article_links_repository import ArticleLinksRepository
 from src.models.articles_model import Articles
 from src.models.article_links_model import ArticleLinks
 from src.models.base_model import Base
+from src.database.base_repository import SchemaType
 import uuid
 from src.models.model_utiles import get_model_info
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
@@ -89,6 +90,22 @@ def sample_articles(session):
 # ArticleRepository 測試
 class TestArticleRepository:
     """測試 ArticlesRepository 的核心功能"""
+    
+    def test_get_schema_class(self, article_repo):
+        """測試獲取schema類的方法"""
+        # 測試默認返回
+        schema = article_repo.get_schema_class()
+        assert schema == ArticleCreateSchema
+        
+        # 測試指定類型返回
+        create_schema = article_repo.get_schema_class(SchemaType.CREATE)
+        assert create_schema == ArticleCreateSchema
+        
+        update_schema = article_repo.get_schema_class(SchemaType.UPDATE)
+        assert update_schema == ArticleUpdateSchema
+        
+        list_schema = article_repo.get_schema_class(SchemaType.LIST)
+        assert list_schema == ArticleCreateSchema  # 測試中LIST和CREATE使用相同的schema
     
     def test_find_by_link(self, article_repo, sample_articles):
         """測試根據連結查詢文章"""

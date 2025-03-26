@@ -1,176 +1,281 @@
-from .base_repository import BaseRepository
+from .base_repository import BaseRepository, SchemaType
 from src.models.crawlers_model import Crawlers
-from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Type
 from datetime import datetime, timezone
-from sqlalchemy import  func, desc, asc
-from src.error.errors import DatabaseOperationError
+from sqlalchemy import func, desc, asc
+from pydantic import BaseModel
+from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
+from src.error.errors import ValidationError
 
 class CrawlersRepository(BaseRepository['Crawlers']):
     """Crawlers 特定的Repository"""
     
+    def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
+        """根據操作類型返回對應的schema類"""
+        if schema_type == SchemaType.CREATE:
+            return CrawlersCreateSchema
+        elif schema_type == SchemaType.UPDATE:
+            return CrawlersUpdateSchema
+        elif schema_type == SchemaType.LIST or schema_type == SchemaType.DETAIL:
+            # 對於LIST和DETAIL，可以使用與CREATE相同的schema或創建新的
+            return CrawlersCreateSchema
+    
+    
+    def create(self, entity_data: Dict[str, Any]) -> Optional[Crawlers]:
+        """創建爬蟲設定
+        
+        Args:
+            entity_data: 爬蟲設定數據
+            
+        Returns:
+            創建的爬蟲設定或 None
+        """
+        # 設置默認值
+        if 'created_at' not in entity_data:
+            entity_data['created_at'] = datetime.now(timezone.utc)
+        if 'is_active' not in entity_data:
+            entity_data['is_active'] = True
+            
+        # 額外檢查爬蟲名稱是否重複
+        if 'crawler_name' in entity_data:
+            existing_crawlers = self.find_by_crawler_name(entity_data['crawler_name'])
+            if any(c.crawler_name == entity_data['crawler_name'] for c in existing_crawlers):
+                raise ValidationError(f"爬蟲名稱 '{entity_data['crawler_name']}' 已存在")
+        
+        # 獲取合適的schema並創建
+        schema_class = self.get_schema_class(SchemaType.CREATE)
+        return self._create_internal(entity_data, schema_class)
+    
+    def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[Crawlers]:
+        """更新爬蟲設定
+        
+        Args:
+            entity_id: 爬蟲ID
+            entity_data: 要更新的數據
+            
+        Returns:
+            更新後的爬蟲設定或 None
+        """
+        # 檢查爬蟲是否存在
+        crawler = self.get_by_id(entity_id)
+        if not crawler:
+            return None
+        
+        # 驗證不可更新的欄位
+        immutable_fields = ['created_at', 'id', 'crawler_type']
+        for field in immutable_fields:
+            if field in entity_data:
+                raise ValidationError(f"不允許更新欄位: {field}")
+            
+        # 檢查爬蟲名稱是否重複
+        if 'crawler_name' in entity_data and entity_data['crawler_name'] != crawler.crawler_name:
+            existing = self.find_by_crawler_name_exact(entity_data['crawler_name'])
+            if existing:
+                raise ValidationError(f"爬蟲名稱 '{entity_data['crawler_name']}' 已存在")
+        
+        # 設置更新時間
+        if 'updated_at' not in entity_data:
+            entity_data['updated_at'] = datetime.now(timezone.utc)
+        
+        # 獲取合適的schema並更新
+        schema_class = self.get_schema_class(SchemaType.UPDATE)
+        return self._update_internal(entity_id, entity_data, schema_class)
+    
     def find_active_crawlers(self) -> List['Crawlers']:
         """查詢活動中的爬蟲"""
         return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(is_active=True).all()
+            lambda: self.session.query(self.model_class)
+                .filter_by(is_active=True)
+                .all()
         )
     
     def find_by_crawler_name(self, crawler_name: str) -> List['Crawlers']:
         """根據爬蟲名稱模糊查詢，回傳匹配的列表"""
         return self.execute_query(
-            lambda: self.session.query(self.model_class).filter(
-                self.model_class.crawler_name.like(f"%{crawler_name}%")
-            ).all()
+            lambda: self.session.query(self.model_class)
+                .filter(self.model_class.crawler_name.like(f"%{crawler_name}%"))
+                .all()
         )
     
     def find_pending_crawlers(self, current_time: Optional[datetime] = None) -> List['Crawlers']:
-        """查找需要執行的爬蟲（已激活且超過上次爬蟲時間+間隔的爬蟲）
-        
-        Args:
-            current_time: 當前時間，默認為UTC現在時間
-        """
+        """查找需要執行的爬蟲"""
         if current_time is None:
             current_time = datetime.now(timezone.utc)
-
-        return self.execute_query(lambda: self._get_pending_crawlers(current_time))
-    
-    def _get_pending_crawlers(self, current_time: datetime) -> List['Crawlers']:
-        """內部方法：獲取需要執行的爬蟲"""
-        # 確保 current_time 是 UTC aware
-        if current_time.tzinfo is None:
+        elif current_time.tzinfo is None:
             current_time = current_time.replace(tzinfo=timezone.utc)
-        
-        # 獲取所有啟用的爬蟲
-        active_crawlers = self.session.query(self.model_class).filter(
-            self.model_class.is_active == True
-        ).all()
-        
-        # 篩選出需要執行的爬蟲
-        pending_crawlers = []
-        for crawler in active_crawlers:
-            # 從未執行過的爬蟲
-            if crawler.last_crawl_time is None:
-                pending_crawlers.append(crawler)
-                continue
+
+        def get_pending_crawlers():
+            # 修改為使用 SQLite 相容的時間間隔計算方式
+            return self.session.query(self.model_class) \
+                .filter(
+                    self.model_class.is_active == True,
+                    (self.model_class.last_crawl_time.is_(None)) |
+                    ((current_time - self.model_class.last_crawl_time) >= 
+                     # 將分鐘轉換為秒進行比較
+                     self.model_class.crawl_interval * 60)
+                ) \
+                .all()
                 
-            # 確保 last_crawl_time 是 UTC aware
-            last_crawl_time = crawler.last_crawl_time
-            if last_crawl_time.tzinfo is None:
-                last_crawl_time = last_crawl_time.replace(tzinfo=timezone.utc)
-            
-            # 檢查是否超過了設定的爬蟲間隔時間（間隔單位是分鐘）
-            interval_seconds = crawler.crawl_interval * 60
-            time_diff = (current_time - last_crawl_time).total_seconds()
-            
-            if time_diff >= interval_seconds:
-                pending_crawlers.append(crawler)
-                
-        return pending_crawlers
-    
+        return self.execute_query(
+            get_pending_crawlers,
+            err_msg="查詢待執行爬蟲時發生錯誤"
+        )
+
     def update_last_crawl_time(self, crawler_id: int, new_time: Optional[datetime] = None) -> bool:
-        """更新爬蟲最後執行時間
-        
-        Args:
-            crawler_id: 爬蟲ID
-            new_time: 新的爬取時間，默認為None，將使用當前UTC時間
-        """
+        """更新爬蟲最後執行時間"""
         if new_time is None:
             new_time = datetime.now(timezone.utc)
-        return self.execute_query(lambda: self._update_last_crawl_time(crawler_id, new_time))
-    
-    def _update_last_crawl_time(self, crawler_id: int, new_time: datetime) -> bool:
-        """內部方法：更新爬蟲最後執行時間"""
-        crawler = self.get_by_id(crawler_id)
-        if not crawler:
-            return False
             
-        try:
-            crawler.last_crawl_time = new_time
-            crawler.updated_at = datetime.now(timezone.utc)
-            self.session.flush()
-            return True
-        except Exception as e:
-            self.session.rollback()
-            raise DatabaseOperationError(f"更新爬蟲執行時間失敗: {str(e)}")
-        
+        update_data = {
+            'last_crawl_time': new_time,
+            'updated_at': datetime.now(timezone.utc)
+        }
+        updated_crawler = self.update(crawler_id, update_data)
+        return updated_crawler is not None
+
     def toggle_active_status(self, crawler_id: int) -> bool:
         """切換爬蟲活躍狀態"""
-        return self.execute_query(lambda: self._toggle_active_status(crawler_id))
-    
-    def _toggle_active_status(self, crawler_id: int) -> bool:
-        """內部方法：切換爬蟲活躍狀態"""
-        crawler = self.get_by_id(crawler_id)
-        if not crawler:
-            return False
+        def toggle_status():
+            crawler = self.get_by_id(crawler_id)
+            if not crawler:
+                return False
+
+            update_data = {
+                'is_active': not crawler.is_active,
+                'updated_at': datetime.now(timezone.utc)
+            }
+            updated_crawler = self.update(crawler_id, update_data)
+            return updated_crawler is not None
             
-        try:
-            # 切換狀態
-            crawler.is_active = not crawler.is_active
-            crawler.updated_at = datetime.now(timezone.utc)
-            self.session.flush()
-            return True
-        except Exception as e:
-            self.session.rollback()
-            raise DatabaseOperationError(f"切換爬蟲狀態失敗: {str(e)}")
-    
-    def get_sorted_by_interval(self, descending: bool = False) -> List['Crawlers']:
-        """按爬取間隔排序的爬蟲設定
-        
-        Args:
-            descending: 是否降序排列，默認為升序
-        """
         return self.execute_query(
-            lambda: self.session.query(self.model_class).order_by(
-                desc(self.model_class.crawl_interval) if descending else asc(self.model_class.crawl_interval)
-            ).all()
+            toggle_status,
+            err_msg=f"切換爬蟲ID={crawler_id}活躍狀態時發生錯誤"
         )
-    
-    def create_crawler(self, crawler_data: Dict[str, Any]) -> Crawlers:
-        """使用模式驗證創建爬蟲"""
-        return self.create(crawler_data, schema_class=CrawlersCreateSchema)
-        
-    def update_crawler(self, crawler_id: int, crawler_data: Dict[str, Any]) -> Optional[Crawlers]:
-        """使用模式驗證更新爬蟲"""
-        return self.update(crawler_id, crawler_data, schema_class=CrawlersUpdateSchema)
-    
+
+    def get_sorted_by_interval(self, descending: bool = False) -> List['Crawlers']:
+        """按爬取間隔排序的爬蟲設定"""
+        def sort_by_interval():
+            return self.session.query(self.model_class) \
+                .order_by(
+                    desc(self.model_class.crawl_interval) 
+                    if descending 
+                    else asc(self.model_class.crawl_interval)
+                ) \
+                .all()
+                
+        return self.execute_query(
+            sort_by_interval,
+            err_msg="按間隔排序爬蟲時發生錯誤"
+        )
+
     def find_by_type(self, crawler_type: str) -> List[Crawlers]:
         """根據爬蟲類型查找爬蟲"""
         return self.execute_query(
-            lambda: self.session.query(self.model_class).filter(
-                self.model_class.crawler_type == crawler_type
-            ).all()
+            lambda: self.session.query(self.model_class)
+                .filter(self.model_class.crawler_type == crawler_type)
+                .all(),
+            err_msg=f"查詢類型為{crawler_type}的爬蟲時發生錯誤"
         )
     
     def find_by_target(self, target_pattern: str) -> List[Crawlers]:
         """根據爬取目標模糊查詢爬蟲"""
         return self.execute_query(
-            lambda: self.session.query(self.model_class).filter(
-                self.model_class.scrape_target.like(f"%{target_pattern}%")
-            ).all()
+            lambda: self.session.query(self.model_class)
+                .filter(self.model_class.scrape_target.like(f"%{target_pattern}%"))
+                .all(),
+            err_msg=f"查詢目標包含{target_pattern}的爬蟲時發生錯誤"
         )
     
     def get_crawler_statistics(self) -> Dict[str, Any]:
         """獲取爬蟲統計信息"""
-        return self.execute_query(lambda: {
-            "total": self.session.query(func.count(self.model_class.id)).scalar(),
-            "active": self.session.query(func.count(self.model_class.id)).filter(
-                self.model_class.is_active == True
-            ).scalar(),
-            "inactive": self.session.query(func.count(self.model_class.id)).filter(
-                self.model_class.is_active == False
-            ).scalar(),
-            "by_type": self._get_type_statistics()
-        })
-    
-    def _get_type_statistics(self) -> Dict[str, int]:
-        """獲取各類型爬蟲數量統計"""
-        result = {}
-        type_counts = self.session.query(
-            self.model_class.crawler_type,
-            func.count(self.model_class.id)
-        ).group_by(self.model_class.crawler_type).all()
-        
-        for crawler_type, count in type_counts:
-            result[crawler_type] = count
+        def get_statistics():
+            total = self.session.query(func.count(self.model_class.id)).scalar()
+            active = self.session.query(func.count(self.model_class.id))\
+                .filter(self.model_class.is_active == True).scalar()
             
-        return result
+            type_counts = self.session.query(
+                self.model_class.crawler_type,
+                func.count(self.model_class.id)
+            ).group_by(self.model_class.crawler_type).all()
+            
+            return {
+                "total": total,
+                "active": active,
+                "inactive": total - active,
+                "by_type": {crawler_type: count for crawler_type, count in type_counts}
+            }
+            
+        return self.execute_query(
+            get_statistics,
+            err_msg="獲取爬蟲統計信息時發生錯誤"
+        )
+
+    def find_by_crawler_name_exact(self, crawler_name: str) -> Optional[Crawlers]:
+        """根據爬蟲名稱精確查詢，回傳匹配的爬蟲或None"""
+        return self.execute_query(
+            lambda: self.session.query(self.model_class)
+                .filter(self.model_class.crawler_name == crawler_name)
+                .first(),
+            err_msg=f"精確查詢爬蟲名稱 '{crawler_name}' 時發生錯誤"
+        )
+    
+    def create_or_update(self, entity_data: Dict[str, Any]) -> Crawlers:
+        """創建或更新爬蟲設定
+        
+        如果有提供 ID 則更新現有爬蟲，否則創建新爬蟲
+        
+        Args:
+            entity_data: 爬蟲設定數據
+            
+        Returns:
+            創建或更新的爬蟲設定
+        """
+        if 'id' in entity_data and entity_data['id']:
+            crawler_id = entity_data.pop('id')
+            updated_crawler = self.update(crawler_id, entity_data)
+            if updated_crawler:
+                return updated_crawler
+                
+        # ID不存在或更新失敗，創建新爬蟲
+        return self.create(entity_data)
+            
+    def batch_toggle_active(self, crawler_ids: List[int], active_status: bool) -> Dict[str, Any]:
+        """批量設置爬蟲的活躍狀態
+        
+        Args:
+            crawler_ids: 爬蟲ID列表
+            active_status: 要設置的活躍狀態
+            
+        Returns:
+            包含成功和失敗信息的字典
+        """
+        def batch_update():
+            success_count = 0
+            failed_ids = []
+            
+            for crawler_id in crawler_ids:
+                try:
+                    update_data = {
+                        'is_active': active_status,
+                        'updated_at': datetime.now(timezone.utc)
+                    }
+                    
+                    updated = self.update(crawler_id, update_data)
+                    if updated:
+                        success_count += 1
+                    else:
+                        failed_ids.append(crawler_id)
+                except Exception as e:
+                    self.session.rollback()
+                    failed_ids.append(crawler_id)
+            
+            return {
+                "success_count": success_count,
+                "fail_count": len(failed_ids),
+                "failed_ids": failed_ids
+            }
+            
+        return self.execute_query(
+            batch_update,
+            err_msg=f"批量{'啟用' if active_status else '停用'}爬蟲時發生錯誤"
+        )

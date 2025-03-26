@@ -1,21 +1,30 @@
-from .base_repository import BaseRepository
+from .base_repository import BaseRepository, SchemaType
 from src.models.article_links_model import ArticleLinks
 from src.models.article_links_schema import ArticleLinksCreateSchema, ArticleLinksUpdateSchema
-from typing import Optional, List, Dict, Any
-from sqlalchemy import func, or_, case
-from src.error.errors import ValidationError, DatabaseConnectionError, DatabaseOperationError
+from typing import Optional, List, Dict, Any, Type
+from sqlalchemy import func, case
+from src.error.errors import ValidationError
 import logging
-from sqlalchemy.exc import OperationalError, SQLAlchemyError, UnboundExecutionError
-from sqlalchemy.exc import ResourceClosedError, StatementError
+from pydantic import BaseModel
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class ArticleLinksRepository(BaseRepository['ArticleLinks']):
+class ArticleLinksRepository(BaseRepository[ArticleLinks]):
     """ArticleLinks 特定的Repository"""
     
-    def find_by_article_link(self, article_link: str) -> Optional['ArticleLinks']:
+    def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
+        """根據操作類型返回對應的schema類"""
+        if schema_type == SchemaType.CREATE:
+            return ArticleLinksCreateSchema
+        elif schema_type == SchemaType.UPDATE:
+            return ArticleLinksUpdateSchema
+        elif schema_type == SchemaType.LIST or schema_type == SchemaType.DETAIL:
+            # 對於LIST和DETAIL，可以使用與CREATE相同的schema或創建新的
+            return ArticleLinksCreateSchema
+    
+    def find_by_article_link(self, article_link: str) -> Optional[ArticleLinks]:
         """根據文章連結查詢"""
         return self.execute_query(
             lambda: self.session.query(self.model_class)
@@ -24,7 +33,7 @@ class ArticleLinksRepository(BaseRepository['ArticleLinks']):
             err_msg=f"查詢文章連結時發生錯誤: {article_link}"
         )
 
-    def find_unscraped_links(self, limit: Optional[int] = 100, source_name: Optional[str] = None) -> List['ArticleLinks']:
+    def find_unscraped_links(self, limit: Optional[int] = 100, source_name: Optional[str] = None) -> List[ArticleLinks]:
         """查詢未爬取的連結"""
         def query_func():
             query = self.session.query(self.model_class).filter_by(is_scraped=False)
@@ -90,7 +99,7 @@ class ArticleLinksRepository(BaseRepository['ArticleLinks']):
             err_msg="獲取來源統計時發生錯誤"
         )
 
-    def create_article_link(self, entity_data: Dict[str, Any]) -> Optional[ArticleLinks]:
+    def create(self, entity_data: Dict[str, Any]) -> Optional[ArticleLinks]:
         """創建文章連結，使用模式驗證
         
         Args:
@@ -108,20 +117,23 @@ class ArticleLinksRepository(BaseRepository['ArticleLinks']):
             if existing:
                 raise ValidationError(f"文章連結已存在: {entity_data['article_link']}")
         
-        # 使用schema進行其餘驗證並創建
-        return self.create(entity_data, schema_class=ArticleLinksCreateSchema)
+        # 使用適當的schema進行驗證和創建
+        schema_class = self.get_schema_class(SchemaType.CREATE)
+        return self._create_internal(entity_data, schema_class)
 
-    def update_article_link(self, link_id: int, entity_data: Dict[str, Any]) -> Optional[ArticleLinks]:
+    def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[ArticleLinks]:
         """更新文章連結，使用模式驗證
         
         Args:
-            link_id: 連結ID
+            entity_id: 連結ID
             entity_data: 更新的資料
             
         Returns:
             Optional[ArticleLinks]: 更新後的實體
         """
-        return self.update(link_id, entity_data, schema_class=ArticleLinksUpdateSchema)
+        # 使用適當的schema進行驗證和更新
+        schema_class = self.get_schema_class(SchemaType.UPDATE)
+        return self._update_internal(entity_id, entity_data, schema_class)
 
     def batch_mark_as_scraped(self, article_links: List[str]) -> Dict[str, Any]:
         """批量將文章連結標記為已爬取"""
