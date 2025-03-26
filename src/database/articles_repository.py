@@ -23,9 +23,8 @@ class ArticlesRepository(BaseRepository[Articles]):
             return ArticleCreateSchema
         elif schema_type == SchemaType.UPDATE:
             return ArticleUpdateSchema
-        elif schema_type == SchemaType.LIST or schema_type == SchemaType.DETAIL:
-            # 對於LIST和DETAIL，可以使用與CREATE相同的schema或創建新的
-            return ArticleCreateSchema
+        raise ValueError(f"未支援的 schema 類型: {schema_type}")
+
 
         
     def find_by_link(self, link: str) -> Optional[Articles]:

@@ -2,6 +2,10 @@
 class DataOperationError(Exception):
     """基礎應用程式錯誤"""
     pass
+class DatabaseError(Exception):
+    """資料庫操作基礎異常類"""
+    pass
+
 
 class OptionError(DataOperationError):
     """選項錯誤"""
@@ -16,9 +20,7 @@ class NotFoundError(DataOperationError):
     pass
 
 
-class DatabaseError(Exception):
-    """資料庫操作基礎異常類"""
-    pass
+
 
 
 class DatabaseConnectionError(DatabaseError):

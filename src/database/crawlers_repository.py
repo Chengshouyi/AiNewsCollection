@@ -16,9 +16,8 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             return CrawlersCreateSchema
         elif schema_type == SchemaType.UPDATE:
             return CrawlersUpdateSchema
-        elif schema_type == SchemaType.LIST or schema_type == SchemaType.DETAIL:
-            # 對於LIST和DETAIL，可以使用與CREATE相同的schema或創建新的
-            return CrawlersCreateSchema
+        raise ValueError(f"未支援的 schema 類型: {schema_type}")
+        
     
     
     def create(self, entity_data: Dict[str, Any]) -> Optional[Crawlers]:
