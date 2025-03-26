@@ -104,8 +104,10 @@ class TestArticleRepository:
         update_schema = article_repo.get_schema_class(SchemaType.UPDATE)
         assert update_schema == ArticleUpdateSchema
         
-        list_schema = article_repo.get_schema_class(SchemaType.LIST)
-        assert list_schema == ArticleCreateSchema  # 測試中LIST和CREATE使用相同的schema
+
+        with pytest.raises(ValueError) as exc_info:
+            article_repo.get_schema_class(SchemaType.LIST)
+        assert "未支援的 schema 類型" in str(exc_info.value)
     
     def test_find_by_link(self, article_repo, sample_articles):
         """測試根據連結查詢文章"""

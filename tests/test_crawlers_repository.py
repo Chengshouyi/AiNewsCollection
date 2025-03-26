@@ -91,8 +91,9 @@ class TestCrawlersRepository:
         assert schema_update == CrawlersUpdateSchema
         
         # 測試 LIST 和 DETAIL schema
-        schema_list = crawlers_repo.get_schema_class(SchemaType.LIST)
-        assert schema_list == CrawlersCreateSchema
+        with pytest.raises(ValueError) as exc_info:
+            crawlers_repo.get_schema_class(SchemaType.LIST)
+        assert "未支援的 schema 類型" in str(exc_info.value)
         
         # 測試默認值
         schema_default = crawlers_repo.get_schema_class()

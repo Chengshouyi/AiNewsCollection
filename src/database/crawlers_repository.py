@@ -18,7 +18,35 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             return CrawlersUpdateSchema
         raise ValueError(f"未支援的 schema 類型: {schema_type}")
         
-    
+    def _validate_required_fields(self, entity_data: Dict[str, Any], existing_entity: Optional[Crawlers] = None) -> Dict[str, Any]:
+        """
+        驗證並補充必填欄位
+        
+        Args:
+            entity_data: 爬蟲設定數據
+            existing_entity: 現有爬蟲實體 (用於更新時)
+            
+        Returns:
+            處理後的爬蟲設定數據
+        """
+        # 深度複製避免修改原始資料
+        processed_data = entity_data.copy()
+        
+        # 檢查必填欄位
+        required_fields = ['crawler_name', 'scrape_target', 'crawl_interval']
+        
+        # 如果是更新操作，從現有實體中補充必填欄位
+        if existing_entity:
+            for field in required_fields:
+                if field not in processed_data and hasattr(existing_entity, field):
+                    processed_data[field] = getattr(existing_entity, field)
+        
+        # 檢查是否仍然缺少必填欄位
+        missing_fields = [field for field in required_fields if field not in processed_data or processed_data[field] is None]
+        if missing_fields:
+            raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
+            
+        return processed_data
     
     def create(self, entity_data: Dict[str, Any]) -> Optional[Crawlers]:
         """創建爬蟲設定
@@ -35,15 +63,18 @@ class CrawlersRepository(BaseRepository['Crawlers']):
         if 'is_active' not in entity_data:
             entity_data['is_active'] = True
             
-        # 額外檢查爬蟲名稱是否重複
-        if 'crawler_name' in entity_data:
-            existing_crawlers = self.find_by_crawler_name(entity_data['crawler_name'])
-            if any(c.crawler_name == entity_data['crawler_name'] for c in existing_crawlers):
+        # 驗證爬蟲名稱是否重複
+        if 'crawler_name' in entity_data and entity_data['crawler_name']:
+            existing = self.find_by_crawler_name_exact(entity_data['crawler_name'])
+            if existing:
                 raise ValidationError(f"爬蟲名稱 '{entity_data['crawler_name']}' 已存在")
         
-        # 獲取合適的schema並創建
+        # 驗證並補充必填欄位
+        validated_data = self._validate_required_fields(entity_data)
+        
+        # 獲取並使用適當的schema進行驗證和創建
         schema_class = self.get_schema_class(SchemaType.CREATE)
-        return self._create_internal(entity_data, schema_class)
+        return self._create_internal(validated_data, schema_class)
     
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[Crawlers]:
         """更新爬蟲設定
@@ -56,9 +87,13 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             更新後的爬蟲設定或 None
         """
         # 檢查爬蟲是否存在
-        crawler = self.get_by_id(entity_id)
-        if not crawler:
+        existing_entity = self.get_by_id(entity_id)
+        if not existing_entity:
             return None
+        
+        # 如果更新資料為空，直接返回已存在的實體
+        if not entity_data:
+            return existing_entity
         
         # 驗證不可更新的欄位
         immutable_fields = ['created_at', 'id', 'crawler_type']
@@ -67,7 +102,7 @@ class CrawlersRepository(BaseRepository['Crawlers']):
                 raise ValidationError(f"不允許更新欄位: {field}")
             
         # 檢查爬蟲名稱是否重複
-        if 'crawler_name' in entity_data and entity_data['crawler_name'] != crawler.crawler_name:
+        if 'crawler_name' in entity_data and entity_data['crawler_name'] != existing_entity.crawler_name:
             existing = self.find_by_crawler_name_exact(entity_data['crawler_name'])
             if existing:
                 raise ValidationError(f"爬蟲名稱 '{entity_data['crawler_name']}' 已存在")
@@ -76,9 +111,12 @@ class CrawlersRepository(BaseRepository['Crawlers']):
         if 'updated_at' not in entity_data:
             entity_data['updated_at'] = datetime.now(timezone.utc)
         
-        # 獲取合適的schema並更新
+        # 驗證並補充必填欄位
+        validated_data = self._validate_required_fields(entity_data, existing_entity)
+        
+        # 獲取並使用適當的schema進行驗證和更新
         schema_class = self.get_schema_class(SchemaType.UPDATE)
-        return self._update_internal(entity_id, entity_data, schema_class)
+        return self._update_internal(entity_id, validated_data, schema_class)
     
     def find_active_crawlers(self) -> List['Crawlers']:
         """查詢活動中的爬蟲"""

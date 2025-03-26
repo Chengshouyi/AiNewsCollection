@@ -22,7 +22,8 @@ class CrawlerTaskHistory(Base, BaseEntity):
     id: Mapped[int] = mapped_column(
         Integer, 
         primary_key=True, 
-        autoincrement=True
+        autoincrement=True,
+        nullable=False
     )
     task_id: Mapped[int] = mapped_column(
         Integer, 

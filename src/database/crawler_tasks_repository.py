@@ -1,10 +1,11 @@
 from .base_repository import BaseRepository, SchemaType
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
-from typing import List, Optional, Type, Any
+from typing import List, Optional, Type, Any, Dict
 from datetime import datetime, timedelta
 from pydantic import BaseModel
 import logging
+from pydantic import ValidationError
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -21,13 +22,86 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             return CrawlerTasksUpdateSchema
         raise ValueError(f"未支援的 schema 類型: {schema_type}")
 
-    def create(self, entity_data: dict) -> Optional[CrawlerTasks]:
-        """創建爬蟲任務"""
-        return self._create_internal(entity_data, self.get_schema_class(SchemaType.CREATE))
+    def _validate_required_fields(self, entity_data: Dict[str, Any], existing_entity: Optional[CrawlerTasks] = None) -> Dict[str, Any]:
+        """
+        驗證並補充必填欄位
+        
+        Args:
+            entity_data: 實體資料
+            existing_entity: 現有實體 (用於更新時)
+            
+        Returns:
+            處理後的實體資料
+        """
+        # 深度複製避免修改原始資料
+        processed_data = entity_data.copy()
+        
+        # 檢查必填欄位，必須移除不可更新的欄位
+        required_fields = ['schedule', 'is_auto']
+        
+        # 如果是更新操作，從現有實體中補充必填欄位
+        if existing_entity:
+            for field in required_fields:
+                if field not in processed_data and hasattr(existing_entity, field):
+                    processed_data[field] = getattr(existing_entity, field)
+        
+        # 檢查是否仍然缺少必填欄位
+        missing_fields = [field for field in required_fields if field not in processed_data or processed_data[field] is None]
+        if missing_fields:
+            raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
+            
+        # 檢查 schedule 是否有效
+        if 'schedule' in processed_data:
+            valid_schedules = ['hourly', 'daily', 'weekly']
+            if processed_data['schedule'] not in valid_schedules:
+                raise ValidationError(f"無效的排程類型 '{processed_data['schedule']}'，有效選項為: {', '.join(valid_schedules)}")
+            
+        return processed_data
 
-    def update(self, entity_id: int, entity_data: dict) -> Optional[CrawlerTasks]:
-        """更新爬蟲任務"""
-        return self._update_internal(entity_id, entity_data, self.get_schema_class(SchemaType.UPDATE))
+    def create(self, entity_data: Dict[str, Any]) -> Optional[CrawlerTasks]:
+        """
+        創建爬蟲任務，添加針對 CrawlerTasks 的特殊驗證
+        
+        Args:
+            entity_data: 實體資料
+            
+        Returns:
+            創建的爬蟲任務實體
+        """
+        # 驗證並補充必填欄位
+        validated_data = self._validate_required_fields(entity_data)
+        
+        # 獲取並使用適當的schema進行驗證和創建
+        schema_class = self.get_schema_class(SchemaType.CREATE)
+        return self._create_internal(validated_data, schema_class)
+
+    def update(self, entity_id: int, entity_data: Dict[str, Any]) -> Optional[CrawlerTasks]:
+        """
+        更新爬蟲任務，添加針對 CrawlerTasks 的特殊驗證
+        
+        Args:
+            entity_id: 實體ID
+            entity_data: 要更新的實體資料
+            
+        Returns:
+            更新後的爬蟲任務實體，如果實體不存在則返回None
+        """
+        # 檢查實體是否存在
+        existing_entity = self.get_by_id(entity_id)
+        if not existing_entity:
+            logger.warning(f"更新爬蟲任務失敗，ID不存在: {entity_id}")
+            return None
+        
+        # 如果更新資料為空，直接返回已存在的實體
+        if not entity_data:
+            return existing_entity
+            
+        # 驗證並補充必填欄位
+        validated_data = self._validate_required_fields(entity_data, existing_entity)
+        
+        # 獲取並使用適當的schema進行驗證和更新
+        schema_class = self.get_schema_class(SchemaType.UPDATE)
+        return self._update_internal(entity_id, validated_data, schema_class)
 
     def find_by_crawler_id(self, crawler_id: int) -> List[CrawlerTasks]:
         """根據爬蟲ID查詢相關的任務"""

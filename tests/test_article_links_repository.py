@@ -123,8 +123,9 @@ class TestArticleLinksRepository:
         update_schema = article_links_repo.get_schema_class(SchemaType.UPDATE)
         assert update_schema == ArticleLinksUpdateSchema
         
-        list_schema = article_links_repo.get_schema_class(SchemaType.LIST)
-        assert list_schema == ArticleLinksCreateSchema  # 在測試中LIST和CREATE使用相同的schema
+        with pytest.raises(ValueError) as exc_info:
+            article_links_repo.get_schema_class(SchemaType.LIST)
+        assert "未支援的 schema 類型" in str(exc_info.value)
     
     def test_find_by_article_link(self, article_links_repo, sample_article_links):
         """測試根據文章連結查詢"""
@@ -215,7 +216,7 @@ class TestArticleLinksRepository:
         # 測試創建重複連結
         with pytest.raises(ValidationError) as exc_info:
             article_links_repo.create(new_link_data)
-        assert "文章連結已存在" in str(exc_info.value)
+        assert "已存在具有相同連結的文章" in str(exc_info.value)
         
         # 測試缺少必填欄位
         invalid_data = {

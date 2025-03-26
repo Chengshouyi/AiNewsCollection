@@ -8,7 +8,7 @@ from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
 from src.models.model_utiles import get_model_info
-from src.error.errors import ValidationError
+from src.error.errors import ValidationError, DatabaseOperationError
 
 # 設置測試資料庫
 @pytest.fixture
@@ -240,7 +240,7 @@ class TestModelStructure:
                 required_fields.append(field)
         
         assert "task_id" in required_fields
-        assert "start_time" in required_fields
+        assert "id" in required_fields
 
 class TestSpecialCases:
     """測試特殊情況"""
@@ -271,8 +271,8 @@ class TestErrorHandling:
         monkeypatch.setattr(crawler_task_history_repo.session, "query", mock_query_error)
         
         # 測試各方法的異常處理
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(DatabaseOperationError) as excinfo:
             crawler_task_history_repo.find_by_task_id(1)
         
         # 修改斷言方式
-        assert "模擬資料庫查詢錯誤" in str(excinfo.value) 
+        assert "查詢任務ID為1的歷史記錄時發生錯誤" in str(excinfo.value) 

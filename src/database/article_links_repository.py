@@ -97,41 +97,116 @@ class ArticleLinksRepository(BaseRepository[ArticleLinks]):
             err_msg="獲取來源統計時發生錯誤"
         )
 
+    def validate_unique_article_link(self, article_link: str, exclude_id: Optional[int] = None, raise_error: bool = True) -> bool:
+        """驗證文章連結是否唯一"""
+        if not article_link:
+            return True
+
+        def query_builder():
+            query = self.session.query(self.model_class).filter_by(article_link=article_link)
+            if exclude_id is not None:
+                query = query.filter(self.model_class.id != exclude_id)
+            return query.first()
+        
+        existing = self.execute_query(
+            query_builder,
+            err_msg="驗證文章連結唯一性時發生錯誤"
+        )
+        
+        if existing:
+            if exclude_id is not None and not self.get_by_id(exclude_id):
+                if raise_error:
+                    raise ValidationError(f"文章連結不存在，ID={exclude_id}")
+                return False
+            
+            if raise_error:
+                raise ValidationError(f"已存在具有相同連結的文章: {article_link}")
+            return False
+        
+        return True
+
+    def _validate_required_fields(self, entity_data: Dict[str, Any], existing_entity: Optional[ArticleLinks] = None) -> Dict[str, Any]:
+        """
+        驗證並補充必填欄位
+        
+        Args:
+            entity_data: 實體資料
+            existing_entity: 現有實體 (用於更新時)
+            
+        Returns:
+            處理後的實體資料
+        """
+        # 深度複製避免修改原始資料
+        processed_data = entity_data.copy()
+        
+        # 檢查必填欄位，必須移除不可更新的欄位
+        required_fields = ['source_name']
+        
+        # 如果是更新操作，從現有實體中補充必填欄位
+        if existing_entity:
+            for field in required_fields:
+                if field not in processed_data and hasattr(existing_entity, field):
+                    processed_data[field] = getattr(existing_entity, field)
+        
+        # 檢查是否仍然缺少必填欄位
+        missing_fields = [field for field in required_fields if field not in processed_data or processed_data[field] is None]
+        if missing_fields:
+            raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
+            
+        return processed_data
+
     def create(self, entity_data: Dict[str, Any]) -> Optional[ArticleLinks]:
-        """創建文章連結，使用模式驗證
+        """
+        創建文章連結，添加針對 ArticleLinks 的特殊驗證
         
         Args:
             entity_data: 實體資料
             
         Returns:
-            ArticleLinks: 創建的實體
-            
-        Raises:
-            ValidationError: 當驗證失敗時
+            創建的文章連結實體
         """
-        # 檢查連結是否已存在
-        if "article_link" in entity_data:
-            existing = self.find_by_article_link(entity_data["article_link"])
-            if existing:
-                raise ValidationError(f"文章連結已存在: {entity_data['article_link']}")
+        # 驗證連結唯一性
+        if 'article_link' in entity_data and entity_data['article_link']:
+            self.validate_unique_article_link(entity_data['article_link'])
         
-        # 使用適當的schema進行驗證和創建
+        # 驗證並補充必填欄位
+        validated_data = self._validate_required_fields(entity_data)
+        
+        # 獲取並使用適當的schema進行驗證和創建
         schema_class = self.get_schema_class(SchemaType.CREATE)
-        return self._create_internal(entity_data, schema_class)
+        return self._create_internal(validated_data, schema_class)
 
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[ArticleLinks]:
-        """更新文章連結，使用模式驗證
+        """
+        更新文章連結，添加針對 ArticleLinks 的特殊驗證
         
         Args:
-            entity_id: 連結ID
-            entity_data: 更新的資料
+            entity_id: 實體ID
+            entity_data: 要更新的實體資料
             
         Returns:
-            Optional[ArticleLinks]: 更新後的實體
+            更新後的文章連結實體，如果實體不存在則返回None
         """
-        # 使用適當的schema進行驗證和更新
+        # 檢查實體是否存在
+        existing_entity = self.get_by_id(entity_id)
+        if not existing_entity:
+            logger.warning(f"更新文章連結失敗，ID不存在: {entity_id}")
+            return None
+        
+        # 如果更新資料為空，直接返回已存在的實體
+        if not entity_data:
+            return existing_entity
+        
+        # 驗證連結唯一性（如果要更新連結）
+        if 'article_link' in entity_data and entity_data['article_link'] != getattr(existing_entity, 'article_link', None):
+            self.validate_unique_article_link(entity_data['article_link'], exclude_id=entity_id)
+        
+        # 驗證並補充必填欄位
+        validated_data = self._validate_required_fields(entity_data, existing_entity)
+        
+        # 獲取並使用適當的schema進行驗證和更新
         schema_class = self.get_schema_class(SchemaType.UPDATE)
-        return self._update_internal(entity_id, entity_data, schema_class)
+        return self._update_internal(entity_id, validated_data, schema_class)
 
     def batch_mark_as_scraped(self, article_links: List[str]) -> Dict[str, Any]:
         """批量將文章連結標記為已爬取"""
