@@ -1,7 +1,6 @@
 from dataclasses import dataclass, field
 from typing import Dict, Any, Optional
 import json
-from pathlib import Path
 
 @dataclass
 class CrawlerConfig:

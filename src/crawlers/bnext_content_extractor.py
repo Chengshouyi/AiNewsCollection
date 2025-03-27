@@ -13,7 +13,7 @@ from src.crawlers.base_config import DEFAULT_HEADERS
 from src.crawlers.bnext_config import BNEXT_CONFIG
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
-from src.utiles.log_utils import LoggerSetup
+from src.utils.log_utils import LoggerSetup
 
 # 設置日誌記錄器
 custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'

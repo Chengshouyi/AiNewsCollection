@@ -126,4 +126,4 @@ if __name__ == "__main__":
 # python -m src.crawlers.crawler_test --config /path/to/config.json
 
 # 只爬取 AI 相關文章
-# python -m src.crawlers.crawler_test --ai-only
+# python -m src.crawlers.crawler_test --ai-only --output ./logs/bnext_articles_ai.csv --log-level DEBUG

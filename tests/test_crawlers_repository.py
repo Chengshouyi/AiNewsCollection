@@ -45,27 +45,21 @@ def sample_crawlers(session):
     crawlers = [
         Crawlers(
             crawler_name="新聞爬蟲1",
-            scrape_target="https://example.com/news1",
-            crawl_interval=60,
+            base_url="https://example.com/news1",
             is_active=True,
-            last_crawl_time=(now - timedelta(hours=2)),
             created_at=(now - timedelta(days=1)),
             crawler_type="web"
         ),
         Crawlers(
             crawler_name="新聞爬蟲2",
-            scrape_target="https://example.com/news2",
-            crawl_interval=120,
+            base_url="https://example.com/news2",
             is_active=False,
-            last_crawl_time=now - timedelta(days=1),
             crawler_type="web"
         ),
         Crawlers(
             crawler_name="RSS爬蟲",
-            scrape_target="https://example.com/rss",
-            crawl_interval=30,
+            base_url="https://example.com/rss",
             is_active=True,
-            last_crawl_time=None,
             crawler_type="rss"
         )
     ]
@@ -143,37 +137,13 @@ class TestCrawlersRepository:
         active_crawlers = crawlers_repo.find_active_crawlers()
         assert len(active_crawlers) == 2
         assert all(crawler.is_active for crawler in active_crawlers)
-    
-    def test_find_pending_crawlers(self, crawlers_repo, sample_crawlers):
-        """測試查找需要執行的爬蟲"""
-        current_time = datetime.now(timezone.utc)
-        pending_crawlers = crawlers_repo.find_pending_crawlers(current_time)
-        
-        assert len(pending_crawlers) > 0
-        for crawler in pending_crawlers:
-            assert crawler.is_active
-            if crawler.last_crawl_time:
-                time_diff = (current_time - crawler.last_crawl_time).total_seconds()
-                assert time_diff >= crawler.crawl_interval * 60
 
-    def test_update_last_crawl_time(self, crawlers_repo, sample_crawlers):
-        """測試更新最後爬蟲時間"""
-        crawler_id = sample_crawlers[0].id
-        new_time = datetime.now(timezone.utc)
-        
-        result = crawlers_repo.update_last_crawl_time(crawler_id, new_time)
-        assert result is True
-        
-        updated_crawler = crawlers_repo.get_by_id(crawler_id)
-        assert updated_crawler.last_crawl_time == new_time
-        assert updated_crawler.updated_at is not None
 
     def test_create(self, crawlers_repo):
         """測試使用模式驗證創建爬蟲"""
         new_crawler_data = {
             "crawler_name": "測試爬蟲",
-            "scrape_target": "https://example.com/test",
-            "crawl_interval": 45,
+            "base_url": "https://example.com/test",
             "is_active": True,
             "crawler_type": "web"
         }
@@ -189,14 +159,13 @@ class TestCrawlersRepository:
         retrieved = crawlers_repo.get_by_id(new_crawler.id)
         assert retrieved is not None
         assert retrieved.crawler_name == "測試爬蟲"
-        assert retrieved.scrape_target == "https://example.com/test"
+        assert retrieved.base_url == "https://example.com/test"
         assert retrieved.crawler_type == "web"
     
         # 測試驗證錯誤 - 缺少必填欄位
         invalid_data = {
             "crawler_name": "缺失欄位爬蟲",
-            # 缺少 scrape_target
-            "crawl_interval": 60,
+            # 缺少 base_url
             "is_active": True
         }
         
@@ -208,8 +177,7 @@ class TestCrawlersRepository:
         # 嘗試創建重複名稱的爬蟲
         duplicate_data = {
             "crawler_name": "新聞爬蟲1",  # 已存在的名稱
-            "scrape_target": "https://example.com/duplicate",
-            "crawl_interval": 45,
+            "base_url": "https://example.com/duplicate",
             "is_active": True,
             "crawler_type": "web"
         }
@@ -233,7 +201,6 @@ class TestCrawlersRepository:
         # 準備更新數據
         update_data = {
             "crawler_name": "已更新爬蟲名稱",
-            "crawl_interval": 90,
             "is_active": False
         }
         
@@ -241,12 +208,11 @@ class TestCrawlersRepository:
         updated = crawlers_repo.update(setting_id, update_data)
         assert updated is not None
         assert updated.crawler_name == "已更新爬蟲名稱"
-        assert updated.crawl_interval == 90
         assert updated.is_active is False
         assert updated.updated_at is not None
         
         # 確認只更新了指定欄位
-        assert updated.scrape_target == sample_crawlers[0].scrape_target
+        assert updated.base_url == sample_crawlers[0].base_url
         assert updated.crawler_type == sample_crawlers[0].crawler_type
         
         # 測試更新不存在的ID
@@ -300,17 +266,6 @@ class TestCrawlersRepository:
         result = crawlers_repo.toggle_active_status(999)
         assert result is False
 
-    def test_get_sorted_by_interval(self, crawlers_repo, sample_crawlers):
-        """測試按爬取間隔排序"""
-        # 升序排序
-        crawlers = crawlers_repo.get_sorted_by_interval()
-        intervals = [c.crawl_interval for c in crawlers]
-        assert intervals == sorted(intervals)
-        
-        # 降序排序
-        crawlers = crawlers_repo.get_sorted_by_interval(descending=True)
-        intervals = [c.crawl_interval for c in crawlers]
-        assert intervals == sorted(intervals, reverse=True)
 
     def test_find_by_type(self, crawlers_repo, sample_crawlers):
         """測試根據爬蟲類型查找"""
@@ -347,20 +302,17 @@ class TestCrawlersRepository:
         update_data = {
             "id": existing_id,
             "crawler_name": "更新通過create_or_update",
-            "crawl_interval": 75
         }
         
         result = crawlers_repo.create_or_update(update_data)
         assert result is not None
         assert result.id == existing_id
         assert result.crawler_name == "更新通過create_or_update"
-        assert result.crawl_interval == 75
-        
+
         # 測試創建新記錄
         new_data = {
             "crawler_name": "新記錄通過create_or_update",
-            "scrape_target": "https://example.com/new",
-            "crawl_interval": 45,
+            "base_url": "https://example.com/new",
             "crawler_type": "api"
         }
         
@@ -374,8 +326,7 @@ class TestCrawlersRepository:
         nonexistent_id_data = {
             "id": 999,
             "crawler_name": "不存在的ID",
-            "scrape_target": "https://example.com/nonexistent",
-            "crawl_interval": 60,
+            "base_url": "https://example.com/nonexistent",
             "crawler_type": "web"
         }
         
@@ -433,8 +384,7 @@ class TestPagination:
         for i in range(6):
             new_setting = Crawlers(
                 crawler_name=f"額外爬蟲{i+1}",
-                scrape_target=f"https://example.com/extra{i+1}",
-                crawl_interval=60,
+                base_url=f"https://example.com/extra{i+1}",
                 is_active=True,
                 crawler_type="web"
             )
@@ -470,8 +420,8 @@ class TestPagination:
         assert page_out["page"] == 3
         
         # 測試排序功能
-        sorted_page = crawlers_repo.get_paginated(page=1, per_page=10, sort_by="crawl_interval", sort_desc=True)
-        intervals = [item.crawl_interval for item in sorted_page["items"]]
+        sorted_page = crawlers_repo.get_paginated(page=1, per_page=10, sort_by="crawler_name", sort_desc=True)
+        intervals = [item.crawler_name for item in sorted_page["items"]]
         assert intervals == sorted(intervals, reverse=True)
 
     def test_pagination_edge_cases(self, crawlers_repo, sample_crawlers):
@@ -501,20 +451,20 @@ class TestPagination:
         asc_page = crawlers_repo.get_paginated(
             page=1, 
             per_page=10, 
-            sort_by="crawl_interval", 
+            sort_by="crawler_name", 
             sort_desc=False
         )
-        asc_intervals = [item.crawl_interval for item in asc_page["items"]]
+        asc_intervals = [item.crawler_name for item in asc_page["items"]]
         assert asc_intervals == sorted(asc_intervals)
         
         # 測試降序排序
         desc_page = crawlers_repo.get_paginated(
             page=1, 
             per_page=10, 
-            sort_by="crawl_interval", 
+            sort_by="crawler_name", 
             sort_desc=True
         )
-        desc_intervals = [item.crawl_interval for item in desc_page["items"]]
+        desc_intervals = [item.crawler_name for item in desc_page["items"]]
         assert desc_intervals == sorted(desc_intervals, reverse=True)
         
         # 測試無效的排序欄位

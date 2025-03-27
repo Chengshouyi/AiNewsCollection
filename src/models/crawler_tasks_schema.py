@@ -2,7 +2,7 @@ from typing import Annotated, Optional, Any
 from pydantic import BaseModel, BeforeValidator, model_validator
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.utiles.model_utiles import validate_optional_str, validate_boolean, validate_positive_int
+from src.utils.model_utils import validate_optional_str, validate_boolean, validate_positive_int
 
 def validate_crawler_id(value: Any) -> int:
     """爬蟲ID驗證"""

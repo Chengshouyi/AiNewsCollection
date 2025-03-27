@@ -82,7 +82,7 @@ class CrawlerTasks(Base, BaseEntity):
         onupdate=lambda: datetime.now(timezone.utc)
     )
 
-    crawlers = relationship("Crawlers", back_populates="crawler_tasks", lazy="joined")
+    crawlers = relationship("Crawlers", back_populates="crawler_tasks")
     history = relationship("CrawlerTaskHistory", back_populates="task", lazy="joined")
 
     def __init__(self, **kwargs):

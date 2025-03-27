@@ -286,32 +286,7 @@ class CrawlersService:
             if repo and session:
                 session.rollback()
             raise e
-    
-    def update_last_crawl_time(self, crawler_id: int) -> bool:
-        """
-        更新爬蟲最後執行時間為當前時間
-        
-        Args:
-            crawler_id: 爬蟲設定ID
-            
-        Returns:
-            是否成功更新
-        """
-        try:
-            repo, session = self._get_repository()
-            current_time = self.datetime_provider.now(timezone.utc)
-            result = repo.update_last_crawl_time(crawler_id, current_time)
-            
-            if result:
-                logger.info(f"成功更新爬蟲最後執行時間，ID={crawler_id}")
-            else:
-                logger.warning(f"更新爬蟲最後執行時間失敗，爬蟲不存在，ID={crawler_id}")
-                
-            return result
-        except Exception as e:
-            error_msg = f"更新爬蟲最後執行時間失敗，ID={crawler_id}: {e}"
-            logger.error(error_msg)
-            raise e
+
     
     def toggle_crawler_status(self, crawler_id: int) -> Optional[Crawlers]:
         """
@@ -333,8 +308,12 @@ class CrawlersService:
                 
             # 獲取更新後的爬蟲設定
             updated_crawler = repo.get_by_id(crawler_id)
-            logger.info(f"成功切換爬蟲狀態，ID={crawler_id}, 新狀態={updated_crawler.is_active}")
-            return updated_crawler
+            if updated_crawler:
+                logger.info(f"成功切換爬蟲狀態，ID={crawler_id}, 新狀態={updated_crawler.is_active}")
+                return updated_crawler
+            else:
+                logger.warning(f"切換爬蟲狀態失敗，爬蟲不存在，ID={crawler_id}")
+                return None
         except Exception as e:
             error_msg = f"切換爬蟲狀態失敗，ID={crawler_id}: {e}"
             logger.error(error_msg)

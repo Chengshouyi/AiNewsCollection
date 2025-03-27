@@ -2,7 +2,7 @@ from typing import Annotated, Optional, Any
 from pydantic import BaseModel, BeforeValidator, model_validator, Field
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.utiles.model_utiles import validate_optional_str, validate_datetime, validate_boolean
+from src.utils.model_utils import validate_optional_str, validate_datetime, validate_boolean
 
 def validate_task_id(value: Any) -> int:
     """任務ID驗證"""

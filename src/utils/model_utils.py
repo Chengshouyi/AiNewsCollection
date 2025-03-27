@@ -64,11 +64,11 @@ def validate_datetime(field_name: str, value: Any) -> Optional[datetime]:
 def validate_url(value: str) -> str:
     """URL驗證"""
     if not value:
-        raise ValidationError("scrape_target: URL不能為空")
+        raise ValidationError("URL不能為空")
     
     # 先檢查長度
     if len(value) > 1000:
-        raise ValidationError("scrape_target: 長度不能超過 1000 字元")
+        raise ValidationError("長度不能超過 1000 字元")
     
     # 檢查 URL 格式
     url_pattern = re.compile(
@@ -80,7 +80,7 @@ def validate_url(value: str) -> str:
         r'(?:/?|[/?]\S+)?$', re.IGNORECASE)
     
     if not url_pattern.match(value):
-        raise ValidationError("scrape_target: 無效的URL格式")
+        raise ValidationError("無效的URL格式")
     
     return value
 

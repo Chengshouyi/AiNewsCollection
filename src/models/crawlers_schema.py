@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field, BeforeValidator, model_validator, field_v
 from datetime import datetime
 import re
 from src.error.errors import ValidationError
-from src.utiles.model_utiles import validate_url
+from src.utils.model_utils import validate_url
 
 
 def validate_crawler_name(value: str) -> str:
@@ -15,13 +15,13 @@ def validate_crawler_name(value: str) -> str:
         raise ValidationError("crawler_name: 長度不能超過 100 字元")
     return value
 
-def validate_scrape_target(value: str) -> str:
+def validate_base_url(value: str) -> str:
     """爬取目標驗證"""
-    if not value or not value.strip():
-        raise ValidationError("scrape_target: 不能為空")
-    value = value.strip()
-    if len(value) > 1000:
-        raise ValidationError("scrape_target: 長度不能超過 1000 字元")
+    try:
+        validate_url(value)
+    except ValidationError as e:
+        raise ValidationError(f"base_url: {e}") 
+    
     return value
 
 def validate_crawler_type(value: str) -> str:
@@ -31,12 +31,6 @@ def validate_crawler_type(value: str) -> str:
     value = value.strip()
     if len(value) > 100:
         raise ValidationError("crawler_type: 長度不能超過 100 字元")
-    return value
-
-def validate_crawl_interval(value: int) -> int:
-    """爬取間隔驗證"""
-    if value <= 0:
-        raise ValidationError("crawl_interval: 必須大於 0")
     return value
 
 def validate_is_active(value: Any) -> bool:
@@ -56,26 +50,24 @@ def validate_is_active(value: Any) -> bool:
 
 # 通用字段定義
 CrawlerName = Annotated[str, BeforeValidator(validate_crawler_name)]
-ScrapeTarget = Annotated[str, BeforeValidator(validate_url)]
+BaseUrl = Annotated[str, BeforeValidator(validate_base_url)]
 CrawlerType = Annotated[str, BeforeValidator(validate_crawler_type)]
-CrawlInterval = Annotated[int, BeforeValidator(validate_crawl_interval)]
 IsActive = Annotated[bool, BeforeValidator(validate_is_active)]
+
 class CrawlersCreateSchema(BaseModel):
     crawler_name: CrawlerName
-    scrape_target: ScrapeTarget
+    base_url: BaseUrl
     crawler_type: CrawlerType
-    crawl_interval: CrawlInterval
     is_active: IsActive = True
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = None
-    last_crawl_time: Optional[datetime] = None
 
     @model_validator(mode='before')
     @classmethod
     def validate_required_fields(cls, data):
         """驗證必填欄位"""
         if isinstance(data, dict):
-            required_fields = ['crawler_name', 'scrape_target', 'crawler_type', 'crawl_interval']
+            required_fields = ['crawler_name', 'base_url', 'crawler_type']
             for field in required_fields:
                 if field not in data:
                     raise ValidationError(f"{field}: 不能為空")
@@ -84,11 +76,9 @@ class CrawlersCreateSchema(BaseModel):
 class CrawlersUpdateSchema(BaseModel):
     """爬蟲更新模型"""
     crawler_name: Optional[CrawlerName] = None
-    scrape_target: Optional[ScrapeTarget] = None
-    crawl_interval: Optional[CrawlInterval] = None
+    base_url: Optional[BaseUrl] = None
     is_active: Optional[IsActive] = None
     updated_at: datetime = Field(default_factory=datetime.now)
-    last_crawl_time: Optional[datetime] = None
 
     @model_validator(mode='before')
     @classmethod

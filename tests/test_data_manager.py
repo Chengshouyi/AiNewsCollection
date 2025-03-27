@@ -140,7 +140,7 @@ class TestDatabaseManager:
         monkeypatch.setattr('sqlalchemy.engine.Connection.execute', mock_execute)
         
         # 應該拋出資料庫連接異常
-        with pytest.raises(DatabaseConnectionError):
+        with pytest.raises(DatabaseConfigError):
             DatabaseManager("sqlite:///:memory:")
 
     @pytest.mark.skipif(os.name == 'nt', reason="權限測試在 Windows 上不穩定")

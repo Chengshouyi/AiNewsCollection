@@ -1,19 +1,15 @@
 import requests
 import pandas as pd
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict
 import time
-import random
 import re
-from urllib.parse import urljoin
-import os
-from datetime import datetime
 
 from src.crawlers.base_config import DEFAULT_HEADERS
 from src.crawlers.bnext_config import BNEXT_CONFIG, BNEXT_DEFAULT_CATEGORIES
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
-from src.utiles.log_utils import LoggerSetup
+from src.utils.log_utils import LoggerSetup
 
 # 設置日誌記錄器
 custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -58,11 +54,15 @@ class BnextScraper:
             # 如果沒有指定類別，則使用預設類別
             if not categories:
                 categories = []
-                for category in BNEXT_DEFAULT_CATEGORIES:
-                    category_url = BNEXT_CONFIG.get_category_url(category)
-                    if category_url:
-                        categories.append(category_url)
-            
+                if BNEXT_CONFIG.default_categories:
+                    categories.extend(BNEXT_CONFIG.default_categories)
+                else:
+                    logger.warning("未設置預設類別，將使用預設類別")
+                    for category in BNEXT_DEFAULT_CATEGORIES:
+                        category_url = BNEXT_CONFIG.get_category_url(category)
+                        if category_url:
+                            categories.append(category_url)
+                
             session = requests.Session()
             all_articles = []
             

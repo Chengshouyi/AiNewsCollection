@@ -20,6 +20,7 @@ class SiteConfig:
     valid_domains: List[str] = field(default_factory=list)
     url_patterns: List[str] = field(default_factory=list)
     url_file_extensions: List[str] = field(default_factory=lambda: ['.html', '.htm'])
+    default_categories: List[str] = field(default_factory=list)
     date_format: str = '%Y/%m/%d %H:%M'
     
     # 選擇器配置
@@ -58,6 +59,7 @@ class SiteConfig:
             list_url_template=crawler_config.list_url_template,
             categories=crawler_config.categories,
             crawler_settings=crawler_config.crawler_settings,
-            content_extraction=crawler_config.content_extraction
+            content_extraction=crawler_config.content_extraction,
+            default_categories=crawler_config.default_categories
         )
 

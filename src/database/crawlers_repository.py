@@ -33,7 +33,7 @@ class CrawlersRepository(BaseRepository['Crawlers']):
         processed_data = entity_data.copy()
         
         # 檢查必填欄位
-        required_fields = ['crawler_name', 'scrape_target', 'crawl_interval']
+        required_fields = ['crawler_name', 'base_url']
         
         # 如果是更新操作，從現有實體中補充必填欄位
         if existing_entity:
@@ -133,42 +133,6 @@ class CrawlersRepository(BaseRepository['Crawlers']):
                 .filter(self.model_class.crawler_name.like(f"%{crawler_name}%"))
                 .all()
         )
-    
-    def find_pending_crawlers(self, current_time: Optional[datetime] = None) -> List['Crawlers']:
-        """查找需要執行的爬蟲"""
-        if current_time is None:
-            current_time = datetime.now(timezone.utc)
-        elif current_time.tzinfo is None:
-            current_time = current_time.replace(tzinfo=timezone.utc)
-
-        def get_pending_crawlers():
-            # 修改為使用 SQLite 相容的時間間隔計算方式
-            return self.session.query(self.model_class) \
-                .filter(
-                    self.model_class.is_active == True,
-                    (self.model_class.last_crawl_time.is_(None)) |
-                    ((current_time - self.model_class.last_crawl_time) >= 
-                     # 將分鐘轉換為秒進行比較
-                     self.model_class.crawl_interval * 60)
-                ) \
-                .all()
-                
-        return self.execute_query(
-            get_pending_crawlers,
-            err_msg="查詢待執行爬蟲時發生錯誤"
-        )
-
-    def update_last_crawl_time(self, crawler_id: int, new_time: Optional[datetime] = None) -> bool:
-        """更新爬蟲最後執行時間"""
-        if new_time is None:
-            new_time = datetime.now(timezone.utc)
-            
-        update_data = {
-            'last_crawl_time': new_time,
-            'updated_at': datetime.now(timezone.utc)
-        }
-        updated_crawler = self.update(crawler_id, update_data)
-        return updated_crawler is not None
 
     def toggle_active_status(self, crawler_id: int) -> bool:
         """切換爬蟲活躍狀態"""
@@ -189,21 +153,6 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             err_msg=f"切換爬蟲ID={crawler_id}活躍狀態時發生錯誤"
         )
 
-    def get_sorted_by_interval(self, descending: bool = False) -> List['Crawlers']:
-        """按爬取間隔排序的爬蟲設定"""
-        def sort_by_interval():
-            return self.session.query(self.model_class) \
-                .order_by(
-                    desc(self.model_class.crawl_interval) 
-                    if descending 
-                    else asc(self.model_class.crawl_interval)
-                ) \
-                .all()
-                
-        return self.execute_query(
-            sort_by_interval,
-            err_msg="按間隔排序爬蟲時發生錯誤"
-        )
 
     def find_by_type(self, crawler_type: str) -> List[Crawlers]:
         """根據爬蟲類型查找爬蟲"""
@@ -218,7 +167,7 @@ class CrawlersRepository(BaseRepository['Crawlers']):
         """根據爬取目標模糊查詢爬蟲"""
         return self.execute_query(
             lambda: self.session.query(self.model_class)
-                .filter(self.model_class.scrape_target.like(f"%{target_pattern}%"))
+                .filter(self.model_class.base_url.like(f"%{target_pattern}%"))
                 .all(),
             err_msg=f"查詢目標包含{target_pattern}的爬蟲時發生錯誤"
         )

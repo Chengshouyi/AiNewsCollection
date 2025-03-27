@@ -11,12 +11,10 @@ class Crawlers(Base, BaseEntity):
     欄位說明：
     - id: 主鍵
     - crawler_name: 爬蟲名稱
-    - scrape_target: 爬取目標
-    - crawl_interval: 爬取間隔
+    - base_url: 爬取目標
     - is_active: 是否啟用
     - created_at: 建立時間
     - updated_at: 更新時間
-    - last_crawl_time: 最後爬取時間
     - crawler_type: 爬蟲類型
     """
     __tablename__ = 'crawlers'
@@ -30,12 +28,8 @@ class Crawlers(Base, BaseEntity):
         String(100), 
         nullable=False
     )
-    scrape_target: Mapped[str] = mapped_column(
+    base_url: Mapped[str] = mapped_column(
         String(1000), 
-        nullable=False
-    )
-    crawl_interval: Mapped[int] = mapped_column(
-        Integer, 
         nullable=False
     )
     is_active: Mapped[bool] = mapped_column(
@@ -52,9 +46,6 @@ class Crawlers(Base, BaseEntity):
     updated_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True),
         onupdate=lambda: datetime.now(timezone.utc)
-    )
-    last_crawl_time: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True)
     )
     crawler_type: Mapped[str] = mapped_column(
         String(100), 
@@ -77,7 +68,7 @@ class Crawlers(Base, BaseEntity):
             f"<Crawlers("
             f"id={self.id}, "
             f"crawler_name='{self.crawler_name}', "
-            f"scrape_target='{self.scrape_target}', "
+            f"base_url='{self.base_url}', "
             f"crawler_type='{self.crawler_type}', "
             f"is_active={self.is_active}"
             f")>"
@@ -87,12 +78,10 @@ class Crawlers(Base, BaseEntity):
         return {
             'id': self.id,
             'crawler_name': self.crawler_name,
-            'scrape_target': self.scrape_target,
+            'base_url': self.base_url,
             'is_active': self.is_active,
-            'crawl_interval': self.crawl_interval,
             'created_at': self.created_at,
             'updated_at': self.updated_at,
-            'last_crawl_time': self.last_crawl_time,
             'crawler_type': self.crawler_type
         }
 

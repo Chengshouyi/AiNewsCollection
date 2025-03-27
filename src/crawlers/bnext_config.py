@@ -108,7 +108,8 @@ def create_bnext_config(config_data: Optional[Dict[str, Any]] = None) -> SiteCon
         list_url_template=config_data.get("list_url_template", "{base_url}/categories/{category}"),
         categories=config_data.get("categories", {}),
         crawler_settings=config_data.get("crawler_settings", {}),
-        content_extraction=config_data.get("content_extraction", {})
+        content_extraction=config_data.get("content_extraction", {}),
+        default_categories=config_data.get("default_categories", [])
     )
 
 # 在模組導入時建立一個全局的 BNext 配置對象

@@ -7,7 +7,7 @@ from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
-from src.utiles.model_utiles import get_model_info
+from src.utils.model_utils import get_model_info
 from src.error.errors import ValidationError, DatabaseOperationError
 
 # 設置測試資料庫
@@ -43,8 +43,7 @@ def crawler_task_history_repo(session):
 def sample_crawler(session):
     crawler = Crawlers(
         crawler_name="測試爬蟲",
-        scrape_target="https://example.com",
-        crawl_interval=60,
+        base_url="https://example.com",
         is_active=True,
         crawler_type="bnext"
     )

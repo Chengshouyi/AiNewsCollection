@@ -2,7 +2,7 @@ from typing import Annotated, Optional, Any
 from pydantic import BaseModel,BeforeValidator, model_validator
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.utiles.model_utiles import validate_optional_str
+from src.utils.model_utils import validate_optional_str
 
 
 def validate_title(value: str) -> str:
