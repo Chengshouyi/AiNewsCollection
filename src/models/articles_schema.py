@@ -2,7 +2,7 @@ from typing import Annotated, Optional, Any
 from pydantic import BaseModel,BeforeValidator, model_validator
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.utils.model_utils import validate_optional_str
+from src.utils.model_utils import validate_str
 
 
 def validate_title(value: str) -> str:
@@ -54,12 +54,12 @@ Title = Annotated[str, BeforeValidator(validate_title)]
 Link = Annotated[str, BeforeValidator(validate_link)]
 Source = Annotated[str, BeforeValidator(validate_source)]
 PublishedAt = Annotated[datetime, BeforeValidator(validate_published_at)]
-Summary = Annotated[Optional[str], BeforeValidator(validate_optional_str("summary", 10000))]
-Content = Annotated[Optional[str], BeforeValidator(validate_optional_str("content", 65536))]
-Category = Annotated[Optional[str], BeforeValidator(validate_optional_str("category", 100))]
-Author = Annotated[Optional[str], BeforeValidator(validate_optional_str("author", 100))]
-ArticleType = Annotated[Optional[str], BeforeValidator(validate_optional_str("article_type", 20))]
-Tags = Annotated[Optional[str], BeforeValidator(validate_optional_str("tags", 500))]
+Summary = Annotated[Optional[str], BeforeValidator(validate_str("summary", 10000))]
+Content = Annotated[Optional[str], BeforeValidator(validate_str("content", 65536))]
+Category = Annotated[Optional[str], BeforeValidator(validate_str("category", 100))]
+Author = Annotated[Optional[str], BeforeValidator(validate_str("author", 100))]
+ArticleType = Annotated[Optional[str], BeforeValidator(validate_str("article_type", 20))]
+Tags = Annotated[Optional[str], BeforeValidator(validate_str("tags", 500))]
 
 class ArticleCreateSchema(BaseModel):
     """文章創建模型"""

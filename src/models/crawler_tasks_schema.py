@@ -2,7 +2,7 @@ from typing import Annotated, Optional, Any
 from pydantic import BaseModel, BeforeValidator, model_validator
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.utils.model_utils import validate_optional_str, validate_boolean, validate_positive_int
+from src.utils.model_utils import validate_str, validate_boolean, validate_positive_int
 
 def validate_crawler_id(value: Any) -> int:
     """爬蟲ID驗證"""
@@ -33,9 +33,9 @@ MinKeywords = Annotated[int, BeforeValidator(validate_positive_int("min_keywords
 IsAuto = Annotated[bool, BeforeValidator(validate_boolean("is_auto"))]
 AiOnly = Annotated[bool, BeforeValidator(validate_boolean("ai_only"))]
 FetchDetails = Annotated[bool, BeforeValidator(validate_boolean("fetch_details"))]
-Notes = Annotated[Optional[str], BeforeValidator(validate_optional_str("notes", 65536))]
+Notes = Annotated[Optional[str], BeforeValidator(validate_str("notes", max_length=65536))]
 Schedule = Annotated[Optional[str], BeforeValidator(validate_schedule)]
-LastRunMessage = Annotated[Optional[str], BeforeValidator(validate_optional_str("last_run_message", 65536))]
+LastRunMessage = Annotated[Optional[str], BeforeValidator(validate_str("last_run_message", max_length=65536))]
 
 class CrawlerTasksCreateSchema(BaseModel):
     """爬蟲任務創建模型"""

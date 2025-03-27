@@ -11,13 +11,15 @@ class TestCrawlersModel:
         crawler = Crawlers(
             crawler_name="test_crawler",
             base_url="https://example.com",
-            crawler_type="web"
+            crawler_type="web",
+            config_file_name="test_config.json"
         )
         
         assert crawler.crawler_name == "test_crawler"
         assert crawler.base_url == "https://example.com"
         assert crawler.is_active is True  # 測試默認值
         assert crawler.crawler_type == "web"
+        assert crawler.config_file_name == "test_config.json"
         assert isinstance(crawler.created_at, datetime)
         assert crawler.updated_at is None
         assert crawler.crawler_tasks == []  # 測試關聯關係
@@ -27,7 +29,8 @@ class TestCrawlersModel:
         crawler = Crawlers(
             crawler_name="test_crawler",
             base_url="https://example.com",
-            crawler_type="web"
+            crawler_type="web",
+            config_file_name="test_config.json"
         )
         
         # 只測試創建時間是 UTC
@@ -42,7 +45,8 @@ class TestCrawlersModel:
             id=1,
             crawler_name="test_crawler",
             base_url="https://example.com",
-            crawler_type="web"
+            crawler_type="web",
+            config_file_name="test_config.json"
         )
         
         dict_data = crawler.to_dict()
@@ -52,17 +56,20 @@ class TestCrawlersModel:
         assert dict_data['base_url'] == "https://example.com"
         assert dict_data['crawler_type'] == "web"
         assert dict_data['is_active'] is True
-    
+        assert dict_data['config_file_name'] == "test_config.json"
+
     def test_repr_method(self):
         """測試 __repr__ 方法"""
         crawler = Crawlers(
             id=1,
             crawler_name="test_crawler",
             base_url="https://example.com",
-            crawler_type="web"
+            crawler_type="web",
+            config_file_name="test_config.json"
         )
         
-        expected_repr = "<Crawlers(id=1, crawler_name='test_crawler', base_url='https://example.com', crawler_type='web', is_active=True)>"
+        expected_repr = "<Crawlers(id=1, crawler_name='test_crawler', base_url='https://example.com', crawler_type='web', config_file_name='test_config.json', is_active=True)>"
+        
         assert repr(crawler) == expected_repr
     
     def test_relationship_behavior(self):
@@ -70,7 +77,8 @@ class TestCrawlersModel:
         crawler = Crawlers(
             crawler_name="test_crawler",
             base_url="https://example.com",
-            crawler_type="web"
+            crawler_type="web",
+            config_file_name="test_config.json"
         )
         
         assert hasattr(crawler, 'crawler_tasks')

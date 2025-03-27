@@ -8,26 +8,77 @@ from datetime import datetime
 from src.error.errors import ValidationError
 import re
 
-def validate_optional_str(field_name: str, max_length: int):
-    """可選字串欄位驗證"""
+def validate_str(
+    field_name: str, 
+    max_length: int = 255, 
+    min_length: int = 0, 
+    required: bool = False,
+    regex: Optional[str] = None
+):
+    """
+    靈活的字串驗證器
+    
+    Args:
+        field_name: 欄位名稱
+        max_length: 最大長度限制
+        min_length: 最小長度限制
+        required: 是否為必填
+        regex: 可選的正則表達式驗證
+    """
+    import re
+
     def validator(value: Optional[str]) -> Optional[str]:
+        # 處理 None 值
         if value is None:
+            if required:
+                raise ValidationError(f"{field_name}: 不能為 None")
             return None
-        if not value.strip():
-            raise ValidationError(f"{field_name}: 不能為空")
-        value = value.strip()
+        
+        # 轉換並去除空白
+        value = str(value).strip()
+        
+        # 檢查是否為空
+        if not value:
+            if required:
+                raise ValidationError(f"{field_name}: 不能為空")
+            return None
+        
+        # 長度驗證
         if len(value) > max_length:
             raise ValidationError(f"{field_name}: 長度不能超過 {max_length} 字元")
+        
+        if len(value) < min_length:
+            raise ValidationError(f"{field_name}: 長度不能小於 {min_length} 字元")
+        
+        # 正則表達式驗證
+        if regex:
+            if not re.match(regex, value):
+                raise ValidationError(f"{field_name}: 不符合指定的格式")
+        
         return value
+    
     return validator
 
-def validate_boolean(field_name: str):
+
+def validate_boolean(field_name: str, required: bool = False):
     """布林值驗證"""
-    def validator(value: Any) -> bool:
+    def validator(value: Any) -> Optional[bool]:
         if value is None:
-            raise ValidationError(f"{field_name}: 不能為空")
-        if not isinstance(value, bool):
-            raise ValidationError(f"{field_name}: 必須是布林值")
+            if required:
+                raise ValidationError(f"{field_name}: 不能為 None")
+            return None
+        if value is not None and not isinstance(value, bool):
+            try:
+                # 嘗試轉換常見的布爾值字符串
+                if isinstance(value, str):
+                    value = value.lower()
+                    if value in ('true', '1', 'yes'):
+                        return True
+                    if value in ('false', '0', 'no'):
+                        return False
+            except:
+                pass
+            raise ValidationError(f"{field_name}: 必須是布爾值")
         return value
     return validator
 
@@ -61,28 +112,51 @@ def validate_datetime(field_name: str, value: Any) -> Optional[datetime]:
     
     raise ValidationError(f"{field_name}: 必須是字串或日期時間。")
 
-def validate_url(value: str) -> str:
-    """URL驗證"""
-    if not value:
-        raise ValidationError("URL不能為空")
+def validate_url(
+    field_name: str, 
+    max_length: int = 1000, 
+    required: bool = False,
+    regex: Optional[str] = None
+):
+    """
+    靈活的URL驗證器
     
-    # 先檢查長度
-    if len(value) > 1000:
-        raise ValidationError("長度不能超過 1000 字元")
+    Args:
+        field_name: 欄位名稱
+        max_length: 最大長度限制
+        min_length: 最小長度限制
+        required: 是否為必填
+        regex: 可選的正則表達式驗證
+    """
+    import re
+
+    def validator(value: Optional[str]) -> Optional[str]:
+        if not value:
+            raise ValidationError(f"{field_name}: URL不能為空")
+        
+        # 先檢查長度
+        if len(value) > max_length:
+            raise ValidationError(f"{field_name}: 長度不能超過 {max_length} 字元")
+        
+        # 檢查 URL 格式
+        if regex:
+            if not re.match(regex, value):
+                raise ValidationError(f"{field_name}: 無效的URL格式")    
+        else:
+            url_pattern = re.compile(
+                r'^https?://'
+                r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'
+                r'localhost|'
+                r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
+                r'(?::\d+)?'
+                r'(?:/?|[/?]\S+)?$', re.IGNORECASE)
+        
+            if not url_pattern.match(value):
+                raise ValidationError(f"{field_name}: 無效的URL格式")
+        
+        return value
     
-    # 檢查 URL 格式
-    url_pattern = re.compile(
-        r'^https?://'
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'
-        r'localhost|'
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'
-        r'(?::\d+)?'
-        r'(?:/?|[/?]\S+)?$', re.IGNORECASE)
-    
-    if not url_pattern.match(value):
-        raise ValidationError("無效的URL格式")
-    
-    return value
+    return validator
 
 def print_model_constraints():
     """顯示模型約束信息的工具函數"""

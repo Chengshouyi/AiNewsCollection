@@ -12,6 +12,7 @@ class TestCrawlersCreateSchema:
             "crawler_name": "test_crawler",
             "base_url": "https://example.com",
             "is_active": True,
+            "config_file_name": "test_config.json",
             "crawler_type": "web"
         }
         schema = CrawlersCreateSchema.model_validate(data)
@@ -19,6 +20,7 @@ class TestCrawlersCreateSchema:
         assert schema.base_url == "https://example.com"
         assert schema.is_active is True
         assert schema.crawler_type == "web"
+        assert schema.config_file_name == "test_config.json"
         assert schema.created_at is not None
     
     def test_crawlers_required_fields(self):
@@ -26,7 +28,8 @@ class TestCrawlersCreateSchema:
         # 缺少 crawler_name
         data1 = {
             "base_url": "https://example.com",
-            "crawler_type": "web"
+            "crawler_type": "web",
+            "config_file_name": "test_config.json"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data1)
@@ -35,7 +38,8 @@ class TestCrawlersCreateSchema:
         # 缺少 base_url
         data2 = {
             "crawler_name": "test_crawler",
-            "crawler_type": "web"
+            "crawler_type": "web",
+            "config_file_name": "test_config.json"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data2)
@@ -48,6 +52,7 @@ class TestCrawlersCreateSchema:
         data_empty = {
             "crawler_name": "",
             "base_url": "https://example.com",
+            "config_file_name": "test_config.json",
             "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -58,7 +63,8 @@ class TestCrawlersCreateSchema:
         data_too_long = {
             "crawler_name": "a" * 101,
             "base_url": "https://example.com",
-            "crawler_type": "web"
+            "crawler_type": "web",
+            "config_file_name": "test_config.json"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_too_long)
@@ -68,7 +74,8 @@ class TestCrawlersCreateSchema:
         data_min = {
             "crawler_name": "a",
             "base_url": "https://example.com",
-            "crawler_type": "web"
+            "crawler_type": "web",
+            "config_file_name": "test_config.json"
         }
         schema_min = CrawlersCreateSchema.model_validate(data_min)
         assert schema_min.crawler_name == "a"
@@ -76,7 +83,8 @@ class TestCrawlersCreateSchema:
         data_max = {
             "crawler_name": "a" * 100,
             "base_url": "https://example.com",
-            "crawler_type": "web"
+            "crawler_type": "web",
+            "config_file_name": "test_config.json"
         }
         schema_max = CrawlersCreateSchema.model_validate(data_max)
         assert len(schema_max.crawler_name) == 100
@@ -87,6 +95,7 @@ class TestCrawlersCreateSchema:
         data_empty = {
             "crawler_name": "test_crawler",
             "base_url": "",
+            "config_file_name": "test_config.json",
             "crawler_type": "web"
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -97,7 +106,8 @@ class TestCrawlersCreateSchema:
         data_too_long = {
             "crawler_name": "test_crawler",
             "base_url": "http://example.com/" + "a" * 1000,
-            "crawler_type": "web"
+            "crawler_type": "web",
+            "config_file_name": "test_config.json"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_too_long)
@@ -107,7 +117,8 @@ class TestCrawlersCreateSchema:
         data_max = {
             "crawler_name": "test_crawler",
             "base_url": "http://example.com/" + "a" * 980,  # 確保總長度不超過1000
-            "crawler_type": "web"
+            "crawler_type": "web",
+            "config_file_name": "test_config.json"
         }
         schema_max = CrawlersCreateSchema.model_validate(data_max)
         assert schema_max.base_url == data_max["base_url"]
@@ -116,7 +127,8 @@ class TestCrawlersCreateSchema:
         data_invalid_url = {
             "crawler_name": "test_crawler",
             "base_url": "invalid_url",
-            "crawler_type": "web"
+            "crawler_type": "web",
+            "config_file_name": "test_config.json"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_invalid_url)
@@ -128,6 +140,7 @@ class TestCrawlersCreateSchema:
         data_empty = {
             "crawler_name": "test_crawler",
             "base_url": "https://example.com",
+            "config_file_name": "test_config.json",
             "crawler_type": ""
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -138,14 +151,25 @@ class TestCrawlersCreateSchema:
         data_too_long = {
             "crawler_name": "test_crawler",
             "base_url": "https://example.com",
+            "config_file_name": "test_config.json",
             "crawler_type": "a" * 101
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_too_long)
         assert "crawler_type: 長度不能超過 100 字元" in str(exc_info.value)
     
+    def test_crawlers_config_file_name_validation(self):
+        """測試設定檔案名的驗證"""
+        # 空值
+        data_empty = {
+            "crawler_name": "test_crawler",
+            "base_url": "https://example.com",
+            "crawler_type": "web"
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersCreateSchema.model_validate(data_empty)
+        assert "config_file_name: 不能為空" in str(exc_info.value)
 
-    
     def test_crawlers_is_active_validation(self):
         """測試是否啟用的驗證"""
         # 非布林值
@@ -153,6 +177,7 @@ class TestCrawlersCreateSchema:
             "crawler_name": "test_crawler",
             "base_url": "https://example.com",
             "crawler_type": "web",
+            "config_file_name": "test_config.json",
             "is_active": "not_a_boolean"
         }
         with pytest.raises(ValidationError) as exc_info:

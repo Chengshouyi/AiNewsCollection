@@ -3,61 +3,22 @@ from pydantic import BaseModel, Field, BeforeValidator, model_validator, field_v
 from datetime import datetime
 import re
 from src.error.errors import ValidationError
-from src.utils.model_utils import validate_url
+from src.utils.model_utils import validate_url, validate_str, validate_boolean
 
 
-def validate_crawler_name(value: str) -> str:
-    """爬蟲名稱驗證"""
-    if not value or not value.strip():
-        raise ValidationError("crawler_name: 不能為空")
-    value = value.strip()
-    if len(value) > 100:
-        raise ValidationError("crawler_name: 長度不能超過 100 字元")
-    return value
-
-def validate_base_url(value: str) -> str:
-    """爬取目標驗證"""
-    try:
-        validate_url(value)
-    except ValidationError as e:
-        raise ValidationError(f"base_url: {e}") 
-    
-    return value
-
-def validate_crawler_type(value: str) -> str:
-    """爬蟲類型驗證"""
-    if not value or not value.strip():
-        raise ValidationError("crawler_type: 不能為空")
-    value = value.strip()
-    if len(value) > 100:
-        raise ValidationError("crawler_type: 長度不能超過 100 字元")
-    return value
-
-def validate_is_active(value: Any) -> bool:
-    if value is not None and not isinstance(value, bool):
-        try:
-            # 嘗試轉換常見的布爾值字符串
-            if isinstance(value, str):
-                value = value.lower()
-                if value in ('true', '1', 'yes'):
-                    return True
-                if value in ('false', '0', 'no'):
-                    return False
-        except:
-            pass
-        raise ValidationError("is_active: 必須是布爾值")
-    return value
 
 # 通用字段定義
-CrawlerName = Annotated[str, BeforeValidator(validate_crawler_name)]
-BaseUrl = Annotated[str, BeforeValidator(validate_base_url)]
-CrawlerType = Annotated[str, BeforeValidator(validate_crawler_type)]
-IsActive = Annotated[bool, BeforeValidator(validate_is_active)]
+CrawlerName = Annotated[str, BeforeValidator(validate_str("crawler_name", max_length=100, required=True))]
+BaseUrl = Annotated[str, BeforeValidator(validate_url("base_url", max_length=1000, required=True))]
+CrawlerType = Annotated[str, BeforeValidator(validate_str("crawler_type", max_length=100, required=True))]
+IsActive = Annotated[bool, BeforeValidator(validate_boolean("is_active", required=True))]
+ConfigFileName = Annotated[str, BeforeValidator(validate_str("config_file_name", max_length=1000, required=True))]
 
 class CrawlersCreateSchema(BaseModel):
     crawler_name: CrawlerName
     base_url: BaseUrl
     crawler_type: CrawlerType
+    config_file_name: ConfigFileName
     is_active: IsActive = True
     created_at: datetime = Field(default_factory=datetime.now)
     updated_at: Optional[datetime] = None
@@ -67,7 +28,7 @@ class CrawlersCreateSchema(BaseModel):
     def validate_required_fields(cls, data):
         """驗證必填欄位"""
         if isinstance(data, dict):
-            required_fields = ['crawler_name', 'base_url', 'crawler_type']
+            required_fields = ['crawler_name', 'base_url', 'crawler_type', 'config_file_name']
             for field in required_fields:
                 if field not in data:
                     raise ValidationError(f"{field}: 不能為空")
@@ -78,6 +39,7 @@ class CrawlersUpdateSchema(BaseModel):
     crawler_name: Optional[CrawlerName] = None
     base_url: Optional[BaseUrl] = None
     is_active: Optional[IsActive] = None
+    config_file_name: Optional[ConfigFileName] = None
     updated_at: datetime = Field(default_factory=datetime.now)
 
     @model_validator(mode='before')

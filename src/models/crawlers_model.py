@@ -13,9 +13,10 @@ class Crawlers(Base, BaseEntity):
     - crawler_name: 爬蟲名稱
     - base_url: 爬取目標
     - is_active: 是否啟用
+    - crawler_type: 爬蟲類型
+    - config_file_name: 爬蟲設定檔案名稱
     - created_at: 建立時間
     - updated_at: 更新時間
-    - crawler_type: 爬蟲類型
     """
     __tablename__ = 'crawlers'
 
@@ -51,6 +52,10 @@ class Crawlers(Base, BaseEntity):
         String(100), 
         nullable=False
     )
+    config_file_name: Mapped[str] = mapped_column(
+        String(100), 
+        nullable=False
+    )
     crawler_tasks = relationship("CrawlerTasks", back_populates="crawlers", lazy="joined")
 
     def __init__(self, **kwargs):
@@ -70,6 +75,7 @@ class Crawlers(Base, BaseEntity):
             f"crawler_name='{self.crawler_name}', "
             f"base_url='{self.base_url}', "
             f"crawler_type='{self.crawler_type}', "
+            f"config_file_name='{self.config_file_name}', "
             f"is_active={self.is_active}"
             f")>"
         )
@@ -82,7 +88,8 @@ class Crawlers(Base, BaseEntity):
             'is_active': self.is_active,
             'created_at': self.created_at,
             'updated_at': self.updated_at,
-            'crawler_type': self.crawler_type
+            'crawler_type': self.crawler_type,
+            'config_file_name': self.config_file_name
         }
 
     

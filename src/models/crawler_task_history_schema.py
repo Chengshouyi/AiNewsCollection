@@ -2,7 +2,7 @@ from typing import Annotated, Optional, Any
 from pydantic import BaseModel, BeforeValidator, model_validator, Field
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.utils.model_utils import validate_optional_str, validate_datetime, validate_boolean
+from src.utils.model_utils import validate_str, validate_datetime, validate_boolean
 
 def validate_task_id(value: Any) -> int:
     """任務ID驗證"""
@@ -49,7 +49,7 @@ def validate_articles_count(value: Any) -> int:
 # 通用字段定義
 TaskId = Annotated[int, BeforeValidator(validate_task_id)]
 ArticlesCount = Annotated[int, BeforeValidator(validate_articles_count)]
-Message = Annotated[Optional[str], BeforeValidator(validate_optional_str("message", 65536))]
+Message = Annotated[Optional[str], BeforeValidator(validate_str("message", max_length=65536))]
 StartTime = Annotated[datetime, BeforeValidator(lambda v: validate_datetime("start_time", v))]
 EndTime = Annotated[Optional[datetime], BeforeValidator(lambda v: validate_datetime("end_time", v))]
 Success = Annotated[bool, BeforeValidator(validate_boolean("success"))]
