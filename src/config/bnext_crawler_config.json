@@ -16,85 +16,16 @@
     "date_format": "%Y-%m-%d",
     "selectors": {
         "focus_articles": [
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "grid grid-cols-6 gap-4 relative h-full"
-                },
-                "parent": {
-                    "class": "pc hidden lg:block"
-                }
-            },
-            {
-                "tag": "h2",
-                "attrs": {},
-                "parent": {
-                    "class": "col-span-3 flex flex-col flex-grow gap-y-3 m-4"
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "flex-grow pt-4 text-lg text-gray-500"
-                },
-                "parent": {
-                    "class": "col-span-3 flex flex-col flex-grow gap-y-3 m-4"
-                }
-            },
-            {
-                "tag": "a",
-                "attrs": {},
-                "parent": {
-                    "class": "flex relative items-center gap-2 text-gray-500 text-sm"
-                }
-            },
-            {
-                "tag": "span",
-                "attrs": {},
-                "parent": {
-                    "class": "flex relative items-center gap-2 text-gray-500 text-sm"
-                },
-                "nth_child": 3
-            }
+            "div.grid.grid-cols-6.gap-4.relative.h-full",
+            "div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > h2",
+            "div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex-grow.pt-4.text-lg.text-gray-500",
+            "div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex.relative.items-center.gap-2.text-gray-500.text-sm > a"
         ],
         "regular_articles": [
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "grid grid-cols-4 gap-8 xl:gap-6"
-                },
-                "parent": {
-                    "class": "pc hidden lg:block"
-                }
-            },
-            {
-                "tag": "h2",
-                "attrs": {},
-                "parent": {
-                    "class": "flex flex-col"
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "text-sm text-justify font-normal text-gray-500 three-line-text tracking-wide"
-                }
-            },
-            {
-                "tag": "a",
-                "attrs": {},
-                "parent": {
-                    "class": "flex relative items-center gap-2 text-xs text-gray-500 font-normal"
-                }
-            },
-            {
-                "tag": "span",
-                "attrs": {},
-                "parent": {
-                    "class": "flex relative items-center gap-2 text-xs text-gray-500 font-normal"
-                },
-                "nth_child": 3
-            }
+            "div.grid.grid-cols-4.gap-8.xl\\:gap-6 > div",
+            "div > h2",
+            "div > div.text-sm.text-justify.font-normal.text-gray-500.three-line-text.tracking-wide",
+            "div.flex.relative.items-center.gap-2.text-gray-500.text-sm > a"
         ],
         "article_detail": [
             {
@@ -105,7 +36,8 @@
                 "parent": {
                     "id": "hero"
                 },
-                "purpose": "header"
+                "purpose": "header",
+                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal"
             },
             {
                 "tag": "span",
@@ -114,7 +46,8 @@
                     "class": "flex gap-1 items-center text-sm text-gray-800"
                 },
                 "nth_child": 1,
-                "purpose": "publish_date"
+                "purpose": "publish_date",
+                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > span:nth-child(1)"
             },
             {
                 "tag": "a",
@@ -122,30 +55,35 @@
                 "parent": {
                     "class": "flex gap-1 items-center text-sm text-gray-800"
                 },
-                "purpose": "category"
+                "purpose": "category",
+                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > a"
             },
             {
                 "tag": "h1",
                 "attrs": {},
-                "purpose": "title"
+                "purpose": "title",
+                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > h1"
             },
             {
                 "tag": "div",
                 "attrs": {},
                 "nth_child": 3,
-                "purpose": "summary"
+                "purpose": "summary",
+                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div:nth-child(3)"
             },
             {
                 "tag": "div",
                 "attrs": {
                     "class": "flex gap-1 flex-wrap"
                 },
-                "purpose": "tags_container"
+                "purpose": "tags_container",
+                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.flex-wrap"
             },
             {
                 "tag": "a",
                 "attrs": {},
-                "purpose": "tag"
+                "purpose": "tag",
+                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.flex-wrap > a"
             },
             {
                 "tag": "a",
@@ -153,14 +91,16 @@
                 "parent": {
                     "class": "flex gap-2 items-center text-sm text-gray-800"
                 },
-                "purpose": "author"
+                "purpose": "author",
+                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-2.items-center.text-sm.text-gray-800 > a"
             },
             {
                 "tag": "div",
                 "attrs": {
                     "class": "htmlview article-content"
                 },
-                "purpose": "content"
+                "purpose": "content",
+                "selector": "div.htmlview.article-content"
             },
             {
                 "tag": "p",
@@ -178,7 +118,8 @@
                 "parent": {
                     "tag": "blockquote"
                 },
-                "purpose": "related_links"
+                "purpose": "related_links",
+                "selector": "div.htmlview.article-content > blockquote > p > a"
             }
         ],
         "common_elements": [
@@ -189,19 +130,19 @@
             {
                 "tag": "div",
                 "attrs": {
-                    "class": "author"
+                    "class": [
+                        "author",
+                        "writer"
+                    ]
                 }
             },
             {
                 "tag": "div",
                 "attrs": {
-                    "class": "read-count"
-                }
-            },
-            {
-                "tag": "a",
-                "attrs": {
-                    "href": "/article/"
+                    "class": [
+                        "read-count",
+                        "view-count"
+                    ]
                 }
             }
         ],
@@ -209,19 +150,11 @@
             {
                 "tag": "div",
                 "attrs": {
-                    "class": "article-card"
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "article-item"
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "article-list-item"
+                    "class": [
+                        "article-card",
+                        "article-item",
+                        "article-list-item"
+                    ]
                 }
             },
             {
@@ -297,16 +230,21 @@
         ],
         "title": [
             {
-                "tag": "h1",
+                "tag": "div",
                 "attrs": {
-                    "class": "article-title"
+                    "class": [
+                        "title",
+                        "article-title"
+                    ]
                 }
             },
             {
-                "tag": "h1",
-                "attrs": {
-                    "class": "post-title"
-                }
+                "tag": "h2",
+                "attrs": {}
+            },
+            {
+                "tag": "h3",
+                "attrs": {}
             }
         ],
         "author": [
@@ -362,6 +300,36 @@
                 "tag": "a",
                 "attrs": {
                     "class": "next-page"
+                }
+            }
+        ],
+        "summary": [
+            {
+                "tag": "div",
+                "attrs": {
+                    "class": [
+                        "text-gray-500",
+                        "summary",
+                        "excerpt",
+                        "description"
+                    ]
+                }
+            }
+        ],
+        "category": [
+            {
+                "tag": "a",
+                "attrs": {
+                    "class": [
+                        "category",
+                        "tag"
+                    ]
+                }
+            },
+            {
+                "tag": "a",
+                "attrs": {
+                    "href": "/categories/"
                 }
             }
         ]

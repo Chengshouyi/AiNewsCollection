@@ -1,56 +1,81 @@
-from typing import Dict, Any, Optional
+from typing import Dict, Type, Optional, Any
+from .site_config import SiteConfig
+import logging
 
-from src.crawlers.base_crawler import BaseCrawler
-from src.crawlers.bnext_crawler import BnextCrawler
-from src.crawlers.site_config import SiteConfig
-from src.crawlers.bnext_config import BNEXT_CONFIG
+logger = logging.getLogger(__name__)
 
 class CrawlerFactory:
-    """爬蟲工廠類，負責創建各種爬蟲實例"""
+    _crawler_types: Dict[str, Dict[str, Any]] = {}
     
-    def __init__(self):
-        # 註冊所有支持的爬蟲類型
-        self.crawler_types = {
-            'bnext': BnextCrawler,
-            # 可以添加其他爬蟲類型
-        }
-        
-        # 默認配置
-        self.default_configs = {
-            'bnext': BNEXT_CONFIG,
-            # 可以添加其他爬蟲的默認配置
-        }
-        
-    def get_crawler(self, crawler_type: str, config: Optional[Dict[str, Any]] = None) -> BaseCrawler:
+    @classmethod
+    def register_crawler_type(
+        cls, 
+        name: str, 
+        crawler_class: Type, 
+        default_config: Optional[SiteConfig] = None
+    ):
         """
-        根據類型和配置創建爬蟲實例
+        動態註冊爬蟲類型
         
         Args:
-            crawler_type: 爬蟲類型，如 'bnext'
-            config: 爬蟲配置，如果為None則使用默認配置
-            
-        Returns:
-            對應類型的爬蟲實例
-        
-        Raises:
-            ValueError: 如果爬蟲類型不支持
+            name (str): 爬蟲名稱
+            crawler_class (Type): 爬蟲類
+            default_config (Optional[SiteConfig]): 預設配置
         """
-        if crawler_type not in self.crawler_types:
-            raise ValueError(f"不支持的爬蟲類型: {crawler_type}")
+        if name in cls._crawler_types:
+            logger.warning(f"覆蓋已存在的爬蟲類型: {name}")
             
-        crawler_class = self.crawler_types[crawler_type]
+        cls._crawler_types[name] = {
+            'class': crawler_class,
+            'config': default_config
+        }
+        logger.info(f"註冊爬蟲類型: {name}")
+
+    @classmethod
+    def get_crawler(
+        cls, 
+        name: str, 
+        config: Optional[SiteConfig] = None,
+        **kwargs
+    ):
+        """
+        獲取特定爬蟲實例
         
-        # 使用提供的配置或默認配置
-        site_config = SiteConfig(**config) if config else self.default_configs[crawler_type]
+        Args:
+            name (str): 爬蟲名稱
+            config (Optional[SiteConfig]): 自定義配置
+            **kwargs: 其他參數傳遞給爬蟲初始化
         
-        return crawler_class(site_config)
+        Returns:
+            爬蟲實例
+        """
+        crawler_info = cls._crawler_types.get(name)
+        if not crawler_info:
+            available = ", ".join(cls._crawler_types.keys())
+            raise ValueError(f"未找到 {name} 爬蟲。可用爬蟲: {available}")
         
-    def get_supported_crawler_types(self):
-        """獲取所有支持的爬蟲類型列表"""
-        return list(self.crawler_types.keys())
+        crawler_class = crawler_info['class']
+        default_config = crawler_info.get('config')
         
-    def register_crawler_type(self, type_name: str, crawler_class, default_config: Optional[SiteConfig] = None):
-        """註冊新的爬蟲類型"""
-        self.crawler_types[type_name] = crawler_class
-        if default_config is not None:
-            self.default_configs[type_name] = default_config 
+        # 優先使用傳入配置，其次使用預設配置
+        final_config = config or default_config
+        
+        # 檢查配置有效性
+        if final_config and hasattr(final_config, 'validate'):
+            if not final_config.validate():
+                logger.warning(f"爬蟲配置驗證失敗: {name}")
+        
+        # 創建爬蟲實例
+        try:
+            if final_config:
+                return crawler_class(config=final_config, **kwargs)
+            else:
+                return crawler_class(**kwargs)
+        except Exception as e:
+            logger.error(f"創建爬蟲實例失敗: {str(e)}")
+            raise
+    
+    @classmethod
+    def list_available_crawlers(cls):
+        """列出所有可用的爬蟲類型"""
+        return list(cls._crawler_types.keys()) 

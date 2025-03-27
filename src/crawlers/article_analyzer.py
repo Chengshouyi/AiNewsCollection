@@ -2,13 +2,17 @@
 # 用於分析文章是否與AI相關的
 
 import pandas as pd
+import logging
+from typing import Dict, Union, List, Any
 from src.crawlers.ai_filter_config import AI_KEYWORDS, AI_CATEGORIES
 
-class ArticleAnalyzer:
-    def __init__(self):
-        pass
+logger = logging.getLogger(__name__)
 
-    def is_ai_related(self, article_info, min_keywords=3, check_content=True):
+class ArticleAnalyzer:
+    """處理文章AI內容相關性分析的類別"""
+    
+    @staticmethod
+    def is_ai_related(article_info: Dict[str, Any], min_keywords: int = 3, check_content: bool = True) -> bool:
         """
         判斷文章是否與AI相關
     
@@ -33,10 +37,17 @@ class ArticleAnalyzer:
                 return True
         
         # 3. 檢查標籤是否包含AI關鍵字
-        if article_info.get('tags') and isinstance(article_info['tags'], list):
-            tags_lower = [tag.lower() for tag in article_info['tags']]
-            if any(any(keyword in tag for keyword in AI_KEYWORDS) for tag in tags_lower):
-                return True
+        if article_info.get('tags'):
+            tags = article_info['tags']
+            # 處理標籤可能是列表或字符串的情況
+            if isinstance(tags, str) and tags:
+                tags_list = [tag.strip().lower() for tag in tags.split(',')]
+                if any(any(keyword in tag for keyword in AI_KEYWORDS) for tag in tags_list):
+                    return True
+            elif isinstance(tags, list):
+                tags_lower = [tag.lower() for tag in tags]
+                if any(any(keyword in tag for keyword in AI_KEYWORDS) for tag in tags_lower):
+                    return True
         
         # 4. 檢查內容是否包含足夠的AI關鍵字
         if check_content and article_info.get('content'):
@@ -47,7 +58,8 @@ class ArticleAnalyzer:
         
         return False
 
-    def analyze_articles_statistics(self, articles_df, ai_only=True):
+    @staticmethod
+    def analyze_articles_statistics(articles_df: pd.DataFrame, ai_only: bool = True) -> Dict[str, Any]:
         """
         分析文章統計數據
         
@@ -56,28 +68,25 @@ class ArticleAnalyzer:
         ai_only (bool): 是否只分析AI相關文章
         
         Returns:
-        None: 在控制台輸出分析結果
+        Dict[str, Any]: 包含分析結果的字典
         """
-        # 輸出基本統計資訊
-        print("\n基本統計資訊:")
-        print(f"總文章數: {len(articles_df)}")
+        # 獲取基本統計資訊
+        stats: Dict[str, Any] = {
+            'total_articles': len(articles_df)
+        }
         
         # 計算平均文章長度
         if 'content_length' in articles_df.columns:
             avg_length = articles_df['content_length'].mean()
-            print(f"平均文章長度: {avg_length:.2f} 字符")
+            stats['avg_article_length'] = int(round(avg_length, 2))
         
         # 統計分類分布
         if 'category' in articles_df.columns:
-            category_counts = articles_df['category'].value_counts()
-            print("\n分類分布:")
-            for cat, count in category_counts.items():
-                if pd.notna(cat):
-                    print(f"  {cat}: {count} 篇")
+            category_counts = articles_df['category'].value_counts().to_dict()
+            stats['category_distribution'] = category_counts
         
-        # 輸出AI關鍵字統計
+        # 統計AI關鍵字出現頻率
         if ai_only and 'content' in articles_df.columns:
-            print("\nAI關鍵字出現頻率:")
             keyword_counts = {}
             for _, row in articles_df.iterrows():
                 content = str(row['content']).lower()
@@ -85,7 +94,28 @@ class ArticleAnalyzer:
                     if keyword in content:
                         keyword_counts[keyword] = keyword_counts.get(keyword, 0) + 1
             
-            # 排序並顯示前20個最常出現的關鍵字
+            # 排序並獲取前20個最常出現的關鍵字
             sorted_keywords = sorted(keyword_counts.items(), key=lambda x: x[1], reverse=True)[:20]
-            for keyword, count in sorted_keywords:
-                print(f"  {keyword}: {count} 篇")
+            stats['ai_keyword_frequency'] = dict(sorted_keywords)
+        
+        return stats
+
+    @staticmethod
+    def print_statistics(stats: Dict[str, Any]) -> None:
+        """輸出統計數據到日誌"""
+        logger.info("基本統計資訊:")
+        logger.info(f"總文章數: {stats['total_articles']}")
+        
+        if 'avg_article_length' in stats:
+            logger.info(f"平均文章長度: {stats['avg_article_length']} 字符")
+        
+        if 'category_distribution' in stats:
+            logger.info("分類分布:")
+            for cat, count in stats['category_distribution'].items():
+                if pd.notna(cat):
+                    logger.info(f"  {cat}: {count} 篇")
+        
+        if 'ai_keyword_frequency' in stats:
+            logger.info("AI關鍵字出現頻率:")
+            for keyword, count in stats['ai_keyword_frequency'].items():
+                logger.info(f"  {keyword}: {count} 篇")

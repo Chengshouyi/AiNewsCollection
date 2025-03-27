@@ -1,12 +1,16 @@
 from abc import ABC, abstractmethod
-from typing import Dict
+from typing import Dict, Optional
 import pandas as pd
 from src.crawlers.site_config import SiteConfig
 from datetime import datetime
+import logging
+import time
+
+logger = logging.getLogger(__name__)
 
 class BaseCrawler(ABC):
-    def __init__(self, config: SiteConfig, crawler_type: str):
-        self.site_config = config
+    def __init__(self, site_config, crawler_type: str):
+        self.site_config = site_config
         self.task_status = {}
         self.crawler_type = crawler_type
 
@@ -25,9 +29,9 @@ class BaseCrawler(ABC):
         pass
 
     @abstractmethod
-    def save_data(self, data: pd.DataFrame):
+    def save_data(self, data: pd.DataFrame, save_to_csv: bool = False, csv_path: Optional[str] = None):
         """
-        保存數據，子類別需要實作
+        保存數據，支持保存到數據庫和CSV文件
         """
         pass
 
@@ -60,15 +64,28 @@ class BaseCrawler(ABC):
                 
             # 步驟3：保存數據
             self._update_task_status(task_id, 80, '保存數據中...')
-            if db_manager:
-                self.save_data(detailed_df)
+            save_to_csv = task_args.get('save_to_csv', False)
+            csv_path = task_args.get('csv_path', f'articles_{task_id}.csv')
+            
+            self.save_data(detailed_df, save_to_csv, csv_path)
                 
             self._update_task_status(task_id, 100, '任務完成', 'completed')
             return detailed_df
             
         except Exception as e:
             self._update_task_status(task_id, 0, f'任務失敗: {str(e)}', 'failed')
+            logger.error(f"執行任務失敗 (ID={task_id}): {str(e)}", exc_info=True)
             raise e
+    
+    def _update_task_status(self, task_id: int, progress: int, message: str, status: Optional[str] = None):
+        """更新任務狀態"""
+        if task_id in self.task_status:
+            self.task_status[task_id]['progress'] = progress
+            self.task_status[task_id]['message'] = message
+            if status:
+                self.task_status[task_id]['status'] = status
+                
+            logger.info(f"任務進度更新 (ID={task_id}): {progress}%, {message}")
     
     def get_task_status(self, task_id: int):
         """獲取任務狀態"""
@@ -77,15 +94,20 @@ class BaseCrawler(ABC):
             'progress': 0,
             'message': '任務不存在'
         })
-    
-    def _update_task_status(self, task_id: int, progress: int, message: str, status: str = 'running'):
-        """更新任務狀態"""
-        if task_id in self.task_status:
-            self.task_status[task_id].update({
-                'status': status,
-                'progress': progress,
-                'message': message,
-                'update_time': datetime.now()
-            })
+        
+    def retry_operation(self, operation, max_retries=3, retry_delay=2):
+        """重試操作的通用方法"""
+        retries = 0
+        while retries < max_retries:
+            try:
+                return operation()
+            except Exception as e:
+                retries += 1
+                if retries >= max_retries:
+                    logger.error(f"操作失敗，已重試 {retries} 次: {str(e)}")
+                    raise e
+                
+                logger.warning(f"操作失敗，正在重試 ({retries}/{max_retries}): {str(e)}")
+                time.sleep(retry_delay)
 
    

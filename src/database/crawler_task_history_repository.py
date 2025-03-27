@@ -37,7 +37,7 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         processed_data = entity_data.copy()
         
         # 檢查必填欄位
-        required_fields = []
+        required_fields = ['published_at']
         
         # 如果是更新操作，從現有實體中補充必填欄位
         if existing_entity:
@@ -275,4 +275,18 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
                 preserve_exceptions=[]
             )
             logger.error(f"更新歷史記錄狀態時發生錯誤: {e}")
-            return False 
+            return False
+
+    def get_latest_by_task_id(self, task_id: int) -> Optional[CrawlerTaskHistory]:
+        """獲取指定任務的最新一筆歷史記錄"""
+        try:
+            result = self.session.query(self.model_class).\
+                filter(self.model_class.task_id == task_id).\
+                order_by(self.model_class.created_at.desc()).\
+                first()
+            return result
+        except Exception as e:
+            self.session.rollback()
+            error_msg = f"獲取最新歷史記錄失敗, task_id={task_id}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            raise DatabaseOperationError(error_msg) from e 

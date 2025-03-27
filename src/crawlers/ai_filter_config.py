@@ -1,7 +1,8 @@
 # AI相關常數和設定
+from typing import Set
 
 # AI相關關鍵字集合，用於篩選文章
-AI_KEYWORDS = {
+AI_KEYWORDS: Set[str] = {
     # 一般AI技術名詞
     'ai', '人工智能', '人工智慧', '機器學習', 'machine learning', 'ml', 'deep learning', '深度學習',
     '神經網絡', '神經網路', 'neural network', '大型語言模型', 'llm', 'large language model',
@@ -26,7 +27,25 @@ AI_KEYWORDS = {
 }
 
 # AI相關的分類名稱
-AI_CATEGORIES = {
+AI_CATEGORIES: Set[str] = {
     'ai', 'artificial intelligence', '人工智能', '人工智慧', '機器學習', 'machine learning',
     'deep learning', '深度學習', '大語言模型', 'llm', '生成式ai'
 }
+
+# 優先級高的關鍵字 - 這些出現即可判定為AI相關
+HIGH_PRIORITY_KEYWORDS: Set[str] = {
+    'chatgpt', 'gpt-4', 'gpt-3', 'claude', 'gemini', 'llama', 'midjourney', 'stable diffusion',
+    '大語言模型', 'llm', '生成式ai', 'generative ai', '人工智慧'
+}
+
+def register_additional_keywords(*keywords: str) -> None:
+    """註冊額外的AI關鍵字"""
+    global AI_KEYWORDS
+    for keyword in keywords:
+        AI_KEYWORDS.add(keyword.lower())
+
+def register_additional_categories(*categories: str) -> None:
+    """註冊額外的AI分類"""
+    global AI_CATEGORIES
+    for category in categories:
+        AI_CATEGORIES.add(category.lower())

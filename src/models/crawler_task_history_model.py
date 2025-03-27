@@ -16,6 +16,8 @@ class CrawlerTaskHistory(Base, BaseEntity):
     - success: 是否成功
     - message: 訊息
     - articles_count: 文章數量
+    - created_at: 建立時間
+    - updated_at: 更新時間
     """
     __tablename__ = 'crawler_task_history'
 
@@ -47,11 +49,23 @@ class CrawlerTaskHistory(Base, BaseEntity):
         default=0,
         nullable=False
     )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, 
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False
+    )
+    updated_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime,
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
 
     # 關聯到爬蟲任務
     task = relationship("CrawlerTasks", back_populates="history", lazy="joined")
 
     def __init__(self, **kwargs):
+        # 設置默認值
+        if 'created_at' not in kwargs:
+            kwargs['created_at'] = datetime.now(timezone.utc)
         if 'start_time' not in kwargs:
             kwargs['start_time'] = datetime.now(timezone.utc)
         if 'success' not in kwargs:
