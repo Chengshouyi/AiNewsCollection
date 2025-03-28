@@ -4,6 +4,7 @@ from src.models.base_model import Base
 from typing import Optional
 from datetime import datetime, timezone
 from .base_entity import BaseEntity
+from src.config import get_system_process_timezone
 
 class CrawlerTasks(Base, BaseEntity):
     """爬蟲任務模型
@@ -68,13 +69,13 @@ class CrawlerTasks(Base, BaseEntity):
         default=False,
         nullable=False
     )
-    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     last_run_success: Mapped[Optional[bool]] = mapped_column(Boolean)
     last_run_message: Mapped[Optional[str]] = mapped_column(Text)
     cron_expression: Mapped[Optional[str]] = mapped_column(VARCHAR(255))
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 
-        default=lambda: datetime.now(timezone.utc),
+        default=lambda: datetime.now(get_system_process_timezone()),
         nullable=False
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(

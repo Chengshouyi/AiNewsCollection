@@ -2,10 +2,11 @@ from .base_repository import BaseRepository, SchemaType
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
 from typing import List, Optional, Type, Any, Dict
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
+from src.config import get_system_process_timezone
 import logging
-from pydantic import ValidationError
+from src.error.errors import ValidationError
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -22,39 +23,30 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             return CrawlerTasksUpdateSchema
         raise ValueError(f"未支援的 schema 類型: {schema_type}")
 
-    def _validate_required_fields(self, entity_data: Dict[str, Any], existing_entity: Optional[CrawlerTasks] = None) -> Dict[str, Any]:
-        """
-        驗證並補充必填欄位
+    def _validate_required_fields(self, entity_data: Any, existing_entity: Optional[CrawlerTasks] = None) -> Dict[str, Any]:
+        """驗證並補充必填欄位"""
+        # 轉換為字典
+        if isinstance(entity_data, dict):
+            processed_data = entity_data.copy()
+        elif hasattr(entity_data, 'dict') and callable(entity_data.dict):
+            # 處理 Pydantic 模型
+            processed_data = entity_data.dict(exclude_unset=True)
+        elif hasattr(entity_data, '__dict__'):
+            # 處理普通物件
+            processed_data = {k: v for k, v in entity_data.__dict__.items() 
+                             if not k.startswith('_')}
+        else:
+            raise ValidationError("無效的資料格式，需要字典或支援轉換的物件")
         
-        Args:
-            entity_data: 實體資料
-            existing_entity: 現有實體 (用於更新時)
+        # 檢查必填欄位
+        if not existing_entity:  # 只在創建時檢查
+            if 'crawler_id' not in processed_data or not processed_data.get('crawler_id'):
+                raise ValidationError("crawler_id: 不能為空")
             
-        Returns:
-            處理後的實體資料
-        """
-        # 深度複製避免修改原始資料
-        processed_data = entity_data.copy()
-        
-        # 檢查必填欄位，必須移除不可更新的欄位
-        required_fields = ['schedule', 'is_auto']
-        
-        # 如果是更新操作，從現有實體中補充必填欄位
-        if existing_entity:
-            for field in required_fields:
-                if field not in processed_data and hasattr(existing_entity, field):
-                    processed_data[field] = getattr(existing_entity, field)
-        
-        # 檢查是否仍然缺少必填欄位
-        missing_fields = [field for field in required_fields if field not in processed_data or processed_data[field] is None]
-        if missing_fields:
-            raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
-            
-        # 檢查 schedule 是否有效
-        if 'schedule' in processed_data:
-            valid_schedules = ['hourly', 'daily', 'weekly']
-            if processed_data['schedule'] not in valid_schedules:
-                raise ValidationError(f"無效的排程類型 '{processed_data['schedule']}'，有效選項為: {', '.join(valid_schedules)}")
+        # 檢查 cron_expression
+        if processed_data.get('is_auto') is True:
+            if 'cron_expression' not in processed_data or not processed_data.get('cron_expression'):
+                raise ValidationError("當設定為自動執行時，cron_expression 不能為空")
             
         return processed_data
 
@@ -159,7 +151,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
     def _toggle_status(self, task: CrawlerTasks, field: str) -> bool:
         """內部方法：切換狀態"""
         setattr(task, field, not getattr(task, field))
-        task.updated_at = datetime.now()
+        task.updated_at = datetime.now(timezone.utc)
         self.session.commit()
         return True
         
@@ -170,12 +162,13 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             return False
             
         def update_last_run_status():
-            # 確保同時更新所有執行相關的欄位
-            task.last_run_at = datetime.now()
+            # 使用 UTC 時間
+            now = datetime.now(timezone.utc)
+            task.last_run_at = now
             task.last_run_success = success
             if message:
                 task.last_run_message = message
-            task.updated_at = datetime.now()
+            task.updated_at = now
             self.session.commit()
             return True
             
@@ -198,7 +191,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
     def _update_field(self, task: CrawlerTasks, field: str, value: Any) -> bool:
         """內部方法：更新欄位"""
         setattr(task, field, value)
-        task.updated_at = datetime.now()
+        task.updated_at = datetime.now(timezone.utc)
         self.session.commit()
         return True
     
@@ -229,59 +222,78 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             err_msg=f"獲取爬蟲ID {crawler_id} 的任務數量時發生錯誤"
         )
 
-    def find_tasks_by_schedule(self, schedule: str) -> List[CrawlerTasks]:
-        """根據排程類型查詢任務"""
-        if schedule not in ['hourly', 'daily', 'weekly']:
-            raise ValueError("無效的排程類型")
-            
+    def find_tasks_by_cron_expression(self, cron_expression: str) -> List[CrawlerTasks]:
+        """根據 cron 表達式查詢任務"""
+        try:
+            # 驗證 cron 表達式
+            from croniter import croniter
+            croniter(cron_expression)
+        except ValueError:
+            error_msg = f"無效的 cron 表達式: {cron_expression}"
+            logger.error(error_msg)
+            raise ValidationError(error_msg)
+        
         return self.execute_query(
             lambda: self.session.query(self.model_class).filter_by(
-                schedule=schedule,
+                cron_expression=cron_expression,
                 is_auto=True  # 只查詢自動執行的任務
             ).all(),
-            err_msg=f"查詢 {schedule} 排程的任務時發生錯誤"
+            err_msg=f"查詢 cron 表達式 {cron_expression} 的任務時發生錯誤"
         )
 
-    def find_pending_tasks(self, schedule: str) -> List[CrawlerTasks]:
-        """查詢需要執行的任務（根據排程和上次執行時間）"""
-        if schedule not in ['hourly', 'daily', 'weekly']:
-            raise ValueError("無效的排程類型")
-            
+    def find_pending_tasks(self, cron_expression: str) -> List[CrawlerTasks]:
+        """查詢需要執行的任務（根據 cron 表達式和上次執行時間）"""
+        try:
+            from croniter import croniter
+            croniter(cron_expression)
+        except ValueError:
+            error_msg = f"無效的 cron 表達式: {cron_expression}"
+            logger.error(error_msg)
+            raise ValidationError(error_msg)
+        
         def get_pending_tasks():
-            # 把時間計算邏輯移到 Python 層面，而不是在 SQL 層面
             all_tasks = self.session.query(self.model_class).filter(
-                self.model_class.schedule == schedule,
+                self.model_class.cron_expression == cron_expression,
                 self.model_class.is_auto == True
             ).all()
             
-            # 在 Python 中進行時間比較
-            now = datetime.now()
+            # 使用 UTC 時間
+            now = datetime.now(get_system_process_timezone())
             result_tasks = []
             
             for task in all_tasks:
-                # 從未執行的任務
+                # 從未執行的任務直接加入
                 if task.last_run_at is None:
                     result_tasks.append(task)
                     continue
                     
-                # 根據排程類型檢查時間差
-                if schedule == 'hourly' and (now - task.last_run_at > timedelta(hours=1)):
-                    result_tasks.append(task)
-                elif schedule == 'daily' and (now - task.last_run_at > timedelta(days=1)):
-                    result_tasks.append(task)
-                elif schedule == 'weekly' and (now - task.last_run_at > timedelta(weeks=1)):
+                # 確保 last_run_at 也是帶時區的
+                last_run = task.last_run_at
+                if last_run.tzinfo is None:
+                    # 如果 last_run_at 沒有時區信息，假設它是 UTC
+                    last_run = last_run.replace(tzinfo=get_system_process_timezone())
+                    
+                # 使用 croniter 計算下次執行時間（使用 UTC）
+                cron = croniter(cron_expression, last_run)
+                next_run = cron.get_next(datetime)
+                # 確保 next_run 也有時區
+                if next_run.tzinfo is None:
+                    next_run = next_run.replace(tzinfo=get_system_process_timezone())
+                    
+                # 只有下次執行時間已經過了，才加入待執行列表
+                if next_run <= now:
                     result_tasks.append(task)
                     
             return result_tasks
             
         return self.execute_query(
             get_pending_tasks,
-            err_msg=f"查詢待執行的 {schedule} 排程任務時發生錯誤"
+            err_msg=f"查詢待執行的 cron 表達式 {cron_expression} 的任務時發生錯誤"
         )
 
     def get_failed_tasks(self, days: int = 1) -> List[CrawlerTasks]:
         """獲取最近失敗的任務"""
-        time_threshold = datetime.now() - timedelta(days=days)
+        time_threshold = datetime.now(timezone.utc) - timedelta(days=days)
         
         return self.execute_query(
             lambda: self.session.query(self.model_class).filter(
@@ -290,3 +302,9 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             ).order_by(self.model_class.last_run_at.desc()).all(),
             err_msg=f"查詢最近 {days} 天失敗的任務時發生錯誤"
         )
+
+    def convert_to_local_time(self, utc_time, timezone_str='Asia/Taipei'):
+        """將 UTC 時間轉換為指定時區時間"""
+        import pytz
+        local_tz = pytz.timezone(timezone_str)
+        return utc_time.astimezone(local_tz)

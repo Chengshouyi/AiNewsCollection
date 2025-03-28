@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from .base_entity import BaseEntity
 
 class Crawlers(Base, BaseEntity):
-    """爬蟲設定模型
+    """爬蟲設定模型for 管理及實例化特定爬蟲
     
     欄位說明：
     - id: 主鍵

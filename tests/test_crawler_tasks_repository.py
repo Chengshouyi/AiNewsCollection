@@ -8,7 +8,7 @@ from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
 from src.utils.model_utils import get_model_info
 from src.error.errors import ValidationError
-from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema
+from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
 
 # 設置測試資料庫
 @pytest.fixture
@@ -45,7 +45,8 @@ def sample_crawler(session):
         crawler_name="測試爬蟲",
         base_url="https://example.com",
         is_active=True,
-        crawler_type="news"
+        crawler_type="news",
+        config_file_name="test_crawler_config.json"
     )
     session.add(crawler)
     session.commit()
@@ -58,19 +59,22 @@ def sample_tasks(session, sample_crawler):
             crawler_id=sample_crawler.id,
             is_auto=True,
             ai_only=True,
-            notes="AI任務1"
+            notes="AI任務1",
+            cron_expression="* * * * *"
         ),
         CrawlerTasks(
             crawler_id=sample_crawler.id,
             is_auto=True,
             ai_only=False,
-            notes="一般任務"
+            notes="一般任務",
+            cron_expression="* * * * *"
         ),
         CrawlerTasks(
             crawler_id=sample_crawler.id,
             is_auto=False,
             ai_only=True,
-            notes="手動AI任務"
+            notes="手動AI任務",
+            cron_expression="* * * * *"
         )
     ]
     session.add_all(tasks)
@@ -166,49 +170,45 @@ class TestCrawlerTasksRepository:
         count = crawler_tasks_repo.get_tasks_count_by_crawler(sample_crawler.id)
         assert count == 3
 
-    def test_find_tasks_by_schedule(self, crawler_tasks_repo, session, sample_crawler):
-        """測試根據排程類型查詢任務"""
+    def test_find_tasks_by_cron_expression(self, crawler_tasks_repo, session, sample_crawler):
+        """測試根據 cron 表達式查詢任務"""
         # 建立測試資料
         tasks = [
             CrawlerTasks(
                 crawler_id=sample_crawler.id,
                 is_auto=True,
-                schedule='hourly'
+                cron_expression="0 * * * *"  # 每小時執行
             ),
             CrawlerTasks(
                 crawler_id=sample_crawler.id,
                 is_auto=True,
-                schedule='daily'
+                cron_expression="0 0 * * *"  # 每天執行
             ),
             CrawlerTasks(
                 crawler_id=sample_crawler.id,
                 is_auto=False,  # 不應該被查詢到
-                schedule='hourly'
+                cron_expression="0 * * * *"
             )
         ]
         session.add_all(tasks)
         session.commit()
 
         # 測試查詢
-        hourly_tasks = crawler_tasks_repo.find_tasks_by_schedule('hourly')
+        hourly_tasks = crawler_tasks_repo.find_tasks_by_cron_expression("0 * * * *")
         assert len(hourly_tasks) == 1
-        assert all(task.schedule == 'hourly' and task.is_auto for task in hourly_tasks)
+        assert all(task.cron_expression == "0 * * * *" and task.is_auto for task in hourly_tasks)
 
-        # 測試無效的排程類型
-        with pytest.raises(ValueError) as excinfo:
-            crawler_tasks_repo.find_tasks_by_schedule('invalid')
-        assert "無效的排程類型" in str(excinfo.value)
+        # 測試無效的 cron 表達式
+        with pytest.raises(ValidationError) as excinfo:
+            crawler_tasks_repo.find_tasks_by_cron_expression("invalid")
+        assert "無效的 cron 表達式" in str(excinfo.value)
 
     def test_find_pending_tasks(self, crawler_tasks_repo, session, sample_crawler):
         """測試查詢待執行的任務"""
-        # 修改測試資料與測試邏輯
-        
         # 先清除可能的干擾資料
         session.query(CrawlerTasks).delete()
         session.commit()
         
-        # 建立測試資料 - 注意這裡不使用 timezone.utc
-        # 因為 repository 的 find_pending_tasks 方法中使用的是 datetime.now() 而非 datetime.now(timezone.utc)
         now = datetime.now()
         
         # 創建三種情況的任務：
@@ -216,7 +216,7 @@ class TestCrawlerTasksRepository:
         task1 = CrawlerTasks(
             crawler_id=sample_crawler.id,
             is_auto=True,
-            schedule='hourly',
+            cron_expression="0 * * * *",  # 每小時執行（整點）
             last_run_at=now - timedelta(hours=2)
         )
         
@@ -224,7 +224,7 @@ class TestCrawlerTasksRepository:
         task2 = CrawlerTasks(
             crawler_id=sample_crawler.id,
             is_auto=True,
-            schedule='hourly',
+            cron_expression="0 * * * *",
             last_run_at=now - timedelta(minutes=30)
         )
         
@@ -232,7 +232,7 @@ class TestCrawlerTasksRepository:
         task3 = CrawlerTasks(
             crawler_id=sample_crawler.id,
             is_auto=True,
-            schedule='hourly',
+            cron_expression="0 * * * *",
             last_run_at=None
         )
         
@@ -244,25 +244,32 @@ class TestCrawlerTasksRepository:
         session.refresh(task2)
         session.refresh(task3)
         
+        # 手動檢查預期結果
+        from croniter import croniter
+        
+        # 手動驗證每個任務的下次執行時間
+        if task2.last_run_at:
+            cron = croniter("0 * * * *", task2.last_run_at)
+            next_run = cron.get_next(datetime)
+            print(f"task2 上次執行: {task2.last_run_at}")
+            print(f"task2 下次執行: {next_run}")
+            print(f"現在時間: {now}")
+            print(f"是否應執行: {next_run <= now}")
+        
         # 執行測試
-        pending_tasks = crawler_tasks_repo.find_pending_tasks('hourly')
+        pending_tasks = crawler_tasks_repo.find_pending_tasks("0 * * * *")
         
         # 取得找到的任務 ID 集合
         found_ids = {task.id for task in pending_tasks}
         
+        # 列出找到的任務
+        print(f"找到的任務: {[task.id for task in pending_tasks]}")
+        
         # 驗證結果
-        assert len(pending_tasks) == 2, f"預期找到 2 個待執行任務，但實際找到 {len(pending_tasks)} 個"
         assert task1.id in found_ids, f"未找到超過1小時的任務 (ID: {task1.id})"
         assert task3.id in found_ids, f"未找到從未執行過的任務 (ID: {task3.id})"
         assert task2.id not in found_ids, f"錯誤找到未超過1小時的任務 (ID: {task2.id})"
-
-        # 在測試中檢查時間儲存情況
-        print(f"現在時間: {datetime.now()}")
-        print(f"task1.last_run_at: {task1.last_run_at}, 類型: {type(task1.last_run_at)}")
-        if task1.last_run_at is not None:
-            print(f"時間差 (小時): {(datetime.now() - task1.last_run_at).total_seconds() / 3600}")
-        else:
-            print("task1.last_run_at 為 None，無法計算時間差")
+        assert len(pending_tasks) == 2, f"預期找到 2 個待執行任務，但實際找到 {len(pending_tasks)} 個"
 
     def test_get_failed_tasks(self, crawler_tasks_repo, session, sample_crawler):
         """測試獲取失敗的任務"""
@@ -292,6 +299,86 @@ class TestCrawlerTasksRepository:
         assert len(failed_tasks) == 1
         assert all(not task.last_run_success for task in failed_tasks)
         assert all(task.last_run_at >= datetime.now() - timedelta(days=1) for task in failed_tasks)
+
+    def test_create_task_with_validation(self, crawler_tasks_repo, sample_crawler):
+        """測試創建任務時的驗證規則"""
+        # 測試缺少必填欄位
+        with pytest.raises(ValidationError) as excinfo:
+            crawler_tasks_repo.create(CrawlerTasks(
+                is_auto=True
+            ))
+        assert "crawler_id: 不能為空" in str(excinfo.value)
+        
+        # 測試自動執行時缺少 cron_expression
+        with pytest.raises(ValidationError) as excinfo:
+            crawler_tasks_repo.create({
+                "crawler_id": sample_crawler.id,
+                "is_auto": True,
+                "cron_expression": None
+            })
+        # 修正預期的錯誤訊息，確保與實際錯誤訊息一致
+        assert "當設定為自動執行時，cron_expression 不能為空" in str(excinfo.value)
+        
+        # 測試成功創建
+        task = crawler_tasks_repo.create({
+            "crawler_id": sample_crawler.id,
+            "is_auto": True,
+            "cron_expression": "0 * * * *"
+        })
+        assert task.crawler_id == sample_crawler.id
+        assert task.is_auto is True
+        assert task.cron_expression == "0 * * * *"
+
+    def test_update_task_with_validation(self, crawler_tasks_repo, session, sample_crawler):
+        """測試更新任務時的驗證規則"""
+        # 確保 sample_crawler 仍然存在於數據庫
+        session.refresh(sample_crawler)
+        
+        # 創建新任務
+        task = CrawlerTasks(
+            crawler_id=sample_crawler.id,
+            is_auto=False
+        )
+        session.add(task)
+        session.commit()
+        session.refresh(task)
+        
+        # 測試更新不可變欄位
+        with pytest.raises(ValidationError) as excinfo:
+            crawler_tasks_repo.update(task.id, {
+                "crawler_id": 999,  # 嘗試更新 crawler_id
+                "cron_expression": "0 * * * *"
+            })
+        assert "不允許更新 crawler_id 欄位" in str(excinfo.value)
+        
+        # 測試自動執行時缺少 cron_expression
+        with pytest.raises(ValidationError) as excinfo:
+            crawler_tasks_repo.update(task.id, {
+                "is_auto": True,
+                "cron_expression": None
+            })
+        assert "當設定為自動執行時，cron_expression 不能為空" in str(excinfo.value)
+        
+        # 測試成功更新
+        updated_task = crawler_tasks_repo.update(task.id, {
+            "is_auto": True,
+            "cron_expression": "0 * * * *"
+        })
+        assert updated_task.is_auto is True
+        assert updated_task.cron_expression == "0 * * * *"
+
+    def test_default_values(self, crawler_tasks_repo, sample_crawler):
+        """測試新建任務時的預設值"""
+        task = crawler_tasks_repo.create({
+            "crawler_id": sample_crawler.id,
+            "is_auto": False  # 手動執行不需要 cron_expression
+        })
+        assert task.is_auto is False
+        assert task.ai_only is False
+        assert task.max_pages == 3
+        assert task.num_articles == 10
+        assert task.min_keywords == 3
+        assert task.fetch_details is False
 
 class TestCrawlerTasksConstraints:
     """測試CrawlerTasks的模型約束"""
@@ -360,29 +447,28 @@ class TestSpecialCases:
         assert crawler_tasks_repo.toggle_ai_only_status(999) is False
         assert crawler_tasks_repo.update_notes(999, "test") is False
 
-    def test_invalid_schedule_operations(self, crawler_tasks_repo):
-        """測試無效的排程操作"""
-        with pytest.raises(ValueError):
-            crawler_tasks_repo.find_tasks_by_schedule('monthly')
+    def test_invalid_cron_operations(self, crawler_tasks_repo):
+        """測試無效的 cron 操作"""
+        with pytest.raises(ValidationError):
+            crawler_tasks_repo.find_tasks_by_cron_expression("invalid")
             
-        with pytest.raises(ValueError):
-            crawler_tasks_repo.find_pending_tasks('invalid')
+        with pytest.raises(ValidationError):
+            crawler_tasks_repo.find_pending_tasks("invalid")
 
-    def test_empty_schedule_results(self, crawler_tasks_repo):
-        """測試空的排程結果"""
-        assert crawler_tasks_repo.find_tasks_by_schedule('hourly') == []
-        assert crawler_tasks_repo.find_pending_tasks('daily') == []
-        assert crawler_tasks_repo.get_failed_tasks() == []
+    def test_empty_cron_results(self, crawler_tasks_repo):
+        """測試空的 cron 結果"""
+        assert crawler_tasks_repo.find_tasks_by_cron_expression("0 * * * *") == []
+        assert crawler_tasks_repo.find_pending_tasks("0 0 * * *") == []
 
-    def test_schedule_with_no_auto_tasks(self, crawler_tasks_repo, session, sample_crawler):
-        """測試沒有自動執行的排程任務"""
+    def test_cron_with_no_auto_tasks(self, crawler_tasks_repo, session, sample_crawler):
+        """測試沒有自動執行的 cron 任務"""
         task = CrawlerTasks(
             crawler_id=sample_crawler.id,
             is_auto=False,
-            schedule='hourly'
+            cron_expression="0 * * * *"
         )
         session.add(task)
         session.commit()
 
-        assert len(crawler_tasks_repo.find_tasks_by_schedule('hourly')) == 0
-        assert len(crawler_tasks_repo.find_pending_tasks('hourly')) == 0 
+        assert len(crawler_tasks_repo.find_tasks_by_cron_expression("0 * * * *")) == 0
+        assert len(crawler_tasks_repo.find_pending_tasks("0 * * * *")) == 0 

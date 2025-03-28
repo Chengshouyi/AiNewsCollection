@@ -50,7 +50,8 @@ class TestCrawlerTasksCreateSchema:
             "ai_only": False,
             "notes": "測試任務",
             "created_at": datetime.now(),
-            "updated_at": None
+            "updated_at": None,
+            "cron_expression": "* * * * *"
         }
         schema = CrawlerTasksCreateSchema.model_validate(data)
         assert schema.crawler_id == 1
@@ -63,7 +64,8 @@ class TestCrawlerTasksCreateSchema:
         # 測試 crawler_id 為 0
         data_zero = {
             "crawler_id": 0,
-            "is_auto": True
+            "is_auto": True,
+            "cron_expression": "* * * * *"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_zero)
@@ -74,7 +76,8 @@ class TestCrawlerTasksCreateSchema:
         # 測試 is_auto 非布林值
         data_invalid_is_auto = {
             "crawler_id": 1,
-            "is_auto": "tru"
+            "is_auto": "tru",
+            "cron_expression": "* * * * *"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_invalid_is_auto)
@@ -83,7 +86,8 @@ class TestCrawlerTasksCreateSchema:
         # 測試 ai_only 非布林值
         data_invalid_ai_only = {
             "crawler_id": 1,
-            "ai_only": "fals"
+            "ai_only": "fals",
+            "cron_expression": "* * * * *"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_invalid_ai_only)

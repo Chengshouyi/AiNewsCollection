@@ -48,19 +48,22 @@ def sample_crawlers(session):
             base_url="https://example.com/news1",
             is_active=True,
             created_at=(now - timedelta(days=1)),
-            crawler_type="web"
+            crawler_type="web",
+            config_file_name="test_crawler.json"
         ),
         Crawlers(
             crawler_name="新聞爬蟲2",
             base_url="https://example.com/news2",
             is_active=False,
-            crawler_type="web"
+            crawler_type="web",
+            config_file_name="test_crawler.json"
         ),
         Crawlers(
             crawler_name="RSS爬蟲",
             base_url="https://example.com/rss",
             is_active=True,
-            crawler_type="rss"
+            crawler_type="rss",
+            config_file_name="test_crawler.json"
         )
     ]
     session.add_all(crawlers)
@@ -145,7 +148,8 @@ class TestCrawlersRepository:
             "crawler_name": "測試爬蟲",
             "base_url": "https://example.com/test",
             "is_active": True,
-            "crawler_type": "web"
+            "crawler_type": "web",
+            "config_file_name": "test_crawler.json"
         }
         
         # 使用 create 方法創建新爬蟲設定
@@ -313,7 +317,8 @@ class TestCrawlersRepository:
         new_data = {
             "crawler_name": "新記錄通過create_or_update",
             "base_url": "https://example.com/new",
-            "crawler_type": "api"
+            "crawler_type": "api",
+            "config_file_name": "test_crawler.json"
         }
         
         result = crawlers_repo.create_or_update(new_data)
@@ -327,7 +332,8 @@ class TestCrawlersRepository:
             "id": 999,
             "crawler_name": "不存在的ID",
             "base_url": "https://example.com/nonexistent",
-            "crawler_type": "web"
+            "crawler_type": "web",
+            "config_file_name": "test_crawler.json"
         }
         
         result = crawlers_repo.create_or_update(nonexistent_id_data)
@@ -386,7 +392,8 @@ class TestPagination:
                 crawler_name=f"額外爬蟲{i+1}",
                 base_url=f"https://example.com/extra{i+1}",
                 is_active=True,
-                crawler_type="web"
+                crawler_type="web",
+                config_file_name="test_crawler.json"
             )
             crawlers_repo.session.add(new_setting)
         crawlers_repo.session.commit()

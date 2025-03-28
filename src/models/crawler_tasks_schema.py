@@ -41,6 +41,9 @@ class CrawlerTasksCreateSchema(BaseModel):
             for field in required_fields:
                 if field not in data:
                     raise ValidationError(f"{field}: 不能為空")
+            if data.get('is_auto') is True:
+                if data.get('cron_expression') is None:
+                    raise ValidationError("cron_expression: 當設定為自動執行時,此欄位不能為空")
         return data
 
 class CrawlerTasksUpdateSchema(BaseModel):
@@ -66,7 +69,9 @@ class CrawlerTasksUpdateSchema(BaseModel):
             for field in immutable_fields:
                 if field in data:
                     raise ValidationError(f"不允許更新 {field} 欄位")
-            
+            if data.get('is_auto') is True:
+                if data.get('cron_expression') is None:
+                    raise ValidationError("cron_expression: 當設定為自動執行時,此欄位不能為空")
             update_fields = [
                 field for field in data.keys()
                 if field not in ['updated_at'] + immutable_fields
