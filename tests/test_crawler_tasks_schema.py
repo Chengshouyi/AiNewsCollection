@@ -17,7 +17,7 @@ class TestCrawlerTasksCreateSchema:
             "num_articles": 20,
             "min_keywords": 4,
             "fetch_details": True,
-            "schedule": "daily",
+            "cron_expression": "*/10 * * * *",
             "last_run_message": "測試訊息"
         }
         schema = CrawlerTasksCreateSchema.model_validate(data)
@@ -29,7 +29,7 @@ class TestCrawlerTasksCreateSchema:
         assert schema.num_articles == 20
         assert schema.min_keywords == 4
         assert schema.fetch_details is True
-        assert schema.schedule == "daily"
+        assert schema.cron_expression == "*/10 * * * *"
         assert schema.last_run_message == "測試訊息"
 
     def test_missing_required_fields(self):
@@ -67,27 +67,27 @@ class TestCrawlerTasksCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_zero)
-        assert "crawler_id: 不能為空" in str(exc_info.value)
+        assert "crawler_id: 必須大於0" in str(exc_info.value)
 
     def test_boolean_fields_validation(self):
         """測試布林欄位的驗證"""
         # 測試 is_auto 非布林值
         data_invalid_is_auto = {
             "crawler_id": 1,
-            "is_auto": "true"
+            "is_auto": "tru"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_invalid_is_auto)
-        assert "is_auto: 必須是布林值" in str(exc_info.value)
+        assert "is_auto: 必須是布爾值" in str(exc_info.value)
 
         # 測試 ai_only 非布林值
         data_invalid_ai_only = {
             "crawler_id": 1,
-            "ai_only": "false"
+            "ai_only": "fals"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_invalid_ai_only)
-        assert "ai_only: 必須是布林值" in str(exc_info.value)
+        assert "ai_only: 必須是布爾值" in str(exc_info.value)
 
     def test_default_values(self):
         """測試默認值設置"""
@@ -102,7 +102,7 @@ class TestCrawlerTasksCreateSchema:
         assert schema.num_articles == 10
         assert schema.min_keywords == 3
         assert schema.fetch_details is False
-        assert schema.schedule is None
+        assert schema.cron_expression is None
         assert schema.last_run_at is None
         assert schema.last_run_success is None
         assert schema.last_run_message is None
@@ -114,7 +114,10 @@ class TestCrawlerTasksCreateSchema:
         for value in empty_values:
             with pytest.raises(ValidationError) as exc_info:
                 CrawlerTasksCreateSchema.model_validate({"crawler_id": value})
-            assert "crawler_id: 不能為空" in str(exc_info.value)
+                if value is None:
+                    assert "crawler_id: 不能為空" in str(exc_info.value)
+                else:
+                    assert "crawler_id: 必須大於0" in str(exc_info.value)
 
         # 測試負數
         with pytest.raises(ValidationError) as exc_info:
@@ -148,7 +151,7 @@ class TestCrawlerTasksCreateSchema:
             data = {"crawler_id": 1, field: "not_boolean"}
             with pytest.raises(ValidationError) as exc_info:
                 CrawlerTasksCreateSchema.model_validate(data)
-            assert f"{field}: 必須是布林值" in str(exc_info.value)
+            assert f"{field}: 必須是布爾值" in str(exc_info.value)
 
         # 測試文字欄位驗證
         text_fields = {
@@ -160,16 +163,6 @@ class TestCrawlerTasksCreateSchema:
             with pytest.raises(ValidationError) as exc_info:
                 CrawlerTasksCreateSchema.model_validate(data)
             assert f"{field}: 長度不能超過 65536 字元" in str(exc_info.value)
-
-        # 測試排程驗證
-        invalid_schedules = ["invalid", "monthly", "yearly"]
-        for schedule in invalid_schedules:
-            with pytest.raises(ValidationError) as exc_info:
-                CrawlerTasksCreateSchema.model_validate({
-                    "crawler_id": 1,
-                    "schedule": schedule
-                })
-            assert "schedule: 必須是 'hourly', 'daily', 'weekly' 或 None" in str(exc_info.value)
 
 class TestCrawlerTasksUpdateSchema:
     """CrawlerTasksUpdateSchema 的測試類"""
@@ -184,7 +177,7 @@ class TestCrawlerTasksUpdateSchema:
             "num_articles": 15,
             "min_keywords": 4,
             "fetch_details": True,
-            "schedule": "weekly",
+            "cron_expression": "* */2 * * *",
             "last_run_message": "更新測試"
         }
         schema = CrawlerTasksUpdateSchema.model_validate(data)
@@ -195,9 +188,68 @@ class TestCrawlerTasksUpdateSchema:
         assert schema.num_articles == 15
         assert schema.min_keywords == 4
         assert schema.fetch_details is True
-        assert schema.schedule == "weekly"
+        assert schema.cron_expression == "* */2 * * *"
         assert schema.last_run_message == "更新測試"
 
+    def test_invalid_cron_expressions(self):
+        """測試無效的 cron 表達式"""
+        # 這些表達式肯定是無效的
+        definitely_invalid_expressions = [
+            "invalid_cron",       # 不是cron格式
+            "*/70 * * * *",       # 分鐘超出範圍
+            "60 * * * *",         # 分鐘超出範圍
+            "* 24 * * *",         # 小時超出範圍
+            "* * 32 * *",         # 日期超出範圍
+            "* * * 13 *",         # 月份超出範圍
+            "* * * * 8",          # 星期超出範圍
+            "1 2 3 4 5 6",        # 字段過多
+            "1 2 3 4 5 6 7"       # 字段過多
+        ]
+        
+        # 測試肯定無效的表達式
+        for expression in definitely_invalid_expressions:
+            try:
+                data = {"cron_expression": expression}
+                CrawlerTasksUpdateSchema.model_validate(data)
+                pytest.fail(f"預期 ValidationError for 錯誤的cron表達式: {expression}")
+            except ValidationError as e:
+                # 確保錯誤消息包含cron_expression欄位名
+                assert "cron_expression:" in str(e), f"Unexpected error for {expression}"
+
+    def test_valid_cron_expressions(self):
+        """測試有效的 cron 表達式"""
+        valid_expressions = [
+            "*/5 * * * *",               # 每 5 分鐘執行一次
+            "* */2 * * *",               # 每隔兩分鐘執行一次 
+            "0 0 * * *",                 # 每天午夜執行
+            "0 12 1 */2 *",             # 每隔兩個月的第一天中午執行
+            "0 0 1,15 * *",             # 每月 1 號和 15 號的午夜執行
+            "0 22 * * 1-5"              # 工作日每天 22:00 執行
+        ]
+
+        for expression in valid_expressions:
+            schema = CrawlerTasksUpdateSchema(cron_expression=expression)
+            assert schema.cron_expression == expression
+
+    def test_optional_cron_expression(self):
+        """測試可選的 cron 表達式"""
+        # 測試 None 值
+        schema = CrawlerTasksUpdateSchema(cron_expression=None)
+        assert schema.cron_expression is None
+
+    def test_cron_expression_edge_cases(self):
+        """測試 cron 表達式的邊界情況"""
+        valid_edge_cases = [
+            "* * * * 0",    # 星期日（0）
+            "* * * * 7",    # 星期日（7）
+            "0 0 1 1 *",    # 每年第一天的午夜
+            "* * * * *"     # 每分鐘執行
+        ]
+
+        for expression in valid_edge_cases:
+            schema = CrawlerTasksUpdateSchema(cron_expression=expression)
+            assert schema.cron_expression == expression
+    
     def test_immutable_fields(self):
         """測試不可變欄位"""
         immutable_fields = {
@@ -221,7 +273,7 @@ class TestCrawlerTasksUpdateSchema:
             "is_auto": False,
             "notes": "新備註",
             "max_pages": 5,
-            "schedule": "daily",
+            "cron_expression": "30 18 * * 0",
             "last_run_message": "部分更新測試"
         }
         

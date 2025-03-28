@@ -137,7 +137,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "link: 不能為空" in str(exc_info.value)
+        assert "link: URL不能為空" in str(exc_info.value)
     
     def test_article_link_too_long_validation(self):
         """測試連結過長的驗證"""
@@ -160,18 +160,20 @@ class TestArticleCreateSchema:
             "published_at": datetime.now().isoformat(),
             "source": "test_source"
         }
-        schema_min = ArticleCreateSchema.model_validate(data_min)
-        assert schema_min.link == "a"
+        with pytest.raises(ValidationError) as exc_info:
+            ArticleCreateSchema.model_validate(data_min)
+        assert "link: 無效的URL格式" in str(exc_info.value)
         
         # 測試最長有效長度
         data_max = {
             "title": "測試文章",
-            "link": "a" * 1000,
+            "link": "https://"+"a" * 1000,
             "published_at": datetime.now().isoformat(),
             "source": "test_source"
         }
-        schema_max = ArticleCreateSchema.model_validate(data_max)
-        assert len(schema_max.link) == 1000
+        with pytest.raises(ValidationError) as exc_info:
+            ArticleCreateSchema.model_validate(data_max)
+        assert "link: 長度不能超過 1000 字元" in str(exc_info.value)
 
     # 摘要欄位測試
     def test_article_summary_too_long_validation(self):
@@ -288,7 +290,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "published_at: 不能為空" in str(exc_info.value)
+        assert "published_at: 無效的日期時間格式。請使用 ISO 格式" in str(exc_info.value)
     
     # 作者欄位測試
     def test_article_author_too_long_validation(self):
@@ -435,7 +437,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "link: 不能為空" in str(exc_info.value)
+        assert "link: URL不能為空" in str(exc_info.value)
     
     def test_update_link_too_long_validation(self):
         """測試更新連結過長的驗證"""
@@ -481,7 +483,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "published_at: 不能為空" in str(exc_info.value)
+        assert "published_at: 無效的日期時間格式。請使用 ISO 格式" in str(exc_info.value)
 
     def test_update_is_ai_related(self):
         """測試更新 is_ai_related 欄位"""

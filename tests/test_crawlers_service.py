@@ -66,23 +66,23 @@ def sample_crawlers(db_manager):
         {
             "id": None,
             "crawler_name": "數位時代爬蟲",
-            "base_url": "https://www.bnext.com.tw/articles"
+            "base_url": "https://www.bnext.com.tw/articles",
             "is_active": True,
-            "created_at": datetime(2023, 1, 2, tzinfo=timezone.utc),
+            "created_at": datetime(2023, 1, 2, tzinfo=timezone.utc)
         },
         {
             "id": None,
             "crawler_name": "科技報導爬蟲",
             "base_url": "https://technews.tw",
             "is_active": False,
-            "created_at": datetime(2023, 1, 3, tzinfo=timezone.utc),
+            "created_at": datetime(2023, 1, 3, tzinfo=timezone.utc)
         },
         {
             "id": None,
             "crawler_name": "商業週刊爬蟲",
             "base_url": "https://www.businessweekly.com.tw",
             "is_active": True,
-            "created_at": datetime(2023, 1, 4, tzinfo=timezone.utc),
+            "created_at": datetime(2023, 1, 4, tzinfo=timezone.utc)
         }
     ]
     

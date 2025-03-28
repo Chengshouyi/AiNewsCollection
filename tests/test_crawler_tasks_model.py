@@ -1,6 +1,6 @@
 import pytest
-from datetime import datetime, timezone
 from src.models.crawler_tasks_model import CrawlerTasks
+from src.error.errors import ValidationError
 
 class TestCrawlerTasksModel:
     """CrawlerTasks 模型的測試類"""
@@ -34,7 +34,7 @@ class TestCrawlerTasksModel:
         assert task.last_run_at is None
         assert task.last_run_success is None
         assert task.last_run_message is None
-        assert task.schedule is None
+        assert task.cron_expression is None
     
     def test_default_values(self):
         """測試默認值設置"""
@@ -52,7 +52,7 @@ class TestCrawlerTasksModel:
         
         # 測試可選欄位預設值
         assert task.notes is None
-        assert task.schedule is None
+        assert task.cron_expression is None
         assert task.last_run_at is None
         assert task.last_run_success is None
         assert task.last_run_message is None
@@ -89,12 +89,14 @@ class TestCrawlerTasksModel:
         
         # 測試文字欄位更新
         task.notes = "更新的備註"
-        task.schedule = "hourly"
+        task.cron_expression = "hourly"
         task.last_run_message = "執行成功"
         assert task.notes == "更新的備註"
-        assert task.schedule == "hourly"
         assert task.last_run_message == "執行成功"
-    
+        
+        task.cron_expression = "*/5 * * * *"
+        assert task.cron_expression == "*/5 * * * *"
+
     def test_to_dict(self):
         """測試 to_dict 方法"""
         task = CrawlerTasks(
@@ -110,7 +112,7 @@ class TestCrawlerTasksModel:
             'id', 'crawler_id', 'is_auto', 'ai_only', 'notes',
             'max_pages', 'num_articles', 'min_keywords', 'fetch_details',
             'created_at', 'updated_at', 'last_run_at', 'last_run_success',
-            'last_run_message', 'schedule'
+            'last_run_message', 'cron_expression'
         }
         
         assert set(task_dict.keys()) == expected_keys 

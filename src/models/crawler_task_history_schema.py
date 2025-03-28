@@ -2,57 +2,17 @@ from typing import Annotated, Optional, Any
 from pydantic import BaseModel, BeforeValidator, model_validator, Field
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.utils.model_utils import validate_str, validate_datetime, validate_boolean
+from src.utils.model_utils import validate_str, validate_datetime, validate_boolean, validate_positive_int
 
-def validate_task_id(value: Any) -> int:
-    """任務ID驗證"""
-    try:
-        value = int(value)
-    except (ValueError, TypeError):
-        raise ValidationError("task_id: 必須是整數")
-    
-    if not value or value <= 0:
-        raise ValidationError("task_id: 不能為空且必須大於0")
-    
-    return value
 
-def validate_articles_count(value: Any) -> int:
-    """文章數量驗證"""
-    if value is None:
-        return 0
-    
-    # 檢查浮點數
-    if isinstance(value, float) and value != int(value):
-        raise ValidationError("articles_count: 必須是整數")
-    
-    # 字串轉換檢查
-    if isinstance(value, str):
-        try:
-            # 檢查是否包含小數點
-            if '.' in value:
-                raise ValidationError("articles_count: 必須是整數")
-            value = int(value)
-        except ValueError:
-            raise ValidationError("articles_count: 必須是整數")
-    
-    # 其他類型轉換
-    try:
-        value = int(value)
-    except (ValueError, TypeError):
-        raise ValidationError("articles_count: 必須是整數")
-    
-    if value < 0:
-        raise ValidationError("articles_count: 不能小於0")
-    
-    return value
 
 # 通用字段定義
-TaskId = Annotated[int, BeforeValidator(validate_task_id)]
-ArticlesCount = Annotated[int, BeforeValidator(validate_articles_count)]
-Message = Annotated[Optional[str], BeforeValidator(validate_str("message", max_length=65536))]
-StartTime = Annotated[datetime, BeforeValidator(lambda v: validate_datetime("start_time", v))]
-EndTime = Annotated[Optional[datetime], BeforeValidator(lambda v: validate_datetime("end_time", v))]
-Success = Annotated[bool, BeforeValidator(validate_boolean("success"))]
+TaskId = Annotated[int, BeforeValidator(validate_positive_int("task_id", required=True))]
+ArticlesCount = Annotated[int, BeforeValidator(validate_positive_int("articles_count", required=True))]
+Message = Annotated[Optional[str], BeforeValidator(validate_str("message", max_length=65536, required=False))]
+StartTime = Annotated[datetime, BeforeValidator(validate_datetime("start_time", required=True))]
+EndTime = Annotated[Optional[datetime], BeforeValidator(validate_datetime("end_time", required=False))]
+Success = Annotated[bool, BeforeValidator(validate_boolean("success", required=True))]
 
 class CrawlerTaskHistoryCreateSchema(BaseModel):
     """爬蟲任務歷史創建模型"""

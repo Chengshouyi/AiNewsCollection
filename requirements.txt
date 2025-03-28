@@ -7,3 +7,5 @@ requests
 pydantic
 fake-useragent
 pandas
+APScheduler
+croniter

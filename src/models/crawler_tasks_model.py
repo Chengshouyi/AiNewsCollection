@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text
+from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text, VARCHAR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from typing import Optional
@@ -23,7 +23,7 @@ class CrawlerTasks(Base, BaseEntity):
     - last_run_at: 上次執行時間
     - last_run_success: 上次執行成功與否
     - last_run_message: 上次執行訊息
-    - schedule: 排程
+    - cron_expression: 排程-cron表達式
     """
     __tablename__ = 'crawler_tasks'
 
@@ -71,7 +71,7 @@ class CrawlerTasks(Base, BaseEntity):
     last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime)
     last_run_success: Mapped[Optional[bool]] = mapped_column(Boolean)
     last_run_message: Mapped[Optional[str]] = mapped_column(Text)
-    schedule: Mapped[Optional[str]] = mapped_column(Text)
+    cron_expression: Mapped[Optional[str]] = mapped_column(VARCHAR(255))
     created_at: Mapped[datetime] = mapped_column(
         DateTime, 
         default=lambda: datetime.now(timezone.utc),
@@ -122,5 +122,5 @@ class CrawlerTasks(Base, BaseEntity):
             'last_run_at': self.last_run_at,
             'last_run_success': self.last_run_success,
             'last_run_message': self.last_run_message,
-            'schedule': self.schedule
+            'cron_expression': self.cron_expression
         }

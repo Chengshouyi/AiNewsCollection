@@ -2,40 +2,20 @@ from typing import Annotated, Optional, Any
 from pydantic import BaseModel, BeforeValidator, model_validator
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.utils.model_utils import validate_str, validate_boolean, validate_positive_int
+from src.utils.model_utils import validate_str, validate_boolean, validate_positive_int, validate_cron_expression
 
-def validate_crawler_id(value: Any) -> int:
-    """爬蟲ID驗證"""
-    if not value:
-        raise ValidationError("crawler_id: 不能為空")
-    try:
-        value = int(value)
-        if value <= 0:
-            raise ValidationError("crawler_id: 必須大於0")
-        return value
-    except ValueError:
-        raise ValidationError("crawler_id: 必須是整數")
-
-def validate_schedule(value: Optional[str]) -> Optional[str]:
-    """排程驗證"""
-    if value is None:
-        return None
-    value = value.strip()
-    if value not in ['hourly', 'daily', 'weekly']:
-        raise ValidationError("schedule: 必須是 'hourly', 'daily', 'weekly' 或 None")
-    return value
 
 # 通用字段定義
-CrawlerId = Annotated[int, BeforeValidator(validate_crawler_id)]
-MaxPages = Annotated[int, BeforeValidator(validate_positive_int("max_pages"))]
-NumArticles = Annotated[int, BeforeValidator(validate_positive_int("num_articles"))]
-MinKeywords = Annotated[int, BeforeValidator(validate_positive_int("min_keywords"))]
-IsAuto = Annotated[bool, BeforeValidator(validate_boolean("is_auto"))]
-AiOnly = Annotated[bool, BeforeValidator(validate_boolean("ai_only"))]
-FetchDetails = Annotated[bool, BeforeValidator(validate_boolean("fetch_details"))]
-Notes = Annotated[Optional[str], BeforeValidator(validate_str("notes", max_length=65536))]
-Schedule = Annotated[Optional[str], BeforeValidator(validate_schedule)]
-LastRunMessage = Annotated[Optional[str], BeforeValidator(validate_str("last_run_message", max_length=65536))]
+CrawlerId = Annotated[int, BeforeValidator(validate_positive_int("crawler_id", required=True))]
+MaxPages = Annotated[int, BeforeValidator(validate_positive_int("max_pages", required=True))]
+NumArticles = Annotated[int, BeforeValidator(validate_positive_int("num_articles", required=True))]
+MinKeywords = Annotated[int, BeforeValidator(validate_positive_int("min_keywords", required=True))]
+IsAuto = Annotated[bool, BeforeValidator(validate_boolean("is_auto", required=True))]
+AiOnly = Annotated[bool, BeforeValidator(validate_boolean("ai_only", required=True))]
+FetchDetails = Annotated[bool, BeforeValidator(validate_boolean("fetch_details", required=True))]
+Notes = Annotated[Optional[str], BeforeValidator(validate_str("notes", max_length=65536, required=False))]
+CronExpression = Annotated[Optional[str], BeforeValidator(validate_cron_expression("cron_expression", max_length=255, min_length=5, required=False))]
+LastRunMessage = Annotated[Optional[str], BeforeValidator(validate_str("last_run_message", max_length=65536, required=False))]
 
 class CrawlerTasksCreateSchema(BaseModel):
     """爬蟲任務創建模型"""
@@ -50,7 +30,7 @@ class CrawlerTasksCreateSchema(BaseModel):
     last_run_at: Optional[datetime] = None
     last_run_success: Optional[bool] = None
     last_run_message: LastRunMessage = None
-    schedule: Schedule = None
+    cron_expression: CronExpression = None
 
     @model_validator(mode='before')
     @classmethod
@@ -75,7 +55,7 @@ class CrawlerTasksUpdateSchema(BaseModel):
     last_run_at: Optional[datetime] = None
     last_run_success: Optional[bool] = None
     last_run_message: Optional[LastRunMessage] = None
-    schedule: Optional[Schedule] = None
+    cron_expression: Optional[CronExpression] = None
 
     @model_validator(mode='before')
     @classmethod

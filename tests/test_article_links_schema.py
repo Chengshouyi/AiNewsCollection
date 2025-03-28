@@ -35,8 +35,8 @@ class TestArticleLinksCreateSchema:
     def test_article_link_validation(self):
         """測試文章連結驗證"""
         test_cases = [
-            ("", "article_link: 不能為空"),
-            ("   ", "article_link: 不能為空"),
+            ("", "article_link: URL不能為空"),
+            ("   ", "article_link: 無效的URL格式"),
             ("a" * 1001, "article_link: 長度不能超過 1000 字元")
         ]
         
@@ -69,8 +69,8 @@ class TestArticleLinksCreateSchema:
     def test_source_url_validation(self):
         """測試來源URL驗證"""
         test_cases = [
-            ("", "source_url: 不能為空"),
-            ("   ", "source_url: 不能為空"),
+            ("", "source_url: URL不能為空"),
+            ("   ", "source_url: 無效的URL格式"),
             ("a" * 1001, "source_url: 長度不能超過 1000 字元")
         ]
         

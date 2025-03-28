@@ -2,7 +2,7 @@ from typing import Annotated, Optional, Any
 from pydantic import BaseModel,BeforeValidator, model_validator
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.utils.model_utils import validate_str
+from src.utils.model_utils import validate_str, validate_url, validate_datetime
 
 
 def validate_title(value: str) -> str:
@@ -50,10 +50,10 @@ def validate_published_at(value: Any) -> datetime:
 
 
 # 通用字段定義
-Title = Annotated[str, BeforeValidator(validate_title)]
-Link = Annotated[str, BeforeValidator(validate_link)]
-Source = Annotated[str, BeforeValidator(validate_source)]
-PublishedAt = Annotated[datetime, BeforeValidator(validate_published_at)]
+Title = Annotated[str, BeforeValidator(validate_str("title", max_length=500, required=True))]
+Link = Annotated[str, BeforeValidator(validate_url("link", max_length=1000, required=True))]
+Source = Annotated[str, BeforeValidator(validate_str("source", max_length=50, required=True))]
+PublishedAt = Annotated[datetime, BeforeValidator(validate_datetime("published_at", required=True))]
 Summary = Annotated[Optional[str], BeforeValidator(validate_str("summary", 10000))]
 Content = Annotated[Optional[str], BeforeValidator(validate_str("content", 65536))]
 Category = Annotated[Optional[str], BeforeValidator(validate_str("category", 100))]
