@@ -1,53 +1,9 @@
 from typing import Annotated, Optional, Any
-from pydantic import BaseModel,BeforeValidator, model_validator
+from pydantic import BeforeValidator, model_validator
 from datetime import datetime
-from src.error.errors import ValidationError
 from src.utils.model_utils import validate_str, validate_url, validate_datetime
-
-
-def validate_title(value: str) -> str:
-    """標題驗證"""
-    if not value or not value.strip():
-        raise ValidationError("title: 不能為空")
-    value = value.strip()
-    if len(value) > 500:
-        raise ValidationError("title: 長度不能超過 500 字元")
-    return value
-
-def validate_link(value: str) -> str:
-    """連結驗證"""
-    if not value or not value.strip():
-        raise ValidationError("link: 不能為空")
-    value = value.strip()
-    if len(value) > 1000:
-        raise ValidationError("link: 長度不能超過 1000 字元")
-    return value
-
-def validate_source(value: str) -> str:
-    """來源驗證"""
-    if not value or not value.strip():
-        raise ValidationError("source: 不能為空")
-    value = value.strip()
-    if len(value) > 50:
-        raise ValidationError("source: 長度不能超過 50 字元")
-    return value
-
-def validate_published_at(value: Any) -> datetime:
-    """發布時間驗證"""
-    if value is None or value == "":
-        raise ValidationError("published_at: 不能為空")
-    
-    if isinstance(value, str):
-        try:
-            return datetime.fromisoformat(value)
-        except ValueError:
-            raise ValidationError("published_at: 無效的日期時間格式。請使用 ISO 格式。")
-    
-    if isinstance(value, datetime):
-        return value
-    
-    raise ValidationError("published_at: 必須是字串或日期時間。")
-
+from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
+from src.utils.schema_utils import validate_update_schema, validate_required_fields_schema
 
 # 通用字段定義
 Title = Annotated[str, BeforeValidator(validate_str("title", max_length=500, required=True))]
@@ -61,7 +17,7 @@ Author = Annotated[Optional[str], BeforeValidator(validate_str("author", 100))]
 ArticleType = Annotated[Optional[str], BeforeValidator(validate_str("article_type", 20))]
 Tags = Annotated[Optional[str], BeforeValidator(validate_str("tags", 500))]
 
-class ArticleCreateSchema(BaseModel):
+class ArticleCreateSchema(BaseCreateSchema):
     """文章創建模型"""
     title: Title
     link: Link
@@ -81,12 +37,9 @@ class ArticleCreateSchema(BaseModel):
         """驗證必填欄位"""
         if isinstance(data, dict):
             required_fields = ['title', 'link', 'published_at', 'source']
-            for field in required_fields:
-                if field not in data:
-                    raise ValidationError(f"{field}: 不能為空")
-        return data
+            return validate_required_fields_schema(required_fields, data)
 
-class ArticleUpdateSchema(BaseModel):
+class ArticleUpdateSchema(BaseUpdateSchema):
     """文章更新模型"""
     title: Optional[Title] = None
     link: Optional[Link] = None
@@ -105,15 +58,7 @@ class ArticleUpdateSchema(BaseModel):
     def validate_update(cls, data):
         """驗證更新操作"""
         if isinstance(data, dict):
-            immutable_fields = ['created_at', 'id']
-            for field in immutable_fields:
-                if field in data:
-                    raise ValidationError(f"不允許更新 {field} 欄位")
-            
-            update_fields = [
-                field for field in data.keys()
-                if field not in ['updated_at'] + immutable_fields
-            ]
-            if not update_fields:
-                raise ValidationError("必須提供至少一個要更新的欄位")
-        return data
+            immutable_fields = [] + cls._get_immutable_fields()
+            updated_fields = [] + cls._get_updated_fields()
+            return validate_update_schema(immutable_fields, updated_fields, data)
+

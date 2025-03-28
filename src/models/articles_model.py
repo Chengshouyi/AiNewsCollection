@@ -20,19 +20,11 @@ class Articles(Base, BaseEntity):
     - source: 文章來源
     - article_type: 文章類型
     - tags: 文章標籤
-    - created_at: 建立時間
-    - updated_at: 更新時間
     """
     __tablename__ = 'articles'
     __table_args__ = (
         # 保留資料庫層面的唯一性約束
         UniqueConstraint('link', name='uq_article_link'),
-    )
-
-    id: Mapped[int] = mapped_column(
-        Integer, 
-        primary_key=True, 
-        autoincrement=True
     )
     title: Mapped[str] = mapped_column(
         String(500), 
@@ -48,7 +40,7 @@ class Articles(Base, BaseEntity):
     )
     category: Mapped[Optional[str]] = mapped_column(String(100))
     published_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime, 
+        DateTime(timezone=True), 
         default=lambda: datetime.now(timezone.utc)
     )
     author: Mapped[Optional[str]] = mapped_column(String(100))
@@ -60,23 +52,11 @@ class Articles(Base, BaseEntity):
         default=False,
         nullable=False
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime,
-        onupdate=lambda: datetime.now(timezone.utc)
-    )
-
     article_links = relationship("ArticleLinks", back_populates="articles", lazy="joined")
 
 
     def __init__(self, **kwargs):
         # 設置默認值
-        if 'created_at' not in kwargs:
-            kwargs['created_at'] = datetime.now(timezone.utc)
         if 'is_ai_related' not in kwargs:
             kwargs['is_ai_related'] = False
             
@@ -87,7 +67,7 @@ class Articles(Base, BaseEntity):
     
     def to_dict(self):
         return {
-            'id': self.id,
+            **super().to_dict(),
             'title': self.title,
             'summary': self.summary,
             'content': self.content,
@@ -99,6 +79,4 @@ class Articles(Base, BaseEntity):
             'article_type': self.article_type,
             'tags': self.tags,
             'is_ai_related': self.is_ai_related,
-            'created_at': self.created_at,
-            'updated_at': self.updated_at
         }

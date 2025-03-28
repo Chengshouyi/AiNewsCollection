@@ -9,35 +9,26 @@ class CrawlerTaskHistory(Base, BaseEntity):
     """爬蟲任務執行歷史記錄
     
     欄位說明：
-    - id: 主鍵
     - task_id: 外鍵，關聯爬蟲任務
     - start_time: 開始時間
     - end_time: 結束時間
     - success: 是否成功
     - message: 訊息
     - articles_count: 文章數量
-    - created_at: 建立時間
-    - updated_at: 更新時間
     """
     __tablename__ = 'crawler_task_history'
 
-    id: Mapped[int] = mapped_column(
-        Integer, 
-        primary_key=True, 
-        autoincrement=True,
-        nullable=False
-    )
     task_id: Mapped[int] = mapped_column(
         Integer, 
         ForeignKey('crawler_tasks.id'), 
         nullable=False
     )
     start_time: Mapped[datetime] = mapped_column(
-        DateTime,
+        DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
         nullable=False
     )
-    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime)
+    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     success: Mapped[bool] = mapped_column(
         Boolean,
         default=False,
@@ -49,23 +40,12 @@ class CrawlerTaskHistory(Base, BaseEntity):
         default=0,
         nullable=False
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False
-    )
-    updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime,
-        onupdate=lambda: datetime.now(timezone.utc)
-    )
 
     # 關聯到爬蟲任務
     task = relationship("CrawlerTasks", back_populates="history", lazy="joined")
 
     def __init__(self, **kwargs):
         # 設置默認值
-        if 'created_at' not in kwargs:
-            kwargs['created_at'] = datetime.now(timezone.utc)
         if 'start_time' not in kwargs:
             kwargs['start_time'] = datetime.now(timezone.utc)
         if 'success' not in kwargs:
@@ -80,7 +60,7 @@ class CrawlerTaskHistory(Base, BaseEntity):
     
     def to_dict(self):
         return {
-            'id': self.id,
+            **super().to_dict(),
             'task_id': self.task_id,
             'start_time': self.start_time,
             'end_time': self.end_time,

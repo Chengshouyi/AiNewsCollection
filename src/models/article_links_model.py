@@ -9,23 +9,15 @@ class ArticleLinks(Base, BaseEntity):
     """文章連結模型
     
     欄位說明：
-    - id: 主鍵
     - source_name: 來源名稱
     - source_url: 來源URL
     - article_link: 文章連結
     - is_scraped: 是否已爬取
-    - created_at: 建立時間
     """
     __tablename__ = 'article_links'
     __table_args__ = (
         # 保留資料庫層面的唯一性約束
         UniqueConstraint('article_link', name='uq_article_link'),
-    )
-
-    id: Mapped[int] = mapped_column(
-        Integer, 
-        primary_key=True, 
-        autoincrement=True
     )
     source_name: Mapped[str] = mapped_column(
         String(50), 
@@ -48,18 +40,11 @@ class ArticleLinks(Base, BaseEntity):
         default=False,
         nullable=False
     )
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, 
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False
-    )
 
     articles = relationship("Articles", back_populates="article_links", lazy="joined")
 
     def __init__(self, **kwargs):
         # 設置默認值
-        if 'created_at' not in kwargs:
-            kwargs['created_at'] = datetime.now(timezone.utc)
         if 'is_scraped' not in kwargs:
             kwargs['is_scraped'] = False
             
@@ -70,11 +55,10 @@ class ArticleLinks(Base, BaseEntity):
     
     def to_dict(self):
         return {
-            'id': self.id,
+            **super().to_dict(),
             'source_name': self.source_name,
             'source_url': self.source_url,
             'article_link': self.article_link,
             'is_scraped': self.is_scraped,
-            'created_at': self.created_at
         }
     
