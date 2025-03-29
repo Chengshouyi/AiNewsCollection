@@ -54,8 +54,7 @@ def sample_articles(session):
             link="https://example.com/article1",
             content="這是關於AI研究的文章內容",
             category="科技",
-            published_at=datetime(2023, 1, 1),
-            created_at=datetime(2023, 1, 2),
+            published_at=datetime(2023, 1, 1, tzinfo=timezone.utc),
             is_ai_related=True,
             source="測試來源1"
         ),
@@ -64,8 +63,7 @@ def sample_articles(session):
             link="https://example.com/article2",
             content="這是股市分析的內容",
             category="財經",
-            published_at=datetime(2023, 1, 3),
-            created_at=datetime(2023, 1, 4),
+            published_at=datetime(2023, 1, 3, tzinfo=timezone.utc),
             is_ai_related=False,
             source="測試來源2"
         ),
@@ -74,8 +72,7 @@ def sample_articles(session):
             link="https://example.com/article3",
             content="這是Python相關教學",
             category="科技",
-            published_at=datetime(2023, 1, 5),
-            created_at=datetime(2023, 1, 6),
+            published_at=datetime(2023, 1, 5, tzinfo=timezone.utc),
             is_ai_related=False,
             source="測試來源3"
         )
@@ -154,8 +151,8 @@ class TestArticleRepository:
         # 測試日期範圍過濾
         articles = article_repo.get_by_filter({
             "published_at": {
-                "$gte": datetime(2023, 1, 1),
-                "$lte": datetime(2023, 1, 3)
+                "$gte": datetime(2023, 1, 1, tzinfo=timezone.utc),
+                "$lte": datetime(2023, 1, 3, tzinfo=timezone.utc)
             }
         })
         assert len(articles) == 2
@@ -230,6 +227,7 @@ class TestArticleRepository:
             "title": "更新後的標題",
             "content": "更新後的內容"
         }
+        print(f"更新資料: {sample_articles[0].published_at.tzinfo}")
         
         updated = article_repo.update(article_id, update_data)
         assert updated is not None
@@ -285,7 +283,7 @@ class TestArticlePaginationAndFiltering:
                 title="AI研究報告1",
                 link="https://example.com/ai1",
                 category="AI研究",
-                published_at=datetime(2023, 1, 1),
+                published_at=datetime(2023, 1, 1, tzinfo=timezone.utc),
                 is_ai_related=True,
                 source="測試來源",
                 tags="AI,研究,深度學習"
@@ -294,7 +292,7 @@ class TestArticlePaginationAndFiltering:
                 title="AI研究報告2",
                 link="https://example.com/ai2",
                 category="AI研究",
-                published_at=datetime(2023, 1, 15),
+                published_at=datetime(2023, 1, 15, tzinfo=timezone.utc),
                 is_ai_related=True,
                 source="測試來源",
                 tags="AI,研究,大語言模型"
@@ -303,7 +301,7 @@ class TestArticlePaginationAndFiltering:
                 title="一般科技新聞1",
                 link="https://example.com/tech1",
                 category="科技",
-                published_at=datetime(2023, 1, 10),
+                published_at=datetime(2023, 1, 10, tzinfo=timezone.utc),
                 is_ai_related=False,
                 source="測試來源",
                 tags="科技,創新"
@@ -312,7 +310,7 @@ class TestArticlePaginationAndFiltering:
                 title="一般科技新聞2",
                 link="https://example.com/tech2",
                 category="科技",
-                published_at=datetime(2023, 1, 20),
+                published_at=datetime(2023, 1, 20, tzinfo=timezone.utc),
                 is_ai_related=False,
                 source="測試來源",
                 tags="科技,產業"
@@ -321,7 +319,7 @@ class TestArticlePaginationAndFiltering:
                 title="財經報導",
                 link="https://example.com/finance",
                 category="財經",
-                published_at=datetime(2023, 1, 5),
+                published_at=datetime(2023, 1, 5, tzinfo=timezone.utc),
                 is_ai_related=False,
                 source="測試來源",
                 tags="財經,市場"
@@ -331,27 +329,13 @@ class TestArticlePaginationAndFiltering:
         session.commit()
         return articles
     
-    def ensure_datetime(self, date_value):
-        """確保值是 datetime 對象"""
-        if date_value is None:
-            return None
-        if isinstance(date_value, str):
-            try:
-                return datetime.fromisoformat(date_value.replace('Z', '+00:00'))
-            except ValueError:
-                try:
-                    return datetime.strptime(date_value, "%Y-%m-%d %H:%M:%S")
-                except ValueError:
-                    return datetime.strptime(date_value, "%Y-%m-%d")
-        return date_value
-    
     def test_combined_filters_with_pagination(self, article_repo, filter_test_articles):
         """測試組合多種過濾條件並進行分頁"""
         try:
             combined_filter = {
                 "is_ai_related": True,
                 "published_at": {
-                    "$gte": datetime(2023, 1, 10)
+                    "$gte": datetime(2023, 1, 10, tzinfo=timezone.utc)
                 }
             }
             
@@ -363,7 +347,7 @@ class TestArticlePaginationAndFiltering:
             
             assert page_data["total"] == 1
             assert page_data["items"][0].is_ai_related is True
-            assert page_data["items"][0].published_at >= datetime(2023, 1, 10)
+            assert page_data["items"][0].published_at >= datetime(2023, 1, 10, tzinfo=timezone.utc)
             
         except DatabaseOperationError as e:
             pytest.skip(f"資料庫操作錯誤: {str(e)}")
@@ -434,7 +418,7 @@ class TestArticlePaginationAndFiltering:
         import logging
         logging.getLogger('sqlalchemy.engine').setLevel(logging.INFO)
         
-        # 執行一些簡單的過濾操作
+        # 執行一些簡單的過濾操作    
         filter_dict = {"is_ai_related": True}
         result = article_repo.get_by_filter(filter_dict)
         

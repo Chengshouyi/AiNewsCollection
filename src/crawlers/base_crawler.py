@@ -2,10 +2,12 @@ from abc import ABC, abstractmethod
 from typing import Dict, Optional
 import pandas as pd
 from src.crawlers.site_config import SiteConfig
-from datetime import datetime
+from datetime import datetime, timezone
 import logging
 import time
 
+# 設定 logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class BaseCrawler(ABC):
@@ -41,7 +43,7 @@ class BaseCrawler(ABC):
             'status': 'running',
             'progress': 0,
             'message': '開始執行任務',
-            'start_time': datetime.now()
+            'start_time': datetime.now(timezone.utc)
         }
         
         try:

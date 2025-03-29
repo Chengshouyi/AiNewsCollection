@@ -144,6 +144,7 @@ class TestArticleModel:
             assert article.published_at.tzinfo == timezone.utc  # 確認有 UTC 時區
         assert article.published_at == naive_time.replace(tzinfo=timezone.utc)  # 確認值正確
 
+
         # 測試 2: 傳入帶非 UTC 時區的 datetime (aware datetime, UTC+8)
         utc_plus_8_time = datetime(2025, 3, 28, 14, 0, 0, tzinfo=timezone(timedelta(hours=8)))
         article.published_at = utc_plus_8_time

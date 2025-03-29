@@ -2,7 +2,7 @@ from .base_repository import BaseRepository, SchemaType
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.crawler_task_history_schema import CrawlerTaskHistoryCreateSchema, CrawlerTaskHistoryUpdateSchema
 from typing import List, Optional, Dict, Any, Type
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import logging
 from src.error.errors import ValidationError, DatabaseOperationError
@@ -37,7 +37,7 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         processed_data = entity_data.copy()
         
         # 檢查必填欄位
-        required_fields = ['published_at']
+        required_fields = []
         
         # 如果是更新操作，從現有實體中補充必填欄位
         if existing_entity:
@@ -249,7 +249,7 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         """
         try:
             # 構建更新數據
-            update_data = {'success': success, 'end_time': datetime.now()}
+            update_data = {'success': success, 'end_time': datetime.now(timezone.utc)}
             
             if message is not None:
                 update_data['message'] = message

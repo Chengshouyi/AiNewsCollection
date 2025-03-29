@@ -1,14 +1,14 @@
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session
 from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
-from src.utils.model_utils import get_model_info
-from src.error.errors import ValidationError, DatabaseOperationError
+from debug.model_info import get_model_info
+from src.error.errors import DatabaseOperationError
 
 # 設置測試資料庫
 @pytest.fixture
@@ -45,7 +45,8 @@ def sample_crawler(session):
         crawler_name="測試爬蟲",
         base_url="https://example.com",
         is_active=True,
-        crawler_type="bnext"
+        crawler_type="bnext",
+        config_file_name="bnext_config.json"
     )
     session.add(crawler)
     session.commit()
@@ -176,7 +177,7 @@ class TestCrawlerTaskHistoryRepository:
         histories_older_than_2_days = crawler_task_history_repo.get_histories_older_than(2)
         assert len(histories_older_than_2_days) > 0
         for history in histories_older_than_2_days:
-            assert (datetime.now() - history.start_time).days >= 2
+            assert (datetime.now(timezone.utc) - history.start_time).days >= 2
 
     def test_update_history_status(self, crawler_task_history_repo, sample_histories):
         """測試更新歷史記錄狀態"""

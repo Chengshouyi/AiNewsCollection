@@ -4,9 +4,10 @@ from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTas
 from typing import List, Optional, Type, Any, Dict
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
-from src.config import get_system_process_timezone
 import logging
 from src.error.errors import ValidationError
+from src.utils.datetime_utils import enforce_utc_datetime_transform
+from croniter import croniter
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -244,7 +245,6 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
     def find_pending_tasks(self, cron_expression: str) -> List[CrawlerTasks]:
         """查詢需要執行的任務（根據 cron 表達式和上次執行時間）"""
         try:
-            from croniter import croniter
             croniter(cron_expression)
         except ValueError:
             error_msg = f"無效的 cron 表達式: {cron_expression}"
@@ -258,7 +258,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             ).all()
             
             # 使用 UTC 時間
-            now = datetime.now(get_system_process_timezone())
+            now = datetime.now(timezone.utc)
             result_tasks = []
             
             for task in all_tasks:
@@ -269,17 +269,21 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
                     
                 # 確保 last_run_at 也是帶時區的
                 last_run = task.last_run_at
+                #print("")
+                #print(f"------Task ID: {task.id}------")
+                #print(f"last_run: {last_run}")
                 if last_run.tzinfo is None:
                     # 如果 last_run_at 沒有時區信息，假設它是 UTC
-                    last_run = last_run.replace(tzinfo=get_system_process_timezone())
-                    
+                    last_run = enforce_utc_datetime_transform(last_run)
+                    #print(f"last_run(after enforce_utc_datetime_transform): {last_run}")
                 # 使用 croniter 計算下次執行時間（使用 UTC）
                 cron = croniter(cron_expression, last_run)
                 next_run = cron.get_next(datetime)
+                #print(f"next_run(from croniter): {next_run}")
                 # 確保 next_run 也有時區
                 if next_run.tzinfo is None:
-                    next_run = next_run.replace(tzinfo=get_system_process_timezone())
-                    
+                    next_run = enforce_utc_datetime_transform(next_run)
+                    #print(f"next_run(after enforce_utc_datetime_transform): {next_run}")
                 # 只有下次執行時間已經過了，才加入待執行列表
                 if next_run <= now:
                     result_tasks.append(task)
