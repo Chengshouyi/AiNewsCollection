@@ -1,12 +1,11 @@
 import pytest
-from datetime import datetime, timedelta, timezone
-import os
+from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, Session
 from src.models.articles_model import Articles
 from src.models.base_model import Base
 from src.services.article_service import ArticleService
-from src.error.errors import ValidationError, DatabaseOperationError
+from src.error.errors import ValidationError
 from src.database.database_manager import DatabaseManager
 from src.database.articles_repository import ArticlesRepository
 
