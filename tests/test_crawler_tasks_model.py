@@ -1,6 +1,5 @@
-import pytest
 from src.models.crawler_tasks_model import CrawlerTasks
-from src.error.errors import ValidationError
+from datetime import datetime, timezone
 
 class TestCrawlerTasksModel:
     """CrawlerTasks 模型的測試類"""
@@ -116,3 +115,34 @@ class TestCrawlerTasksModel:
         }
         
         assert set(task_dict.keys()) == expected_keys 
+    
+
+    def test_crawler_tasks_utc_datetime_conversion(self):
+        """測試 CrawlerTasks 的 last_run_at 欄位 UTC 時間轉換"""
+        from datetime import timedelta
+        
+        # 測試 1: 傳入無時區資訊的 datetime (naive datetime)
+        naive_time = datetime(2025, 3, 28, 12, 0, 0)  # 無時區資訊
+        task = CrawlerTasks(
+            crawler_id=1,
+            last_run_at=naive_time
+        )
+        if task.last_run_at is not None:
+            assert task.last_run_at.tzinfo == timezone.utc  # 確認有 UTC 時區
+        assert task.last_run_at == naive_time.replace(tzinfo=timezone.utc)  # 確認值正確
+
+        # 測試 2: 傳入帶非 UTC 時區的 datetime (aware datetime, UTC+8)
+        utc_plus_8_time = datetime(2025, 3, 28, 14, 0, 0, tzinfo=timezone(timedelta(hours=8)))
+        task.last_run_at = utc_plus_8_time
+        expected_utc_time = datetime(2025, 3, 28, 6, 0, 0, tzinfo=timezone.utc)  # UTC+8 轉 UTC
+        assert task.last_run_at.tzinfo == timezone.utc  # 確認轉換為 UTC 時區
+        assert task.last_run_at == expected_utc_time  # 確認時間正確轉換
+
+        # 測試 3: 傳入已是 UTC 的 datetime，確保不變
+        utc_time = datetime(2025, 3, 28, 12, 0, 0, tzinfo=timezone.utc)
+        task.last_run_at = utc_time
+        assert task.last_run_at == utc_time  # 確認值未被改變
+
+        # 測試 4: 確認非監聽欄位（如 notes）不觸發轉換邏輯
+        task.notes = "新備註"
+        assert task.last_run_at == utc_time  # last_run_at 不受影響

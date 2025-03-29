@@ -5,6 +5,7 @@ from src.models.crawler_task_history_schema import (
     CrawlerTaskHistoryUpdateSchema
 )
 from src.error.errors import ValidationError
+from datetime import timedelta
 
 class TestCrawlerTaskHistoryCreateSchema:
     """CrawlerTaskHistoryCreateSchema 的測試類"""
@@ -76,7 +77,9 @@ class TestCrawlerTaskHistoryCreateSchema:
             ({"task_id": 1, "start_time": "invalid-date"}, "start_time: 無效的日期時間格式"),
             ({"task_id": 1, "end_time": "invalid-date"}, "end_time: 無效的日期時間格式"),
             ({"task_id": 1, "start_time": 123}, "start_time: 必須是字串或日期時間"),
-            ({"task_id": 1, "end_time": 123}, "end_time: 必須是字串或日期時間")
+            ({"task_id": 1, "end_time": 123}, "end_time: 必須是字串或日期時間"),
+            ({"task_id": 1, "start_time": datetime(2025, 3, 28, 14, 0, 0, tzinfo=timezone(timedelta(hours=8)))}, "start_time: 日期時間必須是 UTC 時區"),
+            ({"task_id": 1, "end_time": datetime(2025, 3, 28, 14, 0, 0, tzinfo=timezone(timedelta(hours=8)))}, "end_time: 日期時間必須是 UTC 時區")
         ]
         
         for data, expected_error in invalid_cases:

@@ -1,5 +1,5 @@
 from typing import Optional, Any, Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from src.error.errors import ValidationError
 from croniter import croniter
 import re
@@ -252,24 +252,42 @@ def validate_positive_int(field_name: str, required: bool = False):
         return value
     return validator
 
+
 def validate_datetime(field_name: str, required: bool = False):
     """日期時間驗證"""
+    def is_utc_timezone(dt: datetime) -> bool:
+        """檢查日期時間是否為 UTC 時區"""
+        if dt.tzinfo is None:
+            return False
+        
+        offset = dt.tzinfo.utcoffset(dt)
+        if offset is None:
+            return False
+            
+        return offset == timedelta(0)
+    
     def validator(value: Any) -> Optional[datetime]:
         if value is None:
             if required:
                 raise ValidationError(f"{field_name}: 不能為空")
             return None
         
+        dt = None
         if isinstance(value, str):
             try:
-                return datetime.fromisoformat(value)
+                dt = datetime.fromisoformat(value)
             except ValueError:
                 raise ValidationError(f"{field_name}: 無效的日期時間格式。請使用 ISO 格式。")
+        elif isinstance(value, datetime):
+            dt = value
+        else:
+            raise ValidationError(f"{field_name}: 必須是字串或日期時間。")
         
-        if isinstance(value, datetime):
-            return value
+        # 檢查是否為 UTC 時區
+        if not is_utc_timezone(dt):
+            raise ValidationError(f"{field_name}: 日期時間必須是 UTC 時區")
         
-        raise ValidationError(f"{field_name}: 必須是字串或日期時間。")
+        return dt
     
     return validator
 

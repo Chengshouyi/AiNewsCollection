@@ -31,9 +31,7 @@ class Articles(Base, BaseEntity):
         # 保留資料庫層面的唯一性約束
         UniqueConstraint('link', name='uq_article_link'),
     )
-    
-    # 定義需要監聽的 datetime 欄位
-    _datetime_fields_to_watch = {'published_at'}
+
     
     title: Mapped[str] = mapped_column(
         String(500), 
@@ -62,13 +60,17 @@ class Articles(Base, BaseEntity):
         nullable=False
     )
     article_links = relationship("ArticleLinks", back_populates="articles", lazy="joined")
+    
+    # 定義需要監聽的 datetime 欄位
+    _datetime_fields_to_watch = {'published_at'}
 
     def __init__(self, **kwargs):
         # 設置默認值
         if 'is_ai_related' not in kwargs:
             kwargs['is_ai_related'] = False
         # 告知父類需要監聽的 datetime 欄位
-        super().__init__(datetime_fields_to_watch=self._datetime_fields_to_watch, **kwargs)
+        super().__init__(datetime_fields_to_watch=
+                         self._datetime_fields_to_watch, **kwargs)
 
     # 文章資料repr
     def __repr__(self):

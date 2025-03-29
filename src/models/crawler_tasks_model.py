@@ -69,6 +69,10 @@ class CrawlerTasks(Base, BaseEntity):
     crawlers = relationship("Crawlers", back_populates="crawler_tasks")
     history = relationship("CrawlerTaskHistory", back_populates="task", lazy="joined")
 
+        
+    # 定義需要監聽的 datetime 欄位
+    _datetime_fields_to_watch = {'last_run_at'}
+
     def __init__(self, **kwargs):
         if 'is_auto' not in kwargs:
             kwargs['is_auto'] = True
@@ -82,8 +86,9 @@ class CrawlerTasks(Base, BaseEntity):
             kwargs['min_keywords'] = 3
         if 'fetch_details' not in kwargs:
             kwargs['fetch_details'] = False
-            
-        super().__init__(**kwargs)
+        # 告知父類需要監聽的 datetime 欄位
+        super().__init__(datetime_fields_to_watch=
+                         self._datetime_fields_to_watch, **kwargs)
 
     def __repr__(self):
         return f"<CrawlerTask(id={self.id}, crawler_id={self.crawler_id})>"

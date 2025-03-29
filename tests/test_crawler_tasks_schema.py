@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
 from src.error.errors import ValidationError
 
@@ -49,7 +49,7 @@ class TestCrawlerTasksCreateSchema:
             "is_auto": True,
             "ai_only": False,
             "notes": "測試任務",
-            "created_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
             "updated_at": None,
             "cron_expression": "* * * * *"
         }
@@ -257,7 +257,7 @@ class TestCrawlerTasksUpdateSchema:
     def test_immutable_fields(self):
         """測試不可變欄位"""
         immutable_fields = {
-            "created_at": datetime.now(),
+            "created_at": datetime.now(timezone.utc),
             "crawler_id": 2
         }
         for field, value in immutable_fields.items():
@@ -288,3 +288,6 @@ class TestCrawlerTasksUpdateSchema:
             for other_field in test_cases.keys():
                 if other_field != field:
                     assert getattr(schema, other_field) is None 
+
+
+

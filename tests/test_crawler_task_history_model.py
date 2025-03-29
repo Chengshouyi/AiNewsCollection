@@ -102,3 +102,48 @@ class TestCrawlerTaskHistoryModel:
         # 測試沒有 end_time 的情況
         history.end_time = None
         assert history.to_dict()['duration'] is None
+    
+
+    def test_history_utc_datetime_conversion(self):
+        """測試 CrawlerTaskHistory 的 start_time 和 end_time 欄位 UTC 時間轉換"""
+        from datetime import timedelta
+        
+        # 測試 1: 傳入無時區資訊的 datetime (naive datetime)
+        naive_time = datetime(2025, 3, 28, 12, 0, 0)  # 無時區資訊
+        history = CrawlerTaskHistory(
+            task_id=1,
+            start_time=naive_time,
+            end_time=naive_time
+        )
+        if history.start_time is not None:
+            assert history.start_time.tzinfo == timezone.utc  # 確認有 UTC 時區
+        assert history.start_time == naive_time.replace(tzinfo=timezone.utc)  # 確認值正確
+
+        if history.end_time is not None:
+            assert history.end_time.tzinfo == timezone.utc  # 確認有 UTC 時區
+        assert history.end_time == naive_time.replace(tzinfo=timezone.utc)  # 確認值正確
+
+        # 測試 2: 傳入帶非 UTC 時區的 datetime (aware datetime, UTC+8)
+        utc_plus_8_time = datetime(2025, 3, 28, 14, 0, 0, tzinfo=timezone(timedelta(hours=8)))
+        history.start_time = utc_plus_8_time
+        history.end_time = utc_plus_8_time
+        expected_utc_time = datetime(2025, 3, 28, 6, 0, 0, tzinfo=timezone.utc)  # UTC+8 轉 UTC
+        assert history.start_time.tzinfo == timezone.utc  # 確認轉換為 UTC 時區
+        assert history.start_time == expected_utc_time  # 確認時間正確轉換
+
+        assert history.end_time.tzinfo == timezone.utc  # 確認轉換為 UTC 時區
+        assert history.end_time == expected_utc_time  # 確認時間正確轉換
+
+        # 測試 3: 傳入已是 UTC 的 datetime，確保不變
+        utc_time = datetime(2025, 3, 28, 12, 0, 0, tzinfo=timezone.utc)
+        history.start_time = utc_time
+        history.end_time = utc_time
+        assert history.start_time == utc_time  # 確認值未被改變
+        assert history.end_time == utc_time  # 確認值未被改變
+
+        # 測試 4: 確認非監聽欄位（如 title）不觸發轉換邏輯
+        history.message = "新訊息"
+        assert history.start_time == utc_time  # start_time 不受影響
+        assert history.end_time == utc_time  # end_time 不受影響
+
+

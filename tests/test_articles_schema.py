@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import datetime, timezone
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from src.error.errors import ValidationError
 
@@ -11,7 +11,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source"
         }
         schema = ArticleCreateSchema.model_validate(data)
@@ -24,13 +24,13 @@ class TestArticleCreateSchema:
             # 缺少 title
             {
                 "link": "https://test.com/article",
-                "published_at": datetime.now().isoformat(), 
+                "published_at": datetime.now(timezone.utc).isoformat(), 
                 "source": "test_source"
             },
             # 缺少 link
             {
                 "title": "測試文章",
-                "published_at": datetime.now().isoformat(),
+                "published_at": datetime.now(timezone.utc).isoformat(),
                 "source": "test_source"
             },
             # 缺少 published_at
@@ -43,7 +43,7 @@ class TestArticleCreateSchema:
             {
                 "title": "測試文章",
                 "link": "https://test.com/article", 
-                "published_at": datetime.now().isoformat()
+                "published_at": datetime.now(timezone.utc).isoformat()
             }
         ]
         
@@ -62,7 +62,7 @@ class TestArticleCreateSchema:
             "content": "這是文章內容",
             "link": "https://test.com/article",
             "category": "測試",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "author": "測試作者",
             "source": "test_source",
             "article_type": "news",
@@ -85,7 +85,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source"
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -110,7 +110,7 @@ class TestArticleCreateSchema:
         data_min = {
             "title": "a",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source"
         }
         schema_min = ArticleCreateSchema.model_validate(data_min)
@@ -120,7 +120,7 @@ class TestArticleCreateSchema:
         data_max = {
             "title": "a" * 500,
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source"
         }
         schema_max = ArticleCreateSchema.model_validate(data_max)
@@ -132,7 +132,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source"
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -144,7 +144,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "a" * 1001,
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source"
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -157,7 +157,7 @@ class TestArticleCreateSchema:
         data_min = {
             "title": "測試文章",
             "link": "a",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source"
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -168,7 +168,7 @@ class TestArticleCreateSchema:
         data_max = {
             "title": "測試文章",
             "link": "https://"+"a" * 1000,
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source"
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -181,7 +181,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source",
             "summary": "a" * 10001
         }
@@ -196,7 +196,7 @@ class TestArticleCreateSchema:
         data_max = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source",
             "summary": "a" * 10000
         }
@@ -210,7 +210,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source",
             "content": "a" * 65537
         }
@@ -224,7 +224,7 @@ class TestArticleCreateSchema:
         data_max = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source",
             "content": "a" * 65536
         }
@@ -238,7 +238,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc),
             "source": ""
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -250,7 +250,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc),
             "source": "a" * 51
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -263,7 +263,7 @@ class TestArticleCreateSchema:
         data_min = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc),
             "source": "a"
         }
         schema_min = ArticleCreateSchema.model_validate(data_min)
@@ -273,7 +273,7 @@ class TestArticleCreateSchema:
         data_max = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc),
             "source": "a" * 50
         }
         schema_max = ArticleCreateSchema.model_validate(data_max)
@@ -298,7 +298,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc),
             "source": "test_source",
             "author": "a" * 101
         }
@@ -312,7 +312,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc),
             "source": "test_source",
             "article_type": "a" * 21
         }
@@ -326,7 +326,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc),
             "source": "test_source",
             "tags": "a" * 501
         }
@@ -339,7 +339,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc),
             "source": "test_source",
             "is_ai_related": True
         }
@@ -351,7 +351,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc).isoformat(),
             "source": "test_source"
         }
         schema = ArticleCreateSchema.model_validate(data)
@@ -362,7 +362,7 @@ class TestArticleCreateSchema:
         data = {
             "title": "測試文章",
             "link": "https://test.com/article",
-            "published_at": datetime.now().isoformat(),
+            "published_at": datetime.now(timezone.utc),
             "source": "test_source",
             "is_ai_related": "not_a_boolean"  # 無效的布林值
         }
@@ -404,7 +404,7 @@ class TestArticleUpdateSchema:
         """測試不允許更新 created_at 欄位"""
         data = {
             "title": "更新的文章標題",
-            "created_at": datetime.now().isoformat()
+            "created_at": datetime.now(timezone.utc)
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)

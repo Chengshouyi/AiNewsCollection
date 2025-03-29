@@ -32,8 +32,13 @@ class CrawlerTaskHistory(Base, BaseEntity):
     # 關聯到爬蟲任務
     task = relationship("CrawlerTasks", back_populates="history", lazy="joined")
 
+    # 定義需要監聽的 datetime 欄位  
+    _datetime_fields_to_watch = {'start_time', 'end_time'}
+
     def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+        # 告知父類需要監聽的 datetime 欄位
+        super().__init__(datetime_fields_to_watch=
+                         self._datetime_fields_to_watch, **kwargs)
 
     def __repr__(self):
         return f"<CrawlerTaskHistory(id={self.id}, task_id={self.task_id}, start_time='{self.start_time}')>"
