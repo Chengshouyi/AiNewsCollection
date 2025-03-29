@@ -1,15 +1,13 @@
 import pytest
 from datetime import datetime, timezone
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import Session
 from src.database.articles_repository import ArticlesRepository
 from src.database.article_links_repository import ArticleLinksRepository
 from src.models.articles_model import Articles
 from src.models.article_links_model import ArticleLinks
 from src.models.base_model import Base
 from src.database.base_repository import SchemaType
-import uuid
-from src.utils.model_utils import get_model_info
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from src.error.errors import ValidationError, DatabaseOperationError
 

@@ -3,6 +3,8 @@ from pydantic import BaseModel, BeforeValidator, model_validator
 from datetime import datetime
 from src.error.errors import ValidationError
 from src.utils.model_utils import validate_str, validate_boolean, validate_positive_int, validate_cron_expression
+from src.utils.schema_utils import validate_required_fields_schema, validate_update_schema
+from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
 
 
 # 通用字段定義
@@ -17,7 +19,7 @@ Notes = Annotated[Optional[str], BeforeValidator(validate_str("notes", max_lengt
 CronExpression = Annotated[Optional[str], BeforeValidator(validate_cron_expression("cron_expression", max_length=255, min_length=5, required=False))]
 LastRunMessage = Annotated[Optional[str], BeforeValidator(validate_str("last_run_message", max_length=65536, required=False))]
 
-class CrawlerTasksCreateSchema(BaseModel):
+class CrawlerTasksCreateSchema(BaseCreateSchema):
     """爬蟲任務創建模型"""
     crawler_id: CrawlerId
     is_auto: IsAuto = True
@@ -38,15 +40,12 @@ class CrawlerTasksCreateSchema(BaseModel):
         """驗證必填欄位"""
         if isinstance(data, dict):
             required_fields = ['crawler_id']
-            for field in required_fields:
-                if field not in data:
-                    raise ValidationError(f"{field}: 不能為空")
             if data.get('is_auto') is True:
                 if data.get('cron_expression') is None:
                     raise ValidationError("cron_expression: 當設定為自動執行時,此欄位不能為空")
-        return data
+            return validate_required_fields_schema(required_fields, data)
 
-class CrawlerTasksUpdateSchema(BaseModel):
+class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     """爬蟲任務更新模型"""
     is_auto: Optional[IsAuto] = None
     ai_only: Optional[AiOnly] = None
@@ -65,18 +64,10 @@ class CrawlerTasksUpdateSchema(BaseModel):
     def validate_update(cls, data):
         """驗證更新操作"""
         if isinstance(data, dict):
-            immutable_fields = ['created_at', 'crawler_id']
-            for field in immutable_fields:
-                if field in data:
-                    raise ValidationError(f"不允許更新 {field} 欄位")
+            immutable_fields = ['crawler_id'] + cls._get_immutable_fields()
+            updated_fields = [] + cls._get_updated_fields()
             if data.get('is_auto') is True:
                 if data.get('cron_expression') is None:
                     raise ValidationError("cron_expression: 當設定為自動執行時,此欄位不能為空")
-            update_fields = [
-                field for field in data.keys()
-                if field not in ['updated_at'] + immutable_fields
-            ]
-            if not update_fields:
-                raise ValidationError("必須提供至少一個要更新的欄位")
-        return data
+            return validate_update_schema(immutable_fields, updated_fields, data)
     

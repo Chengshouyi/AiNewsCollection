@@ -129,4 +129,35 @@ class TestArticleModel:
         article.title = "新標題"
         # 注意：實際更新時間需要透過 SQLAlchemy session 的操作才會觸發
 
+    def test_article_utc_datetime_conversion(self):
+        """測試 Article 的 published_at 欄位 UTC 時間轉換"""
+        from datetime import timedelta
+        
+        # 測試 1: 傳入無時區資訊的 datetime (naive datetime)
+        naive_time = datetime(2025, 3, 28, 12, 0, 0)  # 無時區資訊
+        article = Articles(
+            title="測試 UTC 轉換",
+            link="https://test.com/utc-test",
+            published_at=naive_time
+        )
+        if article.published_at is not None:
+            assert article.published_at.tzinfo == timezone.utc  # 確認有 UTC 時區
+        assert article.published_at == naive_time.replace(tzinfo=timezone.utc)  # 確認值正確
+
+        # 測試 2: 傳入帶非 UTC 時區的 datetime (aware datetime, UTC+8)
+        utc_plus_8_time = datetime(2025, 3, 28, 14, 0, 0, tzinfo=timezone(timedelta(hours=8)))
+        article.published_at = utc_plus_8_time
+        expected_utc_time = datetime(2025, 3, 28, 6, 0, 0, tzinfo=timezone.utc)  # UTC+8 轉 UTC
+        assert article.published_at.tzinfo == timezone.utc  # 確認轉換為 UTC 時區
+        assert article.published_at == expected_utc_time  # 確認時間正確轉換
+
+        # 測試 3: 傳入已是 UTC 的 datetime，確保不變
+        utc_time = datetime(2025, 3, 28, 12, 0, 0, tzinfo=timezone.utc)
+        article.published_at = utc_time
+        assert article.published_at == utc_time  # 確認值未被改變
+
+        # 測試 4: 確認非監聽欄位（如 title）不觸發轉換邏輯
+        article.title = "新標題"
+        assert article.published_at == utc_time  # published_at 不受影響
+
 

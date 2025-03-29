@@ -35,8 +35,8 @@ class TestCrawlerTasksCreateSchema:
     def test_missing_required_fields(self):
         """測試缺少必要欄位"""
         data = {
-            "is_auto": True,
-            "ai_only": False
+            "is_auto": False,
+            "ai_only": False,
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data)

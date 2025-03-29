@@ -1,6 +1,6 @@
 from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Optional
 from src.models.base_model import Base
 from .base_entity import BaseEntity
@@ -23,36 +23,16 @@ class CrawlerTaskHistory(Base, BaseEntity):
         ForeignKey('crawler_tasks.id'), 
         nullable=False
     )
-    start_time: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True),
-        default=lambda: datetime.now(timezone.utc),
-        nullable=False
-    )
+    start_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     end_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    success: Mapped[bool] = mapped_column(
-        Boolean,
-        default=False,
-        nullable=False
-    )
+    success: Mapped[Optional[bool]] = mapped_column(Boolean)
     message: Mapped[Optional[str]] = mapped_column(Text)
-    articles_count: Mapped[int] = mapped_column(
-        Integer,
-        default=0,
-        nullable=False
-    )
+    articles_count: Mapped[Optional[int]] = mapped_column(Integer)
 
     # 關聯到爬蟲任務
     task = relationship("CrawlerTasks", back_populates="history", lazy="joined")
 
     def __init__(self, **kwargs):
-        # 設置默認值
-        if 'start_time' not in kwargs:
-            kwargs['start_time'] = datetime.now(timezone.utc)
-        if 'success' not in kwargs:
-            kwargs['success'] = False
-        if 'articles_count' not in kwargs:
-            kwargs['articles_count'] = 0
-            
         super().__init__(**kwargs)
 
     def __repr__(self):
@@ -67,5 +47,5 @@ class CrawlerTaskHistory(Base, BaseEntity):
             'success': self.success,
             'message': self.message,
             'articles_count': self.articles_count,
-            'duration': (self.end_time - self.start_time).total_seconds() if self.end_time else None
+            'duration': (self.end_time - self.start_time).total_seconds() if self.end_time and self.start_time else None
         }

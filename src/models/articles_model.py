@@ -4,6 +4,11 @@ from src.models.base_model import Base
 from typing import Optional
 from datetime import datetime, timezone
 from .base_entity import BaseEntity
+import logging
+
+# 設定 logger
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class Articles(Base, BaseEntity):
     """文章模型
@@ -26,6 +31,10 @@ class Articles(Base, BaseEntity):
         # 保留資料庫層面的唯一性約束
         UniqueConstraint('link', name='uq_article_link'),
     )
+    
+    # 定義需要監聽的 datetime 欄位
+    _datetime_fields_to_watch = {'published_at'}
+    
     title: Mapped[str] = mapped_column(
         String(500), 
         nullable=False
@@ -54,13 +63,13 @@ class Articles(Base, BaseEntity):
     )
     article_links = relationship("ArticleLinks", back_populates="articles", lazy="joined")
 
-
     def __init__(self, **kwargs):
         # 設置默認值
         if 'is_ai_related' not in kwargs:
             kwargs['is_ai_related'] = False
-            
-        super().__init__(**kwargs)
+        # 告知父類需要監聽的 datetime 欄位
+        super().__init__(datetime_fields_to_watch=self._datetime_fields_to_watch, **kwargs)
+
     # 文章資料repr
     def __repr__(self):
         return f"<Article(id={self.id}, title='{self.title}', link='{self.link}')>"

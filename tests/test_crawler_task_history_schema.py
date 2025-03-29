@@ -17,11 +17,11 @@ class TestCrawlerTaskHistoryCreateSchema:
         schema = CrawlerTaskHistoryCreateSchema.model_validate(data)
         
         assert schema.task_id == 1
-        assert isinstance(schema.start_time, datetime)
+        assert schema.start_time is None
         assert schema.end_time is None
-        assert schema.success is False
+        assert schema.success is None
         assert schema.message is None
-        assert schema.articles_count == 0
+        assert schema.articles_count is None
     
     def test_valid_complete_create(self):
         """測試完整有效創建"""
@@ -118,9 +118,8 @@ class TestCrawlerTaskHistoryUpdateSchema:
         """測試不可變欄位更新"""
         immutable_fields = [
             ({"id": 1}, "不允許更新 id 欄位"),
+            ({"created_at": datetime.now(timezone.utc)}, "不允許更新 created_at 欄位"),
             ({"task_id": 1}, "不允許更新 task_id 欄位"),
-            ({"start_time": datetime.now()}, "不允許更新 start_time 欄位"),
-            ({"created_at": datetime.now()}, "不允許更新 created_at 欄位")
         ]
         
         for data, expected_error in immutable_fields:

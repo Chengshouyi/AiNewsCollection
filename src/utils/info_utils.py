@@ -139,6 +139,8 @@ def analyze_class_details(folder_path):
 
 # 使用範例
 if __name__ == '__main__':
+
+    """
     folder_path = './src'  # 替換成你要掃描的資料夾路徑
     class_analysis = analyze_class_details(folder_path)
     
@@ -153,3 +155,4 @@ if __name__ == '__main__':
         print("屬性:", details['attributes'])
         print("使用關係:", details['uses'])
         print("---")
+    """

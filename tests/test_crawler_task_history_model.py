@@ -13,10 +13,9 @@ class TestCrawlerTaskHistoryModel:
         )
         
         assert history.task_id == 1
-        assert history.start_time is not None
-        assert isinstance(history.start_time, datetime)
-        assert history.success is False
-        assert history.articles_count == 0
+        assert history.start_time is None
+        assert history.success is None
+        assert history.articles_count is None
         assert history.end_time is None
         assert history.message is None
     
@@ -93,7 +92,7 @@ class TestCrawlerTaskHistoryModel:
         
         history_dict = history.to_dict()
         expected_keys = {
-            'id', 'task_id', 'start_time', 'end_time',
+            'id', 'created_at', 'updated_at', 'task_id', 'start_time', 'end_time',
             'success', 'message', 'articles_count', 'duration'
         }
         
