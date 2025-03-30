@@ -10,7 +10,7 @@ from src.database.articles_repository import ArticlesRepository
 from sqlalchemy import create_engine
 from src.database.base_repository import SchemaType
 from src.models.article_links_schema import ArticleLinksCreateSchema, ArticleLinksUpdateSchema
-from src.error.errors import ValidationError, DatabaseOperationError, InvalidOperationError, DatabaseConnectionError
+from src.error.errors import ValidationError, DatabaseOperationError, DatabaseConnectionError
 
 # 設置測試資料庫
 @pytest.fixture
@@ -87,19 +87,31 @@ def sample_article_links(session):
             article_link="https://example.com/article1",
             is_scraped=False,
             source_name="測試來源1",
-            source_url="https://example.com/source1"
+            source_url="https://example.com/source1",
+            title="測試文章1",
+            summary="測試摘要1",
+            category="測試分類1",
+            published_age="測試發佈年齡1"
         ),
         ArticleLinks(
             article_link="https://example.com/article2",
             is_scraped=False,
             source_name="測試來源1",
-            source_url="https://example.com/source2"
+            source_url="https://example.com/source2",
+            title="測試文章2",
+            summary="測試摘要2",
+            category="測試分類2",
+            published_age="測試發佈年齡2"
         ),
         ArticleLinks(
             article_link="https://example.com/article3",
             is_scraped=True,
             source_name="測試來源2",
-            source_url="https://example.com/source3"
+            source_url="https://example.com/source3",
+            title="測試文章3",
+            summary="測試摘要3",
+            category="測試分類3",
+            published_age="測試發佈年齡3"
         )
     ]
     session.add_all(links)
@@ -320,6 +332,7 @@ class TestArticleLinksRelationship:
             "is_ai_related": True,
             "source": "測試來源",
             "published_at": datetime.now(timezone.utc)
+
         }
         article = article_repo.create(article_data)
         session.flush()
@@ -329,7 +342,11 @@ class TestArticleLinksRelationship:
             "article_link": "https://example.com/relation-test",
             "is_scraped": True,
             "source_name": "測試來源",
-            "source_url": f"https://example.com/source-{uuid.uuid4()}"
+            "source_url": f"https://example.com/source-{uuid.uuid4()}",
+            "title": "測試文章",
+            "summary": "測試摘要",
+            "category": "測試分類",
+            "published_age": "測試發佈年齡"
         }
         article_link = article_links_repo.create(link_data)
         

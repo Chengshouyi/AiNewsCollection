@@ -106,6 +106,11 @@ class TestArticleLinksModel:
                 source_name="測試來源",
                 source_url="https://test.com",
                 article_link="https://test.com/article",
+                title="測試文章",
+                summary="測試摘要",
+                category="測試分類",
+                published_age="測試發佈年齡",
+                is_scraped=False,
                 articles=article  # 直接設定關聯
             )
             

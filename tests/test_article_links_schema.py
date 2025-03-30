@@ -9,24 +9,36 @@ class TestArticleLinksCreateSchema:
     def test_valid_article_links_create(self):
         """測試有效的 ArticleLinksCreateSchema 資料"""
         valid_data = {
-            "article_link": "https://example.com/article/1",
             "source_name": "範例新聞",
             "source_url": "https://example.com",
+            "article_link": "https://example.com/article/1",
+            "title": "測試文章",
+            "summary": "測試摘要",
+            "category": "測試分類",
+            "published_age": "測試發佈年齡",
             "is_scraped": False
         }
         
         schema = ArticleLinksCreateSchema.model_validate(valid_data)
-        assert schema.article_link == valid_data["article_link"]
         assert schema.source_name == valid_data["source_name"]
         assert schema.source_url == valid_data["source_url"]
+        assert schema.article_link == valid_data["article_link"]
+        assert schema.title == valid_data["title"]
+        assert schema.summary == valid_data["summary"]
+        assert schema.category == valid_data["category"]
+        assert schema.published_age == valid_data["published_age"]
         assert schema.is_scraped == valid_data["is_scraped"]
 
     def test_default_values(self):
         """測試預設值"""
         valid_data = {
-            "article_link": "https://example.com/article/1",
             "source_name": "範例新聞",
-            "source_url": "https://example.com"
+            "source_url": "https://example.com",
+            "article_link": "https://example.com/article/1",
+            "title": "測試文章",
+            "summary": "測試摘要",
+            "category": "測試分類",
+            "published_age": "測試發佈年齡",
         }
         
         schema = ArticleLinksCreateSchema.model_validate(valid_data)
@@ -45,7 +57,12 @@ class TestArticleLinksCreateSchema:
                 ArticleLinksCreateSchema.model_validate({
                     "article_link": value,
                     "source_name": "範例新聞",
-                    "source_url": "https://example.com"
+                    "source_url": "https://example.com",
+                    "title": "測試文章",
+                    "summary": "測試摘要",
+                    "category": "測試分類",
+                    "published_age": "測試發佈年齡",
+                    "is_scraped": False
                 })
             assert expected_error in str(exc_info.value)
 
@@ -62,7 +79,12 @@ class TestArticleLinksCreateSchema:
                 ArticleLinksCreateSchema.model_validate({
                     "article_link": "https://example.com/article/1",
                     "source_name": value,
-                    "source_url": "https://example.com"
+                    "source_url": "https://example.com",
+                    "title": "測試文章",
+                    "summary": "測試摘要",
+                    "category": "測試分類",
+                    "published_age": "測試發佈年齡",
+                    "is_scraped": False
                 })
             assert expected_error in str(exc_info.value)
 
@@ -79,7 +101,12 @@ class TestArticleLinksCreateSchema:
                 ArticleLinksCreateSchema.model_validate({
                     "article_link": "https://example.com/article/1",
                     "source_name": "範例新聞",
-                    "source_url": value
+                    "source_url": value,
+                    "title": "測試文章",
+                    "summary": "測試摘要",
+                    "category": "測試分類",
+                    "published_age": "測試發佈年齡",
+                    "is_scraped": False
                 })
             assert expected_error in str(exc_info.value)
 

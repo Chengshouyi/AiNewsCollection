@@ -3,8 +3,8 @@
 
 import pandas as pd
 import logging
-from typing import Dict, Union, List, Any
-from src.crawlers.ai_filter_config import AI_KEYWORDS, AI_CATEGORIES
+from typing import Dict, Any
+from src.crawlers.configs.ai_filter_config import AI_KEYWORDS, AI_CATEGORIES
 
 logger = logging.getLogger(__name__)
 

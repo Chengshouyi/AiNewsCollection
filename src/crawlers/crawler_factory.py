@@ -1,76 +1,91 @@
 from typing import Dict, Type, Optional, Any
-from .site_config import SiteConfig
+from src.crawlers.configs.site_config import SiteConfig
+from src.database.database_manager import DatabaseManager
+from src.database.crawlers_repository import CrawlersRepository
+from src.models.crawlers_model import Crawlers
 import logging
 
+# 設定 logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class CrawlerFactory:
     _crawler_types: Dict[str, Dict[str, Any]] = {}
+    _db_manager: Optional[DatabaseManager] = None
     
     @classmethod
-    def register_crawler_type(
-        cls, 
-        name: str, 
-        crawler_class: Type, 
-        default_config: Optional[SiteConfig] = None
-    ):
+    def initialize(cls, db_manager: DatabaseManager):
         """
-        動態註冊爬蟲類型
+        初始化爬蟲工廠，從資料庫讀取爬蟲設定並註冊
         
         Args:
-            name (str): 爬蟲名稱
-            crawler_class (Type): 爬蟲類
-            default_config (Optional[SiteConfig]): 預設配置
+            db_manager: 資料庫管理器實例
         """
-        if name in cls._crawler_types:
-            logger.warning(f"覆蓋已存在的爬蟲類型: {name}")
+        cls._db_manager = db_manager
+        try:
+            # 取得爬蟲儲存庫
+            session = db_manager.Session()
+            crawlers_repo = CrawlersRepository(session, Crawlers)
             
-        cls._crawler_types[name] = {
-            'class': crawler_class,
-            'config': default_config
-        }
-        logger.info(f"註冊爬蟲類型: {name}")
+            # 取得所有活動中的爬蟲
+            active_crawlers = crawlers_repo.find_active_crawlers()
+            
+            # 註冊每個爬蟲
+            for crawler in active_crawlers:
+                try:
+                    # 動態導入爬蟲類別
+                    module_name = f"src.crawlers.{crawler.crawler_type.lower()}_crawler"
+                    class_name = crawler.crawler_name
+                    
+                    # 動態導入模組和類別
+                    module = __import__(module_name, fromlist=[class_name])
+                    crawler_class = getattr(module, class_name)
+                    
+                    # 註冊爬蟲
+                    cls._crawler_types[crawler.crawler_name] = {
+                        'class': crawler_class,
+                        'config_file_name': crawler.config_file_name
+                    }
+                    
+                    logger.info(f"成功註冊爬蟲: {crawler.crawler_name}")
+                except Exception as e:
+                    logger.error(f"註冊爬蟲失敗 {crawler.crawler_name}: {str(e)}")
+                    continue
+                    
+        except Exception as e:
+            logger.error(f"初始化爬蟲工廠失敗: {str(e)}")
+            raise
+        finally:
+            if 'session' in locals():
+                session.close()
 
     @classmethod
-    def get_crawler(
-        cls, 
-        name: str, 
-        config: Optional[SiteConfig] = None,
-        **kwargs
-    ):
+    def get_crawler(cls, name: str) -> Any:
         """
         獲取特定爬蟲實例
         
         Args:
             name (str): 爬蟲名稱
-            config (Optional[SiteConfig]): 自定義配置
-            **kwargs: 其他參數傳遞給爬蟲初始化
-        
+            
         Returns:
             爬蟲實例
         """
+        if not cls._db_manager:
+            raise RuntimeError("爬蟲工廠尚未初始化，請先調用 initialize 方法")
+            
         crawler_info = cls._crawler_types.get(name)
         if not crawler_info:
             available = ", ".join(cls._crawler_types.keys())
             raise ValueError(f"未找到 {name} 爬蟲。可用爬蟲: {available}")
         
-        crawler_class = crawler_info['class']
-        default_config = crawler_info.get('config')
-        
-        # 優先使用傳入配置，其次使用預設配置
-        final_config = config or default_config
-        
-        # 檢查配置有效性
-        if final_config and hasattr(final_config, 'validate'):
-            if not final_config.validate():
-                logger.warning(f"爬蟲配置驗證失敗: {name}")
-        
-        # 創建爬蟲實例
         try:
-            if final_config:
-                return crawler_class(config=final_config, **kwargs)
-            else:
-                return crawler_class(**kwargs)
+            # 取得爬蟲類別
+            crawler_class = crawler_info['class']
+            config_file_name = crawler_info['config_file_name']
+            
+            # 創建爬蟲實例，傳入 db_manager
+            return crawler_class(db_manager=cls._db_manager, config_file_name=config_file_name)
+            
         except Exception as e:
             logger.error(f"創建爬蟲實例失敗: {str(e)}")
             raise

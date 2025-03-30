@@ -1,30 +1,72 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 import pandas as pd
-from src.crawlers.site_config import SiteConfig
 from datetime import datetime, timezone
 import logging
 import time
-
+import json
+import os
+from src.crawlers.configs.site_config import SiteConfig
+from src.database.database_manager import DatabaseManager
+from src.database.articles_repository import ArticlesRepository
+from src.database.article_links_repository import ArticleLinksRepository
+from src.models.articles_model import Articles
+from src.models.article_links_model import ArticleLinks
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class BaseCrawler(ABC):
-    def __init__(self, site_config, crawler_type: str):
-        self.site_config = site_config
+
+
+
+    def __init__(self, db_manager: Optional[DatabaseManager] = None, config_file_name: Optional[str] = None):
+        self.config_data: Dict[str, Any] = {}
+        self.site_config: SiteConfig
         self.task_status = {}
-        self.crawler_type = crawler_type
+        self.db_manager = db_manager
+        self.config_file_name = config_file_name
+        
+        # 初始化 repositories
+        self.article_repository = None
+        self.article_link_repository = None
+        if self.db_manager:
+            session = self.db_manager.Session()
+            try:
+                self.article_repository = ArticlesRepository(session, Articles)
+                self.article_link_repository = ArticleLinksRepository(session, ArticleLinks)
+            except Exception as e:
+                logger.error(f"初始化 repositories 失敗: {str(e)}")
+                session.close()
+                raise
 
     @abstractmethod
-    def fetch_article_list(self, args: dict, **kwargs) -> pd.DataFrame:
+    def _set_repository(self):
+        """設置數據庫管理器,子類別需要實作"""
+        pass
+        
+    @abstractmethod
+    def _load_site_config(self):
+        """
+        從配置檔案讀取爬蟲設定，子類別需要實作
+        """
+
+    @abstractmethod
+    def _create_site_config(self):
+        """
+        創建站點配置，子類別需要實作
+        """
+        pass
+
+    @abstractmethod
+    def fetch_article_list(self) -> pd.DataFrame:
         """
         爬取新聞列表，子類別需要實作
         """
         pass
 
     @abstractmethod
-    def fetch_article_details(self, args: dict, **kwargs) -> pd.DataFrame:
+    def fetch_article_details(self) -> pd.DataFrame:
         """
         爬取文章詳細內容，子類別需要實作
         """
@@ -36,6 +78,7 @@ class BaseCrawler(ABC):
         保存數據，支持保存到數據庫和CSV文件
         """
         pass
+
 
     def execute_task(self, task_id: int, task_args: dict, db_manager=None):
         """執行爬蟲任務的完整流程，並更新任務狀態"""
@@ -49,7 +92,8 @@ class BaseCrawler(ABC):
         try:
             # 步驟1：抓取文章列表
             self._update_task_status(task_id, 10, '抓取文章列表中...')
-            articles_df = self.fetch_article_list(task_args)
+            logger.info(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表中...")
+            articles_df = self.fetch_article_list()
             
             # 步驟2：抓取文章詳細內容
             self._update_task_status(task_id, 50, '抓取文章詳細內容中...')
@@ -60,7 +104,7 @@ class BaseCrawler(ABC):
                     'ai_only': task_args.get('ai_only', True),
                     'min_keywords': task_args.get('min_keywords', 3)
                 }
-                detailed_df = self.fetch_article_details(args)
+                detailed_df = self.fetch_article_details()
             else:
                 detailed_df = articles_df
                 

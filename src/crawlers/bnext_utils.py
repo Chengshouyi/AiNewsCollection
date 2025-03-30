@@ -4,17 +4,21 @@
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from src.crawlers.bnext_config import BNEXT_CONFIG
 import re
 import time
 import logging
 import random
 
+
 logger = logging.getLogger(__name__)
 
 class BnextUtils:
     """明日科技爬蟲的工具類"""
-    
+
+    @staticmethod
+    def set_bnext_config(bnext_config):
+        BnextUtils.bnext_config = bnext_config
+
     @staticmethod
     def get_random_sleep_time(min_time: float = 1.0, max_time: float = 3.0):
         """產生隨機休眠時間"""
@@ -150,13 +154,13 @@ class BnextUtils:
         
         # 從容器中尋找
         if not link:
-            link_elem = BnextUtils.find_element(container, BNEXT_CONFIG.selectors['common_elements'][3:], 'link')
+            link_elem = BnextUtils.find_element(container, BnextUtils.bnext_config.selectors['common_elements'][3:], 'link')
             if link_elem:
                 link = link_elem['href']
         
         # 確保連結是完整的
         if link and not link.startswith('http'):
-            link = urljoin(BNEXT_CONFIG.base_url, link)
+            link = urljoin(BnextUtils.bnext_config.base_url, link)
             
         return link
 

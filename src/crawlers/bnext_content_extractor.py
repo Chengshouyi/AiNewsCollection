@@ -9,11 +9,11 @@ import re
 import time
 from datetime import datetime
 
-from src.crawlers.base_config import DEFAULT_HEADERS
-from src.crawlers.bnext_config import BNEXT_CONFIG
+from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
+from src.database.articles_repository import ArticlesRepository
 
 # 設置日誌記錄器
 custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -26,9 +26,35 @@ logger = LoggerSetup.setup_logger(
 )
 
 class BnextContentExtractor:
-    def __init__(self):
-        self.article_repository = None
-        logger.info("初始化 BnextContentExtractor")
+    def __init__(self, config=None):
+        self.article_repository: Optional[ArticlesRepository] = None
+        
+        # 檢查配置
+        logger.info("檢查爬蟲配置")
+        if config is None:
+            logger.error("未提供網站配置，請提供有效的配置")
+            raise ValueError("未提供網站配置，請提供有效的配置")
+        else:
+            # 確保配置有必要的屬性
+            if not hasattr(config, 'base_url'):
+                logger.error("未提供網站基礎URL，將使用預設值")
+                config.base_url = "https://www.bnext.com.tw"
+            if not hasattr(config, 'default_categories'):
+                logger.error("未提供預設類別，將使用預設值")
+                config.default_categories = ["ai","tech","iot","smartmedical","smartcity",       "cloudcomputing","security"]
+            if not hasattr(config, 'selectors'):
+                logger.error("未提供選擇器，將使用預設值")
+                config.selectors = {}
+            if not hasattr(config, 'get_category_url'):
+                logger.error("未提供類別URL，將使用預設值")
+                config.get_category_url = lambda x: f"{config.base_url}/categories/{x}"
+            
+            self.config = config
+            logger.info(f"使用配置: {self.config.__dict__}")
+        
+        if not self.article_repository:
+            logger.warning("未提供資料庫管理器，將不會保存到資料庫")
+
         
     def set_db_manager(self, db_manager):
         """設置資料庫管理器"""
@@ -157,7 +183,7 @@ class BnextContentExtractor:
             logger.debug("成功獲取網頁內容")
             
             soup = BnextUtils.get_soup_from_html(response.text)
-            selectors = BNEXT_CONFIG.selectors['article_detail']
+            selectors = self.config.selectors['article_detail']
             
             # 提取文章內容
             header = soup.select_one(BnextUtils.build_selector(selectors[0]))
@@ -400,7 +426,7 @@ class BnextContentExtractor:
                     link_title = link.get_text(strip=True)
                     
                     # 確保連結是完整的
-                    link_url = BnextUtils.normalize_url(link_url, BNEXT_CONFIG.base_url)
+                    link_url = BnextUtils.normalize_url(link_url, self.config.base_url)
                     
                     # 確保連結有效且未重複
                     if link_url and link_title and link_url not in link_urls and '/article/' in link_url:

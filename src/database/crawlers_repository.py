@@ -205,7 +205,7 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             err_msg=f"精確查詢爬蟲名稱 '{crawler_name}' 時發生錯誤"
         )
     
-    def create_or_update(self, entity_data: Dict[str, Any]) -> Crawlers:
+    def create_or_update(self, entity_data: Dict[str, Any]) -> Optional[Crawlers]:
         """創建或更新爬蟲設定
         
         如果有提供 ID 則更新現有爬蟲，否則創建新爬蟲

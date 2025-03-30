@@ -1,15 +1,15 @@
 import requests
 import pandas as pd
 import logging
-from typing import List, Dict
+from typing import List, Dict, Optional
 import time
 import re
 
-from src.crawlers.base_config import DEFAULT_HEADERS
-from src.crawlers.bnext_config import BNEXT_CONFIG, BNEXT_DEFAULT_CATEGORIES
+from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
+from src.database.articles_repository import ArticlesRepository
 
 # 設置日誌記錄器
 custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -22,24 +22,39 @@ logger = LoggerSetup.setup_logger(
 )
 
 class BnextScraper:
-    def __init__(self, db_manager=None):
+    def __init__(self, config=None):
         """
         初始化爬蟲
         
         Parameters:
-        db_manager (DatabaseManager, optional): 資料庫管理器，用於存儲文章
+        config (SiteConfig, optional): 網站配置
         """
-        self.db_manager = db_manager
-        self.article_repository = None
+        self.article_repository: Optional[ArticlesRepository] = None
         
         # 檢查配置
         logger.info("檢查爬蟲配置")
-        logger.info(f"使用配置: {BNEXT_CONFIG.__dict__}")
-        
-        if db_manager:
-            self.article_repository = db_manager.get_repository('Article')
-            logger.info("資料庫連接已建立")
+        if config is None:
+            logger.error("未提供網站配置，請提供有效的配置")
+            raise ValueError("未提供網站配置，請提供有效的配置")
         else:
+            # 確保配置有必要的屬性
+            if not hasattr(config, 'base_url'):
+                logger.error("未提供網站基礎URL，將使用預設值")
+                config.base_url = "https://www.bnext.com.tw"
+            if not hasattr(config, 'default_categories'):
+                logger.error("未提供預設類別，將使用預設值")
+                config.default_categories = ["ai","tech","iot","smartmedical","smartcity",       "cloudcomputing","security"]
+            if not hasattr(config, 'selectors'):
+                logger.error("未提供選擇器，將使用預設值")
+                config.selectors = {}
+            if not hasattr(config, 'get_category_url'):
+                logger.error("未提供類別URL，將使用預設值")
+                config.get_category_url = lambda x: f"{config.base_url}/categories/{x}"
+            
+            self.config = config
+            logger.info(f"使用配置: {self.config.__dict__}")
+        
+        if not self.article_repository:
             logger.warning("未提供資料庫管理器，將不會保存到資料庫")
 
     def scrape_article_list(self, max_pages=3, categories=None, ai_only=True) -> pd.DataFrame:
@@ -47,44 +62,38 @@ class BnextScraper:
         logger.info("開始爬蟲任務")
         
         try:
-            logger.info("開始爬取文章列表")
+            logger.info("BnextScraper(scrape_article_list()) - call 開始爬取文章列表")
             logger.info(f"參數設置: max_pages={max_pages}, ai_only={ai_only}")
             logger.info(f"使用類別: {categories if categories else '預設類別'}")
             
-            # 如果沒有指定類別，則使用預設類別
+            # 如果沒有指定類別，則使用配置中的類別
             if not categories:
-                categories = []
-                if BNEXT_CONFIG.default_categories:
-                    categories.extend(BNEXT_CONFIG.default_categories)
-                else:
-                    logger.warning("未設置預設類別，將使用預設類別")
-                    for category in BNEXT_DEFAULT_CATEGORIES:
-                        category_url = BNEXT_CONFIG.get_category_url(category)
-                        if category_url:
-                            categories.append(category_url)
+                categories = self.config.categories.get("categories", None)
                 
+            # 初始化requests session(網路連線)
             session = requests.Session()
             all_articles = []
             
-            for category_url in categories:
-                logger.info(f"開始處理類別: {category_url}")
-                current_url = category_url
+            for current_category_name in categories:
+                logger.info(f"開始處理類別: {current_category_name}")
+                # 構造類別URL
+                current_category_url = self.config.list_url_template.format(base_url=self.config.base_url, category=current_category_name)
                 page = 1
                 
                 # 保存原始類別URL，用於構造分頁URL
-                base_category_url = category_url
+                base_category_url = current_category_url
 
                 while page <= max_pages:
                     logger.info(f"正在處理第 {page}/{max_pages} 頁")
-                    logger.debug(f"當前URL: {current_url}")
+                    logger.debug(f"當前URL: {current_category_url}")
                     
                     try:
-                        logger.info(f"正在爬取: {current_url} (第 {page} 頁)")
+                        logger.info(f"正在爬取: {current_category_url} (第 {page} 頁)")
                         
                         # 增加隨機延遲，避免被封鎖
                         BnextUtils.sleep_random_time(1.5, 3.5)
                         
-                        response = session.get(str(current_url), headers=DEFAULT_HEADERS, timeout=15)
+                        response = session.get(str(current_category_url), headers=DEFAULT_HEADERS, timeout=15)
                         
                         if response.status_code != 200:
                             logger.warning(f"頁面請求失敗: {response.status_code}")
@@ -94,17 +103,20 @@ class BnextScraper:
                         
                         # 根據提供的選擇器爬取內容
                         # 1. 爬取焦點文章
+                        logger.info(f"BnextScraper(scrape_article_list()) - call self.extract_focus_articles() 爬取焦點文章")
                         focus_articles = self.extract_focus_articles(soup)
                         all_articles.extend(focus_articles)
                         
                         # 2. 爬取一般文章
+                        logger.info(f"BnextScraper(scrape_article_list()) - call self.extract_regular_articles() 爬取一般文章")
                         regular_articles = self.extract_regular_articles(soup)
                         all_articles.extend(regular_articles)
                         
                         # 3. 如果上述兩種方法沒有找到任何文章或文章太少，則使用備用方法
                         backup_articles = []
+                        logger.info(f"BnextScraper(scrape_article_list()) - call self.extract_backup_articles() 爬取備用文章")
                         if len(focus_articles) + len(regular_articles) < 5:  # 假設每頁至少應有5篇文章
-                            backup_articles = self.extract_backup_articles(soup, current_url)
+                            backup_articles = self.extract_backup_articles(soup, current_category_url)
                             all_articles.extend(backup_articles)
                         
                             
@@ -124,15 +136,15 @@ class BnextScraper:
                         next_page = soup.select_one('.pagination .next, .pagination a[rel="next"]')
                         if next_page and 'href' in next_page.attrs:
                             next_url = next_page['href']
-                            current_url = BnextUtils.normalize_url(next_url, BNEXT_CONFIG.base_url)
+                            current_category_url = BnextUtils.normalize_url(next_url, self.config.base_url)
                             page += 1
                         else:
                             # 嘗試直接構造下一頁URL
-                            current_url = self._build_next_page_url(base_category_url, page + 1)
+                            current_category_url = self._build_next_page_url(base_category_url, page + 1)
                             page += 1
                             
                             # 檢查構造的URL是否有效
-                            if not self._is_valid_next_page(session, current_url):
+                            if not self._is_valid_next_page(session, current_category_url):
                                 break
                     
                         # 記錄每個步驟的結果
@@ -144,7 +156,7 @@ class BnextScraper:
                         logger.error(f"爬取過程中發生錯誤: {str(e)}", exc_info=True)
                         break
                 
-                logger.info(f"完成爬取類別: {category_url}")
+                logger.info(f"完成爬取類別: {current_category_url}")
             
             # 修改儲存邏輯
             if all_articles and self.article_repository:
@@ -248,10 +260,7 @@ class BnextScraper:
         """
         提取焦點文章，增加容錯和詳細日誌
         """
-        articles = []
-        selectors = BNEXT_CONFIG.selectors if hasattr(BNEXT_CONFIG, 'selectors') else {}
-        
-        logger.info(f"焦點文章選擇器配置: {selectors}")
+
         
         # 預設備用選擇器 - 根據實際使用經驗設置更準確的選擇器
         default_selectors = {
@@ -261,37 +270,47 @@ class BnextScraper:
             'category': 'div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex.relative.items-center.gap-2.text-gray-500.text-sm > a',
             'time': 'div.flex.relative.items-center.gap-2.text-gray-500.text-sm span:nth-child(1)'
         }
-        
+        articles = []
+
         try:
-            # 嘗試使用配置中的選擇器，若無則使用預設選擇器
-            container_selector = (
-                selectors.get('focus_articles', [default_selectors['container']])[0] 
-                if selectors.get('focus_articles') 
-                else default_selectors['container']
-            )
+            selectors = self.config.selectors.get('focus_articles', {})
+            if not selectors:
+                logger.warning("未提供焦點文章選擇器配置")
+                container_selector = default_selectors['container']
+                logger.debug(f"使用預設容器選擇器: {container_selector}")
+            else:
+                logger.info(f"焦點文章選擇器配置: {selectors}")
+                container_selector = selectors['container']
+                logger.debug(f"使用config配置的容器選擇器: {container_selector}")
             
-            logger.debug(f"使用容器選擇器: {container_selector}")
+            
             
             # 選擇文章容器
             focus_article_containers = soup.select(container_selector)
             
             logger.info(f"找到 {len(focus_article_containers)} 個焦點文章容器")
+            logger.debug(f"焦點文章容器: {focus_article_containers}")
             
             for idx, container in enumerate(focus_article_containers, 1):
                 try:
                     # 使用預設或配置選擇器提取標題
-                    title_selector = (
-                        selectors.get('focus_articles', [None, default_selectors['title']])[1] 
-                        if selectors.get('focus_articles') 
-                        else default_selectors['title']
-                    )
+                    if selectors['title']:
+                        title_selector = selectors['title']
+                        logger.debug(f"使用config配置的標題選擇器: {title_selector}")
+                    else:
+                        title_selector = default_selectors['title']
+                        logger.debug(f"使用預設標題選擇器: {title_selector}")
+
                     title_elem = container.select_one(title_selector)
+                    logger.debug(f"第{idx}個焦點文章標題元素: {title_elem}")
                     
                     # 如果找不到標題，嘗試使用h2、h3標籤直接搜索
                     if not title_elem:
+                        logger.debug(f"第{idx}個焦點文章標題元素未找到，嘗試使用h2、h3標籤直接搜索")
                         for selector in ['h2', 'h3', '.title', 'div.font-bold']: 
                             title_elem = container.select_one(selector)
                             if title_elem:
+                                logger.debug(f"第{idx}個焦點文章標題元素找到，使用h2、h3標籤直接搜索")
                                 break
                     
                     if not title_elem:
@@ -299,23 +318,37 @@ class BnextScraper:
                         continue
                     
                     title = title_elem.get_text(strip=True)
+                    if title:
+                        logger.debug(f"第{idx}個焦點文章標題: {title}")
+                    else:
+                        logger.warning(f"第 {idx} 個焦點文章標題未找到")
                     
                     # 提取摘要
-                    summary_selector = (
-                        selectors.get('focus_articles', [None, None, default_selectors['summary']])[2] 
-                        if selectors.get('focus_articles') 
-                        else default_selectors['summary']
-                    )
+                    logger.debug(f"提取第{idx}個焦點文章摘要")
+                    if selectors['summary']:
+                        summary_selector = selectors['summary']
+                        logger.debug(f"使用config配置的摘要選擇器: {summary_selector}")
+                    else:
+                        summary_selector = default_selectors['summary']
+                        logger.debug(f"使用預設摘要選擇器: {summary_selector}")
+                    
                     summary_elem = container.select_one(summary_selector)
                     
                     # 如果找不到摘要，嘗試使用通用選擇器
                     if not summary_elem:
+                        logger.debug(f"第{idx}個焦點文章摘要未找到，嘗試使用通用選擇器")
                         for selector in ['div.text-gray-500', '.summary', '.excerpt', 'div.text-sm']:
                             summary_elem = container.select_one(selector)
                             if summary_elem:
+                                logger.debug(f"第{idx}個焦點文章摘要找到，使用通用選擇器")
                                 break
-                    
-                    summary = summary_elem.get_text(strip=True) if summary_elem else ""
+                    if summary_elem:
+                        logger.debug(f"第{idx}個焦點文章摘要元素: {summary_elem}")
+                        summary = summary_elem.get_text(strip=True) if summary_elem else ""
+                        if summary:
+                            logger.debug(f"第{idx}個焦點文章摘要: {summary}")
+                        else:
+                            logger.warning(f"第 {idx} 個焦點文章摘要未找到")
                     
                     # 提取連結 - 改進鏈接提取邏輯
                     link = BnextUtils.extract_article_link(container, title_elem)
@@ -334,7 +367,7 @@ class BnextScraper:
                     
                     # 確保連結是完整的
                     if link and not link.startswith('http'):
-                        link = BnextUtils.normalize_url(link, BNEXT_CONFIG.base_url)
+                        link = BnextUtils.normalize_url(link, self.config.base_url)
                     
                     # 如果還是找不到連結，則跳過這篇文章
                     if not link:
@@ -410,7 +443,7 @@ class BnextScraper:
         提取一般文章，增加容錯和詳細日誌
         """
         articles = []
-        selectors = BNEXT_CONFIG.selectors if hasattr(BNEXT_CONFIG, 'selectors') else {}
+        selectors = self.config.selectors if hasattr(self.config, 'selectors') else {}
         
         logger.info(f"一般文章選擇器配置: {selectors}")
         
@@ -509,7 +542,7 @@ class BnextScraper:
                     
                     # 確保連結是完整的
                     if link and not link.startswith('http'):
-                        link = BnextUtils.normalize_url(link, BNEXT_CONFIG.base_url)
+                        link = BnextUtils.normalize_url(link, self.config.base_url)
                     
                     if not link:
                         logger.warning(f"第 {idx} 個一般文章未找到連結")
@@ -585,7 +618,7 @@ class BnextScraper:
         """
         articles = []
         found_links = set()
-        selectors = BNEXT_CONFIG.selectors if hasattr(BNEXT_CONFIG, 'selectors') else {}
+        selectors = self.config.selectors if hasattr(self.config, 'selectors') else {}
         
         logger.info(f"備用文章選擇器配置: {selectors}")
         
@@ -645,7 +678,7 @@ class BnextScraper:
                         
                         # 確保連結是完整的
                         if link and not link.startswith('http'):
-                            link = BnextUtils.normalize_url(link, BNEXT_CONFIG.base_url)
+                            link = BnextUtils.normalize_url(link, self.config.base_url)
                             
                         if not link or link in found_links or 'javascript:' in link:
                             continue

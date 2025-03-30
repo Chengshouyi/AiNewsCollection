@@ -1,4 +1,4 @@
-from sqlalchemy import String, Boolean
+from sqlalchemy import String, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from .base_entity import BaseEntity
@@ -7,17 +7,21 @@ class Crawlers(Base, BaseEntity):
     """爬蟲設定模型for 管理及實例化特定爬蟲
     
     欄位說明：
-    - crawler_name: 爬蟲名稱
-    - base_url: 爬取目標
-    - is_active: 是否啟用
-    - crawler_type: 爬蟲類型
-    - config_file_name: 爬蟲設定檔案名稱
+    - crawler_name: 爬蟲名稱：爬蟲的class名稱，用來實例化爬蟲，例如：BnextCrawler
+    - base_url: 爬取目標：爬蟲的爬取目標，例如：https://www.bnext.com.tw
+    - is_active: 是否啟用：爬蟲是否啟用，例如：True
+    - crawler_type: 爬蟲類型：爬蟲的類型，例如：bnext
+    - config_file_name: 爬蟲設定檔案名稱：爬蟲的設定檔案名稱，例如：bnext_config.json
     """
     __tablename__ = 'crawlers'
-
+    __table_args__ = (
+        # 保留資料庫層面的唯一性約束
+        UniqueConstraint('crawler_name', name='uq_crawler_name'),
+    )
     crawler_name: Mapped[str] = mapped_column(
         String(100), 
-        nullable=False
+        nullable=False,
+        unique=True
     )
     base_url: Mapped[str] = mapped_column(
         String(1000), 
@@ -31,7 +35,8 @@ class Crawlers(Base, BaseEntity):
     )
     crawler_type: Mapped[str] = mapped_column(
         String(100), 
-        nullable=False
+        nullable=False,
+        server_default="web"
     )
     config_file_name: Mapped[str] = mapped_column(
         String(100), 

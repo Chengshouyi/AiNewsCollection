@@ -140,7 +140,7 @@ class ArticleLinksRepository(BaseRepository[ArticleLinks]):
         processed_data = entity_data.copy()
         
         # 檢查必填欄位，必須移除不可更新的欄位
-        required_fields = ['source_name']
+        required_fields = ['source_name', 'source_url', 'title', 'summary', 'category', 'published_age', 'is_scraped']
         
         # 如果是更新操作，從現有實體中補充必填欄位
         if existing_entity:
