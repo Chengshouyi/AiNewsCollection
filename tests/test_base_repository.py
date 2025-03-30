@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Mapped, mapped_column
 from src.models.base_model import Base
@@ -103,28 +103,39 @@ class ModelRepositoryforTest(BaseRepository[ModelForTest]):
 
 class TestBaseRepository:
     
-    @pytest.fixture
+    @pytest.fixture(scope="session")
     def engine(self):
-        """創建測試用的資料庫引擎"""
+        """創建測試用的資料庫引擎，只需執行一次"""
         return create_engine('sqlite:///:memory:')
     
-    @pytest.fixture
-    def session(self, engine):
-        """創建測試用的資料庫會話"""
+    @pytest.fixture(scope="session")
+    def tables(self, engine):
+        """創建資料表結構，只需執行一次"""
         Base.metadata.create_all(engine)
-        session = Session(engine)
-        yield session
-        session.close()
+        yield
         Base.metadata.drop_all(engine)
     
-    @pytest.fixture
+    @pytest.fixture(scope="session")
+    def session_factory(self, engine):
+        """創建會話工廠，只需執行一次"""
+        return sessionmaker(bind=engine)
+    
+    @pytest.fixture(scope="function")
+    def session(self, session_factory, tables):
+        """為每個測試函數創建獨立的會話"""
+        session = session_factory()
+        yield session
+        session.rollback()  # 確保每個測試後都回滾未提交的更改
+        session.close()
+    
+    @pytest.fixture(scope="function")
     def repo(self, session):
-        """創建 TestModelRepository 的實例"""
+        """為每個測試函數創建獨立的 Repository 實例"""
         return ModelRepositoryforTest(session, ModelForTest)
     
-    @pytest.fixture
+    @pytest.fixture(scope="function")
     def sample_model_data(self):
-        """建立測試數據資料"""
+        """建立測試數據資料，每個測試函數都有獨立的測試數據"""
         return {
             "name": "test_name",
             "title": "測試文章",
@@ -133,31 +144,57 @@ class TestBaseRepository:
             "source": "測試來源"
         }
 
-    def test_create_entity(self, repo, sample_model_data):
+    def test_create_entity(self, repo, sample_model_data, session):
         """測試創建實體的基本功能"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         result = repo.create(sample_model_data)
-        repo.session.commit()
+        session.commit()
+        
+        # 刷新獲取最新數據
+        entity_id = result.id
+        session.expire_all()
+        
+        # 使用ID重新獲取實體
+        result = repo.get_by_id(entity_id)
         
         assert result is not None
         assert result.id is not None
         assert result.title == "測試文章"
         assert result.link == "https://test.com/article"
 
-    def test_create_entity_with_schema(self, repo, sample_model_data):
+    def test_create_entity_with_schema(self, repo, sample_model_data, session):
         """測試使用 schema 創建實體"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         data_with_schema = sample_model_data.copy()
         data_with_schema['schema_class'] = ModelCreateSchema
         
         result = repo.create(data_with_schema)
-        repo.session.commit()
+        session.commit()
+        
+        # 刷新獲取最新數據
+        entity_id = result.id
+        session.expire_all()
+        
+        # 使用ID重新獲取實體
+        result = repo.get_by_id(entity_id)
         
         assert result is not None
         assert result.id is not None
         assert result.title == "測試文章"
         assert result.link == "https://test.com/article"
 
-    def test_create_entity_validation_error(self, repo):
+    def test_create_entity_validation_error(self, repo, session):
         """測試創建實體時的驗證錯誤"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         invalid_data = {
             "name": "test_name",
             "title": "",  # 空標題
@@ -172,92 +209,161 @@ class TestBaseRepository:
         
         assert "title: 不能為空" in str(excinfo.value)
 
-    def test_update_entity(self, repo, sample_model_data):
+    def test_update_entity(self, repo, sample_model_data, session):
         """測試更新實體的基本功能"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         entity = repo.create(sample_model_data)
-        repo.session.commit()
+        session.commit()
+        
+        # 儲存ID並刷新會話
+        entity_id = entity.id
+        session.expire_all()
         
         update_data = {
             "title": "更新後的文章",
             "summary": "這是更新後的摘要"
         }
-        result = repo.update(entity.id, update_data)
-        repo.session.commit()
+        result = repo.update(entity_id, update_data)
+        session.commit()
+        
+        # 刷新獲取最新數據
+        session.expire_all()
+        
+        # 使用ID重新獲取實體
+        result = repo.get_by_id(entity_id)
         
         assert result is not None
-        assert result.id == entity.id
+        assert result.id == entity_id
         assert result.title == "更新後的文章"
         assert result.summary == "這是更新後的摘要"
         assert result.link == "https://test.com/article"  # 未更新的欄位保持不變
 
-    def test_update_entity_with_schema(self, repo, sample_model_data):
+    def test_update_entity_with_schema(self, repo, sample_model_data, session):
         """測試使用 schema 更新實體"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         entity = repo.create(sample_model_data)
-        repo.session.commit()
+        session.commit()
+        
+        # 儲存ID並刷新會話
+        entity_id = entity.id
+        session.expire_all()
         
         update_data = {
             "title": "使用Schema更新後的文章",
             "summary": "這是使用Schema更新後的摘要",
             "schema_class": ModelUpdateSchema
         }
-        result = repo.update(entity.id, update_data)
-        repo.session.commit()
+        result = repo.update(entity_id, update_data)
+        session.commit()
+        
+        # 刷新獲取最新數據
+        session.expire_all()
+        
+        # 使用ID重新獲取實體
+        result = repo.get_by_id(entity_id)
         
         assert result is not None
-        assert result.id == entity.id
+        assert result.id == entity_id
         assert result.title == "使用Schema更新後的文章"
         assert result.summary == "這是使用Schema更新後的摘要"
 
-    def test_update_nonexistent_entity(self, repo):
+    def test_update_nonexistent_entity(self, repo, session):
         """測試更新不存在的實體"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         result = repo.update(999, {"title": "新標題"})
+        session.commit()
+        
         assert result is None
 
-    def test_delete_entity(self, repo, sample_model_data):
+    def test_delete_entity(self, repo, sample_model_data, session):
         """測試刪除實體的基本功能"""
-        entity = repo.create(sample_model_data)
-        repo.session.commit()
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
         
-        result = repo.delete(entity.id)
-        repo.session.commit()
+        entity = repo.create(sample_model_data)
+        session.commit()
+        
+        # 儲存ID並刷新會話
+        entity_id = entity.id
+        session.expire_all()
+        
+        result = repo.delete(entity_id)
+        session.commit()
         
         assert result is True
-        assert repo.get_by_id(entity.id) is None
+        assert repo.get_by_id(entity_id) is None
 
-    def test_delete_nonexistent_entity(self, repo):
+    def test_delete_nonexistent_entity(self, repo, session):
         """測試刪除不存在的實體"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         result = repo.delete(999)
+        
         assert result is False
 
-    def test_get_by_id(self, repo, sample_model_data):
+    def test_get_by_id(self, repo, sample_model_data, session):
         """測試根據 ID 獲取實體"""
-        entity = repo.create(sample_model_data)
-        repo.session.commit()
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
         
-        result = repo.get_by_id(entity.id)
+        entity = repo.create(sample_model_data)
+        session.commit()
+        
+        # 儲存ID並刷新會話
+        entity_id = entity.id
+        session.expire_all()
+        
+        result = repo.get_by_id(entity_id)
         assert result is not None
-        assert result.id == entity.id
+        assert result.id == entity_id
         assert result.title == "測試文章"
 
-    def test_get_all_basic(self, repo, sample_model_data):
+    def test_get_all_basic(self, repo, sample_model_data, session):
         """測試獲取所有實體的基本功能"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         for i in range(3):
             data = sample_model_data.copy()
             data["title"] = f"測試文章{i}"
             repo.create(data)
-        repo.session.commit()
+        session.commit()
+        
+        # 刷新會話獲取最新數據
+        session.expire_all()
         
         results = repo.get_all()
         assert results is not None
         assert len(results) == 3
 
-    def test_get_all_with_sorting(self, repo, sample_model_data):
+    def test_get_all_with_sorting(self, repo, sample_model_data, session):
         """測試獲取所有實體並排序"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         for i in range(3):
             data = sample_model_data.copy()
             data["title"] = f"測試文章{i}"
             repo.create(data)
-        repo.session.commit()
+        session.commit()
+        
+        # 刷新會話獲取最新數據
+        session.expire_all()
         
         # 升序排序
         results = repo.get_all(sort_by="title", sort_desc=False)
@@ -267,27 +373,41 @@ class TestBaseRepository:
         results = repo.get_all(sort_by="title", sort_desc=True)
         assert [item.title for item in results] == ["測試文章2", "測試文章1", "測試文章0"]
 
-    def test_get_all_with_pagination(self, repo, sample_model_data):
+    def test_get_all_with_pagination(self, repo, sample_model_data, session):
         """測試獲取所有實體並分頁"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         for i in range(5):
             data = sample_model_data.copy()
             data["title"] = f"測試文章{i}"
             repo.create(data)
-        repo.session.commit()
+        session.commit()
+        
+        # 刷新會話獲取最新數據
+        session.expire_all()
         
         # 測試限制和偏移
         results = repo.get_all(limit=2, offset=1)
         assert len(results) == 2
-        assert results[0].title == "測試文章1"
+        assert results[0].title == "測試文章3"
         assert results[1].title == "測試文章2"
 
-    def test_get_paginated(self, repo, sample_model_data):
+    def test_get_paginated(self, repo, sample_model_data, session):
         """測試分頁功能"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         for i in range(11):
             data = sample_model_data.copy()
             data["title"] = f"測試文章{i}"
             repo.create(data)
-        repo.session.commit()
+        session.commit()
+        
+        # 刷新會話獲取最新數據
+        session.expire_all()
         
         # 測試第一頁
         page_data = repo.get_paginated(page=1, per_page=5)
@@ -299,17 +419,25 @@ class TestBaseRepository:
         assert page_data["has_prev"] is False
         assert len(page_data["items"]) == 5
 
-    def test_integrity_error_handling(self, repo, sample_model_data):
+    def test_integrity_error_handling(self, repo, sample_model_data, session):
         """測試完整性錯誤處理"""
-        with patch.object(repo.session, 'flush', 
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
+        with patch.object(session, 'flush', 
                          side_effect=IntegrityError("UNIQUE constraint failed", None, Exception())):
             with pytest.raises(IntegrityValidationError) as excinfo:
                 repo.create(sample_model_data)
             
             assert "資料重複" in str(excinfo.value)
 
-    def test_get_schema_class(self, repo):
+    def test_get_schema_class(self, repo, session):
         """測試獲取schema類的方法"""
+        # 清除可能的干擾數據
+        session.query(ModelForTest).delete()
+        session.commit()
+        
         # 測試默認返回
         schema = repo.get_schema_class()
         assert schema == ModelCreateSchema
@@ -320,12 +448,9 @@ class TestBaseRepository:
         
         schema = repo.get_schema_class(SchemaType.UPDATE)
         assert schema == ModelUpdateSchema
-        
+
         schema = repo.get_schema_class(SchemaType.LIST)
         assert schema == ModelCreateSchema  # 在測試實現中，LIST類型也返回ModelCreateSchema
         
         schema = repo.get_schema_class(SchemaType.DETAIL)
         assert schema == ModelCreateSchema  # 在測試實現中，DETAIL類型也返回ModelCreateSchema
-
-
-

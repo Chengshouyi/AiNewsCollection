@@ -35,7 +35,7 @@ class Base(DeclarativeBase):
         onupdate=lambda: datetime.now(timezone.utc)
     )
     # 用來儲存需要監聽的 datetime 欄位
-    _datetime_fields_to_watch: Set[str] = set()
+    _datetime_fields_to_watch: Set[str] = {'created_at', 'updated_at'}
 
     def __init__(self, datetime_fields_to_watch=None, **kwargs):
         if 'created_at' not in kwargs:
