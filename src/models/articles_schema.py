@@ -42,7 +42,6 @@ class ArticleCreateSchema(BaseCreateSchema):
 class ArticleUpdateSchema(BaseUpdateSchema):
     """文章更新模型"""
     title: Optional[Title] = None
-    link: Optional[Link] = None
     summary: Optional[Summary] = None
     content: Optional[Content] = None
     source: Optional[Source] = None
@@ -58,7 +57,7 @@ class ArticleUpdateSchema(BaseUpdateSchema):
     def validate_update(cls, data):
         """驗證更新操作"""
         if isinstance(data, dict):
-            immutable_fields = [] + cls._get_immutable_fields()
-            updated_fields = [] + cls._get_updated_fields()
+            immutable_fields = ['link'] + cls._get_immutable_fields()
+            updated_fields = ['title', 'summary', 'content', 'source', 'published_at', 'category', 'author', 'article_type', 'tags', 'is_ai_related'] + cls._get_updated_fields()
             return validate_update_schema(immutable_fields, updated_fields, data)
 

@@ -429,25 +429,6 @@ class TestArticleUpdateSchema:
             ArticleUpdateSchema.model_validate(data)
         assert "title: 長度不能超過 500 字元" in str(exc_info.value)
     
-    # 更新連結欄位測試
-    def test_update_link_empty_validation(self):
-        """測試更新連結為空的驗證"""
-        data = {
-            "link": ""
-        }
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleUpdateSchema.model_validate(data)
-        assert "link: URL不能為空" in str(exc_info.value)
-    
-    def test_update_link_too_long_validation(self):
-        """測試更新連結過長的驗證"""
-        data = {
-            "link": "a" * 1001
-        }
-        with pytest.raises(ValidationError) as exc_info:
-            ArticleUpdateSchema.model_validate(data)
-        assert "link: 長度不能超過 1000 字元" in str(exc_info.value)
-    
     # 更新其他欄位的測試
     def test_update_summary_too_long_validation(self):
         """測試更新摘要過長的驗證"""

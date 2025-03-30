@@ -45,6 +45,6 @@ class CrawlerTaskHistoryUpdateSchema(BaseUpdateSchema):
         """驗證更新操作"""
         if isinstance(data, dict):
             immutable_fields = ['task_id'] + cls._get_immutable_fields()
-            updated_fields = [] + cls._get_updated_fields()
+            updated_fields = ['end_time', 'start_time', 'success', 'message', 'articles_count'] + cls._get_updated_fields()
             return validate_update_schema(immutable_fields, updated_fields, data)
             

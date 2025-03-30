@@ -41,7 +41,7 @@ class CrawlersUpdateSchema(BaseUpdateSchema):
         """驗證更新操作"""
         if isinstance(data, dict):
             immutable_fields = ['crawler_type'] + cls._get_immutable_fields()
-            updated_fields = [] + cls._get_updated_fields()
+            updated_fields = ['crawler_name', 'base_url', 'is_active', 'config_file_name'] + cls._get_updated_fields()
             return validate_update_schema(immutable_fields, updated_fields, data)
 
 

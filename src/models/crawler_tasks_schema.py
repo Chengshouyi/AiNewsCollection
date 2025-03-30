@@ -65,7 +65,7 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
         """驗證更新操作"""
         if isinstance(data, dict):
             immutable_fields = ['crawler_id'] + cls._get_immutable_fields()
-            updated_fields = [] + cls._get_updated_fields()
+            updated_fields = ['is_auto', 'ai_only', 'notes', 'max_pages', 'num_articles', 'min_keywords', 'fetch_details', 'last_run_at', 'last_run_success', 'last_run_message', 'cron_expression'] + cls._get_updated_fields()
             if data.get('is_auto') is True:
                 if data.get('cron_expression') is None:
                     raise ValidationError("cron_expression: 當設定為自動執行時,此欄位不能為空")

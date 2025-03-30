@@ -9,7 +9,7 @@ def validate_update_schema(immutable_fields: list, update_fields: list, data: di
 
         updated_fields = [
             field for field in data.keys()
-            if field not in update_fields + immutable_fields
+            if field not in immutable_fields and field in update_fields
         ]
         if not updated_fields:
             raise ValidationError("必須提供至少一個要更新的欄位")

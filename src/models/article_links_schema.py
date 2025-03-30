@@ -36,7 +36,7 @@ class ArticleLinksUpdateSchema(BaseUpdateSchema):
         """驗證更新操作"""
         if isinstance(data, dict):
             immutable_fields = ['article_link'] + cls._get_immutable_fields()
-            updated_fields = [] + cls._get_updated_fields()
+            updated_fields = ['source_name', 'source_url', 'is_scraped'] + cls._get_updated_fields()
             return validate_update_schema(immutable_fields, updated_fields, data)
         
     
