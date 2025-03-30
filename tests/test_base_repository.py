@@ -48,7 +48,7 @@ class ModelUpdateSchema(BaseModel):
 
 class ModelForTest(Base):
     """測試用模型"""
-    __tablename__ = 'test_model'
+    __tablename__ = 'test_repository_model'
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String)
     title: Mapped[str] = mapped_column(String)

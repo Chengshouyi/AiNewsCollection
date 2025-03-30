@@ -9,7 +9,7 @@ from src.models.base_model import Base
 
 
 class ModelForTest(Base):
-    __tablename__ = "test_model"
+    __tablename__ = "test_schema_model"
     name: Mapped[str] = mapped_column(String(50))
 
 
