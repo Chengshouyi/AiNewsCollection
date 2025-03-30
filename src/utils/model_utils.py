@@ -1,5 +1,5 @@
 from typing import Optional, Any, Callable
-from datetime import datetime, timedelta
+from datetime import datetime,  timezone
 from src.error.errors import ValidationError
 from croniter import croniter
 import re
@@ -254,38 +254,52 @@ def validate_positive_int(field_name: str, required: bool = False):
 
 
 def validate_datetime(field_name: str, required: bool = False):
-    """日期時間驗證"""
+    """日期時間驗證
+    
+    Args:
+        field_name: 欄位名稱
+        required: 是否為必填
+        
+    Returns:
+        驗證函數
+    """
     def is_utc_timezone(dt: datetime) -> bool:
         """檢查日期時間是否為 UTC 時區"""
         if dt.tzinfo is None:
             return False
-        
-        offset = dt.tzinfo.utcoffset(dt)
-        if offset is None:
-            return False
-            
-        return offset == timedelta(0)
+        return dt.tzinfo == timezone.utc
     
     def validator(value: Any) -> Optional[datetime]:
+        # 處理 None 值
         if value is None:
+            if required:
+                raise ValidationError(f"{field_name}: 不能為 None")
+            return None
+        
+        # 處理空字串
+        if isinstance(value, str) and not value.strip():
             if required:
                 raise ValidationError(f"{field_name}: 不能為空")
             return None
         
-        dt = None
+        # 處理字串輸入
         if isinstance(value, str):
             try:
-                dt = datetime.fromisoformat(value)
+                # 嘗試解析 ISO 格式
+                dt = datetime.fromisoformat(value.replace('Z', '+00:00'))
             except ValueError:
-                raise ValidationError(f"{field_name}: 無效的日期時間格式。請使用 ISO 格式。")
+                raise ValidationError(f"{field_name}: 無效的日期時間格式。請使用 ISO 格式（例如：2025-03-30T08:00:00Z）。")
+        # 處理 datetime 物件
         elif isinstance(value, datetime):
             dt = value
         else:
-            raise ValidationError(f"{field_name}: 必須是字串或日期時間。")
+            raise ValidationError(f"{field_name}: 必須是字串或日期時間物件。")
         
-        # 檢查是否為 UTC 時區
+        # 檢查時區
         if not is_utc_timezone(dt):
-            raise ValidationError(f"{field_name}: 日期時間必須是 UTC 時區")
+            if dt.tzinfo is None:
+                raise ValidationError(f"{field_name}: 日期時間必須包含時區資訊。")
+            raise ValidationError(f"{field_name}: 日期時間必須是 UTC 時區。")
         
         return dt
     
