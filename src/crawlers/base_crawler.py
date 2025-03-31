@@ -39,11 +39,6 @@ class BaseCrawler(ABC):
                 logger.error(f"初始化 repositories 失敗: {str(e)}")
                 session.close()
                 raise
-
-    @abstractmethod
-    def _set_repository(self):
-        """設置數據庫管理器,子類別需要實作"""
-        pass
         
     @abstractmethod
     def _load_site_config(self):

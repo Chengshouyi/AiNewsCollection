@@ -26,9 +26,9 @@ logger = LoggerSetup.setup_logger(
 )
 
 class BnextContentExtractor:
-    def __init__(self, config=None):
-        self.article_repository: Optional[ArticlesRepository] = None
-        
+    def __init__(self, config=None, article_repository: Optional[ArticlesRepository] = None):
+        self.article_repository: Optional[ArticlesRepository] = article_repository
+        self.site_config = config
         # 檢查配置
         logger.info("檢查爬蟲配置")
         if config is None:
@@ -39,9 +39,9 @@ class BnextContentExtractor:
             if not hasattr(config, 'base_url'):
                 logger.error("未提供網站基礎URL，將使用預設值")
                 config.base_url = "https://www.bnext.com.tw"
-            if not hasattr(config, 'default_categories'):
+            if not hasattr(config, 'categories'):
                 logger.error("未提供預設類別，將使用預設值")
-                config.default_categories = ["ai","tech","iot","smartmedical","smartcity",       "cloudcomputing","security"]
+                config.categories = ["ai","tech","iot","smartmedical","smartcity",       "cloudcomputing","security"]
             if not hasattr(config, 'selectors'):
                 logger.error("未提供選擇器，將使用預設值")
                 config.selectors = {}
@@ -49,22 +49,12 @@ class BnextContentExtractor:
                 logger.error("未提供類別URL，將使用預設值")
                 config.get_category_url = lambda x: f"{config.base_url}/categories/{x}"
             
-            self.config = config
-            logger.info(f"使用配置: {self.config.__dict__}")
+            self.site_config = config
+            logger.info(f"使用配置: {self.site_config.__dict__}")
         
         if not self.article_repository:
             logger.warning("未提供資料庫管理器，將不會保存到資料庫")
 
-        
-    def set_db_manager(self, db_manager):
-        """設置資料庫管理器"""
-        logger.info("設置資料庫管理器")
-        self.db_manager = db_manager
-        if db_manager:
-            self.article_repository = db_manager.get_repository('Article')
-            logger.info("成功獲取 Article Repository")
-        else:
-            logger.warning("未提供資料庫管理器")
 
     def batch_get_articles_content(self, articles_df, num_articles=10, ai_only=True, min_keywords=3, db_manager=None) -> pd.DataFrame:
         """批量獲取文章內容"""
@@ -73,9 +63,6 @@ class BnextContentExtractor:
         logger.info("開始批量獲取文章內容")
         logger.info(f"參數設置: num_articles={num_articles}, ai_only={ai_only}, min_keywords={min_keywords}")
         logger.info(f"待處理文章數量: {len(articles_df)}")
-        
-        if db_manager:
-            self.set_db_manager(db_manager)
         
         articles_contents = []
         successful_count = 0
@@ -183,7 +170,10 @@ class BnextContentExtractor:
             logger.debug("成功獲取網頁內容")
             
             soup = BnextUtils.get_soup_from_html(response.text)
-            selectors = self.config.selectors['article_detail']
+            if self.site_config is None:
+                logger.error("未提供選擇器，請提供有效的配置")
+                raise ValueError("未提供選擇器，請提供有效的配置")
+            selectors = self.site_config.selectors['article_detail']
             
             # 提取文章內容
             header = soup.select_one(BnextUtils.build_selector(selectors[0]))
@@ -426,7 +416,10 @@ class BnextContentExtractor:
                     link_title = link.get_text(strip=True)
                     
                     # 確保連結是完整的
-                    link_url = BnextUtils.normalize_url(link_url, self.config.base_url)
+                    if not self.site_config:
+                        logger.error("未提供選擇器，請提供有效的配置")
+                        raise ValueError("未提供選擇器，請提供有效的配置")
+                    link_url = BnextUtils.normalize_url(link_url, self.site_config.base_url)
                     
                     # 確保連結有效且未重複
                     if link_url and link_title and link_url not in link_urls and '/article/' in link_url:

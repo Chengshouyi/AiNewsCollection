@@ -4,12 +4,13 @@ import logging
 from typing import List, Dict, Optional
 import time
 import re
+from bs4 import Tag
 
 from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
-from src.database.articles_repository import ArticlesRepository
+from src.database.article_links_repository import ArticleLinksRepository
 
 # 設置日誌記錄器
 custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -22,15 +23,14 @@ logger = LoggerSetup.setup_logger(
 )
 
 class BnextScraper:
-    def __init__(self, config=None):
+    def __init__(self, config=None, article_links_repository: Optional[ArticleLinksRepository] = None):
         """
         初始化爬蟲
         
         Parameters:
         config (SiteConfig, optional): 網站配置
         """
-        self.article_repository: Optional[ArticlesRepository] = None
-        
+        self.article_links_repository: Optional[ArticleLinksRepository] = article_links_repository
         # 檢查配置
         logger.info("檢查爬蟲配置")
         if config is None:
@@ -41,9 +41,9 @@ class BnextScraper:
             if not hasattr(config, 'base_url'):
                 logger.error("未提供網站基礎URL，將使用預設值")
                 config.base_url = "https://www.bnext.com.tw"
-            if not hasattr(config, 'default_categories'):
+            if not hasattr(config, 'categories'):
                 logger.error("未提供預設類別，將使用預設值")
-                config.default_categories = ["ai","tech","iot","smartmedical","smartcity",       "cloudcomputing","security"]
+                config.categories = ["ai","tech","iot","smartmedical","smartcity",       "cloudcomputing","security"]
             if not hasattr(config, 'selectors'):
                 logger.error("未提供選擇器，將使用預設值")
                 config.selectors = {}
@@ -51,33 +51,29 @@ class BnextScraper:
                 logger.error("未提供類別URL，將使用預設值")
                 config.get_category_url = lambda x: f"{config.base_url}/categories/{x}"
             
-            self.config = config
-            logger.info(f"使用配置: {self.config.__dict__}")
+            self.site_config = config
+            logger.info(f"使用配置: {self.site_config.__dict__}")
         
-        if not self.article_repository:
+        if not self.article_links_repository:
             logger.warning("未提供資料庫管理器，將不會保存到資料庫")
 
-    def scrape_article_list(self, max_pages=3, categories=None, ai_only=True) -> pd.DataFrame:
+    def scrape_article_list(self, max_pages=3, ai_only=True) -> pd.DataFrame:
         start_time = time.time()
-        logger.info("開始爬蟲任務")
+        logger.info("開始抓取文章列表")
         
         try:
-            logger.info("BnextScraper(scrape_article_list()) - call 開始爬取文章列表")
+            logger.info("BnextScraper(scrape_article_list()) - call 開始抓取文章列表")
             logger.info(f"參數設置: max_pages={max_pages}, ai_only={ai_only}")
-            logger.info(f"使用類別: {categories if categories else '預設類別'}")
-            
-            # 如果沒有指定類別，則使用配置中的類別
-            if not categories:
-                categories = self.config.categories.get("categories", None)
+            logger.info(f"使用類別: {self.site_config.categories.get('categories', None) if self.site_config.categories else '預設類別'}")
                 
             # 初始化requests session(網路連線)
             session = requests.Session()
-            all_articles = []
-            
-            for current_category_name in categories:
+            all_article_links_list = []
+
+            for current_category_name in self.site_config.categories.get('categories', None):
                 logger.info(f"開始處理類別: {current_category_name}")
                 # 構造類別URL
-                current_category_url = self.config.list_url_template.format(base_url=self.config.base_url, category=current_category_name)
+                current_category_url = self.site_config.get_category_url(current_category_name)
                 page = 1
                 
                 # 保存原始類別URL，用於構造分頁URL
@@ -103,40 +99,29 @@ class BnextScraper:
                         
                         # 根據提供的選擇器爬取內容
                         # 1. 爬取焦點文章
-                        logger.info(f"BnextScraper(scrape_article_list()) - call self.extract_focus_articles() 爬取焦點文章")
-                        focus_articles = self.extract_focus_articles(soup)
-                        all_articles.extend(focus_articles)
+                        logger.info(f"BnextScraper(scrape_article_list()) - call self.extract_article_links() 爬取文章連結")
+                        current_page_article_links_list = self.extract_article_links(soup)
                         
-                        # 2. 爬取一般文章
-                        logger.info(f"BnextScraper(scrape_article_list()) - call self.extract_regular_articles() 爬取一般文章")
-                        regular_articles = self.extract_regular_articles(soup)
-                        all_articles.extend(regular_articles)
-                        
-                        # 3. 如果上述兩種方法沒有找到任何文章或文章太少，則使用備用方法
-                        backup_articles = []
-                        logger.info(f"BnextScraper(scrape_article_list()) - call self.extract_backup_articles() 爬取備用文章")
-                        if len(focus_articles) + len(regular_articles) < 5:  # 假設每頁至少應有5篇文章
-                            backup_articles = self.extract_backup_articles(soup, current_category_url)
-                            all_articles.extend(backup_articles)
-                        
-                            
                         # 篩選是否為AI相關文章
                         # 先透過標題和分類快速篩選
                         if ai_only:
                             # 只對當前頁面新增的文章進行篩選
-                            current_page_articles = focus_articles + regular_articles + backup_articles
-                            filtered_articles = []
-                            for article in current_page_articles:
+                            filtered_article_links_list = []
+                            for article in current_page_article_links_list:
                                 if ArticleAnalyzer().is_ai_related(article, check_content=False):
-                                    filtered_articles.append(article)
+                                    filtered_article_links_list.append(article)
                             # 將之前累積的文章和當前頁面篩選後的文章合併
-                            all_articles = all_articles[:-len(current_page_articles)] + filtered_articles
+                            all_article_links_list.extend(filtered_article_links_list)
+                            logger.info(f"共爬取 {len(all_article_links_list)} 篇與AI相關文章連結")
+                        else:
+                            all_article_links_list.extend(current_page_article_links_list)
+                            logger.info(f"共爬取 {len(all_article_links_list)} 篇文章連結")
                         
                         # 檢查是否有下一頁
                         next_page = soup.select_one('.pagination .next, .pagination a[rel="next"]')
                         if next_page and 'href' in next_page.attrs:
                             next_url = next_page['href']
-                            current_category_url = BnextUtils.normalize_url(next_url, self.config.base_url)
+                            current_category_url = BnextUtils.normalize_url(next_url, self.site_config.base_url)
                             page += 1
                         else:
                             # 嘗試直接構造下一頁URL
@@ -148,9 +133,7 @@ class BnextScraper:
                                 break
                     
                         # 記錄每個步驟的結果
-                        logger.info(f"本頁找到: 焦點文章 {len(focus_articles)} 篇, "
-                                   f"一般文章 {len(regular_articles)} 篇, "
-                                   f"備用文章 {len(backup_articles)} 篇")
+                        logger.info(f"本頁共找到: {len(current_page_article_links_list)} 篇文章連結")
                     
                     except Exception as e:
                         logger.error(f"爬取過程中發生錯誤: {str(e)}", exc_info=True)
@@ -159,29 +142,19 @@ class BnextScraper:
                 logger.info(f"完成爬取類別: {current_category_url}")
             
             # 修改儲存邏輯
-            if all_articles and self.article_repository:
-                df = pd.DataFrame(all_articles)
+            if all_article_links_list and self.article_links_repository:
+                df = pd.DataFrame(all_article_links_list)
                 df = df.drop_duplicates(subset=['link'], keep='first')
                 
                 # 轉換資料格式以符合資料庫結構
                 success_count = 0
                 fail_count = 0
                 
-                for _, article in df.iterrows():
-                    # 轉換為資料庫模型格式
-                    db_article = {
-                        'title': article['title'],
-                        'summary': article.get('summary', ''),
-                        'link': article['link'],
-                        'category': article.get('category', ''),
-                        'published_at': article.get('publish_time', ''),
-                        'source': 'bnext_list',
-                        'article_type': article.get('article_type', 'regular')
-                    }
+                for article_link in all_article_links_list:
                     
                     # 使用 repository 直接存儲
                     try:
-                        self.article_repository.create(db_article)
+                        self.article_links_repository.create(article_link)
                         success_count += 1
                     except Exception as e:
                         logger.error(f"儲存文章失敗: {str(e)}")
@@ -190,17 +163,17 @@ class BnextScraper:
                 logger.info(f"文章存儲結果: 成功 {success_count} 篇，失敗 {fail_count} 篇")
             
             # 轉換為DataFrame
-            return self._process_articles_to_dataframe(all_articles)
+            return self._process_articles_to_dataframe(all_article_links_list)
         
         finally:
             end_time = time.time()
             duration = end_time - start_time
             logger.info(f"爬蟲任務完成，總耗時: {duration:.2f} 秒")
-            if categories:
-                logger.info(f"共處理 {len(categories)} 個類別，"
-                           f"爬取 {len(all_articles)} 篇文章")
+            if self.site_config.categories:
+                logger.info(f"共處理 {len(self.site_config.categories)} 個類別，"
+                           f"爬取 {len(all_article_links_list)} 篇文章")
             else:
-                logger.info(f"共爬取 {len(all_articles)} 篇文章")
+                logger.info(f"共爬取 {len(all_article_links_list)} 篇文章")
 
     def _build_next_page_url(self, base_url: str, page_num: int) -> str:
         """構建下一頁URL"""
@@ -231,527 +204,120 @@ class BnextScraper:
             logger.error(f"訪問下一頁時出錯: {str(e)}", exc_info=True)
             return False
 
-    def _process_articles_to_dataframe(self, articles: List[Dict]) -> pd.DataFrame:
+    def _process_articles_to_dataframe(self, links_list: List[Dict]) -> pd.DataFrame:
         """處理文章列表並轉換為DataFrame"""
-        if not articles:
+        if not links_list:
             logger.warning("未爬取到任何文章")
             return pd.DataFrame()
             
-        df = pd.DataFrame(articles)
+        df = pd.DataFrame(links_list)
         df = df.drop_duplicates(subset=['link'], keep='first')
         
         # 添加統計信息
         stats = {
-            'total': len(df),
-            'focus': len(df[df['article_type'] == 'focus']),
-            'regular': len(df[df['article_type'] == 'regular']),
-            'backup': len(df[df['article_type'] == 'backup'])
+            'total': len(df)
         }
         
         logger.info("爬取統計信息:")
         logger.info(f"總文章數: {stats['total']}")
-        logger.info(f"焦點文章: {stats['focus']}")
-        logger.info(f"一般文章: {stats['regular']}")
-        logger.info(f"備用文章: {stats['backup']}")
         
         return df
 
-    def extract_focus_articles(self, soup):
+    def extract_article_links(self, soup):
         """
         提取焦點文章，增加容錯和詳細日誌
         """
 
         
-        # 預設備用選擇器 - 根據實際使用經驗設置更準確的選擇器
-        default_selectors = {
-            'container': 'div.grid.grid-cols-6.gap-4.relative.h-full',
-            'title': 'div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > h2',
-            'summary': 'div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex-grow.pt-4.text-lg.text-gray-500',
-            'category': 'div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex.relative.items-center.gap-2.text-gray-500.text-sm > a',
-            'time': 'div.flex.relative.items-center.gap-2.text-gray-500.text-sm span:nth-child(1)'
-        }
-        articles = []
+        article_links_list = []
 
         try:
-            selectors = self.config.selectors.get('focus_articles', {})
-            if not selectors:
-                logger.warning("未提供焦點文章選擇器配置")
-                container_selector = default_selectors['container']
-                logger.debug(f"使用預設容器選擇器: {container_selector}")
-            else:
-                logger.info(f"焦點文章選擇器配置: {selectors}")
-                container_selector = selectors['container']
-                logger.debug(f"使用config配置的容器選擇器: {container_selector}")
-            
-            
-            
-            # 選擇文章容器
-            focus_article_containers = soup.select(container_selector)
-            
-            logger.info(f"找到 {len(focus_article_containers)} 個焦點文章容器")
-            logger.debug(f"焦點文章容器: {focus_article_containers}")
-            
-            for idx, container in enumerate(focus_article_containers, 1):
-                try:
-                    # 使用預設或配置選擇器提取標題
-                    if selectors['title']:
-                        title_selector = selectors['title']
-                        logger.debug(f"使用config配置的標題選擇器: {title_selector}")
-                    else:
-                        title_selector = default_selectors['title']
-                        logger.debug(f"使用預設標題選擇器: {title_selector}")
+            selectors = self.site_config.selectors
+            get_article_links_selectors = selectors.get('get_article_links') 
 
-                    title_elem = container.select_one(title_selector)
-                    logger.debug(f"第{idx}個焦點文章標題元素: {title_elem}")
-                    
-                    # 如果找不到標題，嘗試使用h2、h3標籤直接搜索
-                    if not title_elem:
-                        logger.debug(f"第{idx}個焦點文章標題元素未找到，嘗試使用h2、h3標籤直接搜索")
-                        for selector in ['h2', 'h3', '.title', 'div.font-bold']: 
-                            title_elem = container.select_one(selector)
-                            if title_elem:
-                                logger.debug(f"第{idx}個焦點文章標題元素找到，使用h2、h3標籤直接搜索")
-                                break
-                    
-                    if not title_elem:
-                        logger.warning(f"第 {idx} 個容器未找到標題，使用標題選擇器: {title_selector}")
-                        continue
-                    
-                    title = title_elem.get_text(strip=True)
-                    if title:
-                        logger.debug(f"第{idx}個焦點文章標題: {title}")
-                    else:
-                        logger.warning(f"第 {idx} 個焦點文章標題未找到")
-                    
-                    # 提取摘要
-                    logger.debug(f"提取第{idx}個焦點文章摘要")
-                    if selectors['summary']:
-                        summary_selector = selectors['summary']
-                        logger.debug(f"使用config配置的摘要選擇器: {summary_selector}")
-                    else:
-                        summary_selector = default_selectors['summary']
-                        logger.debug(f"使用預設摘要選擇器: {summary_selector}")
-                    
-                    summary_elem = container.select_one(summary_selector)
-                    
-                    # 如果找不到摘要，嘗試使用通用選擇器
-                    if not summary_elem:
-                        logger.debug(f"第{idx}個焦點文章摘要未找到，嘗試使用通用選擇器")
-                        for selector in ['div.text-gray-500', '.summary', '.excerpt', 'div.text-sm']:
-                            summary_elem = container.select_one(selector)
-                            if summary_elem:
-                                logger.debug(f"第{idx}個焦點文章摘要找到，使用通用選擇器")
-                                break
-                    if summary_elem:
-                        logger.debug(f"第{idx}個焦點文章摘要元素: {summary_elem}")
-                        summary = summary_elem.get_text(strip=True) if summary_elem else ""
-                        if summary:
-                            logger.debug(f"第{idx}個焦點文章摘要: {summary}")
-                        else:
-                            logger.warning(f"第 {idx} 個焦點文章摘要未找到")
-                    
-                    # 提取連結 - 改進鏈接提取邏輯
-                    link = BnextUtils.extract_article_link(container, title_elem)
-                    
-                    # 如果找不到鏈接，嘗試從標題元素或其父元素中提取
-                    if not link and title_elem:
-                        # 嘗試標題的父級a標籤
-                        parent_a = title_elem.find_parent('a')
-                        if parent_a and 'href' in parent_a.attrs:
-                            link = parent_a['href']
-                        else:
-                            # 嘗試找出所有帶有/article/路徑的連結
-                            article_links = container.find_all('a', href=lambda x: x and '/article/' in x)
-                            if article_links:
-                                link = article_links[0]['href']
-                    
-                    # 確保連結是完整的
-                    if link and not link.startswith('http'):
-                        link = BnextUtils.normalize_url(link, self.config.base_url)
-                    
-                    # 如果還是找不到連結，則跳過這篇文章
-                    if not link:
-                        logger.warning(f"第 {idx} 個焦點文章未找到有效連結")
-                        continue
-                    
-                    # 提取分類
-                    category_selector = (
-                        selectors.get('focus_articles', [None, None, None, default_selectors['category']])[3] 
-                        if selectors.get('focus_articles') 
-                        else default_selectors['category']
-                    )
-                    category_elem = container.select_one(category_selector)
-                    
-                    # 如果找不到分類，嘗試使用其他選擇器
-                    if not category_elem:
-                        for selector in ['.category', '.tag', 'a[href*="/categories/"]']:
-                            category_elem = container.select_one(selector)
-                            if category_elem:
-                                break
-                    
-                    category = category_elem.get_text(strip=True) if category_elem else None
-                    
-                    # 如果從DOM中無法提取類別，嘗試從URL中提取
-                    if not category and link:
-                        category_match = re.search(r'/categories/([^/]+)', link)
-                        if category_match:
-                            category = category_match.group(1)
-                    
-                    # 提取發布時間
-                    time_selector = (
-                        selectors.get('focus_articles', [None, None, None, None, default_selectors['time']])[4] 
-                        if selectors.get('focus_articles') 
-                        else default_selectors['time']
-                    )
-                    time_elem = container.select_one(time_selector)
-                    
-                    # 如果找不到發布時間，嘗試使用其他選擇器
-                    if not time_elem:
-                        for selector in ['time', '.date', '.time', '.published-date']:
-                            time_elem = container.select_one(selector)
-                            if time_elem:
-                                break
-                    
-                    publish_time = time_elem.get_text(strip=True) if time_elem else None
-                    
-                    article_info = {
-                        'title': title,
-                        'summary': summary,
-                        'link': link,
-                        'category': category,
-                        'publish_time': publish_time,
-                        'article_type': 'focus'
-                    }
-                    
-                    articles.append(article_info)
-                    logger.debug(f"成功提取焦點文章: {title}")
-                
-                except Exception as article_error:
-                    logger.error(f"提取第 {idx} 個焦點文章時出錯: {str(article_error)}", exc_info=True)
-        
-        except Exception as e:
-            logger.error("提取焦點文章時發生錯誤", exc_info=True)
-            logger.error(f"錯誤詳情: {str(e)}")
-            logger.error(f"當前選擇器配置: {selectors}")
-            return []
-        
-        logger.info(f"成功提取 {len(articles)} 篇焦點文章")
-        return articles
+            # 提取焦點文章連結
+            articles_container = soup.select(get_article_links_selectors.get("articles_container"))
+            
+            logger.info(f"找到 {len(articles_container)} 個焦點文章連結容器")
+            logger.debug(f"焦點文章連結容器: {articles_container}")
 
-    def extract_regular_articles(self, soup):
-        """
-        提取一般文章，增加容錯和詳細日誌
-        """
-        articles = []
-        selectors = self.config.selectors if hasattr(self.config, 'selectors') else {}
-        
-        logger.info(f"一般文章選擇器配置: {selectors}")
-        
-        # 預設備用選擇器 - 根據實際使用經驗設置更準確的選擇器
-        default_selectors = {
-            'container': 'div.grid.grid-cols-4.gap-8.xl\\:gap-6 > div',
-            'title': 'div > h2',
-            'summary': 'div > div.text-sm.text-justify.font-normal.text-gray-500.three-line-text.tracking-wide',
-            'category': 'div.flex.relative.items-center.gap-2.text-gray-500.text-sm > a',
-            'time': 'div.flex.relative.items-center.gap-2.text-gray-500.text-sm span:nth-child(1)'
-        }
-        
-        try:
-            # 嘗試使用配置中的選擇器，若無則使用預設選擇器
-            container_selector = (
-                selectors.get('regular_articles', [default_selectors['container']])[0] 
-                if selectors.get('regular_articles') 
-                else default_selectors['container']
-            )
+            category = articles_container[0].select_one(get_article_links_selectors.get("category"))
+            category_text = category.get_text(strip=True) if category else None
+            link = articles_container[0].select_one(get_article_links_selectors.get("link"))
+            link_text = link.get_attribute_list('href')[0] if link else None
+            title = articles_container[0].select_one(get_article_links_selectors.get("title"))
+            title_text = title.get_text(strip=True) if title else None
+            summary = articles_container[0].select_one(get_article_links_selectors.get("summary"))
+            summary_text = summary.get_text(strip=True) if summary else None
+            published_age = articles_container[0].select_one(get_article_links_selectors.get("published_age"))
+            published_age_text = published_age.get_text(strip=True) if published_age else None
             
-            logger.debug(f"使用容器選擇器: {container_selector}")
+                    
+            article_links_list.append({
+                'source_name': self.site_config.name,
+                'source_url': self.site_config.base_url,
+                'title': title_text,
+                'summary': summary_text,
+                'article_link': link_text,
+                'category': category_text,
+                'published_age': published_age_text,
+                'is_scraped': False
+            })
             
-            # 選擇文章容器
-            article_containers = soup.select(container_selector)
+            logger.debug(f"成功提取焦點文章連結: {title_text}")
             
-            logger.info(f"找到 {len(article_containers)} 個一般文章容器")
-            
-            # 如果找不到文章，嘗試使用備用選擇器
-            if len(article_containers) == 0:
-                backup_selectors = [
-                    "div.grid.grid-cols-4",
-                    "div.grid div[class*='grid-cols']",
-                    "div.grid div.flex.flex-col"
-                ]
-                
-                for backup_selector in backup_selectors:
-                    article_containers = soup.select(backup_selector)
-                    if len(article_containers) > 0:
-                        logger.warning(f"使用備用選擇器: {backup_selector}，找到 {len(article_containers)} 個容器")
-                        break
-            
-            for idx, container in enumerate(article_containers, 1):
-                try:
-                    # 使用預設或配置選擇器提取標題
-                    title_selector = (
-                        selectors.get('regular_articles', [None, default_selectors['title']])[1] 
-                        if selectors.get('regular_articles') 
-                        else default_selectors['title']
-                    )
-                    title_elem = container.select_one(title_selector)
-                    
-                    # 如果找不到標題，嘗試使用更通用的選擇器
-                    if not title_elem:
-                        for selector in ['h2', 'h3', '.title', '.article-title', 'div.font-bold', '.font-medium']:
-                            title_elem = container.select_one(selector)
-                            if title_elem:
-                                break
-                    
-                    if not title_elem:
-                        logger.warning(f"第 {idx} 個容器未找到標題，使用標題選擇器: {title_selector}")
-                        continue
-                    
-                    title = title_elem.get_text(strip=True)
-                    
-                    # 提取摘要
-                    summary_selector = (
-                        selectors.get('regular_articles', [None, None, default_selectors['summary']])[2] 
-                        if selectors.get('regular_articles') 
-                        else default_selectors['summary']
-                    )
-                    summary_elem = container.select_one(summary_selector)
-                    
-                    # 如果找不到摘要，嘗試使用通用選擇器
-                    if not summary_elem:
-                        for selector in ['div.text-gray-500', '.summary', '.excerpt', '.description', 'div.text-sm']:
-                            summary_elem = container.select_one(selector)
-                            if summary_elem:
-                                break
-                    
-                    summary = summary_elem.get_text(strip=True) if summary_elem else ""
-                    
-                    # 提取連結 - 改進鏈接提取邏輯
-                    link = BnextUtils.extract_article_link(container, title_elem)
-                    
-                    # 如果找不到鏈接，嘗試從標題元素或其父元素中提取
-                    if not link and title_elem:
-                        # 嘗試標題的父級a標籤
-                        parent_a = title_elem.find_parent('a')
-                        if parent_a and 'href' in parent_a.attrs:
-                            link = parent_a['href']
-                        else:
-                            # 嘗試找出所有帶有/article/路徑的連結
-                            article_links = container.find_all('a', href=lambda x: x and '/article/' in x)
-                            if article_links:
-                                link = article_links[0]['href']
-                    
-                    # 確保連結是完整的
-                    if link and not link.startswith('http'):
-                        link = BnextUtils.normalize_url(link, self.config.base_url)
-                    
-                    if not link:
-                        logger.warning(f"第 {idx} 個一般文章未找到連結")
-                        continue
-                    
-                    # 提取分類
-                    category_selector = (
-                        selectors.get('regular_articles', [None, None, None, default_selectors['category']])[3] 
-                        if selectors.get('regular_articles') 
-                        else default_selectors['category']
-                    )
-                    category_elem = container.select_one(category_selector)
-                    
-                    # 如果找不到分類，嘗試使用其他選擇器
-                    if not category_elem:
-                        for selector in ['.category', '.tag', 'a[href*="/categories/"]']:
-                            category_elem = container.select_one(selector)
-                            if category_elem:
-                                break
-                    
-                    category = category_elem.get_text(strip=True) if category_elem else None
-                    
-                    # 如果從DOM中無法提取類別，嘗試從URL中提取
-                    if not category and link:
-                        category_match = re.search(r'/categories/([^/]+)', link)
-                        if category_match:
-                            category = category_match.group(1)
-                    
-                    # 提取發布時間
-                    time_selector = (
-                        selectors.get('regular_articles', [None, None, None, None, default_selectors['time']])[4] 
-                        if selectors.get('regular_articles') 
-                        else default_selectors['time']
-                    )
-                    time_elem = container.select_one(time_selector)
-                    
-                    # 如果找不到發布時間，嘗試使用其他選擇器
-                    if not time_elem:
-                        for selector in ['time', '.date', '.time', '.published-date']:
-                            time_elem = container.select_one(selector)
-                            if time_elem:
-                                break
-                    
-                    publish_time = time_elem.get_text(strip=True) if time_elem else None
-                    
-                    article_info = {
-                        'title': title,
-                        'summary': summary,
-                        'link': link,
-                        'category': category,
-                        'publish_time': publish_time,
-                        'article_type': 'regular'
-                    }
-                    
-                    articles.append(article_info)
-                    logger.debug(f"成功提取一般文章: {title}")
-                
-                except Exception as article_error:
-                    logger.error(f"提取第 {idx} 個一般文章時出錯: {str(article_error)}", exc_info=True)
-        
-        except Exception as e:
-            logger.error("提取一般文章時發生錯誤", exc_info=True)
-            logger.error(f"錯誤詳情: {str(e)}")
-            logger.error(f"當前選擇器配置: {selectors}")
-            return []
-        
-        logger.info(f"成功提取 {len(articles)} 篇一般文章")
-        return articles
+            # 提取網格文章連結
+            get_grid_contentainer_selector = get_article_links_selectors.get("article_grid_container")
+            article_grid_container = articles_container[0].select_one(get_grid_contentainer_selector.get("container"))
+            if not article_grid_container:
+                logger.warning("未找到文章網格容器")
+                return article_links_list
 
-    def extract_backup_articles(self, soup, current_url):
-        """
-        備用文章提取方法，增加容錯和詳細日誌
-        """
-        articles = []
-        found_links = set()
-        selectors = self.config.selectors if hasattr(self.config, 'selectors') else {}
-        
-        logger.info(f"備用文章選擇器配置: {selectors}")
-        
-        # 預設備用選擇器 - 更完整的備用選擇器集合
-        default_selectors = {
-            'container': [
-                'div.article-card', '.article-item', 'a.text-black', 'div.flex.flex-col',
-                'a[href*="/articles/"]', 'a[href*="/article/"]'
-            ],
-            'title': ['h2', 'h3', '.article-title', '.font-bold', '.title'],
-            'summary': ['.article-summary', '.text-gray-500', 'div.text-sm', '.excerpt', '.description'],
-            'category': ['.article-category', 'a.category', '.text-xs', 'a[href*="/categories/"]', '.tag'],
-            'time': ['.article-time', '.text-gray-500.text-sm', 'span', 'time', '.date', '.published-date']
-        }
-        
-        try:
-            # 嘗試多種可能的備用選擇器
-            backup_selectors = selectors.get('backup_articles', [])
-            
-            # 使用預設選擇器和配置選擇器合併
-            all_container_selectors = default_selectors['container']
-            for selector_obj in backup_selectors:
-                # 如果是簡單的字符串選擇器
-                if isinstance(selector_obj, str):
-                    all_container_selectors.append(selector_obj)
-                # 如果是複雜選擇器對象
-                elif isinstance(selector_obj, dict) and 'tag' in selector_obj:
-                    # 構建css選擇器
-                    tag = selector_obj.get('tag', '')
-                    attrs = selector_obj.get('attrs', {})
-                    if 'class' in attrs and isinstance(attrs['class'], list):
-                        for class_name in attrs['class']:
-                            all_container_selectors.append(f"{tag}.{class_name}")
-                    elif 'href' in attrs:
-                        all_container_selectors.append(f"{tag}[href*=\"{attrs['href']}\"]")
-            
-            # 記錄所有已找到的連結，避免重複
-            for container_selector in all_container_selectors:
-                logger.debug(f"嘗試備用選擇器: {container_selector}")
-                
-                article_cards = soup.select(container_selector)
-                logger.info(f"使用選擇器 '{container_selector}' 找到 {len(article_cards)} 個可能的文章")
-                
-                for idx, card in enumerate(article_cards, 1):
+            for idx, container in enumerate(article_grid_container.children,1):  # 迭代直接子元素
+                if isinstance(container, Tag):  # 檢查是否為 Tag 物件
                     try:
-                        # 提取連結 - 更靈活的鏈接提取
-                        link = None
-                        
-                        # 如果卡片本身是連結
-                        if card.name == 'a' and 'href' in card.attrs:
-                            link = card['href']
-                        else:
-                            # 尋找內部的文章連結
-                            link_candidates = card.find_all('a', href=lambda href: href and ('/article/' in href or '/articles/' in href))
-                            if link_candidates:
-                                link = link_candidates[0]['href']
-                        
-                        # 確保連結是完整的
-                        if link and not link.startswith('http'):
-                            link = BnextUtils.normalize_url(link, self.config.base_url)
-                            
-                        if not link or link in found_links or 'javascript:' in link:
+                        # 檢查 container 是否為 div 標籤
+                        if container.name != 'div':
                             continue
-                            
-                        found_links.add(link)
-                        
-                        # 提取標題
-                        title_elem = None
-                        for title_selector in default_selectors['title']:
-                            title_elem = card.select_one(title_selector)
-                            if title_elem:
-                                break
-                        
-                        title = title_elem.get_text(strip=True) if title_elem else card.get_text(strip=True)
-                        
-                        # 清理標題，移除過長的內容
-                        if len(title) > 100:
-                            title = title[:100] + "..."
-                        
-                        # 提取摘要
-                        summary_elem = None
-                        for summary_selector in default_selectors['summary']:
-                            summary_elem = card.select_one(summary_selector)
-                            if summary_elem:
-                                break
-                                
-                        summary = summary_elem.get_text(strip=True) if summary_elem else ""
-                        
-                        # 提取分類
-                        category_elem = None
-                        for category_selector in default_selectors['category']:
-                            category_elem = card.select_one(category_selector)
-                            if category_elem:
-                                break
-                                
-                        category = category_elem.get_text(strip=True) if category_elem else None
-                        
-                        # 如果沒有找到分類，從URL推斷
-                        if not category:
-                            category_match = re.search(r'/categories/([^/]+)', current_url)
-                            if category_match:
-                                category = category_match.group(1)
-                            elif link:
-                                category_match = re.search(r'/categories/([^/]+)', link)
-                                if category_match:
-                                    category = category_match.group(1)
-                        
-                        # 提取發布時間
-                        time_elem = None
-                        for time_selector in default_selectors['time']:
-                            time_elem = card.select_one(time_selector)
-                            if time_elem:
-                                break
-                                
-                        publish_time = time_elem.get_text(strip=True) if time_elem else None
-                        
-                        article_info = {
-                            'title': title,
-                            'summary': summary,
-                            'link': link,
-                            'category': category,
-                            'publish_time': publish_time,
-                            'article_type': 'backup'
-                        }
-                        
-                        articles.append(article_info)
-                        logger.debug(f"成功提取備用文章: {title}")
-                    
-                    except Exception as article_error:
-                        logger.error(f"提取第 {idx} 個備用文章時出錯: {str(article_error)}", exc_info=True)
-        
+
+                        g_article_link = container.select_one(get_grid_contentainer_selector.get("link"))  # 修改選擇器，直接查找 a 標籤
+                        if g_article_link:
+                            g_article_link_text = g_article_link.get('href')
+                            print(f"第{idx}篇網格文章連結: {g_article_link_text}")  # 列印文章連結
+                
+                        g_article_title = container.select_one(get_grid_contentainer_selector.get("title"))  # 修改選擇器，直接查找 h2 標籤
+                        if g_article_title:
+                            g_article_title_text = g_article_title.get_text(strip=True)
+                            print(f"第{idx}篇網格文章標題: {g_article_title_text}")  # 列印文章標題
+                        g_article_summary = container.select_one(get_grid_contentainer_selector.get("summary"))
+                        if g_article_summary:
+                            g_article_summary_text = g_article_summary.get_text(strip=True)
+                            print(f"第{idx}篇網格文章摘要: {g_article_summary_text}")  # 列印文章摘要
+                        g_articel_published_age = container.select_one(get_grid_contentainer_selector.get("published_age"))
+                        if g_articel_published_age:
+                            g_articel_published_age_text = g_articel_published_age.get_text(strip=True)
+                            print(f"第{idx}篇網格文章發佈時間: {g_articel_published_age_text}")  # 列印文章發佈時間
+                            # 添加網格文章連結到列表
+                            article_links_list.append({
+                                'source_name': self.site_config.name,
+                                'source_url': self.site_config.base_url,
+                                'title': g_article_title_text,
+                                'summary': g_article_summary_text,
+                                'article_link': g_article_link_text,
+                                'category': category_text,
+                                'published_age': g_articel_published_age_text,
+                                'is_scraped': False
+                            })
+                            logger.debug(f"成功添加網格文章連結到列表: {g_article_title_text}")
+                    except Exception as e:
+                        print(f"發生錯誤: {e}")
+                else:
+                    return article_links_list
+           
         except Exception as e:
-            logger.error(f"提取備用文章時出現嚴重錯誤: {str(e)}", exc_info=True)
+            logger.error(f"提取文章連結時發生錯誤: {str(e)}", exc_info=True)
+            logger.error(f"當前選擇器配置: {selectors}")
+            return article_links_list
         
-        logger.info(f"成功提取 {len(articles)} 篇備用文章")
-        return articles
+        logger.info(f"成功提取 {len(article_links_list)} 篇焦點文章")
+        return article_links_list

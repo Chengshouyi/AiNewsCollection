@@ -2,17 +2,22 @@
     "name": "bnext",
     "base_url": "https://www.bnext.com.tw",
     "list_url_template": "{base_url}/categories/{category}",
-    "categories": {
-        "categories": [
-            "ai",
-            "tech",
-            "iot",
-            "smartmedical",
-            "smartcity",
-            "cloudcomputing",
-            "security"
-        ]
-    },
+    "categories": [
+        "ai",
+        "tech",
+        "iot",
+        "smartmedical",
+        "smartcity",
+        "cloudcomputing",
+        "security",
+        "articles",
+        "5g",
+        "car",
+        "blockchain",
+        "energy",
+        "semiconductor",
+        "manufacture"
+    ],
     "crawler_settings": {
         "max_pages": 3,
         "ai_only": true
@@ -35,339 +40,33 @@
     ],
     "date_format": "%Y-%m-%d",
     "selectors": {
-        "focus_articles": {
-            "container": "div.grid.grid-cols-6.gap-4.relative.h-full",
-            "title": "div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > h2",
-            "summary": "div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex-grow.pt-4.text-lg.text-gray-500",
-            "category": "div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex.relative.items-center.gap-2.text-gray-500.text-sm > a"
+        "get_article_links": {
+            "articles_container": "body > div.main-body-content > div > div.pc.hidden.lg\\:block",
+            "category": "div.border-b.pb-4.text-center.text-3xl.font-medium.mb-8.flex.items-center.justify-center.gap-2 > span",
+            "link": "div.grid.grid-cols-6.gap-4.relative.h-full > a",
+            "title": "div.grid.grid-cols-6.gap-4.relative.h-full > div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > h2",
+            "summary": "div.grid.grid-cols-6.gap-4.relative.h-full > div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex-grow.pt-4.text-lg.text-gray-500",
+            "published_age": "div.grid.grid-cols-6.gap-4.relative.h-full > div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex.relative.items-center.gap-2.text-gray-500.text-sm > span:nth-child(3)",
+            "article_grid_container": {
+                "container": "div.grid.grid-cols-4.gap-8.xl\\:gap-6",
+                "link": "a",
+                "title": "h2",
+                "summary": "div.text-sm.text-justify.font-normal.text-gray-500.three-line-text.tracking-wide",
+                "published_age": "div.flex.relative.items-center.gap-2.text-xs.text-gray-500.font-normal > span:nth-child(3)"
+            }
         },
-        "regular_articles": [
-            "div.grid.grid-cols-4.gap-8.xl\\:gap-6 > div",
-            "div > h2",
-            "div > div.text-sm.text-justify.font-normal.text-gray-500.three-line-text.tracking-wide",
-            "div.flex.relative.items-center.gap-2.text-gray-500.text-sm > a"
-        ],
-        "article_detail": [
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "pc h-full hidden lg:flex flex-col gap-2 tracking-wide leading-normal"
-                },
-                "parent": {
-                    "id": "hero"
-                },
-                "purpose": "header",
-                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal"
+        "get_article_contents": {
+            "content_container": "body > div.main-body-content > div > div.article-lw.pb-4.lg\\:py-4",
+            "category": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800",
+            "published_date": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > span:nth-child(1)",
+            "title": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > h1",
+            "summary": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div:nth-child(3)",
+            "tags": {
+                "container": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.flex-wrap",
+                "tag": "a"
             },
-            {
-                "tag": "span",
-                "attrs": {},
-                "parent": {
-                    "class": "flex gap-1 items-center text-sm text-gray-800"
-                },
-                "nth_child": 1,
-                "purpose": "publish_date",
-                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > span:nth-child(1)"
-            },
-            {
-                "tag": "a",
-                "attrs": {},
-                "parent": {
-                    "class": "flex gap-1 items-center text-sm text-gray-800"
-                },
-                "purpose": "category",
-                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > a"
-            },
-            {
-                "tag": "h1",
-                "attrs": {},
-                "purpose": "title",
-                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > h1"
-            },
-            {
-                "tag": "div",
-                "attrs": {},
-                "nth_child": 3,
-                "purpose": "summary",
-                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div:nth-child(3)"
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "flex gap-1 flex-wrap"
-                },
-                "purpose": "tags_container",
-                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.flex-wrap"
-            },
-            {
-                "tag": "a",
-                "attrs": {},
-                "purpose": "tag",
-                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.flex-wrap > a"
-            },
-            {
-                "tag": "a",
-                "attrs": {},
-                "parent": {
-                    "class": "flex gap-2 items-center text-sm text-gray-800"
-                },
-                "purpose": "author",
-                "selector": "div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-2.items-center.text-sm.text-gray-800 > a"
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "htmlview article-content"
-                },
-                "purpose": "content",
-                "selector": "div.htmlview.article-content"
-            },
-            {
-                "tag": "p",
-                "attrs": {},
-                "purpose": "content_paragraph"
-            },
-            {
-                "tag": "h2",
-                "attrs": {},
-                "purpose": "content_heading"
-            },
-            {
-                "tag": "a",
-                "attrs": {},
-                "parent": {
-                    "tag": "blockquote"
-                },
-                "purpose": "related_links",
-                "selector": "div.htmlview.article-content > blockquote > p > a"
-            }
-        ],
-        "common_elements": [
-            {
-                "tag": "time",
-                "attrs": {}
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": [
-                        "author",
-                        "writer"
-                    ]
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": [
-                        "read-count",
-                        "view-count"
-                    ]
-                }
-            }
-        ],
-        "backup_articles": [
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": [
-                        "article-card",
-                        "article-item",
-                        "article-list-item"
-                    ]
-                }
-            },
-            {
-                "tag": "a",
-                "attrs": {
-                    "href": "/article/"
-                }
-            }
-        ],
-        "list": [
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "article-list"
-                }
-            },
-            {
-                "tag": "a",
-                "attrs": {
-                    "class": "article-link"
-                }
-            }
-        ],
-        "content": [
-            {
-                "tag": "article",
-                "attrs": {
-                    "class": "post-content"
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "article-content"
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "article-body"
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "id": "article-content"
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "post-content"
-                }
-            }
-        ],
-        "date": [
-            {
-                "tag": "time",
-                "attrs": {
-                    "class": "published-date"
-                }
-            },
-            {
-                "tag": "span",
-                "attrs": {
-                    "class": "date"
-                }
-            },
-            {
-                "tag": "time",
-                "attrs": {}
-            }
-        ],
-        "title": [
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": [
-                        "title",
-                        "article-title"
-                    ]
-                }
-            },
-            {
-                "tag": "h2",
-                "attrs": {}
-            },
-            {
-                "tag": "h3",
-                "attrs": {}
-            }
-        ],
-        "author": [
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "article-author"
-                }
-            }
-        ],
-        "tags": [
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "tags"
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "article-tags"
-                }
-            },
-            {
-                "tag": "a",
-                "attrs": {
-                    "class": "tag"
-                }
-            }
-        ],
-        "related_articles": [
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "related-article"
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "related-post"
-                }
-            },
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": "more-article"
-                }
-            }
-        ],
-        "pagination": [
-            {
-                "tag": "a",
-                "attrs": {
-                    "class": "next-page"
-                }
-            }
-        ],
-        "summary": [
-            {
-                "tag": "div",
-                "attrs": {
-                    "class": [
-                        "text-gray-500",
-                        "summary",
-                        "excerpt",
-                        "description"
-                    ]
-                }
-            }
-        ],
-        "category": [
-            {
-                "tag": "a",
-                "attrs": {
-                    "class": [
-                        "category",
-                        "tag"
-                    ]
-                }
-            },
-            {
-                "tag": "a",
-                "attrs": {
-                    "href": "/categories/"
-                }
-            }
-        ]
-    },
-    "default_categories": [
-        "ai",
-        "tech",
-        "iot",
-        "smartmedical",
-        "smartcity",
-        "cloudcomputing",
-        "security",
-        "articles",
-        "5g",
-        "car",
-        "blockchain",
-        "energy",
-        "semiconductor",
-        "manufacture"
-    ]
+            "author": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-2.items-center.text-sm.text-gray-800 > a",
+            "content": "#article > div > div.left > div > div.center.flex.flex-col.gap-4 > div.htmlview.article-content"
+        }
+    }
 }

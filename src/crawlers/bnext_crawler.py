@@ -31,16 +31,16 @@ class BnextCrawler(BaseCrawler):
         self._create_site_config()
         
         # 創建爬蟲實例，傳入配置
-        #TODO:傳入資料庫ArticleRepository,ArticleLinkRepository
         self.scraper = scraper or BnextScraper(
-            config=self.site_config
+            config=self.site_config,
+            article_links_repository=self.article_link_repository
         )
         self.extractor = extractor or BnextContentExtractor(
-            config=self.site_config
+            config=self.site_config,
+            article_repository=self.article_repository
         )
         
         # 設置資料庫
-        self._set_repository()
         self.articles_df = pd.DataFrame()
 
 
@@ -88,16 +88,8 @@ class BnextCrawler(BaseCrawler):
             categories=self.config_data.get("categories", {}),
             crawler_settings=self.config_data.get("crawler_settings", {}),
             content_extraction=self.config_data.get("content_extraction", {}),
-            default_categories=self.config_data.get("default_categories", []),
             selectors=self.config_data.get("selectors", {})
         )
-        BnextUtils.set_bnext_config(self.site_config)
-
-    def _set_repository(self):
-        """設置數據庫管理器"""
-        if self.db_manager:
-            self.scraper.article_repository = self.article_repository
-            self.extractor.article_repository = self.article_repository
     
     def fetch_article_list(self) -> Optional[pd.DataFrame]:
         """
@@ -116,12 +108,12 @@ class BnextCrawler(BaseCrawler):
             self._create_site_config()
 
         max_pages = self.site_config.crawler_settings.get("max_pages", 3)
-        categories = self.site_config.categories.get("categories", None)
+        categories = self.site_config.categories
         ai_only = self.site_config.crawler_settings.get("ai_only", True)
         logger.info(f"抓取文章列表參數設定：最大頁數: {max_pages}, 文章類別: {categories}, AI 相關文章: {ai_only}")
         logger.info(f"BnextCrawler(fetch_article_list()) - call BnextScraper.scrape_article_list： 抓取文章列表中...")
         self.articles_df = self.retry_operation(
-            lambda: self.scraper.scrape_article_list(max_pages, categories, ai_only)
+            lambda: self.scraper.scrape_article_list(max_pages, ai_only)
         )
         return self.articles_df
 

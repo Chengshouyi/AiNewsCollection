@@ -1,23 +1,22 @@
 # bnext_utils.py
 # 共用模組，提供 BnextScraper 和 BnextContentExtractor 共用的功能
 
-import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 import re
 import time
 import logging
 import random
+from typing import Optional, Dict, Any
+from src.crawlers.configs.site_config import SiteConfig
+import json
 
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class BnextUtils:
     """明日科技爬蟲的工具類"""
-
-    @staticmethod
-    def set_bnext_config(bnext_config):
-        BnextUtils.bnext_config = bnext_config
 
     @staticmethod
     def get_random_sleep_time(min_time: float = 1.0, max_time: float = 3.0):
@@ -139,30 +138,6 @@ class BnextUtils:
         elements = BnextUtils.find_elements_by_purpose(soup, selectors, purpose)
         return elements[0] if elements else None
     
-    @staticmethod
-    def extract_article_link(container, title_elem=None):
-        """
-        提取文章連結的通用方法
-        """
-        link = None
-        
-        # 從標題元素尋找
-        if title_elem:
-            parent_a = title_elem.find_parent('a')
-            if parent_a and 'href' in parent_a.attrs:
-                link = parent_a['href']
-        
-        # 從容器中尋找
-        if not link:
-            link_elem = BnextUtils.find_element(container, BnextUtils.bnext_config.selectors['common_elements'][3:], 'link')
-            if link_elem:
-                link = link_elem['href']
-        
-        # 確保連結是完整的
-        if link and not link.startswith('http'):
-            link = urljoin(BnextUtils.bnext_config.base_url, link)
-            
-        return link
 
     @staticmethod
     def fix_css_selector(selector: str) -> str:

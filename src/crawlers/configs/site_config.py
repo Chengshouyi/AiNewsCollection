@@ -20,7 +20,6 @@ class SiteConfig:
     valid_domains: List[str] = field(default_factory=list)
     url_patterns: List[str] = field(default_factory=list)
     url_file_extensions: List[str] = field(default_factory=lambda: ['.html', '.htm'])
-    default_categories: List[str] = field(default_factory=list)
     date_format: str = '%Y/%m/%d %H:%M'
     
     # 選擇器配置
@@ -40,26 +39,13 @@ class SiteConfig:
         self.selectors = {**default_selectors, **self.selectors}
         if not self.valid_domains: self.valid_domains = [self.base_url]
 
-    def get_category_url(self, category: str) -> Optional[str]:
+    def get_category_url(self, category_name: str) -> Optional[str]:
         """獲取特定分類的 URL"""
-        if category not in self.categories:
+        if category_name not in self.categories:
             return None
-        return f"{self.base_url}{self.categories[category]}"
+        return self.list_url_template.format(base_url=self.base_url, category=category_name)
 
     def validate(self) -> bool:
         """驗證站點配置"""
         return bool(self.name and self.base_url)
-
-    @classmethod
-    def from_crawler_config(cls, crawler_config):
-        """從 CrawlerConfig 對象創建 SiteConfig"""
-        return cls(
-            name=crawler_config.site_name,
-            base_url=crawler_config.base_url,
-            list_url_template=crawler_config.list_url_template,
-            categories=crawler_config.categories,
-            crawler_settings=crawler_config.crawler_settings,
-            content_extraction=crawler_config.content_extraction,
-            default_categories=crawler_config.default_categories
-        )
 
