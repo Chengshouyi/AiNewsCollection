@@ -16,14 +16,12 @@ class SiteConfig:
     })
     content_extraction: Dict[str, Any] = field(default_factory=dict)
     headers: Dict[str, str] = field(default_factory=lambda: DEFAULT_HEADERS)
-    selectors: Dict[str, List[Dict]] = field(default_factory=dict)
+    selectors: Dict[str, Any] = field(default_factory=dict)
     valid_domains: List[str] = field(default_factory=list)
     url_patterns: List[str] = field(default_factory=list)
     url_file_extensions: List[str] = field(default_factory=lambda: ['.html', '.htm'])
     date_format: str = '%Y/%m/%d %H:%M'
     
-    # 選擇器配置
-    selectors: Dict[str, List[Dict]] = field(default_factory=dict)
     
     def validate_url(self, url: str) -> bool:
         if not url or not any(url.startswith(domain) for domain in self.valid_domains):
@@ -35,8 +33,6 @@ class SiteConfig:
         return True
 
     def __post_init__(self):
-        default_selectors = {'list': [], 'content': [], 'date': [], 'title': [], 'pagination': []}
-        self.selectors = {**default_selectors, **self.selectors}
         if not self.valid_domains: self.valid_domains = [self.base_url]
 
     def get_category_url(self, category_name: str) -> Optional[str]:

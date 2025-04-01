@@ -50,7 +50,7 @@ class BnextContentExtractor:
                 config.get_category_url = lambda x: f"{config.base_url}/categories/{x}"
             
             self.site_config = config
-            logger.info(f"使用配置: {self.site_config.__dict__}")
+            #logger.info(f"使用選擇器: {self.site_config.selectors}")
         
         if not self.article_repository:
             logger.warning("未提供資料庫管理器，將不會保存到資料庫")

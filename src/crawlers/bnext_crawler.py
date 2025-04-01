@@ -28,13 +28,16 @@ class BnextCrawler(BaseCrawler):
         """
         super().__init__(db_manager, config_file_name)
         
+        logger.info(f"BnextCrawler - call_create_site_config()： 建立站點配置")
         self._create_site_config()
         
         # 創建爬蟲實例，傳入配置
+        logger.info(f"BnextCrawler - call_create_scraper()： 建立爬蟲實例")
         self.scraper = scraper or BnextScraper(
             config=self.site_config,
             article_links_repository=self.article_link_repository
         )
+        logger.info(f"BnextCrawler - call_create_extractor()： 建立文章內容擷取器")
         self.extractor = extractor or BnextContentExtractor(
             config=self.site_config,
             article_repository=self.article_repository
@@ -54,20 +57,8 @@ class BnextCrawler(BaseCrawler):
                     # 使用文件配置更新默認配置
                     self.config_data.update(file_config)
                     
-                    # 特別處理選擇器配置，確保其結構正確
-                    if 'selectors' in file_config:
-                        logger.info(f"從配置文件中載入選擇器配置，找到 {len(file_config['selectors'])} 個選擇器組")
-                        if 'selectors' not in self.config_data:
-                            self.config_data['selectors'] = {}
-                        
-                        # 確保選擇器下的項目都正確加載
-                        selectors = file_config['selectors']
-                        self.config_data['selectors'].update(selectors)
-                        
-                        # 記錄載入的選擇器配置
-                        logger.debug(f"載入的選擇器配置: {list(self.config_data['selectors'].keys())}")
-                    
                 logger.info(f"已載入 BNext 配置: {self.config_file_name}")
+                logger.info(f"已載入 BNext 配置: {self.config_data}")
             except (json.JSONDecodeError, FileNotFoundError) as e:
                 logger.warning(f"載入配置文件失敗: {str(e)}，使用預設配置")
         else:
@@ -78,14 +69,16 @@ class BnextCrawler(BaseCrawler):
     def _create_site_config(self):
         """創建站點配置"""
         if not self.config_data:
+            logger.info(f"BnextCrawler - call_load_site_config()： 載入站點配置")
             self._load_site_config()
         
         # 創建 site_config
+        logger.info(f"BnextCrawler - call_create_site_config()： 創建 site_config")
         self.site_config = SiteConfig(
             name=self.config_data.get("name", "BNext"),
             base_url=self.config_data.get("base_url", "https://www.bnext.com.tw"),
             list_url_template=self.config_data.get("list_url_template", "{base_url}/categories/{category}"),
-            categories=self.config_data.get("categories", {}),
+            categories=self.config_data.get("categories", []),
             crawler_settings=self.config_data.get("crawler_settings", {}),
             content_extraction=self.config_data.get("content_extraction", {}),
             selectors=self.config_data.get("selectors", {})

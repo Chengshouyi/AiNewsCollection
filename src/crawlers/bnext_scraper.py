@@ -5,7 +5,7 @@ from typing import List, Dict, Optional
 import time
 import re
 from bs4 import Tag
-
+import random
 from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
@@ -41,64 +41,78 @@ class BnextScraper:
             if not hasattr(config, 'base_url'):
                 logger.error("未提供網站基礎URL，將使用預設值")
                 config.base_url = "https://www.bnext.com.tw"
+
             if not hasattr(config, 'categories'):
                 logger.error("未提供預設類別，將使用預設值")
-                config.categories = ["ai","tech","iot","smartmedical","smartcity",       "cloudcomputing","security"]
+                config.categories = ["ai","tech","iot","smartmedical","smartcity","cloudcomputing","security"]
+
             if not hasattr(config, 'selectors'):
                 logger.error("未提供選擇器，將使用預設值")
                 config.selectors = {}
+
             if not hasattr(config, 'get_category_url'):
                 logger.error("未提供類別URL，將使用預設值")
                 config.get_category_url = lambda x: f"{config.base_url}/categories/{x}"
             
             self.site_config = config
-            logger.info(f"使用配置: {self.site_config.__dict__}")
+            #logger.info(f"使用選擇器: {self.site_config.selectors}")
         
         if not self.article_links_repository:
             logger.warning("未提供資料庫管理器，將不會保存到資料庫")
 
     def scrape_article_list(self, max_pages=3, ai_only=True) -> pd.DataFrame:
         start_time = time.time()
-        logger.info("開始抓取文章列表")
+        all_article_links_list = []
         
         try:
             logger.info("BnextScraper(scrape_article_list()) - call 開始抓取文章列表")
             logger.info(f"參數設置: max_pages={max_pages}, ai_only={ai_only}")
-            logger.info(f"使用類別: {self.site_config.categories.get('categories', None) if self.site_config.categories else '預設類別'}")
+            logger.info(f"使用類別: {self.site_config.categories if self.site_config.categories else '預設類別'}")
                 
             # 初始化requests session(網路連線)
             session = requests.Session()
-            all_article_links_list = []
 
-            for current_category_name in self.site_config.categories.get('categories', None):
+            for current_category_name in self.site_config.categories:
                 logger.info(f"開始處理類別: {current_category_name}")
                 # 構造類別URL
                 current_category_url = self.site_config.get_category_url(current_category_name)
                 page = 1
+                logger.info(f"構造類別URL: {current_category_url}, 頁數: {page}")
                 
                 # 保存原始類別URL，用於構造分頁URL
                 base_category_url = current_category_url
+                logger.info(f"保存原始類別URL: {base_category_url}")
 
                 while page <= max_pages:
                     logger.info(f"正在處理第 {page}/{max_pages} 頁")
                     logger.debug(f"當前URL: {current_category_url}")
                     
                     try:
-                        logger.info(f"正在爬取: {current_category_url} (第 {page} 頁)")
+                        logger.info(f"開始執行隨機延遲")
+                        delay_time = random.uniform(1.5, 3.5)
+                        logger.info(f"設定延遲時間: {delay_time} 秒")
+                        time.sleep(delay_time)
+                        logger.info(f"延遲完成")
                         
-                        # 增加隨機延遲，避免被封鎖
-                        BnextUtils.sleep_random_time(1.5, 3.5)
-                        
-                        response = session.get(str(current_category_url), headers=DEFAULT_HEADERS, timeout=15)
-                        
-                        if response.status_code != 200:
-                            logger.warning(f"頁面請求失敗: {response.status_code}")
-                            break
-                        
+                        logger.info(f"準備使用session.get()")
+                        response = session.get(str(current_category_url), headers=self.site_config.headers, timeout=15)
+                        logger.info(f"使用session.get()完成")
+                    except Exception as e:
+                        logger.error(f"增加隨機延遲時發生錯誤: {str(e)}", exc_info=True)
+                        continue  # 跳過當前迭代，繼續下一頁
+
+                    # 檢查響應狀態
+                    if response.status_code != 200:
+                        logger.warning(f"頁面請求失敗: {response.status_code}")
+                        break
+                    
+                    # 正常處理頁面內容
+                    try:
                         soup = BnextUtils.get_soup_from_html(response.text)
-                        
+                        logger.info(f"構建 soup 完成")
+
                         # 根據提供的選擇器爬取內容
-                        # 1. 爬取焦點文章
+                        # 1. 爬取文章連結
                         logger.info(f"BnextScraper(scrape_article_list()) - call self.extract_article_links() 爬取文章連結")
                         current_page_article_links_list = self.extract_article_links(soup)
                         
@@ -136,7 +150,7 @@ class BnextScraper:
                         logger.info(f"本頁共找到: {len(current_page_article_links_list)} 篇文章連結")
                     
                     except Exception as e:
-                        logger.error(f"爬取過程中發生錯誤: {str(e)}", exc_info=True)
+                        logger.error(f"處理頁面內容時發生錯誤: {str(e)}", exc_info=True)
                         break
                 
                 logger.info(f"完成爬取類別: {current_category_url}")
@@ -164,6 +178,10 @@ class BnextScraper:
             
             # 轉換為DataFrame
             return self._process_articles_to_dataframe(all_article_links_list)
+        
+        except Exception as e:
+            logger.error(f"爬蟲過程中發生未預期的錯誤: {str(e)}", exc_info=True)
+            return pd.DataFrame()  # 返回空的 DataFrame
         
         finally:
             end_time = time.time()
@@ -225,7 +243,7 @@ class BnextScraper:
 
     def extract_article_links(self, soup):
         """
-        提取焦點文章，增加容錯和詳細日誌
+        提取文章連結，增加容錯和詳細日誌
         """
 
         
@@ -234,12 +252,13 @@ class BnextScraper:
         try:
             selectors = self.site_config.selectors
             get_article_links_selectors = selectors.get('get_article_links') 
+            get_grid_contentainer_selector = get_article_links_selectors.get("article_grid_container")
 
-            # 提取焦點文章連結
+            # 提取文章連結
             articles_container = soup.select(get_article_links_selectors.get("articles_container"))
             
-            logger.info(f"找到 {len(articles_container)} 個焦點文章連結容器")
-            logger.debug(f"焦點文章連結容器: {articles_container}")
+            logger.info(f"找到 {len(articles_container)} 個文章連結容器")
+            # logger.debug(f"文章連結容器: {articles_container}")
 
             category = articles_container[0].select_one(get_article_links_selectors.get("category"))
             category_text = category.get_text(strip=True) if category else None
@@ -264,55 +283,53 @@ class BnextScraper:
                 'is_scraped': False
             })
             
-            logger.debug(f"成功提取焦點文章連結: {title_text}")
+            logger.debug(f"成功提取文章連結，標題: {title_text}")
             
             # 提取網格文章連結
-            get_grid_contentainer_selector = get_article_links_selectors.get("article_grid_container")
+            logger.info(f"開始提取網格文章連結")
+
+
             article_grid_container = articles_container[0].select_one(get_grid_contentainer_selector.get("container"))
             if not article_grid_container:
                 logger.warning("未找到文章網格容器")
                 return article_links_list
+            # logger.info(f"Container type: {article_grid_container}")
 
-            for idx, container in enumerate(article_grid_container.children,1):  # 迭代直接子元素
-                if isinstance(container, Tag):  # 檢查是否為 Tag 物件
-                    try:
-                        # 檢查 container 是否為 div 標籤
-                        if container.name != 'div':
-                            continue
-
-                        g_article_link = container.select_one(get_grid_contentainer_selector.get("link"))  # 修改選擇器，直接查找 a 標籤
-                        if g_article_link:
-                            g_article_link_text = g_article_link.get('href')
-                            print(f"第{idx}篇網格文章連結: {g_article_link_text}")  # 列印文章連結
-                
-                        g_article_title = container.select_one(get_grid_contentainer_selector.get("title"))  # 修改選擇器，直接查找 h2 標籤
-                        if g_article_title:
-                            g_article_title_text = g_article_title.get_text(strip=True)
-                            print(f"第{idx}篇網格文章標題: {g_article_title_text}")  # 列印文章標題
-                        g_article_summary = container.select_one(get_grid_contentainer_selector.get("summary"))
-                        if g_article_summary:
-                            g_article_summary_text = g_article_summary.get_text(strip=True)
-                            print(f"第{idx}篇網格文章摘要: {g_article_summary_text}")  # 列印文章摘要
-                        g_articel_published_age = container.select_one(get_grid_contentainer_selector.get("published_age"))
-                        if g_articel_published_age:
-                            g_articel_published_age_text = g_articel_published_age.get_text(strip=True)
-                            print(f"第{idx}篇網格文章發佈時間: {g_articel_published_age_text}")  # 列印文章發佈時間
-                            # 添加網格文章連結到列表
-                            article_links_list.append({
-                                'source_name': self.site_config.name,
-                                'source_url': self.site_config.base_url,
-                                'title': g_article_title_text,
-                                'summary': g_article_summary_text,
-                                'article_link': g_article_link_text,
-                                'category': category_text,
-                                'published_age': g_articel_published_age_text,
-                                'is_scraped': False
-                            })
-                            logger.debug(f"成功添加網格文章連結到列表: {g_article_title_text}")
-                    except Exception as e:
-                        print(f"發生錯誤: {e}")
-                else:
-                    return article_links_list
+            for idx, container in enumerate(article_grid_container.find_all('div', recursive=False),1): 
+                logger.info(f"開始處理第 {idx} 個網格文章連結容器")
+                logger.info(f"檢查網格文章連結容器類型: {type(container)}")
+                try:
+                    g_article_link = container.select_one(get_grid_contentainer_selector.get("link"))  # 修改選擇器，直接查找 a 標籤
+                    if g_article_link:
+                        g_article_link_text = g_article_link.get('href')
+                        print(f"第{idx}篇網格文章連結: {g_article_link_text}")  # 列印文章連結
+            
+                    g_article_title = container.select_one(get_grid_contentainer_selector.get("title"))  # 修改選擇器，直接查找 h2 標籤
+                    if g_article_title:
+                        g_article_title_text = g_article_title.get_text(strip=True)
+                        print(f"第{idx}篇網格文章標題: {g_article_title_text}")  # 列印文章標題
+                    g_article_summary = container.select_one(get_grid_contentainer_selector.get("summary"))
+                    if g_article_summary:
+                        g_article_summary_text = g_article_summary.get_text(strip=True)
+                        print(f"第{idx}篇網格文章摘要: {g_article_summary_text}")  # 列印文章摘要
+                    g_articel_published_age = container.select_one(get_grid_contentainer_selector.get("published_age"))
+                    if g_articel_published_age:
+                        g_articel_published_age_text = g_articel_published_age.get_text(strip=True)
+                        print(f"第{idx}篇網格文章發佈時間: {g_articel_published_age_text}")  # 列印文章發佈時間
+                        # 添加網格文章連結到列表
+                        article_links_list.append({
+                            'source_name': self.site_config.name,
+                            'source_url': self.site_config.base_url,
+                            'title': g_article_title_text,
+                            'summary': g_article_summary_text,
+                            'article_link': g_article_link_text,
+                            'category': category_text,
+                            'published_age': g_articel_published_age_text,
+                            'is_scraped': False
+                        })
+                        logger.debug(f"成功添加網格文章連結到列表: {g_article_title_text}")
+                except Exception as e:
+                    print(f"發生錯誤: {e}")
            
         except Exception as e:
             logger.error(f"提取文章連結時發生錯誤: {str(e)}", exc_info=True)

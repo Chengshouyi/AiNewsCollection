@@ -115,7 +115,7 @@ def main():
         
         # 獲取爬蟲實例
         crawler = CrawlerFactory.get_crawler(args.crawler)
-        
+        logger.info(f"CrawlerTest - call CrawlerFactory.get_crawler(args.crawler)： 獲取爬蟲實例完成")
         # 執行爬蟲
         logger.info(f"CrawlerTest - call main： 開始爬取 {args.crawler}，最大頁數: {args.max_pages}")
         
@@ -127,10 +127,10 @@ def main():
         logger.info(f"獲取文章列表，共 {len(articles_df)} 篇")
         
         # 獲取文章詳情
-        if args.fetch_details and not articles_df.empty:
-            logger.info(f"CrawlerTest - call crawler.fetch_article_details()： 開始獲取文章詳情，數量: {args.num_articles}")
-            articles_df = crawler.fetch_article_details()
-            logger.info(f"CrawlerTest - call crawler.fetch_article_details()： 獲取文章詳情完成")
+#if args.fetch_details and not articles_df.empty:
+#            logger.info(f"CrawlerTest - call crawler.fetch_article_details()： 開始獲取文章詳情，數量: {args.num_articles}")
+#            articles_df = crawler.fetch_article_details()
+#            logger.info(f"CrawlerTest - call crawler.fetch_article_details()： 獲取文章詳情完成")
 
         
         # 保存數據
