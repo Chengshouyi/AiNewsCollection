@@ -136,7 +136,7 @@ def main():
         # 保存數據
         if not articles_df.empty:
             logger.info(f"CrawlerTest - call crawler.save_data()： 開始保存文章到 {args.output}")
-            crawler.save_data(articles_df, save_to_csv=True, csv_path=args.output)
+            crawler._save_to_csv(articles_df, save_to_csv=True, csv_path=args.output)
             logger.info(f"CrawlerTest - call crawler.save_data()： 已保存 {len(articles_df)} 篇文章到 {args.output}")
         else:
             logger.warning("沒有獲取到任何文章")

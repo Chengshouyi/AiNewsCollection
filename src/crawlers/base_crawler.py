@@ -20,25 +20,13 @@ class BaseCrawler(ABC):
 
 
 
-    def __init__(self, db_manager: Optional[DatabaseManager] = None, config_file_name: Optional[str] = None):
+    def __init__(self, config_file_name: Optional[str] = None):
         self.config_data: Dict[str, Any] = {}
         self.site_config: SiteConfig
         self.task_status = {}
-        self.db_manager = db_manager
         self.config_file_name = config_file_name
         
-        # 初始化 repositories
-        self.article_repository = None
-        self.article_link_repository = None
-        if self.db_manager:
-            session = self.db_manager.Session()
-            try:
-                self.article_repository = ArticlesRepository(session, Articles)
-                self.article_link_repository = ArticleLinksRepository(session, ArticleLinks)
-            except Exception as e:
-                logger.error(f"初始化 repositories 失敗: {str(e)}")
-                session.close()
-                raise
+
         
     @abstractmethod
     def _load_site_config(self):
@@ -67,15 +55,34 @@ class BaseCrawler(ABC):
         """
         pass
 
-    @abstractmethod
-    def save_data(self, data: pd.DataFrame, save_to_csv: bool = False, csv_path: Optional[str] = None):
-        """
-        保存數據，支持保存到數據庫和CSV文件
-        """
-        pass
+    def _save_to_database(self, data: pd.DataFrame, target: str):
+        """保存爬取到的文章數據"""
+        if data is None or len(data) == 0:
+            logger.warning("沒有數據可供保存")
+            return
+
+        if target == "article_links":
+            pass
+        elif target == "articles":
+            pass
+        else:
+            raise ValueError(f"不支持的保存目標: {target}")
+
+    def _save_to_csv(self, data: pd.DataFrame, csv_path: Optional[str] = None):
+        """保存數據到CSV文件"""
+        if not csv_path:
+            csv_path = f'articles_{int(time.time())}.csv'
+            
+        try:
+            # 確保目錄存在
+            os.makedirs(os.path.dirname(csv_path) or '.', exist_ok=True)
+            data.to_csv(csv_path, index=False, encoding='utf-8-sig')
+            logger.info(f"文章數據已保存到 CSV 文件: {csv_path}")
+        except Exception as e:
+            logger.error(f"保存文章到 CSV 文件失敗: {str(e)}", exc_info=True)
 
 
-    def execute_task(self, task_id: int, task_args: dict, db_manager=None):
+    def execute_task(self, task_id: int, task_args: dict):
         """執行爬蟲任務的完整流程，並更新任務狀態"""
         self.task_status[task_id] = {
             'status': 'running',
@@ -108,7 +115,7 @@ class BaseCrawler(ABC):
             save_to_csv = task_args.get('save_to_csv', False)
             csv_path = task_args.get('csv_path', f'articles_{task_id}.csv')
             
-            self.save_data(detailed_df, save_to_csv, csv_path)
+            self._save_to_database(detailed_df, "articles")
                 
             self._update_task_status(task_id, 100, '任務完成', 'completed')
             return detailed_df

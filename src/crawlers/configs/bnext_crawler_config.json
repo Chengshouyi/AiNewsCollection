@@ -19,11 +19,11 @@
         "manufacture"
     ],
     "crawler_settings": {
-        "max_pages": 3,
+        "max_pages": 2,
         "ai_only": true
     },
     "content_extraction": {
-        "num_articles": 10,
+        "num_articles": 3,
         "ai_only": true,
         "min_keywords": 3
     },

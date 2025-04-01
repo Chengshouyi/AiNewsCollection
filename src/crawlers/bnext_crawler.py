@@ -1,14 +1,10 @@
 import pandas as pd
 import logging
-import time
-import os
 import json
 from src.crawlers.base_crawler import BaseCrawler
 from src.crawlers.configs.site_config import SiteConfig
 from src.crawlers.bnext_scraper import BnextScraper
 from src.crawlers.bnext_content_extractor import BnextContentExtractor
-from src.database.database_manager import DatabaseManager
-from src.crawlers.bnext_utils import BnextUtils
 from typing import Optional
 
 # 設定 logger
@@ -17,7 +13,7 @@ logging.basicConfig(level=logging.INFO,
 logger = logging.getLogger(__name__)
 
 class BnextCrawler(BaseCrawler):
-    def __init__(self, db_manager: DatabaseManager, config_file_name: Optional[str] = None, scraper=None, extractor=None):
+    def __init__(self, config_file_name: Optional[str] = None, scraper=None, extractor=None):
         """
         初始化明日科技爬蟲
         
@@ -26,7 +22,7 @@ class BnextCrawler(BaseCrawler):
             scraper (BnextScraper, optional): 文章列表爬蟲
             extractor (BnextContentExtractor, optional): 文章內容擷取器
         """
-        super().__init__(db_manager, config_file_name)
+        super().__init__(config_file_name)
         
         logger.info(f"BnextCrawler - call_create_site_config()： 建立站點配置")
         self._create_site_config()
@@ -34,13 +30,11 @@ class BnextCrawler(BaseCrawler):
         # 創建爬蟲實例，傳入配置
         logger.info(f"BnextCrawler - call_create_scraper()： 建立爬蟲實例")
         self.scraper = scraper or BnextScraper(
-            config=self.site_config,
-            article_links_repository=self.article_link_repository
+            config=self.site_config
         )
         logger.info(f"BnextCrawler - call_create_extractor()： 建立文章內容擷取器")
         self.extractor = extractor or BnextContentExtractor(
-            config=self.site_config,
-            article_repository=self.article_repository
+            config=self.site_config
         )
         
         # 設置資料庫
@@ -138,51 +132,8 @@ class BnextCrawler(BaseCrawler):
             
         return self.retry_operation(
             lambda: self.extractor.batch_get_articles_content(
-                articles_df, num_articles, ai_only, min_keywords, self.db_manager
-            )
+                articles_df, num_articles, ai_only, min_keywords)
         )
-      
-    def save_data(self, data: pd.DataFrame, save_to_csv: bool = False, csv_path: Optional[str] = None):
-        """保存爬取到的文章數據"""
-        if data is None or len(data) == 0:
-            logger.warning("沒有數據可供保存")
-            return
-            
-        # 保存到數據庫
-        if self.db_manager and self.article_repository:
-            for _, row in data.iterrows():
-                try:
-                    article_data = {
-                        'title': row['title'],
-                        'summary': row.get('summary', ''),
-                        'content': row.get('content', ''),
-                        'link': row['link'],
-                        'category': row.get('category', ''),
-                        'published_at': row.get('publish_time', '') or row.get('publish_at', ''),
-                        'author': row.get('author', ''),
-                        'source': 'bnext_crawler',
-                        'tags': row.get('tags', '')
-                    }
-                    self.article_repository.create(article_data)
-                except Exception as e:
-                    logger.error(f"保存文章到數據庫失敗: {str(e)}", exc_info=True)
-        
-        # 如果需要，保存到 CSV 文件
-        if save_to_csv:
-            self._save_to_csv(data, csv_path)
-        
-    def _save_to_csv(self, data: pd.DataFrame, csv_path: Optional[str] = None):
-        """保存數據到CSV文件"""
-        if not csv_path:
-            csv_path = f'articles_{int(time.time())}.csv'
-            
-        try:
-            # 確保目錄存在
-            os.makedirs(os.path.dirname(csv_path) or '.', exist_ok=True)
-            data.to_csv(csv_path, index=False, encoding='utf-8-sig')
-            logger.info(f"文章數據已保存到 CSV 文件: {csv_path}")
-        except Exception as e:
-            logger.error(f"保存文章到 CSV 文件失敗: {str(e)}", exc_info=True)
 
 
 

@@ -84,7 +84,7 @@ class CrawlerFactory:
             config_file_name = crawler_info['config_file_name']
             
             # 創建爬蟲實例，傳入 db_manager
-            return crawler_class(db_manager=cls._db_manager, config_file_name=config_file_name)
+            return crawler_class(config_file_name=config_file_name)
             
         except Exception as e:
             logger.error(f"創建爬蟲實例失敗: {str(e)}")

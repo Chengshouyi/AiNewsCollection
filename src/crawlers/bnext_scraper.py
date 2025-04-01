@@ -1,16 +1,14 @@
 import requests
 import pandas as pd
 import logging
-from typing import List, Dict, Optional
+from typing import List, Dict
 import time
 import re
-from bs4 import Tag
 import random
 from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
-from src.database.article_links_repository import ArticleLinksRepository
 
 # 設置日誌記錄器
 custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -23,14 +21,13 @@ logger = LoggerSetup.setup_logger(
 )
 
 class BnextScraper:
-    def __init__(self, config=None, article_links_repository: Optional[ArticleLinksRepository] = None):
+    def __init__(self, config=None):
         """
         初始化爬蟲
         
         Parameters:
         config (SiteConfig, optional): 網站配置
         """
-        self.article_links_repository: Optional[ArticleLinksRepository] = article_links_repository
         # 檢查配置
         logger.info("檢查爬蟲配置")
         if config is None:
@@ -56,9 +53,6 @@ class BnextScraper:
             
             self.site_config = config
             #logger.info(f"使用選擇器: {self.site_config.selectors}")
-        
-        if not self.article_links_repository:
-            logger.warning("未提供資料庫管理器，將不會保存到資料庫")
 
     def scrape_article_list(self, max_pages=3, ai_only=True) -> pd.DataFrame:
         start_time = time.time()
@@ -156,28 +150,12 @@ class BnextScraper:
                 logger.info(f"完成爬取類別: {current_category_url}")
             
             # 修改儲存邏輯
-            if all_article_links_list and self.article_links_repository:
-                df = pd.DataFrame(all_article_links_list)
-                df = df.drop_duplicates(subset=['link'], keep='first')
-                
-                # 轉換資料格式以符合資料庫結構
-                success_count = 0
-                fail_count = 0
-                
-                for article_link in all_article_links_list:
-                    
-                    # 使用 repository 直接存儲
-                    try:
-                        self.article_links_repository.create(article_link)
-                        success_count += 1
-                    except Exception as e:
-                        logger.error(f"儲存文章失敗: {str(e)}")
-                        fail_count += 1
-                
-                logger.info(f"文章存儲結果: 成功 {success_count} 篇，失敗 {fail_count} 篇")
-            
-            # 轉換為DataFrame
-            return self._process_articles_to_dataframe(all_article_links_list)
+            if all_article_links_list:
+                # 轉換為DataFrame
+                return self._process_articles_to_dataframe(all_article_links_list)
+            else:
+                logger.warning("未爬取到任何文章")
+                return pd.DataFrame()
         
         except Exception as e:
             logger.error(f"爬蟲過程中發生未預期的錯誤: {str(e)}", exc_info=True)
@@ -229,7 +207,7 @@ class BnextScraper:
             return pd.DataFrame()
             
         df = pd.DataFrame(links_list)
-        df = df.drop_duplicates(subset=['link'], keep='first')
+        df = df.drop_duplicates(subset=['article_link'], keep='first')
         
         # 添加統計信息
         stats = {
