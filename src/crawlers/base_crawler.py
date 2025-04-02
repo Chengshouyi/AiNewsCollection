@@ -7,6 +7,7 @@ import time
 import json
 import os
 from src.crawlers.configs.site_config import SiteConfig
+from src.services.links_with_articles_service import LinksWithArticlesService
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -16,13 +17,14 @@ class BaseCrawler(ABC):
 
 
 
-    def __init__(self, config_file_name: Optional[str] = None):
+    def __init__(self, config_file_name: Optional[str] = None, links_with_articles_service: Optional[LinksWithArticlesService] = None):
         self.config_data: Dict[str, Any] = {}
         self.site_config: SiteConfig
         self.task_status = {}
         self.config_file_name = config_file_name
         self.article_links_df = pd.DataFrame()
         self.articles_df = pd.DataFrame()
+        self.links_with_articles_service = links_with_articles_service
         
 
         
@@ -53,18 +55,40 @@ class BaseCrawler(ABC):
         """
         pass
 
-    def _save_to_database(self, data: pd.DataFrame, target: str):
+    def _save_to_database(self, target: str):
         """保存爬取到的文章數據"""
-        if data is None or len(data) == 0:
+        if self.article_links_df is None or len(self.article_links_df) == 0:
             logger.warning("沒有數據可供保存")
             return
-
-        if target == "article_links":
-            pass
-        elif target == "articles":
-            pass
-        else:
-            raise ValueError(f"不支持的保存目標: {target}")
+        if self.links_with_articles_service is None:
+            logger.error("links_with_articles_service 未初始化")
+            return
+        try:
+            if target == "article_links":
+                # 只新增文章連結，不新增文章
+                article_links_data = self.article_links_df.to_dict('records')
+                result = self.links_with_articles_service.batch_insert_links_with_articles(
+                    article_links_data = article_links_data
+                )
+            elif target == "links_with_articles":
+                # 同時新增文章和文章連結
+                articles_data = self.articles_df.to_dict('records')
+                article_links_data = self.article_links_df.to_dict('records')
+                result = self.links_with_articles_service.batch_insert_links_with_articles(
+                    article_links_data = article_links_data,
+                    articles_data = articles_data
+                )
+                
+                if result["failed_pairs"]:
+                    logger.warning(f"有 {result['fail_count']} 筆資料新增失敗:")
+                    for failed_pair in result["failed_pairs"]:
+                        logger.warning(f"失敗原因: {failed_pair['error']}")
+            else:
+                raise ValueError(f"不支持的保存目標: {target}")
+            
+        except Exception as e:
+            logger.error(f"保存到資料庫失敗: {str(e)}")
+            raise e
 
     def _save_to_csv(self, data: pd.DataFrame, csv_path: Optional[str] = None):
         """保存數據到CSV文件"""

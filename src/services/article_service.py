@@ -6,7 +6,9 @@ from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from src.error.errors import DatabaseOperationError, ValidationError
 from src.database.database_manager import DatabaseManager
 from src.database.articles_repository import ArticlesRepository
-from sqlalchemy import func, or_
+from src.database.article_links_repository import ArticleLinksRepository
+from src.models.article_links_model import ArticleLinks
+from sqlalchemy import or_
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -58,10 +60,10 @@ class ArticleService:
                 logger.error(error_msg)
                 raise e
 
-            repo, session = self._get_repository()
+            article_repo, session = self._get_repository()
             # Repository 層會檢查文章是否已存在
             try:
-                result = repo.create(validated_data)
+                result = article_repo.create(validated_data)
                 session.commit()
                 return self._ensure_fresh_instance(result)
             except Exception as e:
@@ -106,7 +108,7 @@ class ArticleService:
         # 批量插入有效文章
         if validated_articles: 
             try:
-                repo, session = self._get_repository()
+                article_repo, session = self._get_repository()
                 # 創建所有文章實體
                 article_entities = []
                 for article_data in validated_articles:
@@ -138,7 +140,7 @@ class ArticleService:
             "fail_count": len(articles_data),
             "inserted_articles": []
         }
-
+    
     def get_all_articles(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List[Articles]:
         """
         獲取所有文章，支持分頁和排序
@@ -153,9 +155,9 @@ class ArticleService:
             文章列表
         """
         try:
-            repo, session = self._get_repository()
+            article_repo, session = self._get_repository()
             # 獲取所有文章
-            articles = repo.get_all(
+            articles = article_repo.get_all(
                 limit=limit,
                 offset=offset,
                 sort_by=sort_by,
@@ -182,7 +184,7 @@ class ArticleService:
             符合條件的文章列表
         """
         try:
-            repo, session = self._get_repository()
+            article_repo, session = self._get_repository()
             # 建立查詢
             query = session.query(Articles)
             
@@ -224,8 +226,8 @@ class ArticleService:
             文章或 None
         """  
         try:
-            repo, session = self._get_repository()
-            article = repo.get_by_id(article_id)
+            article_repo, session = self._get_repository()
+            article = article_repo.get_by_id(article_id)
             return article
         except Exception as e:
             error_msg = f"獲取文章失敗，ID={article_id}: {e}"
@@ -243,8 +245,8 @@ class ArticleService:
             文章或 None
         """
         try:
-            repo, session = self._get_repository()
-            article = repo.find_by_link(link)
+            article_repo, session = self._get_repository()
+            article = article_repo.find_by_link(link)
             return article
         except Exception as e:
             error_msg = f"根據連結獲取文章失敗，link={link}: {e}"
@@ -268,8 +270,8 @@ class ArticleService:
             total_pages: 總頁數
         """
         try:
-            repo, session = self._get_repository()
-            return repo.get_paginated(page, per_page, sort_by, sort_desc)
+            article_repo, session = self._get_repository()
+            return article_repo.get_paginated(page, per_page, sort_by, sort_desc)
         except Exception as e:
             error_msg = f"分頁獲取文章失敗: {e}"
             logger.error(error_msg)
@@ -287,8 +289,8 @@ class ArticleService:
             AI相關文章列表
         """
         try:
-            repo, session = self._get_repository()
-            articles = repo.get_by_filter(
+            article_repo, session = self._get_repository()
+            articles = article_repo.get_by_filter(
                 filter_dict={"is_ai_related": True},
                 limit=limit,
                 offset=offset
@@ -312,8 +314,8 @@ class ArticleService:
             指定分類的文章列表
         """
         try:
-            repo, session = self._get_repository()
-            articles = repo.get_by_filter(
+            article_repo, session = self._get_repository()
+            articles = article_repo.get_by_filter(
                 filter_dict={"category": category},
                 limit=limit,
                 offset=offset
@@ -337,8 +339,8 @@ class ArticleService:
             包含指定標籤的文章列表
         """
         try:
-            repo, session = self._get_repository()
-            articles = repo.find_by_tags(tags)
+            article_repo, session = self._get_repository()
+            articles = article_repo.find_by_tags(tags)
             
             # 處理分頁
             if offset is not None and limit is not None:
@@ -368,7 +370,7 @@ class ArticleService:
         Raises:
             ValidationError: 當嘗試更新不可變欄位或資料驗證失敗時
         """
-        repo, session = None, None
+        article_repo, session = None, None
         try:
             # 自動更新 updated_at 欄位
             article_data['updated_at'] = datetime.now()
@@ -381,10 +383,10 @@ class ArticleService:
                 logger.error(error_msg)
                 raise ValidationError(error_msg)
             
-            repo, session = self._get_repository()
+            article_repo, session = self._get_repository()
             # 嘗試執行更新，這可能會引發 ValidationError
             try:
-                result = repo.update(article_id, validated_data)
+                result = article_repo.update(article_id, validated_data)
                 
                 if not result:
                     error_msg = f"文章更新失敗，ID不存在: {article_id}"
@@ -447,10 +449,10 @@ class ArticleService:
                 logger.error(error_msg)
                 raise e
                 
-            repo, session = self._get_repository()
+            article_repo, session = self._get_repository()
             
             # 使用Repository的批量更新方法
-            result = repo.batch_update(article_ids, validated_data)
+            result = article_repo.batch_update(article_ids, validated_data)
             
             # 提交更新
             session.commit()
@@ -483,8 +485,8 @@ class ArticleService:
             是否成功刪除
         """              
         try:
-            repo, session = self._get_repository()
-            result = repo.delete(article_id)
+            article_repo, session = self._get_repository()
+            result = article_repo.delete(article_id)
             
             if not result:
                 error_msg = f"欲刪除的文章不存在，ID={article_id}"
@@ -521,13 +523,13 @@ class ArticleService:
             }
         
         try:
-            repo, session = self._get_repository()
+            article_repo, session = self._get_repository()
             deleted_ids = []
             missing_ids = []
             
             # 逐個刪除文章
             for article_id in article_ids:
-                result = repo.delete(article_id)
+                result = article_repo.delete(article_id)
                 if result:
                     deleted_ids.append(article_id)
                 else:
@@ -579,16 +581,16 @@ class ArticleService:
             包含各種統計數據的字典
         """
         try:
-            repo, session = self._get_repository()
-            total_count = repo.count()
-            ai_related_count = repo.count(filter_dict={"is_ai_related": True})
+            article_repo, session = self._get_repository()
+            total_count = article_repo.count()
+            ai_related_count = article_repo.count(filter_dict={"is_ai_related": True})
             
             # 獲取各分類的文章數量
-            category_distribution = repo.get_category_distribution()
+            category_distribution = article_repo.get_category_distribution()
             
             # 獲取最近一週的文章數量
             week_ago = datetime.now() - timedelta(days=7)
-            recent_count = repo.count(
+            recent_count = article_repo.count(
                 filter_dict={"published_at": {"$gte": week_ago}}
             )
             
@@ -631,7 +633,7 @@ class ArticleService:
             符合條件的文章列表
         """
         try:
-            repo, session = self._get_repository()
+            article_repo, session = self._get_repository()
             query = session.query(Articles)
             
             if keywords:

@@ -1,15 +1,14 @@
 import pytest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import os
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
 from src.services.crawlers_service import CrawlersService
-from src.error.errors import ValidationError, DatabaseOperationError
+from src.error.errors import ValidationError
 from src.database.database_manager import DatabaseManager
 from src.database.crawlers_repository import CrawlersRepository
-from pydantic import BaseModel, Field, validator
 
 # 設定測試資料庫
 @pytest.fixture(scope="session")

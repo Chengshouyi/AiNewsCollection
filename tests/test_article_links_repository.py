@@ -1,54 +1,58 @@
 import uuid
 import pytest
 from datetime import datetime, timezone
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy import create_engine
 from src.models.article_links_model import ArticleLinks
 from src.models.articles_model import Articles
 from src.models.base_model import Base
 from src.database.article_links_repository import ArticleLinksRepository
 from src.database.articles_repository import ArticlesRepository
-from sqlalchemy import create_engine
 from src.database.base_repository import SchemaType
 from src.models.article_links_schema import ArticleLinksCreateSchema, ArticleLinksUpdateSchema
 from src.error.errors import ValidationError, DatabaseOperationError, DatabaseConnectionError
 
-# 設置測試資料庫
-@pytest.fixture
+# 設置測試資料庫，使用 session scope
+@pytest.fixture(scope="session")
 def engine():
-    return create_engine('sqlite:///:memory:')
+    return create_engine('sqlite:///:memory:', echo=False)
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def tables(engine):
     Base.metadata.create_all(engine)
     yield
     Base.metadata.drop_all(engine)
 
-@pytest.fixture
-def session(engine, tables):
-    connection = engine.connect()
-    transaction = connection.begin()
-    session = Session(bind=connection)
-    
+@pytest.fixture(scope="session")
+def session_factory(engine):
+    """創建會話工廠"""
+    return sessionmaker(bind=engine)
+
+@pytest.fixture(scope="function")
+def session(session_factory, tables):
+    """為每個測試函數提供獨立的會話"""
+    session = session_factory()
     try:
         yield session
     finally:
         session.close()
-        # 只有在事務仍然有效時才回滾
-        if transaction.is_active:
-            transaction.rollback()
-        connection.close()
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def article_links_repo(session):
     return ArticleLinksRepository(session, ArticleLinks)
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def article_repo(session):
     return ArticlesRepository(session, Articles)
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def sample_articles(session):
     """創建測試文章數據"""
+    # 清除可能存在的舊數據
+    session.query(Articles).delete()
+    session.commit()
+    
+    current_time = datetime.now(timezone.utc)
     articles = [
         Articles(
             title="測試文章1",
@@ -56,7 +60,7 @@ def sample_articles(session):
             content="測試內容1",
             is_ai_related=True,
             source="測試來源1",
-            published_at=datetime.now(timezone.utc)
+            published_at=current_time
         ),
         Articles(
             title="測試文章2",
@@ -64,7 +68,7 @@ def sample_articles(session):
             content="測試內容2",
             is_ai_related=False,
             source="測試來源1",
-            published_at=datetime.now(timezone.utc)
+            published_at=current_time
         ),
         Articles(
             title="測試文章3",
@@ -72,16 +76,23 @@ def sample_articles(session):
             content="測試內容3",
             is_ai_related=True,
             source="測試來源2",
-            published_at=datetime.now(timezone.utc)
+            published_at=current_time
         )
     ]
     session.add_all(articles)
     session.commit()
+    
+    # 確保所有物件都有正確的 ID
+    session.expire_all()
     return articles
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def sample_article_links(session):
     """創建測試文章連結數據"""
+    # 清除可能存在的舊數據
+    session.query(ArticleLinks).delete()
+    session.commit()
+    
     links = [
         ArticleLinks(
             article_link="https://example.com/article1",
@@ -116,6 +127,9 @@ def sample_article_links(session):
     ]
     session.add_all(links)
     session.commit()
+    
+    # 確保所有物件都有正確的 ID
+    session.expire_all()
     return links
 
 # ArticleLinksRepository 測試
@@ -139,8 +153,11 @@ class TestArticleLinksRepository:
             article_links_repo.get_schema_class(SchemaType.LIST)
         assert "未支援的 schema 類型" in str(exc_info.value)
     
-    def test_find_by_article_link(self, article_links_repo, sample_article_links):
+    def test_find_by_article_link(self, article_links_repo, sample_article_links, session):
         """測試根據文章連結查詢"""
+        # 確保使用最新數據
+        session.expire_all()
+        
         # 測試存在的連結
         result = article_links_repo.find_by_article_link("https://example.com/article1")
         assert result is not None
@@ -151,8 +168,10 @@ class TestArticleLinksRepository:
         result = article_links_repo.find_by_article_link("https://nonexistent.com")
         assert result is None
 
-    def test_find_unscraped_links(self, article_links_repo, sample_article_links):
+    def test_find_unscraped_links(self, article_links_repo, sample_article_links, session):
         """測試查詢未爬取的連結"""
+        session.expire_all()
+        
         # 測試無過濾條件
         results = article_links_repo.find_unscraped_links()
         assert len(results) == 2
@@ -217,6 +236,10 @@ class TestArticleLinksRepository:
             "article_link": "https://example.com/new-article",
             "source_name": "新測試來源",
             "source_url": "https://example.com/new-source",
+            "title": "新測試文章",
+            "summary": "新測試摘要",
+            "category": "新測試分類",
+            "published_age": "新測試發佈年齡",
             "is_scraped": False
         }
         
@@ -358,3 +381,54 @@ class TestArticleLinksRelationship:
         # 反向測試 - 根據文章連結查找相關連結
         found_links = article_links_repo.find_by_article_link(article.link)
         assert found_links is not None
+    
+    def test_update_scrape_status(self, article_links_repo, sample_article_links):
+        """測試更新文章連結的爬取狀態"""
+        # 測試將文章標記為已爬取
+        success = article_links_repo.update_scrape_status("https://example.com/article1", True)
+        assert success is True
+        
+        # 驗證狀態已更新
+        link = article_links_repo.find_by_article_link("https://example.com/article1")
+        assert link.is_scraped is True
+        
+        # 測試將已爬取文章標記為未爬取
+        link = article_links_repo.find_by_article_link("https://example.com/article3")
+        assert link.is_scraped is True  # 確認初始狀態為已爬取
+        
+        success = article_links_repo.update_scrape_status("https://example.com/article3", False)
+        assert success is True
+        
+        # 驗證狀態已更新為未爬取
+        link = article_links_repo.find_by_article_link("https://example.com/article3")
+        assert link.is_scraped is False
+        
+        # 測試更新不存在的連結
+        success = article_links_repo.update_scrape_status("https://nonexistent.com", True)
+        assert success is False
+
+    def test_delete_by_article_link(self, article_links_repo, sample_article_links):
+        """測試根據文章連結刪除"""
+        # 測試刪除存在的連結
+        before_count = len(article_links_repo.get_all())
+        assert before_count == 3  # 確認初始有3筆資料
+        
+        # 執行刪除
+        success = article_links_repo.delete_by_article_link("https://example.com/article1")
+        assert success is True
+        
+        # 驗證刪除後的數量
+        after_count = len(article_links_repo.get_all())
+        assert after_count == 2
+        
+        # 驗證特定連結已被刪除
+        link = article_links_repo.find_by_article_link("https://example.com/article1")
+        assert link is None
+        
+        # 測試刪除不存在的連結
+        success = article_links_repo.delete_by_article_link("https://nonexistent.com")
+        assert success is False
+        
+        # 驗證數量未變
+        final_count = len(article_links_repo.get_all())
+        assert final_count == 2

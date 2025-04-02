@@ -234,3 +234,33 @@ class ArticleLinksRepository(BaseRepository[ArticleLinks]):
             batch_update_func,
             err_msg="批量標記文章為已爬取時發生錯誤"
         )
+    
+    def update_scrape_status(self, article_link: str, is_scraped: bool = True) -> bool:
+        """更新文章連結的爬取狀態"""
+        def update_func():
+            link_entity = self.find_by_article_link(article_link)
+            if not link_entity:
+                return False
+            link_entity.is_scraped = is_scraped
+            self.session.flush()
+            return True
+        
+        return self.execute_query(
+            update_func,
+            err_msg=f"更新文章連結爬取狀態時發生錯誤: {article_link}"
+        )
+    
+    def delete_by_article_link(self, article_link: str) -> bool:
+        """根據文章連結刪除"""
+        def delete_func():
+            link_entity = self.find_by_article_link(article_link)
+            if not link_entity:
+                return False
+            self.session.delete(link_entity)
+            self.session.flush()
+            return True
+        
+        return self.execute_query(
+            delete_func,
+            err_msg=f"刪除文章連結時發生錯誤: {article_link}"
+        )
