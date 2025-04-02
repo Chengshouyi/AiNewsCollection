@@ -57,8 +57,8 @@
         },
         "get_article_contents": {
             "content_container": "body > div.main-body-content > div > div.article-lw.pb-4.lg\\:py-4",
-            "category": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800",
             "published_date": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > span:nth-child(1)",
+            "category": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > a",
             "title": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > h1",
             "summary": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div:nth-child(3)",
             "tags": {

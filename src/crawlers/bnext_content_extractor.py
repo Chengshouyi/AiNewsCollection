@@ -72,7 +72,7 @@ class BnextContentExtractor:
             for i, (_, article) in enumerate(article_links_df.head(num_articles).iterrows(), 1):
                 logger.info(f"處理第 {i}/{num_articles} 篇文章")
                 logger.info(f"文章標題: {article['title']}")
-                logger.debug(f"文章連結: {article['link']}")
+                logger.debug(f"文章連結: {article['article_link']}")
                 
                 try:
                     content_data = self._get_article_content(
@@ -158,14 +158,19 @@ class BnextContentExtractor:
             
             selectors = self.site_config.selectors
             get_article_contents_selectors = selectors.get('get_article_contents')
+            #logger.debug(f"get_article_contents_selectors: {get_article_contents_selectors}")
 
             # 提取文章內容
             article_content_container = soup.select(get_article_contents_selectors.get("content_container"))
             if not article_content_container:
                 logger.error(f"無法找到文章container: {article_url}")
                 return None
+            #logger.debug(f"article_content_container: {article_content_container}")
+            article_content = self._extract_article_parts(article_content_container, soup, get_article_contents_selectors)
+            if article_content is None:
+                logger.error(f"文章內容提取失敗: {article_url}")
+                return None
             
-            article_content = self._extract_article_parts(article_content_container, soup, selectors)
             article_content['link'] = article_url
             
             # AI 相關性檢查
@@ -187,44 +192,54 @@ class BnextContentExtractor:
     def _extract_article_parts(self, article_content_container, soup, get_article_contents_selectors):
         """提取文章各個部分"""
         logger.debug("開始提取文章各部分內容")
+        
         if not article_content_container:
-            logger.error(f"沒有提供文章container")
+            logger.error("沒有提供文章container")
             return None
-        else:
-            logger.debug(f"找到文章container數量: {len(article_content_container)}")
+        
+        logger.debug(f"找到文章container數量: {len(article_content_container)}")
+        
         try:
+            # 獲取主要容器以避免重複訪問
+            main_container = article_content_container[0]
+            
             # 提取各個部分並記錄日誌
-            category = article_content_container[0].select_one(get_article_contents_selectors.get("category"))
+            category = main_container.select_one(get_article_contents_selectors.get("category"))
             category_text = category.get_text(strip=True) if category else None
             logger.debug(f"提取文章category: {category_text}")
-            published_date = article_content_container[0].select_one(get_article_contents_selectors.get("published_date"))
+            
+            published_date = main_container.select_one(get_article_contents_selectors.get("published_date"))
             published_date_text = published_date.get_text(strip=True) if published_date else None
             logger.debug(f"提取文章published_date: {published_date_text}")
-            title = article_content_container[0].select_one(get_article_contents_selectors.get("title"))
+            
+            title = main_container.select_one(get_article_contents_selectors.get("title"))
             title_text = title.get_text(strip=True) if title else None
             logger.debug(f"提取文章title: {title_text}")
-            summary  = article_content_container[0].select_one(get_article_contents_selectors.get("summary"))
+            
+            summary = main_container.select_one(get_article_contents_selectors.get("summary"))
             summary_text = summary.get_text(strip=True) if summary else None
             logger.debug(f"提取文章summary: {summary_text}")
 
             # 提取標籤
-            tags=[]
-            tags_container = article_content_container[0].select_one(get_article_contents_selectors.get("tags").get("container"))
-            if not tags_container:
-                logger.error("標籤容器抓取失敗")
-                
-            logger.debug(f"找到標籤容器數量: {len(tags_container)}")
+            tags = []
+            tag_container_selector = get_article_contents_selectors.get("tags").get("container")
+            tag_container = main_container.select_one(tag_container_selector)
+            if not tag_container:
+                logger.error("沒有標籤容器")
+            else:
+                logger.debug(f"找到標籤容器數量: {len(tag_container)}")
+                for container in tag_container.find_all(get_article_contents_selectors.get("tags").get("tag"), recursive=False):
+                    tag_text = container.get_text(strip=True)
+                    logger.debug(f"找到Tag: {tag_text}")
+                    tags.append(tag_text)
 
-            for container in tags_container.find_all(get_article_contents_selectors.get("tags").get("tag"), recursive=False):
-                tag_text = container.get_text(strip=True)
-                logger.debug(f"找到Tag: {tag_text}")
-                tags.append(tag_text)
-
-            author = article_content_container[0].select_one(get_article_contents_selectors.get("author"))
+            author = main_container.select_one(get_article_contents_selectors.get("author"))
             author_text = author.get_text(strip=True) if author else None
             logger.debug(f'提取author: {author_text}')
 
-            content_container = article_content_container[0].select_one(get_article_contents_selectors.get("content"))
+            # 提取內容
+            full_content = ""
+            content_container = main_container.select_one(get_article_contents_selectors.get("content"))
             if content_container:
                 all_text = []
                 for element in content_container.find_all(['p', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'ul', 'ol']):
@@ -232,9 +247,10 @@ class BnextContentExtractor:
                     if text:
                         all_text.append(text)
                 full_content = "\n".join(all_text)
-                logger.debug(f'提取content: {full_content}')
+                logger.debug(f'提取content: {full_content[:100]}...') # 只記錄前100個字符
             else:
                 logger.error("找不到文章內容容器")
+                return None
 
             # 返回提取的所有部分
             return {
@@ -251,7 +267,7 @@ class BnextContentExtractor:
             
         except Exception as e:
             logger.error(f"提取文章部分時發生錯誤: {str(e)}", exc_info=True)
-            return {}
+            return None
 
     def _process_content_to_dataframe(self, articles_contents: List[Dict]) -> pd.DataFrame:
         """將文章內容列表轉換為DataFrame"""
