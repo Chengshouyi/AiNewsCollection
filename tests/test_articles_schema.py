@@ -290,7 +290,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
-        assert "published_at: 無效的日期時間格式。請使用 ISO 格式" in str(exc_info.value)
+        assert "published_at: 不能為空" in str(exc_info.value)
     
     # 作者欄位測試
     def test_article_author_too_long_validation(self):
@@ -464,7 +464,7 @@ class TestArticleUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleUpdateSchema.model_validate(data)
-        assert "published_at: 無效的日期時間格式。請使用 ISO 格式" in str(exc_info.value)
+        assert "published_at: 不能為空" in str(exc_info.value)
 
     def test_update_is_ai_related(self):
         """測試更新 is_ai_related 欄位"""

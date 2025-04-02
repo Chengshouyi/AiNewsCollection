@@ -10,8 +10,6 @@ from datetime import datetime, timezone
 from typing import List, Dict, Any
 from src.models.base_model import Base
 
-# Define test database URL (in-memory SQLite for testing)
-TEST_DATABASE_URL = "sqlite:///:memory:"
 
 # 設定測試資料庫
 @pytest.fixture(scope="session")
@@ -76,16 +74,45 @@ def sample_articles_data() -> List[Dict[str, Any]]:
     """提供範例文章資料"""
     now_utc = datetime.now(timezone.utc)
     return [
-        {"article_link": "link1", "title": "Title 1", "published_date": now_utc, "content": "Content 1", "source": "source1"},
-        {"article_link": "link2", "title": "Title 2", "published_date": now_utc, "content": "Content 2", "source": "source2"},
+        {
+            "link": "https://example.com/article1", 
+            "title": "Title 1", 
+            "published_at": now_utc, 
+            "content": "Content 1", 
+            "source": "source1"
+            },
+        {
+            "link": "https://example.com/article2", 
+            "title": "Title 2", 
+            "published_at": now_utc, 
+            "content": "Content 2", 
+            "source": "source2"},
     ]
 
 @pytest.fixture(scope="function")
 def sample_article_links_data() -> List[Dict[str, Any]]:
     """提供範例文章連結資料"""
     return [
-        {"article_link": "link1", "category": "cat1", "scrape_timestamp": datetime.now(timezone.utc)},
-        {"article_link": "link2", "category": "cat2", "scrape_timestamp": datetime.now(timezone.utc)},
+        {
+            "source_name": "範例新聞",
+            "source_url": "https://example.com",
+            "article_link": "https://example.com/article1",
+            "title": "測試文章",
+            "summary": "測試摘要",
+            "category": "測試分類",
+            "published_age": "測試發佈年齡",
+            "is_scraped": False
+         },
+        {
+            "source_name": "範例新聞1",
+            "source_url": "https://example.com",
+            "article_link": "https://example.com/article2",
+            "title": "測試文章1",
+            "summary": "測試摘要1",
+            "category": "測試分類1",
+            "published_age": "測試發佈年齡1",
+            "is_scraped": False
+        },
     ]
 
 class TestLinksWithArticlesService:
@@ -115,7 +142,7 @@ class TestLinksWithArticlesService:
         results = links_articles_service.get_articles_by_source(source, with_links=True)
         assert len(results) == 1
         assert results[0]["article"].title == "Title 1"
-        assert results[0]["links"].article_link == "link1"
+        assert results[0]["links"].article_link == "https://example.com/article1"
 
     def test_get_articles_by_source_without_links(self, links_articles_service: LinksWithArticlesService, session: Session, clear_tables, sample_article_links_data, sample_articles_data):
         """測試根據來源獲取文章但不包含連結"""
@@ -136,7 +163,7 @@ class TestLinksWithArticlesService:
     def test_delete_article_with_links_success(self, links_articles_service: LinksWithArticlesService, session: Session, clear_tables, sample_article_links_data, sample_articles_data):
         """測試成功刪除文章及其相關連結"""
         links_articles_service.batch_insert_links_with_articles(sample_article_links_data, sample_articles_data)
-        article_link_to_delete = "link1"
+        article_link_to_delete = "https://example.com/article1"
         initial_articles_count = session.query(Articles).count()
         initial_links_count = session.query(ArticleLinks).count()
         deletion_result = links_articles_service.delete_article_with_links(article_link_to_delete)
@@ -159,7 +186,7 @@ class TestLinksWithArticlesService:
     def test_delete_article_with_links_only_link_exists(self, links_articles_service: LinksWithArticlesService, session: Session, clear_tables, sample_article_links_data):
         """測試刪除只有連結存在的文章（文章不存在）"""
         links_articles_service.batch_insert_links_with_articles(sample_article_links_data)
-        article_link_to_delete = "link1"
+        article_link_to_delete = "https://example.com/article1"
         initial_links_count = session.query(ArticleLinks).count()
         deletion_result = links_articles_service.delete_article_with_links(article_link_to_delete)
         assert deletion_result is True
