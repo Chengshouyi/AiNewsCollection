@@ -25,6 +25,8 @@ class BaseCrawler(ABC):
         self.site_config: SiteConfig
         self.task_status = {}
         self.config_file_name = config_file_name
+        self.article_links_df = pd.DataFrame()
+        self.articles_df = pd.DataFrame()
         
 
         
@@ -42,14 +44,14 @@ class BaseCrawler(ABC):
         pass
 
     @abstractmethod
-    def fetch_article_list(self) -> pd.DataFrame:
+    def fetch_article_links(self):
         """
         爬取新聞列表，子類別需要實作
         """
         pass
 
     @abstractmethod
-    def fetch_article_details(self) -> pd.DataFrame:
+    def fetch_articles(self):
         """
         爬取文章詳細內容，子類別需要實作
         """
@@ -71,7 +73,8 @@ class BaseCrawler(ABC):
     def _save_to_csv(self, data: pd.DataFrame, csv_path: Optional[str] = None):
         """保存數據到CSV文件"""
         if not csv_path:
-            csv_path = f'articles_{int(time.time())}.csv'
+            logger.error("未提供CSV文件路徑")
+            return
             
         try:
             # 確保目錄存在
@@ -95,30 +98,26 @@ class BaseCrawler(ABC):
             # 步驟1：抓取文章列表
             self._update_task_status(task_id, 10, '抓取文章列表中...')
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表中...")
-            articles_df = self.fetch_article_list()
+            self.fetch_article_links()
+            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表完成")
+            if self.article_links_df.empty or self.article_links_df is None:
+                logger.warning("沒有獲取到任何文章連結")
+                return
             
             # 步驟2：抓取文章詳細內容
             self._update_task_status(task_id, 50, '抓取文章詳細內容中...')
-            if task_args.get('fetch_details', False):
-                args = {
-                    'articles_df': articles_df,
-                    'num_articles': task_args.get('num_articles', 10),
-                    'ai_only': task_args.get('ai_only', True),
-                    'min_keywords': task_args.get('min_keywords', 3)
-                }
-                detailed_df = self.fetch_article_details()
-            else:
-                detailed_df = articles_df
-                
+            self.fetch_articles()
+            if self.articles_df.empty or self.articles_df is None:
+                logger.warning("沒有獲取到任何文章")
+                return
             # 步驟3：保存數據
             self._update_task_status(task_id, 80, '保存數據中...')
-            save_to_csv = task_args.get('save_to_csv', False)
-            csv_path = task_args.get('csv_path', f'articles_{task_id}.csv')
+            self._save_to_csv(self.article_links_df, f'./logs/article_links_{task_id}.csv')
+            self._save_to_csv(self.articles_df, f'./logs/articles_{task_id}.csv')
+            #self._save_to_database(self.article_links_df, "article_links")
+            #self._save_to_database(self.articles_df, "articles")
             
-            self._save_to_database(detailed_df, "articles")
-                
             self._update_task_status(task_id, 100, '任務完成', 'completed')
-            return detailed_df
             
         except Exception as e:
             self._update_task_status(task_id, 0, f'任務失敗: {str(e)}', 'failed')

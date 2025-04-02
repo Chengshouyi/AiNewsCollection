@@ -78,7 +78,7 @@ class BnextCrawler(BaseCrawler):
             selectors=self.config_data.get("selectors", {})
         )
     
-    def fetch_article_list(self) -> Optional[pd.DataFrame]:
+    def fetch_article_links(self):
         """
         抓取文章列表
         
@@ -99,12 +99,11 @@ class BnextCrawler(BaseCrawler):
         ai_only = self.site_config.crawler_settings.get("ai_only", True)
         logger.debug(f"抓取文章列表參數設定：最大頁數: {max_pages}, 文章類別: {categories}, AI 相關文章: {ai_only}")
         logger.debug(f"抓取文章列表中...")
-        self.articles_df = self.retry_operation(
+        self.article_links_df = self.retry_operation(
             lambda: self.scraper.scrape_article_list(max_pages, ai_only)
         )
-        return self.articles_df
 
-    def fetch_article_details(self, article_links_df: Optional[pd.DataFrame] = None) -> Optional[pd.DataFrame]:
+    def fetch_articles(self):
         """
         抓取文章詳細內容
         
@@ -118,10 +117,9 @@ class BnextCrawler(BaseCrawler):
         Returns:
             pd.DataFrame: 包含文章詳細內容的資料框
         """
-        if article_links_df is None:
-            articles_df = self.articles_df
-        else:
-            articles_df = article_links_df
+        if self.article_links_df is None or self.article_links_df.empty:
+            logger.warning("沒有文章列表可供處理")
+            return None
 
         if not self.site_config:
             self._create_site_config()
@@ -129,14 +127,9 @@ class BnextCrawler(BaseCrawler):
         num_articles = self.site_config.content_extraction.get("num_articles", 10)
         ai_only = self.site_config.content_extraction.get("ai_only", True)
         min_keywords = self.site_config.content_extraction.get("min_keywords", 3)
-        
-        if articles_df is None or len(articles_df) == 0:
-            logger.warning("沒有文章列表可供處理")
-            return pd.DataFrame()
             
-        return self.retry_operation(
-            lambda: self.extractor.batch_get_articles_content(
-                articles_df, num_articles, ai_only, min_keywords)
+        self.articles_df = self.retry_operation(
+            lambda: self.extractor.batch_get_articles_content(self.article_links_df, num_articles, ai_only, min_keywords)
         )
 
 

@@ -2,6 +2,7 @@ import requests
 import logging
 from typing import Dict, Optional, List
 import pandas as pd
+
 import time
 
 from src.crawlers.configs.base_config import DEFAULT_HEADERS
@@ -81,8 +82,16 @@ class BnextContentExtractor:
                         continue
                     
                     articles_contents.append(content_data)
+                    article_links_df.loc[article_links_df['article_link'] == article['article_link'], 'is_scraped'] = True
                     successful_count += 1
                     ai_related_count += 1
+                    
+                    # 檢查更新是否成功
+                    updated_row = article_links_df.loc[article_links_df['article_link'] == article['article_link']]
+                    if not updated_row.empty:
+                        logger.debug(f"成功更新文章狀態: {article['article_link']}")
+                    else:
+                        logger.warning(f"未找到對應文章進行更新: {article['article_link']}")
                     
                     # 記錄進度
                     if successful_count % 5 == 0:
