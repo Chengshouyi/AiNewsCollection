@@ -2,10 +2,14 @@ from .base_repository import BaseRepository, SchemaType
 from src.models.crawlers_model import Crawlers
 from typing import List, Optional, Dict, Any, Type
 from datetime import datetime, timezone
-from sqlalchemy import func, desc, asc
+from sqlalchemy import func
 from pydantic import BaseModel
 from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
 from src.error.errors import ValidationError
+import logging
+# 設定 logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class CrawlersRepository(BaseRepository['Crawlers']):
     """Crawlers 特定的Repository"""

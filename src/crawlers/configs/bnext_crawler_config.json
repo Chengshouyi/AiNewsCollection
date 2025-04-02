@@ -7,6 +7,13 @@
         "tech",
         "iot",
         "smartmedical",
+        "smartcity"
+    ],
+    "full_category": [
+        "ai",
+        "tech",
+        "iot",
+        "smartmedical",
         "smartcity",
         "cloudcomputing",
         "security",
@@ -19,7 +26,7 @@
         "manufacture"
     ],
     "crawler_settings": {
-        "max_pages": 2,
+        "max_pages": 1,
         "ai_only": true
     },
     "content_extraction": {

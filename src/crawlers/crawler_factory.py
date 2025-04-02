@@ -1,5 +1,5 @@
-from typing import Dict, Type, Optional, Any
-from src.crawlers.configs.site_config import SiteConfig
+from typing import Dict, Optional, Any
+from src.services.crawlers_service import CrawlersService
 from src.database.database_manager import DatabaseManager
 from src.database.crawlers_repository import CrawlersRepository
 from src.models.crawlers_model import Crawlers
@@ -14,21 +14,17 @@ class CrawlerFactory:
     _db_manager: Optional[DatabaseManager] = None
     
     @classmethod
-    def initialize(cls, db_manager: DatabaseManager):
+    def initialize(cls, crawlers_service: CrawlersService):
         """
         初始化爬蟲工廠，從資料庫讀取爬蟲設定並註冊
         
         Args:
             db_manager: 資料庫管理器實例
         """
-        cls._db_manager = db_manager
+        cls._crawlers_service = crawlers_service
         try:
-            # 取得爬蟲儲存庫
-            session = db_manager.Session()
-            crawlers_repo = CrawlersRepository(session, Crawlers)
-            
             # 取得所有活動中的爬蟲
-            active_crawlers = crawlers_repo.find_active_crawlers()
+            active_crawlers = cls._crawlers_service.get_active_crawlers()
             
             # 註冊每個爬蟲
             for crawler in active_crawlers:
@@ -55,9 +51,7 @@ class CrawlerFactory:
         except Exception as e:
             logger.error(f"初始化爬蟲工廠失敗: {str(e)}")
             raise
-        finally:
-            if 'session' in locals():
-                session.close()
+
 
     @classmethod
     def get_crawler(cls, name: str) -> Any:
@@ -70,7 +64,7 @@ class CrawlerFactory:
         Returns:
             爬蟲實例
         """
-        if not cls._db_manager:
+        if not cls._crawlers_service:
             raise RuntimeError("爬蟲工廠尚未初始化，請先調用 initialize 方法")
             
         crawler_info = cls._crawler_types.get(name)

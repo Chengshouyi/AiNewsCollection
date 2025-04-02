@@ -1,11 +1,10 @@
-# article_analyzer.py
-# 用於分析文章是否與AI相關的
-
 import pandas as pd
 import logging
 from typing import Dict, Any
 from src.crawlers.configs.ai_filter_config import AI_KEYWORDS, AI_CATEGORIES
 
+# 設定 logger
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 class ArticleAnalyzer:

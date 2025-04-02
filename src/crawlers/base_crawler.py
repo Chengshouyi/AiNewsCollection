@@ -7,11 +7,7 @@ import time
 import json
 import os
 from src.crawlers.configs.site_config import SiteConfig
-from src.database.database_manager import DatabaseManager
-from src.database.articles_repository import ArticlesRepository
-from src.database.article_links_repository import ArticleLinksRepository
-from src.models.articles_model import Articles
-from src.models.article_links_model import ArticleLinks
+
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

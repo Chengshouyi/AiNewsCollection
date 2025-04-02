@@ -12,6 +12,7 @@ from src.crawlers.crawler_factory import CrawlerFactory
 from src.database.database_manager import DatabaseManager
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
+from src.services.crawlers_service import CrawlersService
 
 # 設置更詳細的日誌
 def setup_logging(log_level=logging.INFO):
@@ -107,11 +108,12 @@ def main():
         # 初始化記憶體資料庫
         db_manager = DatabaseManager('sqlite:///:memory:')
         
+        crawlers_service = CrawlersService(db_manager)
         # 初始化測試資料
         init_test_database(db_manager)
         
         # 初始化爬蟲工廠
-        CrawlerFactory.initialize(db_manager)
+        CrawlerFactory.initialize(crawlers_service)
         
         # 獲取爬蟲實例
         crawler = CrawlerFactory.get_crawler(args.crawler)

@@ -1,12 +1,13 @@
-"""基礎配置模組，包含爬蟲的通用配置項"""
-
-from typing import Dict, Final, Any
+from typing import Dict, Final
 import requests
 import time
 import random
 import logging
 
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+"""基礎配置模組，包含爬蟲的通用配置項"""
 
 # HTTP請求頭
 DEFAULT_HEADERS: Dict[str, str] = {

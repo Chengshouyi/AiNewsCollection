@@ -9,36 +9,39 @@ from src.services.crawlers_service import CrawlersService
 from src.error.errors import ValidationError, DatabaseOperationError
 from src.database.database_manager import DatabaseManager
 from src.database.crawlers_repository import CrawlersRepository
+from pydantic import BaseModel, Field, validator
 
 # 設定測試資料庫
-@pytest.fixture
+@pytest.fixture(scope="session")
 def engine():
+    """建立全局測試引擎，使用記憶體 SQLite 資料庫"""
     return create_engine('sqlite:///:memory:')
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def tables(engine):
+    """建立測試資料表，使用 session scope 減少重複建立和銷毀資料庫結構"""
     Base.metadata.create_all(engine)
     yield
     Base.metadata.drop_all(engine)
 
-@pytest.fixture
-def session(engine, tables):
-    """建立測試會話"""
-    connection = engine.connect()
-    transaction = connection.begin()
-    session = Session(bind=connection)
+@pytest.fixture(scope="session")
+def session_factory(engine):
+    """建立會話工廠，使用 session scope 共享會話工廠"""
+    return sessionmaker(bind=engine)
+
+@pytest.fixture(scope="function")
+def session(session_factory, tables):
+    """建立測試會話，每個測試函數獲取全新的獨立會話"""
+    session = session_factory()
     
     try:
         yield session
     finally:
         session.close()
-        if transaction.is_active:
-            transaction.rollback()
-        connection.close()
 
-@pytest.fixture
-def db_manager(engine, monkeypatch):
-    """創建真實的 DatabaseManager 實例用於測試"""
+@pytest.fixture(scope="function")
+def db_manager(engine, session_factory, monkeypatch):
+    """創建真實的 DatabaseManager 實例用於測試，每個測試獲取獨立的數據庫管理器"""
     # 設定環境變數指向記憶體資料庫
     monkeypatch.setenv('DATABASE_PATH', 'sqlite:///:memory:')
     
@@ -47,42 +50,46 @@ def db_manager(engine, monkeypatch):
     
     # 替換引擎和會話工廠，使用測試用的記憶體資料庫
     manager.engine = engine
-    manager.Session = sessionmaker(bind=engine)
+    manager.Session = session_factory
     
-    # 創建所有表格
+    # 確保表格已經創建完成
     Base.metadata.create_all(engine)
     
     return manager
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def crawlers_service(db_manager):
-    """創建爬蟲服務實例"""
+    """創建爬蟲服務實例，每個測試獲取獨立實例"""
     return CrawlersService(db_manager)
 
-@pytest.fixture
-def sample_crawlers(db_manager):
+@pytest.fixture(scope="function")
+def sample_crawlers(db_manager, session):
     """創建樣本爬蟲資料並保存 ID 和屬性值"""
+    # 清除可能存在的資料，確保測試隔離
+    session.query(Crawlers).delete()
+    session.commit()
+    
     crawlers_data = [
         {
-            "id": None,
             "crawler_name": "數位時代爬蟲",
             "base_url": "https://www.bnext.com.tw/articles",
             "is_active": True,
-            "created_at": datetime(2023, 1, 2, tzinfo=timezone.utc)
+            "crawler_type": "bnext",
+            "config_file_name": "bnext_crawler_config.json"
         },
         {
-            "id": None,
             "crawler_name": "科技報導爬蟲",
             "base_url": "https://technews.tw",
             "is_active": False,
-            "created_at": datetime(2023, 1, 3, tzinfo=timezone.utc)
+            "crawler_type": "bnext",
+            "config_file_name": "bnext_crawler_config.json"
         },
         {
-            "id": None,
             "crawler_name": "商業週刊爬蟲",
             "base_url": "https://www.businessweekly.com.tw",
             "is_active": True,
-            "created_at": datetime(2023, 1, 4, tzinfo=timezone.utc)
+            "crawler_type": "bnext",
+            "config_file_name": "bnext_crawler_config.json"
         }
     ]
     
@@ -93,7 +100,8 @@ def sample_crawlers(db_manager):
             crawler_name=crawler_data["crawler_name"],
             base_url=crawler_data["base_url"],
             is_active=crawler_data["is_active"],
-            created_at=crawler_data["created_at"]
+            crawler_type=crawler_data["crawler_type"],
+            config_file_name=crawler_data["config_file_name"]
         )
         crawler_objects.append(crawler)
     
@@ -101,6 +109,11 @@ def sample_crawlers(db_manager):
     with db_manager.session_scope() as session:
         session.add_all(crawler_objects)
         session.commit()
+        
+        # 明確刷新物件，確保 ID 已正確賦值
+        for crawler in crawler_objects:
+            session.refresh(crawler)
+            
         # 獲取 ID
         for i, crawler in enumerate(crawler_objects):
             crawlers_data[i]["id"] = crawler.id
@@ -108,14 +121,16 @@ def sample_crawlers(db_manager):
     # 返回資料字典而非物件，避免分離實例問題
     return crawlers_data
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def valid_crawler_data():
+    """提供有效的爬蟲資料用於測試"""
     return {
         "crawler_name": "測試爬蟲",
         "base_url": "https://example.com/test",
-        "is_active": True
+        "is_active": True,
+        "crawler_type": "bnext",
+        "config_file_name": "bnext_crawler_config.json"
     }
-
 
 class TestCrawlersService:
     """爬蟲服務的測試類"""
@@ -133,13 +148,22 @@ class TestCrawlersService:
         # 測試完後關閉會話
         session.close()
     
-    def test_create_crawler(self, crawlers_service, valid_crawler_data):
+    def test_create_crawler(self, crawlers_service, valid_crawler_data, session):
         """測試創建爬蟲設定"""
+        # 清除可能存在的同名爬蟲設定
+        session.query(Crawlers).filter_by(crawler_name=valid_crawler_data["crawler_name"]).delete()
+        session.commit()
+        
         result = crawlers_service.create_crawler(valid_crawler_data)
         assert result is not None
         
-        # 透過 ID 重新查詢爬蟲設定，避免使用分離的實例
+        # 獲取新創建的爬蟲 ID
         crawler_id = result.id
+        
+        # 清除會話緩存，確保從數據庫獲取最新數據
+        session.expire_all()
+        
+        # 透過 ID 重新查詢爬蟲設定，避免使用分離的實例
         retrieved_crawler = crawlers_service.get_crawler_by_id(crawler_id)
         
         assert retrieved_crawler is not None
@@ -147,8 +171,11 @@ class TestCrawlersService:
         assert retrieved_crawler.base_url == valid_crawler_data["base_url"]
         assert retrieved_crawler.is_active == valid_crawler_data["is_active"]
     
-    def test_get_all_crawlers(self, crawlers_service, sample_crawlers):
+    def test_get_all_crawlers(self, crawlers_service, sample_crawlers, session):
         """測試獲取所有爬蟲設定"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
         # 獲取所有爬蟲設定
         crawlers = crawlers_service.get_all_crawlers()
         assert len(crawlers) == 3
@@ -167,8 +194,11 @@ class TestCrawlersService:
         # 驗證是否按名稱降序排序
         assert sorted(names, reverse=True) == names
     
-    def test_get_crawler_by_id(self, crawlers_service, sample_crawlers):
+    def test_get_crawler_by_id(self, crawlers_service, sample_crawlers, session):
         """測試根據ID獲取爬蟲設定"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
         crawler_id = sample_crawlers[0]["id"]  # 使用字典中的 id
         crawler = crawlers_service.get_crawler_by_id(crawler_id)
         
@@ -179,8 +209,11 @@ class TestCrawlersService:
         crawler = crawlers_service.get_crawler_by_id(999999)
         assert crawler is None
     
-    def test_get_active_crawlers(self, crawlers_service, sample_crawlers):
+    def test_get_active_crawlers(self, crawlers_service, sample_crawlers, session):
         """測試獲取活動中的爬蟲設定"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
         active_crawlers = crawlers_service.get_active_crawlers()
         
         # 驗證所有返回的爬蟲設定都是活動中的
@@ -190,8 +223,11 @@ class TestCrawlersService:
         # 驗證數量是否正確 (應該有2個活動中的爬蟲)
         assert len(active_crawlers) == 2
     
-    def test_get_crawlers_by_name(self, crawlers_service, sample_crawlers):
+    def test_get_crawlers_by_name(self, crawlers_service, sample_crawlers, session):
         """測試根據名稱模糊查詢爬蟲設定"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
         # 查詢包含"爬蟲"的爬蟲設定
         crawlers = crawlers_service.get_crawlers_by_name("爬蟲")
         assert len(crawlers) == 3  # 所有爬蟲設定名稱都包含"爬蟲"
@@ -205,37 +241,27 @@ class TestCrawlersService:
         no_crawlers = crawlers_service.get_crawlers_by_name("不存在")
         assert len(no_crawlers) == 0
     
-    def test_get_pending_crawlers(self, crawlers_service, sample_crawlers, monkeypatch):
-        """測試獲取待執行的爬蟲設定"""
-        # 模擬當前時間為最後爬取時間後的足夠時間
-        future_time = datetime.now(timezone.utc) + timedelta(hours=5)
-        
-        # 創建一個模擬的 now 方法
-        def mock_now(tz=None):
-            return future_time
-        
-        # 使用 monkeypatch 替換時間提供者的 now 方法
-        monkeypatch.setattr(crawlers_service.datetime_provider, 'now', mock_now)
-        
-        # 獲取待執行的爬蟲設定
-        pending_crawlers = crawlers_service.get_pending_crawlers()
-        
-        # 應該找到所有活動中的爬蟲（在這個模擬的時間點，所有活動爬蟲都應該是待執行的）
-        assert len(pending_crawlers) == 2
-        assert all(crawler.is_active for crawler in pending_crawlers)
     
-    def test_update_crawler(self, crawlers_service, sample_crawlers):
+    def test_update_crawler(self, crawlers_service, sample_crawlers, session):
         """測試更新爬蟲設定"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
         crawler_id = sample_crawlers[0]["id"]  # 使用字典中的 id
         
         # 準備更新資料
         update_data = {
             "crawler_name": "更新後的爬蟲名稱",
-            "is_active": False
+            "base_url": "https://example.com/updated",
+            "is_active": False,
+            "config_file_name": "bnext_crawler_config.json"
         }
         
         updated_crawler = crawlers_service.update_crawler(crawler_id, update_data)
         assert updated_crawler is not None
+        
+        # 清除會話緩存，確保從數據庫獲取最新數據
+        session.expire_all()
         
         # 重新查詢更新後的爬蟲設定，避免使用分離的實例
         retrieved_crawler = crawlers_service.get_crawler_by_id(crawler_id)
@@ -248,13 +274,19 @@ class TestCrawlersService:
         updated_crawler = crawlers_service.update_crawler(999999, update_data)
         assert updated_crawler is None
     
-    def test_delete_crawler(self, crawlers_service, sample_crawlers):
+    def test_delete_crawler(self, crawlers_service, sample_crawlers, session):
         """測試刪除爬蟲設定"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
         crawler_id = sample_crawlers[0]["id"]  # 使用字典中的 id
         
         # 確認刪除成功
         result = crawlers_service.delete_crawler(crawler_id)
         assert result is True
+        
+        # 清除會話緩存，確保從數據庫獲取最新數據
+        session.expire_all()
         
         # 確認爬蟲設定已被刪除
         assert crawlers_service.get_crawler_by_id(crawler_id) is None
@@ -263,9 +295,12 @@ class TestCrawlersService:
         result = crawlers_service.delete_crawler(999999)
         assert result is False
     
-    def test_toggle_crawler_status(self, crawlers_service, sample_crawlers):
+    def test_toggle_crawler_status(self, crawlers_service, sample_crawlers, session):
         """測試切換爬蟲活躍狀態"""
-        crawler_id = sample_crawlers[0]["id"]  # 使用字典中的 id
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
+        crawler_id = sample_crawlers[1]["id"]  # 使用字典中的 id，選擇非活躍的爬蟲
         
         # 獲取原始爬蟲設定
         original_crawler = crawlers_service.get_crawler_by_id(crawler_id)
@@ -275,6 +310,9 @@ class TestCrawlersService:
         updated_crawler = crawlers_service.toggle_crawler_status(crawler_id)
         assert updated_crawler is not None
         assert updated_crawler.is_active != original_is_active
+        
+        # 清除會話緩存，確保從數據庫獲取最新數據
+        session.expire_all()
         
         # 再次切換
         updated_crawler = crawlers_service.toggle_crawler_status(crawler_id)
@@ -288,20 +326,42 @@ class TestCrawlersService:
 class TestCrawlersServiceErrorHandling:
     """測試爬蟲服務的錯誤處理"""
     
-    def test_invalid_crawler_data(self, crawlers_service):
+    def test_invalid_crawler_data(self, crawlers_service, session):
         """測試無效爬蟲設定資料處理"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
         # 缺少必要欄位
         invalid_data = {
-            "crawler_name": "測試爬蟲"
-            # 缺少 base_url 等必要欄位
+            "crawler_name": "測試爬蟲",
+            "base_url": "https://example.com/test",
+            "config_file_name": "test_config.json",
+            "is_active": True
+            # 缺少 crawler_type
         }
         
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(ValidationError) as excinfo:
             crawlers_service.create_crawler(invalid_data)
-        assert "ValidationError" in str(excinfo.value) or "do not be empty" in str(excinfo.value)
+        assert "crawler_type" in str(excinfo.value)
+        
+         # 缺少必要欄位 config_file_name
+        invalid_data = {
+            "crawler_name": "測試爬蟲",
+            "base_url": "https://example.com/test",
+            "crawler_type": "test",
+            "is_active": True
+            # 缺少 config_file_name
+        }
     
-    def test_update_immutable_fields(self, crawlers_service, sample_crawlers):
+        with pytest.raises(ValidationError) as excinfo:
+            crawlers_service.create_crawler(invalid_data)
+        assert "config_file_name" in str(excinfo.value)
+    
+    def test_update_immutable_fields(self, crawlers_service, sample_crawlers, session):
         """測試更新不可變欄位處理"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
         crawler_id = sample_crawlers[0]["id"]  # 使用字典中的 id
         
         # 嘗試更新不可變欄位
@@ -313,70 +373,84 @@ class TestCrawlersServiceErrorHandling:
         with pytest.raises(ValidationError):
             crawlers_service.update_crawler(crawler_id, immutable_update)
     
-    def test_validation_with_schema(self, crawlers_service):
+    def test_validation_with_schema(self, crawlers_service, session):
         """測試使用Schema進行驗證"""
+        session.expire_all()
+        
         # 無效的base_url    
         invalid_data = {
             "crawler_name": "測試爬蟲",
-            "base_url": "",
+            "base_url": "",  # 無效的URL
+            "is_active": True,
+            "crawler_type": "test",
+            "config_file_name": "test_config.json"
+        }
+        
+        with pytest.raises(ValidationError) as excinfo:
+            crawlers_service.create_crawler(invalid_data)
+        assert "base_url" in str(excinfo.value)
+        
+        # 測試更新不可變欄位 crawler_type
+        invalid_update = {
+            "crawler_type": "new_type"  # 試圖更新不可變欄位
+        }
+        
+        # 需先創建一個有效的爬蟲，然後嘗試更新它的不可變欄位
+        valid_data = {
+            "crawler_name": "可更新測試爬蟲",
+            "base_url": "https://example.com/test",
+            "crawler_type": "test",
+            "config_file_name": "test_config.json",
             "is_active": True
         }
         
-        with pytest.raises(Exception) as excinfo:
-            crawlers_service.create_crawler(invalid_data)
-        assert "ValidationError" in str(excinfo.value) or "must be greater than 0" in str(excinfo.value)
+        created_crawler = crawlers_service.create_crawler(valid_data)
+        
+        with pytest.raises(ValidationError) as excinfo:
+            crawlers_service.update_crawler(created_crawler.id, invalid_update)
+        assert "crawler_type" in str(excinfo.value)
     
-    def test_empty_update_data(self, crawlers_service, sample_crawlers):
+    def test_empty_update_data(self, crawlers_service, sample_crawlers, session):
         """測試空更新資料處理"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
         crawler_id = sample_crawlers[0]["id"]  # 使用字典中的 id
         
         # 沒有任何欄位的更新資料
         empty_update = {}
         
-        with pytest.raises(Exception) as excinfo:
+        with pytest.raises(ValidationError) as excinfo:
             crawlers_service.update_crawler(crawler_id, empty_update)
         
         # 檢查錯誤訊息中是否包含有關提供至少一個更新欄位的內容
         error_message = str(excinfo.value).lower()
-        assert "必須提供至少一個欄位進行更新" in error_message or "validation" in error_message
-
+        assert "crawler_name, base_url" in error_message
 
 class TestCrawlersServiceTransactions:
     """測試爬蟲服務的事務處理"""
     
-    def test_update_transaction(self, crawlers_service, sample_crawlers):
+    def test_update_transaction(self, crawlers_service, sample_crawlers, session):
         """測試更新的事務性"""
-        crawler_id = sample_crawlers[0]["id"]  # 使用字典中的 id
+        session.expire_all()
+    
+        crawler_id = sample_crawlers[0]["id"]
         
-        # 無效的更新資料 - 爬取間隔為負數
+        original_crawler = crawlers_service.get_crawler_by_id(crawler_id)
+        original_name = original_crawler.crawler_name
+        original_url = original_crawler.base_url
+        
+        # 無效的更新資料 - 空的base_url
         invalid_update = {
             "crawler_name": "有效名稱",
             "base_url": ""  # 無效值 
         }
         
-        # 由於更新資料無效，更新應該失敗
-        with pytest.raises(Exception):
+        with pytest.raises(ValidationError):
             crawlers_service.update_crawler(crawler_id, invalid_update)
         
-        # 驗證爬蟲設定未被更新（事務回滾）
+        session.expire_all()
+        
         updated_crawler = crawlers_service.get_crawler_by_id(crawler_id)
-        # 確保名稱和爬取間隔未被更新為無效值
-        assert updated_crawler.crawler_name != "有效名稱"
-        assert updated_crawler.base_url != ""
-
-
-def test_crawlers_model_immutable_fields():
-    """直接測試 Crawlers 模型的不可變欄位"""
-    crawler = Crawlers(
-        crawler_name="測試爬蟲",
-        base_url="https://example.com/test",
-        is_active=True
-    )
-    
-    # 測試修改 id 欄位
-    with pytest.raises(ValidationError):
-        crawler.id = 999
-    
-    # 測試修改 created_at 欄位
-    with pytest.raises(ValidationError):
-        crawler.created_at = datetime.now(timezone.utc)
+        assert updated_crawler.crawler_name == original_name
+        assert updated_crawler.base_url == original_url

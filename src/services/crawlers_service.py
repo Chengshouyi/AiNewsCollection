@@ -72,8 +72,12 @@ class CrawlersService:
             try:
                 result = repo.create(validated_data)
                 session.commit()
-                logger.debug(f"成功創建爬蟲設定, ID={result.id}")
-                return self._ensure_fresh_instance(result)
+                if result:
+                    logger.debug(f"成功創建爬蟲設定, ID={result.id}")
+                    return self._ensure_fresh_instance(result)
+                else:
+                    logger.error("創建爬蟲設定失敗，結果為 None")
+                    raise DatabaseOperationError("創建爬蟲設定失敗，結果為 None")
             except Exception as e:
                 session.rollback()
                 raise e
@@ -171,26 +175,6 @@ class CrawlersService:
             return crawlers
         except Exception as e:
             error_msg = f"根據名稱查詢爬蟲設定失敗: {e}"
-            logger.error(error_msg)
-            raise e
-    
-    def get_pending_crawlers(self) -> List[Crawlers]:
-        """
-        獲取待執行的爬蟲設定
-        
-        Returns:
-            待執行的爬蟲設定列表
-        """
-        try:
-            repo, session = self._get_repository()
-            # 使用時間提供者
-            current_time = self.datetime_provider.now(timezone.utc)
-            
-            # 直接使用 repository 方法獲取待執行爬蟲
-            pending_crawlers = repo.find_pending_crawlers(current_time)
-            return pending_crawlers
-        except Exception as e:
-            error_msg = f"獲取待執行的爬蟲設定失敗: {e}"
             logger.error(error_msg)
             raise e
     
@@ -319,21 +303,6 @@ class CrawlersService:
             logger.error(error_msg)
             raise e
     
-    def get_crawlers_sorted_by_interval(self) -> List[Crawlers]:
-        """
-        獲取按爬取間隔排序的爬蟲設定
-        
-        Returns:
-            按爬取間隔排序的爬蟲設定列表
-        """
-        try:
-            repo, session = self._get_repository()
-            crawlers = repo.get_sorted_by_interval()
-            return crawlers
-        except Exception as e:
-            error_msg = f"獲取按間隔排序的爬蟲設定失敗: {e}"
-            logger.error(error_msg)
-            raise e
     
     def _ensure_fresh_instance(self, entity: Optional[T]) -> Optional[T]:
         """
