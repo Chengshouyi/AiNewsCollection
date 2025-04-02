@@ -26,15 +26,14 @@ class ArticleLinksRepository(BaseRepository[ArticleLinks]):
         """根據文章連結查詢"""
         return self.execute_query(
             lambda: self.session.query(self.model_class)
-                              .filter_by(article_link=article_link)
-                              .first(),
-            err_msg=f"查詢文章連結時發生錯誤: {article_link}"
+            .filter(self.model_class.article_link == article_link)
+            .first()
         )
 
     def find_unscraped_links(self, limit: Optional[int] = 100, source_name: Optional[str] = None) -> List[ArticleLinks]:
         """查詢未爬取的連結"""
         def query_func():
-            query = self.session.query(self.model_class).filter_by(is_scraped=False)
+            query = self.session.query(self.model_class).filter(self.model_class.articles == None)
             if source_name:
                 query = query.filter_by(source_name=source_name)
             if limit:
@@ -46,10 +45,25 @@ class ArticleLinksRepository(BaseRepository[ArticleLinks]):
             err_msg="查詢未爬取的連結時發生錯誤"
         )
 
+    def find_scraped_links(self, limit: Optional[int] = 100, source_name: Optional[str] = None) -> List[ArticleLinks]:
+        """查詢已爬取的連結"""
+        def query_func():
+            query = self.session.query(self.model_class).filter(self.model_class.articles != None)
+            if source_name:
+                query = query.filter_by(source_name=source_name)
+            if limit:
+                query = query.limit(limit)
+            return query.all()
+            
+        return self.execute_query(
+            query_func,
+            err_msg="查詢已爬取的連結時發生錯誤"
+        )
+
     def count_unscraped_links(self, source_name: Optional[str] = None) -> int:
         """計算未爬取的連結數量"""
         def query_func():
-            query = self.session.query(func.count(self.model_class.id)).filter_by(is_scraped=False)
+            query = self.session.query(func.count(self.model_class.id)).filter(self.model_class.articles == None)
             if source_name:
                 query = query.filter_by(source_name=source_name)
             return query.scalar()
@@ -57,6 +71,19 @@ class ArticleLinksRepository(BaseRepository[ArticleLinks]):
         return self.execute_query(
             query_func,
             err_msg="計算未爬取的連結數量時發生錯誤"
+        )
+
+    def count_scraped_links(self, source_name: Optional[str] = None) -> int:
+        """計算已爬取的連結數量"""
+        def query_func():
+            query = self.session.query(func.count(self.model_class.id)).filter(self.model_class.articles != None)
+            if source_name:
+                query = query.filter_by(source_name=source_name)
+            return query.scalar()
+            
+        return self.execute_query(
+            query_func,
+            err_msg="計算已爬取的連結數量時發生錯誤"
         )
 
     def mark_as_scraped(self, article_link: str) -> bool:
@@ -80,16 +107,17 @@ class ArticleLinksRepository(BaseRepository[ArticleLinks]):
             total_stats = self.session.query(
                 self.model_class.source_name,
                 func.count(self.model_class.id).label('total'),
-                func.sum(case((self.model_class.is_scraped == False, 1), else_=0)).label('unscraped')
+                func.sum(case((self.model_class.articles == None, 1), else_=0)).label('unscraped'),
+                func.sum(case((self.model_class.articles != None, 1), else_=0)).label('scraped')
             ).group_by(self.model_class.source_name).all()
             
             return {
                 source_name: {
                     'total': total,
                     'unscraped': unscraped or 0,
-                    'scraped': total - (unscraped or 0)
+                    'scraped': scraped or 0
                 }
-                for source_name, total, unscraped in total_stats
+                for source_name, total, unscraped, scraped in total_stats
             }
             
         return self.execute_query(
@@ -252,15 +280,11 @@ class ArticleLinksRepository(BaseRepository[ArticleLinks]):
     
     def delete_by_article_link(self, article_link: str) -> bool:
         """根據文章連結刪除"""
-        def delete_func():
-            link_entity = self.find_by_article_link(article_link)
-            if not link_entity:
-                return False
-            self.session.delete(link_entity)
-            self.session.flush()
-            return True
-        
-        return self.execute_query(
-            delete_func,
-            err_msg=f"刪除文章連結時發生錯誤: {article_link}"
-        )
+        try:
+            result = self.session.query(self.model_class)\
+                .filter(self.model_class.article_link == article_link)\
+                .delete()
+            return result > 0
+        except Exception as e:
+            self.session.rollback()
+            raise e

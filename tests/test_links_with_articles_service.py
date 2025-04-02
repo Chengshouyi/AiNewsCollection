@@ -7,7 +7,7 @@ from src.models.articles_model import Articles
 from src.models.article_links_model import ArticleLinks
 from src.services.links_with_articles_service import LinksWithArticlesService
 from datetime import datetime, timezone
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Hashable
 from src.models.base_model import Base
 
 
@@ -70,7 +70,7 @@ def clear_tables(session: Session):
     session.commit()
 
 @pytest.fixture(scope="function")
-def sample_articles_data() -> List[Dict[str, Any]]:
+def sample_articles_data() -> List[Dict[Hashable, Any]]:
     """提供範例文章資料"""
     now_utc = datetime.now(timezone.utc)
     return [
@@ -79,40 +79,53 @@ def sample_articles_data() -> List[Dict[str, Any]]:
             "title": "Title 1", 
             "published_at": now_utc, 
             "content": "Content 1", 
-            "source": "source1"
-            },
+            "source": "source1",
+            "summary": "Summary 1",
+            "category": "測試分類",
+            "author": "Author 1",
+            "article_type": "news",
+            "tags": "AI,Tech",
+            "is_ai_related": True
+        },
         {
             "link": "https://example.com/article2", 
             "title": "Title 2", 
             "published_at": now_utc, 
             "content": "Content 2", 
-            "source": "source2"},
+            "source": "source2",
+            "summary": "Summary 2",
+            "category": "測試分類1",
+            "author": "Author 2",
+            "article_type": "news",
+            "tags": "Business",
+            "is_ai_related": False
+        }
     ]
 
 @pytest.fixture(scope="function")
-def sample_article_links_data() -> List[Dict[str, Any]]:
+def sample_article_links_data() -> List[Dict[Hashable, Any]]:
     """提供範例文章連結資料"""
     return [
         {
             "source_name": "範例新聞",
             "source_url": "https://example.com",
             "article_link": "https://example.com/article1",
-            "title": "測試文章",
+            "title": "Title 1",
             "summary": "測試摘要",
             "category": "測試分類",
-            "published_age": "測試發佈年齡",
-            "is_scraped": False
-         },
-        {
-            "source_name": "範例新聞1",
-            "source_url": "https://example.com",
-            "article_link": "https://example.com/article2",
-            "title": "測試文章1",
-            "summary": "測試摘要1",
-            "category": "測試分類1",
-            "published_age": "測試發佈年齡1",
+            "published_age": "1 小時前",
             "is_scraped": False
         },
+        {
+            "source_name": "範例新聞1",
+            "source_url": "https://example.com/news",
+            "article_link": "https://example.com/article2",
+            "title": "Title 2",
+            "summary": "測試摘要1",
+            "category": "測試分類1",
+            "published_age": "2 小時前",
+            "is_scraped": True
+        }
     ]
 
 class TestLinksWithArticlesService:
@@ -162,16 +175,29 @@ class TestLinksWithArticlesService:
 
     def test_delete_article_with_links_success(self, links_articles_service: LinksWithArticlesService, session: Session, clear_tables, sample_article_links_data, sample_articles_data):
         """測試成功刪除文章及其相關連結"""
+        # 先插入測試資料
         links_articles_service.batch_insert_links_with_articles(sample_article_links_data, sample_articles_data)
-        article_link_to_delete = "https://example.com/article1"
+        
+        # 確認初始數量
         initial_articles_count = session.query(Articles).count()
         initial_links_count = session.query(ArticleLinks).count()
+        assert initial_articles_count > 0
+        assert initial_links_count > 0
+        
+        # 執行刪除
+        article_link_to_delete = "https://example.com/article1"
         deletion_result = links_articles_service.delete_article_with_links(article_link_to_delete)
+        
+        # 驗證刪除結果
         assert deletion_result is True
         assert session.query(Articles).count() == initial_articles_count - 1
-        assert session.query(ArticleLinks).count() == initial_links_count - 1
-        assert session.query(Articles).filter(Articles.link == article_link_to_delete).first() is None
-        assert session.query(ArticleLinks).filter(ArticleLinks.article_link == article_link_to_delete).first() is None
+        assert session.query(ArticleLinks).count() == initial_links_count - 1  # 連結應該被刪除，因為 article_link 是 NOT NULL
+        
+        # 驗證特定記錄已被刪除
+        deleted_article = session.query(Articles).filter(Articles.link == article_link_to_delete).first()
+        deleted_link = session.query(ArticleLinks).filter(ArticleLinks.article_link == article_link_to_delete).first()
+        assert deleted_article is None
+        assert deleted_link is None
 
     def test_delete_article_with_links_not_found(self, links_articles_service: LinksWithArticlesService, session: Session, clear_tables):
         """測試刪除不存在的文章連結"""
@@ -207,3 +233,103 @@ class TestLinksWithArticlesService:
         assert deletion_result is False
         assert session.query(Articles).count() == 0
         assert session.query(ArticleLinks).count() == 0
+
+
+    def test_batch_insert_links_with_existing_article(self, links_articles_service: LinksWithArticlesService, session: Session, clear_tables, sample_articles_data):
+        """測試當文章已存在時的連結插入"""
+        # 先插入一篇文章
+        article_data = sample_articles_data[0]
+        article = Articles(**article_data)
+        session.add(article)
+        session.commit()
+
+        # 準備對應的連結資料
+        link_data: List[Dict[Hashable, Any]] = [{
+            "source_name": "範例新聞",
+            "source_url": "https://example.com",
+            "article_link": article_data["link"],  # 使用相同的連結
+            "title": article_data["title"],
+            "summary": "測試摘要",
+            "category": article_data["category"],
+            "published_age": "1 小時前",
+            "is_scraped": False
+        }]
+
+        # 插入連結
+        result = links_articles_service.batch_insert_links_with_articles(link_data, [article_data])
+        
+        # 驗證結果
+        assert result["success_count"] == 1
+        assert len(result["inserted_links"]) == 1
+        assert len(result["inserted_articles"]) == 1
+        assert session.query(Articles).count() == 1  # 文章數量應該還是1
+        assert session.query(ArticleLinks).count() == 1
+
+    def test_batch_insert_links_without_article_reference(self, links_articles_service: LinksWithArticlesService, session: Session, clear_tables):
+        """測試插入沒有對應文章的連結"""
+        link_data: List[Dict[Hashable, Any]] = [{
+            "source_name": "範例新聞",
+            "source_url": "https://example.com",
+            "article_link": "https://example.com/no-article",
+            "title": "無對應文章的連結",
+            "summary": "測試摘要",
+            "category": "測試分類",
+            "published_age": "1 小時前",
+            "is_scraped": False
+        }]
+
+        result = links_articles_service.batch_insert_links_with_articles(link_data)
+        
+        # 驗證結果
+        assert result["success_count"] == 1
+        assert len(result["inserted_links"]) == 1
+        assert len(result["inserted_articles"]) == 0
+        assert session.query(Articles).count() == 0
+        assert session.query(ArticleLinks).count() == 1
+
+    def test_get_articles_by_source_with_missing_links(self, links_articles_service: LinksWithArticlesService, session: Session, clear_tables, sample_articles_data):
+        """測試獲取沒有對應連結的文章"""
+        # 只插入文章，不插入連結
+        article = Articles(**sample_articles_data[0])
+        session.add(article)
+        session.commit()
+
+        results = links_articles_service.get_articles_by_source(sample_articles_data[0]["source"], with_links=True)
+        
+        assert len(results) == 1
+        assert results[0]["article"].title == sample_articles_data[0]["title"]
+        assert results[0]["links"] is None
+
+    def test_delete_article_with_links_cascade(self, links_articles_service: LinksWithArticlesService, session: Session, clear_tables, sample_article_links_data, sample_articles_data):
+        """測試刪除文章時連結的處理"""
+        # 先插入資料
+        links_articles_service.batch_insert_links_with_articles(sample_article_links_data, sample_articles_data)
+        
+        # 直接從資料庫刪除文章
+        article = session.query(Articles).filter(Articles.link == sample_articles_data[0]["link"]).first()
+        session.delete(article)
+        session.commit()
+
+        # 驗證連結是否已被刪除（因為 article_link 是 NOT NULL 且 ondelete="CASCADE"）
+        link = session.query(ArticleLinks).filter(
+            ArticleLinks.article_link == sample_article_links_data[0]["article_link"]
+        ).first()
+        assert link is None  # 連結應該被刪除，因為 article_link 是 NOT NULL
+
+    def test_update_article_link_status_without_article(self, links_articles_service: LinksWithArticlesService, session: Session, clear_tables, sample_article_links_data):
+        """測試更新沒有對應文章的連結狀態"""
+        # 只插入連結
+        links_articles_service.batch_insert_links_with_articles(sample_article_links_data)
+        
+        # 更新狀態
+        result = links_articles_service.update_article_link_status(
+            sample_article_links_data[0]["article_link"],
+            True
+        )
+        
+        assert result is True
+        link = session.query(ArticleLinks).filter(
+            ArticleLinks.article_link == sample_article_links_data[0]["article_link"]
+        ).first()
+        assert link is not None
+        assert link.is_scraped is True

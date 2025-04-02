@@ -87,9 +87,14 @@ class LinksWithArticlesService:
                 
                 # 如果有文章資料，先創建文章
                 if is_with_articles and articles_data is not None:
-                    article = Articles(**validated_article)
-                    session.add(article)
-                    session.flush()  # 獲取文章 ID
+                    # 檢查文章是否已存在
+                    existing_article = article_repo.find_by_link(validated_article['link'])
+                    if existing_article:
+                        article = existing_article
+                    else:
+                        article = Articles(**validated_article)
+                        session.add(article)
+                        session.flush()
                 
                 # 設置連結的 is_scraped 狀態
                 validated_link['is_scraped'] = True if is_with_articles else False
@@ -161,7 +166,8 @@ class LinksWithArticlesService:
             if not article:
                 return None
                 
-            links = article_link_repo.find_by_article_link(article.article_links)
+            # 修改這裡：直接使用 article.link 查詢
+            links = article_link_repo.find_by_article_link(article.link)
             
             return {
                 "article": article,
@@ -230,18 +236,23 @@ class LinksWithArticlesService:
             article_repo, article_link_repo, session = self._get_repository()
             articles = article_repo.get_by_filter({"source": source})
             result = []
-            if not with_links and articles is not None:
-                result.append({
-                    "article": articles,
-                    "links": None
-                })
-            elif with_links and articles is not None:
-                for article in articles:
-                    links = article_link_repo.find_by_article_link(article.article_links)
-                result.append({
+            
+            if not articles:
+                return result
+            
+            for article in articles:
+                article_data = {
                     "article": article,
-                    "links": links
-                })
+                    "links": None
+                }
+                
+                if with_links:
+                    # 修改這裡：直接使用 article.link 查詢
+                    links = article_link_repo.find_by_article_link(article.link)
+                    article_data["links"] = links
+                    
+                result.append(article_data)
+            
             return result
         except Exception as e:
             error_msg = f"獲取來源文章失敗，source={source}: {e}"
@@ -258,19 +269,25 @@ class LinksWithArticlesService:
         Returns:
             是否刪除成功
         """
-        article_repo, article_link_repo, session = None, None, None
         try:
             article_repo, article_link_repo, session = self._get_repository()
             
-            # 先刪除連結
-            article_link_repo.delete_by_article_link(article_link)
+            # 先查找文章
+            article = article_repo.find_by_link(article_link)
             
-            # 再刪除文章
-            result = article_repo.delete(article_link)
-            
-            if result:
+            # 如果文章存在，則刪除文章（連結會因為 CASCADE 設定自動刪除）
+            if article:
+                session.delete(article)
                 session.commit()
                 return True
+            
+            # 如果文章不存在，則查找連結
+            link = article_link_repo.find_by_article_link(article_link)
+            if link:
+                session.delete(link)
+                session.commit()
+                return True
+            
             return False
         except Exception as e:
             error_msg = f"刪除文章及連結失敗，link={article_link}: {e}"

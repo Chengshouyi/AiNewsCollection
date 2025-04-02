@@ -34,9 +34,9 @@ class ArticleLinks(Base, BaseEntity):
     )
     article_link: Mapped[str] = mapped_column(
         String(1000), 
-        ForeignKey("articles.link"),
+        ForeignKey("articles.link", ondelete="CASCADE"),
         unique=True, 
-        nullable=False, 
+        nullable=False,  # 不允許為空，因為這是抓取文章的關鍵
         index=True
     )
     title: Mapped[str] = mapped_column(
@@ -59,7 +59,13 @@ class ArticleLinks(Base, BaseEntity):
         Boolean,
         default=False
     )
-    articles = relationship("Articles", back_populates="article_links", lazy="joined")
+    articles = relationship(
+        "Articles",
+        back_populates="article_links",
+        lazy="joined",
+        primaryjoin="and_(ArticleLinks.article_link==Articles.link)",
+        uselist=False
+    )
 
     def __init__(self, **kwargs):
         # 設置默認值
@@ -81,6 +87,6 @@ class ArticleLinks(Base, BaseEntity):
             'summary': self.summary,
             'category': self.category,
             'published_age': self.published_age,
-            'is_scraped': self.is_scraped,
+            'is_scraped': self.is_scraped
         }
     

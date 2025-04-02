@@ -59,7 +59,13 @@ class Articles(Base, BaseEntity):
         default=False,
         nullable=False
     )
-    article_links = relationship("ArticleLinks", back_populates="articles", lazy="joined")
+    article_links = relationship(
+        "ArticleLinks",
+        back_populates="articles",
+        lazy="joined",
+        uselist=False,
+        primaryjoin="and_(Articles.link==ArticleLinks.article_link)"
+    )
     
     # 定義需要監聽的 datetime 欄位
     _datetime_fields_to_watch = {'published_at'}
