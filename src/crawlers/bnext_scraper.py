@@ -29,7 +29,7 @@ class BnextScraper:
         config (SiteConfig, optional): 網站配置
         """
         # 檢查配置
-        logger.info("檢查爬蟲配置")
+        logger.debug("檢查爬蟲配置")
         if config is None:
             logger.error("未提供網站配置，請提供有效的配置")
             raise ValueError("未提供網站配置，請提供有效的配置")
@@ -52,45 +52,45 @@ class BnextScraper:
                 config.get_category_url = lambda x: f"{config.base_url}/categories/{x}"
             
             self.site_config = config
-            #logger.info(f"使用選擇器: {self.site_config.selectors}")
+            #logger.debug(f"使用選擇器: {self.site_config.selectors}")
 
     def scrape_article_list(self, max_pages=3, ai_only=True) -> pd.DataFrame:
         start_time = time.time()
         all_article_links_list = []
         
         try:
-            logger.info("BnextScraper(scrape_article_list()) - call 開始抓取文章列表")
-            logger.info(f"參數設置: max_pages={max_pages}, ai_only={ai_only}")
-            logger.info(f"使用類別: {self.site_config.categories if self.site_config.categories else '預設類別'}")
+            logger.debug("BnextScraper(scrape_article_list()) - call 開始抓取文章列表")
+            logger.debug(f"參數設置: max_pages={max_pages}, ai_only={ai_only}")
+            logger.debug(f"使用類別: {self.site_config.categories if self.site_config.categories else '預設類別'}")
                 
             # 初始化requests session(網路連線)
             session = requests.Session()
 
             for current_category_name in self.site_config.categories:
-                logger.info(f"開始處理類別: {current_category_name}")
+                logger.debug(f"開始處理類別: {current_category_name}")
                 # 構造類別URL
                 current_category_url = self.site_config.get_category_url(current_category_name)
                 page = 1
-                logger.info(f"構造類別URL: {current_category_url}, 頁數: {page}")
+                logger.debug(f"構造類別URL: {current_category_url}, 頁數: {page}")
                 
                 # 保存原始類別URL，用於構造分頁URL
                 base_category_url = current_category_url
-                logger.info(f"保存原始類別URL: {base_category_url}")
+                logger.debug(f"保存原始類別URL: {base_category_url}")
 
                 while page <= max_pages:
-                    logger.info(f"正在處理第 {page}/{max_pages} 頁")
+                    logger.debug(f"正在處理第 {page}/{max_pages} 頁")
                     logger.debug(f"當前URL: {current_category_url}")
                     
                     try:
-                        logger.info(f"開始執行隨機延遲")
+                        logger.debug(f"開始執行隨機延遲")
                         delay_time = random.uniform(1.5, 3.5)
-                        logger.info(f"設定延遲時間: {delay_time} 秒")
+                        logger.debug(f"設定延遲時間: {delay_time} 秒")
                         time.sleep(delay_time)
-                        logger.info(f"延遲完成")
+                        logger.debug(f"延遲完成")
                         
-                        logger.info(f"準備使用session.get()")
+                        logger.debug(f"準備使用session.get()")
                         response = session.get(str(current_category_url), headers=self.site_config.headers, timeout=15)
-                        logger.info(f"使用session.get()完成")
+                        logger.debug(f"使用session.get()完成")
                     except Exception as e:
                         logger.error(f"增加隨機延遲時發生錯誤: {str(e)}", exc_info=True)
                         continue  # 跳過當前迭代，繼續下一頁
@@ -103,11 +103,11 @@ class BnextScraper:
                     # 正常處理頁面內容
                     try:
                         soup = BnextUtils.get_soup_from_html(response.text)
-                        logger.info(f"構建 soup 完成")
+                        logger.debug(f"構建 soup 完成")
 
                         # 根據提供的選擇器爬取內容
                         # 1. 爬取文章連結
-                        logger.info(f"BnextScraper(scrape_article_list()) - call self.extract_article_links() 爬取文章連結")
+                        logger.debug(f"BnextScraper(scrape_article_list()) - call self.extract_article_links() 爬取文章連結")
                         current_page_article_links_list = self.extract_article_links(soup)
                         
                         # 篩選是否為AI相關文章
@@ -120,10 +120,10 @@ class BnextScraper:
                                     filtered_article_links_list.append(article)
                             # 將之前累積的文章和當前頁面篩選後的文章合併
                             all_article_links_list.extend(filtered_article_links_list)
-                            logger.info(f"共爬取 {len(all_article_links_list)} 篇與AI相關文章連結")
+                            logger.debug(f"共爬取 {len(all_article_links_list)} 篇與AI相關文章連結")
                         else:
                             all_article_links_list.extend(current_page_article_links_list)
-                            logger.info(f"共爬取 {len(all_article_links_list)} 篇文章連結")
+                            logger.debug(f"共爬取 {len(all_article_links_list)} 篇文章連結")
                         
                         # 檢查是否有下一頁
                         next_page = soup.select_one('.pagination .next, .pagination a[rel="next"]')
@@ -141,13 +141,13 @@ class BnextScraper:
                                 break
                     
                         # 記錄每個步驟的結果
-                        logger.info(f"本頁共找到: {len(current_page_article_links_list)} 篇文章連結")
+                        logger.debug(f"本頁共找到: {len(current_page_article_links_list)} 篇文章連結")
                     
                     except Exception as e:
                         logger.error(f"處理頁面內容時發生錯誤: {str(e)}", exc_info=True)
                         break
                 
-                logger.info(f"完成爬取類別: {current_category_url}")
+                logger.debug(f"完成爬取類別: {current_category_url}")
             
             # 修改儲存邏輯
             if all_article_links_list:
@@ -164,12 +164,12 @@ class BnextScraper:
         finally:
             end_time = time.time()
             duration = end_time - start_time
-            logger.info(f"爬蟲任務完成，總耗時: {duration:.2f} 秒")
+            logger.debug(f"爬蟲任務完成，總耗時: {duration:.2f} 秒")
             if self.site_config.categories:
-                logger.info(f"共處理 {len(self.site_config.categories)} 個類別，"
+                logger.debug(f"共處理 {len(self.site_config.categories)} 個類別，"
                            f"爬取 {len(all_article_links_list)} 篇文章")
             else:
-                logger.info(f"共爬取 {len(all_article_links_list)} 篇文章")
+                logger.debug(f"共爬取 {len(all_article_links_list)} 篇文章")
 
     def _build_next_page_url(self, base_url: str, page_num: int) -> str:
         """構建下一頁URL"""
@@ -214,8 +214,8 @@ class BnextScraper:
             'total': len(df)
         }
         
-        logger.info("爬取統計信息:")
-        logger.info(f"總文章數: {stats['total']}")
+        logger.debug("爬取統計信息:")
+        logger.debug(f"總文章數: {stats['total']}")
         
         return df
 
@@ -235,7 +235,7 @@ class BnextScraper:
             # 提取文章連結
             articles_container = soup.select(get_article_links_selectors.get("articles_container"))
             
-            logger.info(f"找到 {len(articles_container)} 個文章連結容器")
+            logger.debug(f"找到 {len(articles_container)} 個文章連結容器")
             # logger.debug(f"文章連結容器: {articles_container}")
 
             category = articles_container[0].select_one(get_article_links_selectors.get("category"))
@@ -264,18 +264,18 @@ class BnextScraper:
             logger.debug(f"成功提取文章連結，標題: {title_text}")
             
             # 提取網格文章連結
-            logger.info(f"開始提取網格文章連結")
+            logger.debug(f"開始提取網格文章連結")
 
 
             article_grid_container = articles_container[0].select_one(get_grid_contentainer_selector.get("container"))
             if not article_grid_container:
                 logger.warning("未找到文章網格容器")
                 return article_links_list
-            # logger.info(f"Container type: {article_grid_container}")
+            # logger.debug(f"Container type: {article_grid_container}")
 
             for idx, container in enumerate(article_grid_container.find_all('div', recursive=False),1): 
-                logger.info(f"開始處理第 {idx} 個網格文章連結容器")
-                logger.info(f"檢查網格文章連結容器類型: {type(container)}")
+                logger.debug(f"開始處理第 {idx} 個網格文章連結容器")
+                logger.debug(f"檢查網格文章連結容器類型: {type(container)}")
                 try:
                     g_article_link = container.select_one(get_grid_contentainer_selector.get("link"))  # 修改選擇器，直接查找 a 標籤
                     if g_article_link:
@@ -314,5 +314,5 @@ class BnextScraper:
             logger.error(f"當前選擇器配置: {selectors}")
             return article_links_list
         
-        logger.info(f"成功提取 {len(article_links_list)} 篇焦點文章")
+        logger.debug(f"成功提取 {len(article_links_list)} 篇焦點文章")
         return article_links_list

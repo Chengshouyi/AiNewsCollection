@@ -77,7 +77,7 @@ class BaseCrawler(ABC):
             # 確保目錄存在
             os.makedirs(os.path.dirname(csv_path) or '.', exist_ok=True)
             data.to_csv(csv_path, index=False, encoding='utf-8-sig')
-            logger.info(f"文章數據已保存到 CSV 文件: {csv_path}")
+            logger.debug(f"文章數據已保存到 CSV 文件: {csv_path}")
         except Exception as e:
             logger.error(f"保存文章到 CSV 文件失敗: {str(e)}", exc_info=True)
 
@@ -94,7 +94,7 @@ class BaseCrawler(ABC):
         try:
             # 步驟1：抓取文章列表
             self._update_task_status(task_id, 10, '抓取文章列表中...')
-            logger.info(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表中...")
+            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表中...")
             articles_df = self.fetch_article_list()
             
             # 步驟2：抓取文章詳細內容
@@ -133,7 +133,7 @@ class BaseCrawler(ABC):
             if status:
                 self.task_status[task_id]['status'] = status
                 
-            logger.info(f"任務進度更新 (ID={task_id}): {progress}%, {message}")
+            logger.debug(f"任務進度更新 (ID={task_id}): {progress}%, {message}")
     
     def get_task_status(self, task_id: int):
         """獲取任務狀態"""

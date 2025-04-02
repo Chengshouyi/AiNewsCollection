@@ -115,58 +115,58 @@ def main():
         
         # 獲取爬蟲實例
         crawler = CrawlerFactory.get_crawler(args.crawler)
-        logger.info(f"CrawlerTest - call CrawlerFactory.get_crawler(args.crawler)： 獲取爬蟲實例完成")
+        logger.debug(f"CrawlerTest - call CrawlerFactory.get_crawler(args.crawler)： 獲取爬蟲實例完成")
         # 執行爬蟲
-        logger.info(f"CrawlerTest - call main： 開始爬取 {args.crawler}，最大頁數: {args.max_pages}")
+        logger.debug(f"CrawlerTest - call main： 開始爬取 {args.crawler}，最大頁數: {args.max_pages}")
         
-        # # 獲取文章連結
-        # logger.info(f"CrawlerTest - call crawler.fetch_article_list()： 獲取文章連結中...")
-        # articles_df = crawler.fetch_article_list()
+        # 獲取文章連結
+        logger.debug(f"CrawlerTest - call crawler.fetch_article_list()： 獲取文章連結中...")
+        article_links_df = crawler.fetch_article_list()
         
-        # logger.info(f"CrawlerTest - call crawler.fetch_article_list()： 獲取文章連結完成")
-        # logger.info(f"獲取文章連結，共 {len(articles_df)} 篇")
-        # # 保存數據
-        # if not articles_df.empty:
-        #     logger.info(f"CrawlerTest - call crawler.save_data()： 開始保存文章連結到 {'./logs/article_links_ai.csv'}")
-        #     crawler._save_to_csv(articles_df, csv_path=args.output)
-        #     logger.info(f"CrawlerTest - call crawler.save_data()： 已保存 {len(articles_df)} 篇文章到 {args.output}")
-        # else:
-        #     logger.warning("沒有獲取到任何文章")
+        logger.debug(f"CrawlerTest - call crawler.fetch_article_list()： 獲取文章連結完成")
+        logger.debug(f"獲取文章連結，共 {len(article_links_df)} 篇")
+        # 保存數據
+        if not article_links_df.empty:
+            logger.debug(f"CrawlerTest - call crawler.save_data()： 開始保存文章連結到 {'./logs/article_links_ai.csv'}")
+            crawler._save_to_csv(article_links_df, csv_path='./logs/article_links_ai.csv')
+            logger.debug(f"CrawlerTest - call crawler.save_data()： 已保存 {len(article_links_df)} 篇文章到 {args.output}")
+        else:
+            logger.warning("沒有獲取到任何文章")
         
-        # 從 CSV 讀取數據並轉換為 DataFrame(測試用)
-        try:
-            # 假設 CSV 文件路徑儲存在變數中或作為參數傳入
-            csv_file_path = './logs/article_links_ai.csv'  # 或者直接指定路徑，例如 'data/articles.csv'
+        # # 從 CSV 讀取數據並轉換為 DataFrame(測試用)
+        # try:
+        #     # 假設 CSV 文件路徑儲存在變數中或作為參數傳入
+        #     csv_file_path = './logs/article_links_ai.csv'  # 或者直接指定路徑，例如 'data/articles.csv'
             
-            # 檢查文件是否存在
-            if not os.path.exists(csv_file_path):
-                logger.error(f"CSV 文件不存在: {csv_file_path}")
-                articles_df = pd.DataFrame()  # 創建空的 DataFrame
-            else:
-                logger.info(f"開始從 CSV 文件讀取數據: {csv_file_path}")
-                # 讀取 CSV 文件
-                articles_df = pd.read_csv(csv_file_path, encoding='utf-8')
-                logger.info(f"成功讀取 CSV 文件，共 {len(articles_df)} 條記錄")
+        #     # 檢查文件是否存在
+        #     if not os.path.exists(csv_file_path):
+        #         logger.error(f"CSV 文件不存在: {csv_file_path}")
+        #         articles_df = pd.DataFrame()  # 創建空的 DataFrame
+        #     else:
+        #         logger.debug(f"開始從 CSV 文件讀取數據: {csv_file_path}")
+        #         # 讀取 CSV 文件
+        #         articles_df = pd.read_csv(csv_file_path, encoding='utf-8')
+        #         logger.debug(f"成功讀取 CSV 文件，共 {len(articles_df)} 條記錄")
                 
-                # 顯示 DataFrame 的基本信息
-                logger.debug(f"DataFrame 信息:\n{articles_df.info()}")
-                logger.debug(f"DataFrame 前 5 行:\n{articles_df.head()}")
+        #         # 顯示 DataFrame 的基本信息
+        #         logger.debug(f"DataFrame 信息:\n{articles_df.info()}")
+        #         logger.debug(f"DataFrame 前 5 行:\n{articles_df.head()}")
                 
-        except Exception as e:
-            logger.error(f"讀取 CSV 文件時發生錯誤: {str(e)}")
-            articles_df = pd.DataFrame()  # 創建空的 DataFrame 作為後備
+        # except Exception as e:
+        #     logger.error(f"讀取 CSV 文件時發生錯誤: {str(e)}")
+        #     articles_df = pd.DataFrame()  # 創建空的 DataFrame 作為後備
             
         # 獲取文章內容
-        if args.fetch_details and not articles_df.empty:
-            logger.info(f"CrawlerTest - call crawler.fetch_article_details()： 開始獲取文章內容，數量: {args.num_articles}")
-            articles_df = crawler.fetch_article_details(articles_df)
-            logger.info(f"CrawlerTest - call crawler.fetch_article_details()： 獲取文章內容完成")
+        if args.fetch_details and not article_links_df.empty:
+            logger.debug(f"CrawlerTest - call crawler.fetch_article_details()： 開始獲取文章內容，數量: {args.num_articles}")
+            articles_df = crawler.fetch_article_details(article_links_df)
+            logger.debug(f"CrawlerTest - call crawler.fetch_article_details()： 獲取文章內容完成")
 
         # 保存文章內容
         if not articles_df.empty:
-            logger.info(f"CrawlerTest - call crawler.save_data()： 開始保存文章內容到 {'./logs/articles_ai.csv'}")
-            crawler._save_to_csv(articles_df, csv_path=args.output)
-            logger.info(f"CrawlerTest - call crawler.save_data()： 已保存 {len(articles_df)} 篇文章到 {args.output}")
+            logger.debug(f"CrawlerTest - call crawler.save_data()： 開始保存文章內容到 {'./logs/articles_ai.csv'}")
+            crawler._save_to_csv(articles_df, csv_path='./logs/articles_ai.csv')
+            logger.debug(f"CrawlerTest - call crawler.save_data()： 已保存 {len(articles_df)} 篇文章到 {args.output}")
         else:
             logger.warning("沒有獲取到任何文章")
             

@@ -114,9 +114,9 @@ class LoggerSetup:
             logger.propagate = False
             
             # 記錄初始化信息
-            logger.info(f"日誌系統初始化完成")
-            logger.info(f"日誌文件路徑: {log_filename}")
-            logger.info(f"當前時間: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            logger.debug(f"日誌系統初始化完成")
+            logger.debug(f"日誌文件路徑: {log_filename}")
+            logger.debug(f"當前時間: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             
             return logger
             

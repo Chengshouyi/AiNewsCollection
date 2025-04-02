@@ -47,7 +47,7 @@ class CrawlerFactory:
                         'config_file_name': crawler.config_file_name
                     }
                     
-                    logger.info(f"成功註冊爬蟲: {crawler.crawler_name}")
+                    logger.debug(f"成功註冊爬蟲: {crawler.crawler_name}")
                 except Exception as e:
                     logger.error(f"註冊爬蟲失敗 {crawler.crawler_name}: {str(e)}")
                     continue

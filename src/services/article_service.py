@@ -121,7 +121,7 @@ class ArticleService:
                 
                 success_count = len(article_entities)
                 log_info = f"批量插入文章完成: 成功 {success_count}"
-                logger.info(log_info)
+                logger.debug(log_info)
                 
                 return {
                     "success_count": success_count,
@@ -458,7 +458,7 @@ class ArticleService:
             success_count = result["success_count"]
             fail_count = result["fail_count"]
             log_info = f"批量更新文章完成: 成功 {success_count}, 失敗 {fail_count}"
-            logger.info(log_info)
+            logger.debug(log_info)
             
             return {
                 "success_count": success_count,
@@ -493,7 +493,7 @@ class ArticleService:
                 
             session.commit()
             log_info = f"成功刪除文章，ID={article_id}"
-            logger.info(log_info)
+            logger.debug(log_info)
             return True
         except Exception as e:
             error_msg = f"刪除文章失敗，ID={article_id}: {str(e)}"
@@ -539,7 +539,7 @@ class ArticleService:
             fail_count = len(missing_ids)
             
             log_info = f"批量刪除文章完成: 成功 {success_count}, 失敗 {fail_count}"
-            logger.info(log_info)
+            logger.debug(log_info)
             
             return {
                 "success_count": success_count,

@@ -103,19 +103,19 @@ class ArticleAnalyzer:
     @staticmethod
     def print_statistics(stats: Dict[str, Any]) -> None:
         """輸出統計數據到日誌"""
-        logger.info("基本統計資訊:")
-        logger.info(f"總文章數: {stats['total_articles']}")
+        logger.debug("基本統計資訊:")
+        logger.debug(f"總文章數: {stats['total_articles']}")
         
         if 'avg_article_length' in stats:
-            logger.info(f"平均文章長度: {stats['avg_article_length']} 字符")
+            logger.debug(f"平均文章長度: {stats['avg_article_length']} 字符")
         
         if 'category_distribution' in stats:
-            logger.info("分類分布:")
+            logger.debug("分類分布:")
             for cat, count in stats['category_distribution'].items():
                 if pd.notna(cat):
-                    logger.info(f"  {cat}: {count} 篇")
+                    logger.debug(f"  {cat}: {count} 篇")
         
         if 'ai_keyword_frequency' in stats:
-            logger.info("AI關鍵字出現頻率:")
+            logger.debug("AI關鍵字出現頻率:")
             for keyword, count in stats['ai_keyword_frequency'].items():
-                logger.info(f"  {keyword}: {count} 篇")
+                logger.debug(f"  {keyword}: {count} 篇")

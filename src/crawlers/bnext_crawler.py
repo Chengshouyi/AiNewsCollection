@@ -24,15 +24,15 @@ class BnextCrawler(BaseCrawler):
         """
         super().__init__(config_file_name)
         
-        logger.info(f"BnextCrawler - call_create_site_config()： 建立站點配置")
+        logger.debug(f"BnextCrawler - call_create_site_config()： 建立站點配置")
         self._create_site_config()
         
         # 創建爬蟲實例，傳入配置
-        logger.info(f"BnextCrawler - call_create_scraper()： 建立爬蟲實例")
+        logger.debug(f"BnextCrawler - call_create_scraper()： 建立爬蟲實例")
         self.scraper = scraper or BnextScraper(
             config=self.site_config
         )
-        logger.info(f"BnextCrawler - call_create_extractor()： 建立文章內容擷取器")
+        logger.debug(f"BnextCrawler - call_create_extractor()： 建立文章內容擷取器")
         self.extractor = extractor or BnextContentExtractor(
             config=self.site_config
         )
@@ -51,8 +51,8 @@ class BnextCrawler(BaseCrawler):
                     # 使用文件配置更新默認配置
                     self.config_data.update(file_config)
                     
-                logger.info(f"已載入 BNext 配置: {self.config_file_name}")
-                logger.info(f"已載入 BNext 配置: {self.config_data}")
+                logger.debug(f"已載入 BNext 配置: {self.config_file_name}")
+                logger.debug(f"已載入 BNext 配置: {self.config_data}")
             except (json.JSONDecodeError, FileNotFoundError) as e:
                 logger.warning(f"載入配置文件失敗: {str(e)}，使用預設配置")
         else:
@@ -63,11 +63,11 @@ class BnextCrawler(BaseCrawler):
     def _create_site_config(self):
         """創建站點配置"""
         if not self.config_data:
-            logger.info(f"BnextCrawler - call_load_site_config()： 載入站點配置")
+            logger.debug(f"BnextCrawler - call_load_site_config()： 載入站點配置")
             self._load_site_config()
         
         # 創建 site_config
-        logger.info(f"BnextCrawler - call_create_site_config()： 創建 site_config")
+        logger.debug(f"BnextCrawler - call_create_site_config()： 創建 site_config")
         self.site_config = SiteConfig(
             name=self.config_data.get("name", "BNext"),
             base_url=self.config_data.get("base_url", "https://www.bnext.com.tw"),
@@ -97,8 +97,8 @@ class BnextCrawler(BaseCrawler):
         max_pages = self.site_config.crawler_settings.get("max_pages", 3)
         categories = self.site_config.categories
         ai_only = self.site_config.crawler_settings.get("ai_only", True)
-        logger.info(f"抓取文章列表參數設定：最大頁數: {max_pages}, 文章類別: {categories}, AI 相關文章: {ai_only}")
-        logger.info(f"BnextCrawler(fetch_article_list()) - call BnextScraper.scrape_article_list： 抓取文章列表中...")
+        logger.debug(f"抓取文章列表參數設定：最大頁數: {max_pages}, 文章類別: {categories}, AI 相關文章: {ai_only}")
+        logger.debug(f"BnextCrawler(fetch_article_list()) - call BnextScraper.scrape_article_list： 抓取文章列表中...")
         self.articles_df = self.retry_operation(
             lambda: self.scraper.scrape_article_list(max_pages, ai_only)
         )

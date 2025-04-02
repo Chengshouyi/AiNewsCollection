@@ -62,7 +62,7 @@ class CrawlersService:
             # 使用 Pydantic 驗證資料
             try:
                 validated_data = CrawlersCreateSchema.model_validate(crawler_data).model_dump()
-                logger.info(f"爬蟲設定資料驗證成功: {validated_data}")
+                logger.debug(f"爬蟲設定資料驗證成功: {validated_data}")
             except Exception as e:
                 error_msg = f"爬蟲設定資料驗證失敗: {e}"
                 logger.error(error_msg)
@@ -72,7 +72,7 @@ class CrawlersService:
             try:
                 result = repo.create(validated_data)
                 session.commit()
-                logger.info(f"成功創建爬蟲設定, ID={result.id}")
+                logger.debug(f"成功創建爬蟲設定, ID={result.id}")
                 return self._ensure_fresh_instance(result)
             except Exception as e:
                 session.rollback()
@@ -216,7 +216,7 @@ class CrawlersService:
             # 使用 Pydantic 驗證資料
             try:
                 validated_data = CrawlersUpdateSchema.model_validate(crawler_data).model_dump()
-                logger.info(f"爬蟲設定更新資料驗證成功: {validated_data}")
+                logger.debug(f"爬蟲設定更新資料驗證成功: {validated_data}")
             except Exception as e:
                 error_msg = f"爬蟲設定更新資料驗證失敗: {str(e)}"
                 logger.error(error_msg)
@@ -241,7 +241,7 @@ class CrawlersService:
                     return None
                     
                 session.commit()
-                logger.info(f"成功更新爬蟲設定，ID={crawler_id}")
+                logger.debug(f"成功更新爬蟲設定，ID={crawler_id}")
                 return self._ensure_fresh_instance(result)
             except ValidationError as e:
                 session.rollback()
@@ -278,7 +278,7 @@ class CrawlersService:
                 
             session.commit()
             log_info = f"成功刪除爬蟲設定，ID={crawler_id}"
-            logger.info(log_info)
+            logger.debug(log_info)
             return True
         except Exception as e:
             error_msg = f"刪除爬蟲設定失敗，ID={crawler_id}: {str(e)}"
@@ -309,7 +309,7 @@ class CrawlersService:
             # 獲取更新後的爬蟲設定
             updated_crawler = repo.get_by_id(crawler_id)
             if updated_crawler:
-                logger.info(f"成功切換爬蟲狀態，ID={crawler_id}, 新狀態={updated_crawler.is_active}")
+                logger.debug(f"成功切換爬蟲狀態，ID={crawler_id}, 新狀態={updated_crawler.is_active}")
                 return updated_crawler
             else:
                 logger.warning(f"切換爬蟲狀態失敗，爬蟲不存在，ID={crawler_id}")

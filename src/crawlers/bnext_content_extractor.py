@@ -1,19 +1,13 @@
-# content_extractor.py
-# 用於爬取文章內容的模組
-
 import requests
 import logging
 from typing import Dict, Optional, List
 import pandas as pd
-import re
 import time
-from bs4 import Tag
 
 from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
-from src.database.articles_repository import ArticlesRepository
 
 # 設置日誌記錄器
 custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -29,7 +23,7 @@ class BnextContentExtractor:
     def __init__(self, config=None):
         self.site_config = config
         # 檢查配置
-        logger.info("檢查爬蟲配置")
+        logger.debug("檢查爬蟲配置")
         if config is None:
             logger.error("未提供網站配置，請提供有效的配置")
             raise ValueError("未提供網站配置，請提供有效的配置")
@@ -52,16 +46,16 @@ class BnextContentExtractor:
                 config.get_category_url = lambda x: f"{config.base_url}/categories/{x}"
             
             self.site_config = config
-            #logger.info(f"使用選擇器: {self.site_config.selectors}")
+            #logger.debug(f"使用選擇器: {self.site_config.selectors}")
 
 
     def batch_get_articles_content(self, article_links_df, num_articles=10, ai_only=True, min_keywords=3) -> pd.DataFrame:
         """批量獲取文章內容"""
         start_time = time.time()
         
-        logger.info("開始批量獲取文章內容")
-        logger.info(f"參數設置: num_articles={num_articles}, ai_only={ai_only}, min_keywords={min_keywords}")
-        logger.info(f"待處理文章數量: {len(article_links_df)}")
+        logger.debug("開始批量獲取文章內容")
+        logger.debug(f"參數設置: num_articles={num_articles}, ai_only={ai_only}, min_keywords={min_keywords}")
+        logger.debug(f"待處理文章數量: {len(article_links_df)}")
         
         articles_contents = []
         successful_count = 0
@@ -70,8 +64,8 @@ class BnextContentExtractor:
         
         try:
             for i, (_, article) in enumerate(article_links_df.head(num_articles).iterrows(), 1):
-                logger.info(f"處理第 {i}/{num_articles} 篇文章")
-                logger.info(f"文章標題: {article['title']}")
+                logger.debug(f"處理第 {i}/{num_articles} 篇文章")
+                logger.debug(f"文章標題: {article['title']}")
                 logger.debug(f"文章連結: {article['article_link']}")
                 
                 try:
@@ -94,12 +88,12 @@ class BnextContentExtractor:
                     if successful_count % 5 == 0:
                         elapsed_time = time.time() - start_time
                         avg_time = elapsed_time / successful_count
-                        logger.info(f"進度報告:")
-                        logger.info(f"- 已處理: {i}/{num_articles}")
-                        logger.info(f"- 成功數: {successful_count}")
-                        logger.info(f"- AI相關: {ai_related_count}")
-                        logger.info(f"- 失敗數: {failed_count}")
-                        logger.info(f"- 平均處理時間: {avg_time:.2f}秒/篇")
+                        logger.debug(f"進度報告:")
+                        logger.debug(f"- 已處理: {i}/{num_articles}")
+                        logger.debug(f"- 成功數: {successful_count}")
+                        logger.debug(f"- AI相關: {ai_related_count}")
+                        logger.debug(f"- 失敗數: {failed_count}")
+                        logger.debug(f"- 平均處理時間: {avg_time:.2f}秒/篇")
                 
                 except Exception as e:
                     failed_count += 1
@@ -110,15 +104,15 @@ class BnextContentExtractor:
             end_time = time.time()
             total_time = end_time - start_time
             
-            logger.info("爬取任務完成")
-            logger.info(f"總耗時: {total_time:.2f}秒")
-            logger.info(f"處理統計:")
-            logger.info(f"- 總處理文章: {num_articles}")
-            logger.info(f"- 成功獲取: {successful_count}")
-            logger.info(f"- AI相關文章: {ai_related_count}")
-            logger.info(f"- 處理失敗: {failed_count}")
+            logger.debug("爬取任務完成")
+            logger.debug(f"總耗時: {total_time:.2f}秒")
+            logger.debug(f"處理統計:")
+            logger.debug(f"- 總處理文章: {num_articles}")
+            logger.debug(f"- 成功獲取: {successful_count}")
+            logger.debug(f"- AI相關文章: {ai_related_count}")
+            logger.debug(f"- 處理失敗: {failed_count}")
             if successful_count > 0:
-                logger.info(f"- 平均處理時間: {total_time/successful_count:.2f}秒/篇")
+                logger.debug(f"- 平均處理時間: {total_time/successful_count:.2f}秒/篇")
         
         return self._process_content_to_dataframe(articles_contents)
 

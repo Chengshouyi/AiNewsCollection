@@ -220,7 +220,7 @@ class CrawlerTaskHistoryService:
             # 使用 Pydantic 驗證資料
             try:
                 validated_data = CrawlerTaskHistoryUpdateSchema.model_validate(update_data).model_dump()
-                logger.info(f"歷史記錄狀態更新資料驗證成功: {validated_data}")
+                logger.debug(f"歷史記錄狀態更新資料驗證成功: {validated_data}")
             except Exception as e:
                 error_msg = f"歷史記錄狀態更新資料驗證失敗: {str(e)}"
                 logger.error(error_msg)
@@ -235,7 +235,7 @@ class CrawlerTaskHistoryService:
                 
             session.commit()
             log_info = f"成功更新歷史記錄狀態, ID={history_id}"
-            logger.info(log_info)
+            logger.debug(log_info)
             return True
             
         except ValidationError as e:
@@ -271,7 +271,7 @@ class CrawlerTaskHistoryService:
                 
             session.commit()
             log_info = f"成功刪除歷史記錄，ID={history_id}"
-            logger.info(log_info)
+            logger.debug(log_info)
             return True
         except Exception as e:
             error_msg = f"刪除歷史記錄失敗，ID={history_id}: {str(e)}"
