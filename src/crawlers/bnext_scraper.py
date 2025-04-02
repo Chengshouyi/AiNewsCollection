@@ -59,7 +59,7 @@ class BnextScraper:
         all_article_links_list = []
         
         try:
-            logger.debug("BnextScraper(scrape_article_list()) - call 開始抓取文章列表")
+            logger.debug("開始抓取文章列表")
             logger.debug(f"參數設置: max_pages={max_pages}, ai_only={ai_only}")
             logger.debug(f"使用類別: {self.site_config.categories if self.site_config.categories else '預設類別'}")
                 

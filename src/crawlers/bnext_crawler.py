@@ -98,7 +98,7 @@ class BnextCrawler(BaseCrawler):
         categories = self.site_config.categories
         ai_only = self.site_config.crawler_settings.get("ai_only", True)
         logger.debug(f"抓取文章列表參數設定：最大頁數: {max_pages}, 文章類別: {categories}, AI 相關文章: {ai_only}")
-        logger.debug(f"BnextCrawler(fetch_article_list()) - call BnextScraper.scrape_article_list： 抓取文章列表中...")
+        logger.debug(f"抓取文章列表中...")
         self.articles_df = self.retry_operation(
             lambda: self.scraper.scrape_article_list(max_pages, ai_only)
         )
