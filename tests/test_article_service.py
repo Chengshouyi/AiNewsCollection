@@ -7,7 +7,7 @@ from src.models.base_model import Base
 from src.database.database_manager import DatabaseManager
 from src.database.articles_repository import ArticlesRepository
 from src.services.article_service import ArticleService
-from src.error.errors import DatabaseOperationError, ValidationError
+from src.error.errors import ValidationError
 
 # 設置測試資料庫
 @pytest.fixture(scope="session")

@@ -84,6 +84,7 @@ class ArticleService:
                 "inserted_articles": result["inserted_articles"]
             }
         except Exception as e:
+            session.rollback()
             error_msg = f"批量插入文章失敗: {e}"
             logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e
