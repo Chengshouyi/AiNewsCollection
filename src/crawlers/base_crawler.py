@@ -7,7 +7,7 @@ import time
 import json
 import os
 from src.crawlers.configs.site_config import SiteConfig
-from src.services.links_with_articles_service import LinksWithArticlesService
+from src.services.article_service import ArticleService
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -17,14 +17,13 @@ class BaseCrawler(ABC):
 
 
 
-    def __init__(self, config_file_name: Optional[str] = None, links_with_articles_service: Optional[LinksWithArticlesService] = None):
+    def __init__(self, config_file_name: Optional[str] = None, article_service: Optional[ArticleService] = None):
         self.config_data: Dict[str, Any] = {}
         self.site_config: SiteConfig
         self.task_status = {}
         self.config_file_name = config_file_name
-        self.article_links_df = pd.DataFrame()
         self.articles_df = pd.DataFrame()
-        self.links_with_articles_service = links_with_articles_service
+        self.article_service = article_service
         
 
         
@@ -55,36 +54,24 @@ class BaseCrawler(ABC):
         """
         pass
 
-    def _save_to_database(self, target: str):
+    def _save_to_database(self):
         """保存爬取到的文章數據"""
-        if self.article_links_df is None or len(self.article_links_df) == 0:
-            logger.warning("沒有數據可供保存")
-            return
-        if self.links_with_articles_service is None:
-            logger.error("links_with_articles_service 未初始化")
+        if self.article_service is None:
+            logger.error("article_service 未初始化")
             return
         try:
-            if target == "article_links":
-                # 只新增文章連結，不新增文章
-                article_links_data = self.article_links_df.to_dict('records')
-                result = self.links_with_articles_service.batch_insert_links_with_articles(
-                    article_links_data = article_links_data
-                )
-            elif target == "links_with_articles":
-                # 同時新增文章和文章連結
-                articles_data = self.articles_df.to_dict('records')
-                article_links_data = self.article_links_df.to_dict('records')
-                result = self.links_with_articles_service.batch_insert_links_with_articles(
-                    article_links_data = article_links_data,
-                    articles_data = articles_data
+            # 同時新增文章
+            articles_data = self.articles_df.to_dict('records')
+            result = self.article_service.batch_insert_articles(
+                articles_data = articles_data
                 )
                 
-                if result["failed_pairs"]:
-                    logger.warning(f"有 {result['fail_count']} 筆資料新增失敗:")
-                    for failed_pair in result["failed_pairs"]:
-                        logger.warning(f"失敗原因: {failed_pair['error']}")
+            if result["failed_pairs"]:
+                logger.warning(f"有 {result['fail_count']} 筆資料新增失敗:")
+                for failed_pair in result["failed_pairs"]:
+                    logger.warning(f"失敗原因: {failed_pair['error']}")
             else:
-                raise ValueError(f"不支持的保存目標: {target}")
+                logger.info("所有資料新增成功")
             
         except Exception as e:
             logger.error(f"保存到資料庫失敗: {str(e)}")
@@ -120,7 +107,7 @@ class BaseCrawler(ABC):
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表中...")
             self.fetch_article_links()
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表完成")
-            if self.article_links_df.empty or self.article_links_df is None:
+            if self.articles_df.empty or self.articles_df is None:
                 logger.warning("沒有獲取到任何文章連結")
                 return
             
@@ -132,10 +119,8 @@ class BaseCrawler(ABC):
                 return
             # 步驟3：保存數據
             self._update_task_status(task_id, 80, '保存數據中...')
-            self._save_to_csv(self.article_links_df, f'./logs/article_links_{task_id}.csv')
             self._save_to_csv(self.articles_df, f'./logs/articles_{task_id}.csv')
-            #self._save_to_database(self.article_links_df, "article_links")
-            #self._save_to_database(self.articles_df, "articles")
+            self._save_to_database()
             
             self._update_task_status(task_id, 100, '任務完成', 'completed')
             

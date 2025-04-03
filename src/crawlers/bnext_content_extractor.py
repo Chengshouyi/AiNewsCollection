@@ -52,13 +52,13 @@ class BnextContentExtractor:
             #logger.debug(f"使用選擇器: {self.site_config.selectors}")
 
 
-    def batch_get_articles_content(self, article_links_df, num_articles=10, ai_only=True, min_keywords=3) -> pd.DataFrame:
+    def batch_get_articles_content(self, articles_df, num_articles=10, ai_only=True, min_keywords=3) -> pd.DataFrame:
         """批量獲取文章內容"""
         start_time = time.time()
         
         logger.debug("開始批量獲取文章內容")
         logger.debug(f"參數設置: num_articles={num_articles}, ai_only={ai_only}, min_keywords={min_keywords}")
-        logger.debug(f"待處理文章數量: {len(article_links_df)}")
+        logger.debug(f"待處理文章數量: {len(articles_df)}")
         
         articles_contents = []
         successful_count = 0
@@ -66,14 +66,14 @@ class BnextContentExtractor:
         failed_count = 0
         
         try:
-            for i, (_, article) in enumerate(article_links_df.head(num_articles).iterrows(), 1):
+            for i, (_, article) in enumerate(articles_df.head(num_articles).iterrows(), 1):
                 logger.debug(f"處理第 {i}/{num_articles} 篇文章")
                 logger.debug(f"文章標題: {article['title']}")
-                logger.debug(f"文章連結: {article['article_link']}")
+                logger.debug(f"文章連結: {article['link']}")
                 
                 try:
                     content_data = self._get_article_content(
-                        article['article_link'], 
+                        article['link'], 
                         ai_filter=ai_only, 
                         min_keywords=min_keywords
                     )
@@ -84,16 +84,16 @@ class BnextContentExtractor:
                         continue
                     
                     articles_contents.append(content_data)
-                    article_links_df.loc[article_links_df['article_link'] == article['article_link'], 'is_scraped'] = True
+                    articles_df.loc[articles_df['link'] == article['link'], 'is_scraped'] = True
                     successful_count += 1
                     ai_related_count += 1
                     
                     # 檢查更新是否成功
-                    updated_row = article_links_df.loc[article_links_df['article_link'] == article['article_link']]
+                    updated_row = articles_df.loc[articles_df['link'] == article['link']]
                     if not updated_row.empty:
-                        logger.debug(f"成功更新文章狀態: {article['article_link']}")
+                        logger.debug(f"成功更新文章狀態: {article['link']}")
                     else:
-                        logger.warning(f"未找到對應文章進行更新: {article['article_link']}")
+                        logger.warning(f"未找到對應文章進行更新: {article['link']}")
                     
                     # 記錄進度
                     if successful_count % 5 == 0:
