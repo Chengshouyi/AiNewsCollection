@@ -276,7 +276,7 @@ class TestArticleRepository:
         
         assert result["success_count"] == 2
         assert result["fail_count"] == 0
-        assert all(entity.category == "批量更新" for entity in result["updated_entities"])
+        assert all(entity.category == "批量更新" for entity in result["updated_articles"])
 
     def test_get_paginated_by_filter(self, article_repo, sample_articles, session):
         """測試分頁查詢"""

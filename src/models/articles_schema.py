@@ -59,12 +59,18 @@ class ArticleUpdateSchema(BaseUpdateSchema):
     is_ai_related: Optional[IsAiRelated] = None
     is_scraped: Optional[IsScraped] = None
 
+    @classmethod
+    def get_immutable_fields(cls):
+        return ['link'] + BaseUpdateSchema.get_immutable_fields()
+    
+    @classmethod
+    def get_updated_fields(cls):
+        return ['title', 'summary', 'content', 'source', 'source_url', 'published_at', 'category', 'author', 'article_type', 'tags', 'is_ai_related', 'is_scraped'] + BaseUpdateSchema.get_updated_fields()
+    
     @model_validator(mode='before')
     @classmethod
     def validate_update(cls, data):
         """驗證更新操作"""
         if isinstance(data, dict):
-            immutable_fields = ['link'] + cls._get_immutable_fields()
-            updated_fields = ['title', 'summary', 'content', 'source', 'source_url', 'published_at', 'category', 'author', 'article_type', 'tags', 'is_ai_related', 'is_scraped'] + cls._get_updated_fields()
-            return validate_update_schema(immutable_fields, updated_fields, data)
+            return validate_update_schema(cls.get_immutable_fields(), cls.get_updated_fields(), data)
 

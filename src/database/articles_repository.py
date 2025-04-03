@@ -1,7 +1,7 @@
 from src.database.base_repository import BaseRepository, SchemaType
 from src.models.articles_model import Articles
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
-from typing import Optional, List, Dict, Any, Type
+from typing import Optional, List, Dict, Any, Type, Union, overload, Literal
 from sqlalchemy import func, or_, case
 from sqlalchemy.orm import Query
 from src.error.errors import ValidationError
@@ -17,7 +17,13 @@ logger = logging.getLogger(__name__)
 class ArticlesRepository(BaseRepository[Articles]):
     """Article 特定的Repository"""
     
-    def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
+    @overload
+    def get_schema_class(self, schema_type: Literal[SchemaType.UPDATE]) -> Type[ArticleUpdateSchema]: ...
+    
+    @overload
+    def get_schema_class(self, schema_type: Literal[SchemaType.CREATE]) -> Type[ArticleCreateSchema]: ...
+    
+    def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[Union[ArticleCreateSchema, ArticleUpdateSchema]]:
         """根據操作類型返回對應的schema類"""
         if schema_type == SchemaType.CREATE:
             return ArticleCreateSchema
@@ -346,101 +352,93 @@ class ArticlesRepository(BaseRepository[Articles]):
 
     def batch_update(self, entity_ids: List[Any], entity_data: Dict[str, Any]) -> Dict[str, Any]:
         """
-        批量更新文章，優化處理連結重複的問題
+        批量更新文章，使用單一更新方法確保一致性
         
         Args:
-            entity_ids: 要更新的實體ID列表
+            entity_ids: 要更新的文章ID列表
             entity_data: 要更新的實體資料
         
         Returns:
             Dict: 包含成功和失敗資訊的字典
+                success_count: 成功更新數量
+                fail_count: 失敗數量
+                updated_articles: 成功更新的文章列表
+                missing_ids: 未找到的文章ID列表
+                error_ids: 更新過程中出錯的ID列表
+                invalid_fields: 不合規的欄位列表
         """
-        updated_entities = []
+        updated_articles = []
         missing_ids = []
         error_ids = []
+        invalid_fields = []
         
-        # 第一步：檢查所有ID是否存在
-        existing_entities = {}
-        for entity_id in entity_ids:
-            entity = self.get_by_id(entity_id)
-            if entity:
-                existing_entities[entity_id] = entity
-            else:
-                missing_ids.append(entity_id)
+        # 如果更新資料為空，直接返回結果
+        if not entity_data:
+            return {
+                "success_count": 0,
+                "fail_count": 0,
+                "updated_articles": [],
+                "missing_ids": [],
+                "error_ids": [],
+                "invalid_fields": []
+            }
         
-        # 第二步：如果要更新link欄位，預先檢查連結是否已存在且屬於非更新範圍內的實體
-        if 'link' in entity_data and entity_data['link']:
-            # 檢查連結是否存在於其他非更新實體中
-            link = entity_data['link']
-            def check_link_query():
-                query = self.session.query(self.model_class).filter_by(link=link)
-                if entity_ids:
-                    query = query.filter(~self.model_class.id.in_(entity_ids))
-                return query.first()
-            
-            existing_with_link = self.execute_query(
-                check_link_query,
-                err_msg="批量更新文章時檢查連結是否存在時發生錯誤"
-            )
-            
-            if existing_with_link:
-                # 發現連結衝突，但仍然繼續處理其他實體
-                logger.warning(f"無法更新連結，已存在相同連結的文章: {link}")
-        
-        # 獲取更新用的schema
+        # 檢查並移除不合規的欄位
+        cleaned_data = entity_data.copy()
         schema_class = self.get_schema_class(SchemaType.UPDATE)
+        non_updatable_fields = schema_class.get_immutable_fields()  # 從 schema 獲取不可更新的欄位
         
-        # 第三步：逐一更新實體
-        for entity_id, entity in existing_entities.items():
+        for field in non_updatable_fields:
+            if field in cleaned_data:
+                invalid_fields.append(field)
+                cleaned_data.pop(field)
+                logger.warning(f"欄位 '{field}' 不允許更新，該筆資料已從更新資料中移除")
+        
+        # 如果清理後沒有要更新的資料，直接返回結果
+        if not cleaned_data:
+            return {
+                "success_count": 0,
+                "fail_count": 0,  # 修改為 0，因為沒有實際的更新操作
+                "updated_articles": [],
+                "missing_ids": [],
+                "error_ids": [],  # 清空 error_ids，因為沒有實際的更新操作
+                "invalid_fields": invalid_fields
+            }
+        
+        # 逐一更新實體
+        for entity_id in entity_ids:
             try:
-                # 複製一份資料，防止修改原始資料
-                entity_data_copy = entity_data.copy()
+                # 使用 self.update 方法更新實體
+                updated_entity = self.update(entity_id, cleaned_data)
                 
-                # 處理連結欄位的特殊情況：如果需要更新連結但與其他實體重複，則跳過該欄位的更新
-                if 'link' in entity_data_copy:
-                    # 如果當前實體已經具有此連結，則可以更新
-                    if entity.link == entity_data_copy['link']:
-                        pass  # 允許更新自己的連結
-                    else:
-                        # 檢查除自身外是否有其他實體具有此連結
-                        def check_duplicate_query():
-                            query = self.session.query(self.model_class).filter_by(link=entity_data_copy['link'])
-                            query = query.filter(self.model_class.id != entity_id)
-                            return query.first()
-                        
-                        duplicate = self.execute_query(
-                            check_duplicate_query,
-                            err_msg=f"檢查實體 ID={entity_id} 的連結重複性時發生錯誤"
-                        )
-                        
-                        if duplicate:
-                            # 如果發現重複，則從更新資料中移除連結欄位
-                            logger.warning(f"實體 ID={entity_id} 的連結更新已跳過，因為連結 '{entity_data_copy['link']}' 已存在")
-                            entity_data_copy.pop('link', None)
-                
-                # 如果沒有任何要更新的欄位，則跳過
-                if not entity_data_copy:
+                if updated_entity is None:
+                    # 如果返回 None，表示實體不存在
+                    missing_ids.append(entity_id)
                     continue
-                
-                # 驗證並補充必填欄位
-                validated_data = self._validate_required_fields(entity_data_copy, entity)
-                
-                # 更新實體
-                result = self._update_internal(entity_id, validated_data, schema_class)
-                if result:
-                    updated_entities.append(result)
+                    
+                updated_articles.append(updated_entity)
                 
             except Exception as e:
-                logger.error(f"更新實體 ID={entity_id} 時出錯: {str(e)}")
+                logger.error(f"更新實體 ID={entity_id} 時發生錯誤: {str(e)}")
                 error_ids.append(entity_id)
+                continue
         
-        # 返回結果
+        try:
+            self.session.commit()  # 提交所有成功的更新
+        except Exception as e:
+            logger.error(f"提交批量更新時發生錯誤: {str(e)}")
+            self.session.rollback()
+            # 如果提交失敗，將所有更新標記為失敗
+            error_ids.extend([article.id for article in updated_articles])
+            updated_articles = []
+        
         return {
-            "success_count": len(updated_entities),
+            "success_count": len(updated_articles),
             "fail_count": len(missing_ids) + len(error_ids),
-            "updated_entities": updated_entities,
+            "updated_articles": updated_articles,
             "missing_ids": missing_ids,
-            "error_ids": error_ids
+            "error_ids": error_ids,
+            "invalid_fields": invalid_fields
         }
     
 

@@ -43,7 +43,7 @@ class TestArticleCreateSchema:
             # 缺少 title
             {
                 "link": "https://test.com/article",
-                "published_at": datetime.now(timezone.utc).isoformat(), 
+                "published_at": datetime.now(timezone.utc).isoformat(),
                 "source": "test_source",
                 "source_url": "https://test.com/article",
                 "summary": "這是文章摘要",
@@ -122,6 +122,7 @@ class TestArticleCreateSchema:
                 "published_at": datetime.now(timezone.utc).isoformat(),
                 "source": "test_source",
                 "source_url": "https://test.com/article",   
+                "summary": "這是文章摘要",
                 "content": "這是文章內容",
                 "author": "測試作者",
                 "article_type": "news",
@@ -163,11 +164,29 @@ class TestArticleCreateSchema:
 
         ]
         
+        required_fields = {
+            "title", "link", "source", "source_url", 
+            "summary", "category", "is_ai_related", "is_scraped"
+        }
+
         for test_case in test_cases:
             with pytest.raises(ValidationError) as exc_info:
-                ArticleCreateSchema.model_validate(test_case)   
-            missing_field = set(["title", "link", "source", "source_url", "summary", "category", "is_ai_related", "is_scraped"]) - set(test_case.keys())
-            assert f"{list(missing_field)[0]}: 不能為空" in str(exc_info.value)
+                ArticleCreateSchema.model_validate(test_case)
+            
+            # 找出缺少的欄位
+            missing_fields = required_fields - set(test_case.keys())
+            assert len(missing_fields) == 1, "每個測試案例應該只缺少一個必填欄位"
+            
+            # 驗證錯誤訊息包含缺少欄位的資訊
+            error_message = str(exc_info.value)
+            missing_field = list(missing_fields)[0]
+            
+            # 檢查錯誤訊息中是否包含任何缺少欄位的資訊
+            assert "不能為空" in error_message, f"錯誤訊息應該包含「不能為空」: {error_message}"
+            assert any(
+                f"{field}: 不能為空" in error_message 
+                for field in missing_fields
+            ), f"錯誤訊息應該包含缺少的欄位 {missing_field}: {error_message}"
 
 
     def test_article_with_all_optional_fields(self):

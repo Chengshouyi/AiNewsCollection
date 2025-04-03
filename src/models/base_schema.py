@@ -32,10 +32,10 @@ class BaseUpdateSchema(BaseModel):
             data['updated_at'] = datetime.now(timezone.utc)
         return data
 
-    @staticmethod
-    def _get_immutable_fields():
+    @classmethod
+    def get_immutable_fields(cls):
         return ['created_at', 'id']
 
-    @staticmethod
-    def _get_updated_fields():
+    @classmethod
+    def get_updated_fields(cls):
         return ['updated_at']

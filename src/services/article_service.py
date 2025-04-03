@@ -1,11 +1,11 @@
 import logging
-from typing import Optional, Dict, Any, List, TypeVar, Tuple, cast
+from typing import Optional, Dict, Any, List, TypeVar, Tuple
 from src.models.articles_model import Base, Articles
 from datetime import datetime, timedelta
 from src.error.errors import DatabaseOperationError
-from src.database.database_manager import DatabaseManager
 from src.database.articles_repository import ArticlesRepository
 from sqlalchemy import or_
+from sqlalchemy.orm import Session
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -18,18 +18,16 @@ T = TypeVar('T', bound=Base)
 class ArticleService:
     """文章服務，提供文章相關業務邏輯"""
     
-    def __init__(self, db_manager: DatabaseManager):
-        self.db_manager = db_manager
+    def __init__(self, session: Session):
+        self.session = session
 
     def _get_repository(self):
         """取得儲存庫的上下文管理器"""
-        session = self.db_manager.Session()
         try:
-            return ArticlesRepository(session, Articles), session
+            return ArticlesRepository(self.session, Articles), self.session
         except Exception as e:
             error_msg = f"取得儲存庫失敗: {e}"
             logger.error(error_msg)
-            session.close()
             raise DatabaseOperationError(error_msg) from e
     
     def insert_article(self, article_data: Dict[str, Any]) -> Optional[Articles]:
@@ -285,12 +283,20 @@ class ArticleService:
                 updated_articles: 成功更新的文章列表
                 missing_ids: 未找到的文章ID列表
                 error_ids: 更新過程中出錯的ID列表
+                invalid_fields: 不合規的欄位列表
         """
         article_repo, session = self._get_repository()
         try:
             result = article_repo.batch_update(article_ids, article_data)
             session.commit()
-            return result
+            return {
+                "success_count": result["success_count"],
+                "fail_count": result["fail_count"],
+                "updated_articles": result["updated_articles"],
+                "missing_ids": result["missing_ids"],
+                "error_ids": result["error_ids"],
+                "invalid_fields": result["invalid_fields"]
+            }
         except Exception as e:
             session.rollback()
             logger.error(f"批量更新文章失敗: {e}")

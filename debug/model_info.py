@@ -1,8 +1,8 @@
-from src.models import Articles, ArticleLinks, Crawlers, CrawlerTasks, CrawlerTaskHistory
+from src.models import Articles, Crawlers, CrawlerTasks, CrawlerTaskHistory
 
 def print_model_constraints():
     """顯示模型約束信息的工具函數"""
-    models = [Articles, ArticleLinks, Crawlers, CrawlerTasks, CrawlerTaskHistory]
+    models = [Articles, Crawlers, CrawlerTasks, CrawlerTaskHistory]
     
     for model in models:
         # 打印表格相關資訊
@@ -81,7 +81,7 @@ def print_all_model_info():
 
 def get_all_model_info():
     """獲取所有模型信息並返回字典結構，便於程式化處理"""
-    models = [Articles, ArticleLinks, Crawlers, CrawlerTasks, CrawlerTaskHistory]
+    models = [Articles, Crawlers, CrawlerTasks, CrawlerTaskHistory]
     return [get_model_info(model) for model in models]
 
 def get_model_info(model_class):
