@@ -166,7 +166,7 @@ class TestArticleCreateSchema:
         for test_case in test_cases:
             with pytest.raises(ValidationError) as exc_info:
                 ArticleCreateSchema.model_validate(test_case)   
-            missing_field = set(["title", "link", "published_at", "source", "source_url", "summary", "content", "category", "author", "article_type", "tags", "is_ai_related", "is_scraped"]) - set(test_case.keys())
+            missing_field = set(["title", "link", "source", "source_url", "summary", "category", "is_ai_related", "is_scraped"]) - set(test_case.keys())
             assert f"{list(missing_field)[0]}: 不能為空" in str(exc_info.value)
 
 
