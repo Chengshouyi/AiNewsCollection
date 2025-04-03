@@ -14,7 +14,6 @@ class Articles(Base, BaseEntity):
     """文章模型
     
     欄位說明：
-    - id: 主鍵
     - title: 文章標題
     - summary: 文章摘要
     - content: 文章內容
@@ -23,8 +22,11 @@ class Articles(Base, BaseEntity):
     - published_at: 文章發布時間
     - author: 文章作者
     - source: 文章來源
+    - source_url: 來源URL
     - article_type: 文章類型
     - tags: 文章標籤
+    - is_ai_related: 是否與ai相關
+    - is_scraped: 是否已爬取
     """
     __tablename__ = 'articles'
     __table_args__ = (
@@ -51,7 +53,12 @@ class Articles(Base, BaseEntity):
         default=lambda: datetime.now(timezone.utc)
     )
     author: Mapped[Optional[str]] = mapped_column(String(100))
-    source: Mapped[Optional[str]] = mapped_column(String(50))
+    source: Mapped[str] = mapped_column(String(50))
+    source_url: Mapped[str] = mapped_column(
+        String(1000), 
+        unique=True, 
+        nullable=False
+    )
     article_type: Mapped[Optional[str]] = mapped_column(String(20))
     tags: Mapped[Optional[str]] = mapped_column(String(500))
     is_ai_related: Mapped[bool] = mapped_column(
@@ -59,12 +66,10 @@ class Articles(Base, BaseEntity):
         default=False,
         nullable=False
     )
-    article_links = relationship(
-        "ArticleLinks",
-        back_populates="articles",
-        lazy="joined",
-        uselist=False,
-        primaryjoin="and_(Articles.link==ArticleLinks.article_link)"
+    is_scraped: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False
     )
     
     # 定義需要監聽的 datetime 欄位
@@ -74,6 +79,9 @@ class Articles(Base, BaseEntity):
         # 設置默認值
         if 'is_ai_related' not in kwargs:
             kwargs['is_ai_related'] = False
+
+        if 'is_scraped' not in kwargs:
+            kwargs['is_scraped'] = False
         # 告知父類需要監聽的 datetime 欄位
         super().__init__(datetime_fields_to_watch=
                          self._datetime_fields_to_watch, **kwargs)
@@ -93,7 +101,9 @@ class Articles(Base, BaseEntity):
             'published_at': self.published_at,
             'author': self.author,
             'source': self.source,
+            'source_url': self.source_url,
             'article_type': self.article_type,
             'tags': self.tags,
             'is_ai_related': self.is_ai_related,
+            'is_scraped': self.is_scraped
         }

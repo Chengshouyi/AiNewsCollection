@@ -2,7 +2,7 @@ from src.database.base_repository import BaseRepository, SchemaType
 from src.models.articles_model import Articles
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from typing import Optional, List, Dict, Any, Type
-from sqlalchemy import func, or_
+from sqlalchemy import func, or_, case
 from sqlalchemy.orm import Query
 from src.error.errors import ValidationError
 import logging
@@ -104,6 +104,30 @@ class ArticlesRepository(BaseRepository[Articles]):
             err_msg="根據過濾條件查詢文章時發生錯誤"
         )
 
+    def get_source_statistics(self) -> Dict[str, Dict[str, int]]:
+        """獲取各來源的爬取統計"""
+        def stats_func():
+            total_stats = self.session.query(
+                self.model_class.source,
+                func.count(self.model_class.id).label('total'),
+                func.sum(case((self.model_class.is_scraped == False, 1), else_=0)).label('unscraped'),
+                func.sum(case((self.model_class.is_scraped == True, 1), else_=0)).label('scraped')
+            ).group_by(self.model_class.source).all()
+            
+            return {
+                source: {
+                    'total': total,
+                    'unscraped': unscraped or 0,
+                    'scraped': scraped or 0
+                }
+                for source, total, unscraped, scraped in total_stats
+            }
+            
+        return self.execute_query(
+            stats_func,
+            err_msg="獲取來源統計時發生錯誤"
+        )
+    
     def count(self, filter_dict: Optional[Dict[str, Any]] = None) -> int:
         """計算符合條件的文章數量"""
         def query_builder():
@@ -196,8 +220,8 @@ class ArticlesRepository(BaseRepository[Articles]):
         # 深度複製避免修改原始資料
         processed_data = entity_data.copy()
         
-        # 檢查必填欄位
-        required_fields = ['is_ai_related', 'title', 'link', 'source', 'published_at']
+        # 檢查必填欄位，排除不可修改欄位link
+        required_fields = ['summary', 'source', 'source_url','category', 'is_ai_related', 'title', 'published_at','is_scraped']
         
         # 如果是更新操作，從現有實體中補充必填欄位
         if existing_entity:
@@ -233,6 +257,46 @@ class ArticlesRepository(BaseRepository[Articles]):
         schema_class = self.get_schema_class(SchemaType.CREATE)
         return self._create_internal(validated_data, schema_class)
     
+    def batch_create(self, entities_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """
+        批量創建實體
+        
+        Args:
+            entities_data: 實體資料列表
+            
+        Returns:
+            包含成功和失敗資訊的字典
+                success_count: 成功創建數量
+                fail_count: 失敗數量
+                inserted_articles: 成功創建的實體列表
+        """
+        success_count = 0
+        fail_count = 0
+        inserted_articles = []
+        
+        for entity_data in entities_data:
+            try:
+                # 驗證連結唯一性
+                self.validate_unique_link(entity_data['link'])
+                
+                # 創建實體
+                entity = self.model_class(**entity_data)
+                self.session.add(entity)
+                self.session.flush()
+                
+                inserted_articles.append(entity)
+                success_count += 1
+            except Exception as e:
+                logger.error(f"批量創建實體失敗: {e}")
+                fail_count += 1
+                continue
+        
+        return {
+            "success_count": success_count,
+            "fail_count": fail_count,
+            "inserted_articles": inserted_articles
+        }
+
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[Articles]:
         """
         更新文章，添加針對 Articles 的特殊驗證
@@ -264,6 +328,21 @@ class ArticlesRepository(BaseRepository[Articles]):
         # 獲取並使用適當的schema進行驗證和更新
         schema_class = self.get_schema_class(SchemaType.UPDATE)
         return self._update_internal(entity_id, validated_data, schema_class)
+
+    def update_scrape_status(self, link: str, is_scraped: bool = True) -> bool:
+        """更新文章連結的爬取狀態"""
+        def update_func():
+            link_entity = self.find_by_link(link)
+            if not link_entity:
+                return False
+            link_entity.is_scraped = is_scraped
+            self.session.flush()
+            return True
+        
+        return self.execute_query(
+            update_func,
+            err_msg=f"更新文章連結爬取狀態時發生錯誤: {link}"
+        )
 
     def batch_update(self, entity_ids: List[Any], entity_data: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -364,6 +443,34 @@ class ArticlesRepository(BaseRepository[Articles]):
             "error_ids": error_ids
         }
     
+
+    def batch_mark_as_scraped(self, links: List[str]) -> Dict[str, Any]:
+        """批量將文章連結標記為已爬取"""
+        def batch_update_func():
+            success_count = 0
+            failed_links = []
+            
+            for link in links:
+                try:
+                    if self.update_scrape_status(link):
+                        success_count += 1
+                    else:
+                        failed_links.append(link)
+                except Exception as e:
+                    logger.error(f"標記連結 {link} 時發生錯誤: {e}")
+                    failed_links.append(link)
+            
+            return {
+                "success_count": success_count,
+                "fail_count": len(failed_links),
+                "failed_links": failed_links
+            }
+            
+        return self.execute_query(
+            batch_update_func,
+            err_msg="批量標記文章為已爬取時發生錯誤"
+        )
+
     def get_paginated_by_filter(self, filter_dict: Dict[str, Any], page: int, per_page: int, 
                                sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
         """根據過濾條件獲取分頁資料
@@ -425,3 +532,70 @@ class ArticlesRepository(BaseRepository[Articles]):
             err_msg="根據過濾條件獲取分頁資料時發生錯誤"
         )
     
+
+    def delete_by_link(self, link: str) -> bool:
+        """根據文章連結刪除"""
+        try:
+            article = self.find_by_link(link)
+            if not article:
+                raise ValidationError(f"文章不存在，連結: {link}")
+            return  self.delete(article.id)
+        except Exception as e:
+            self.session.rollback()
+            raise e
+
+    def count_unscraped_links(self, source: Optional[str] = None) -> int:
+        """計算未爬取的連結數量"""
+        def query_func():
+            query = self.session.query(func.count(self.model_class.id)).filter(self.model_class.is_scraped == False)
+            if source:
+                query = query.filter_by(source=source)
+            return query.scalar()
+            
+        return self.execute_query(
+            query_func,
+            err_msg="計算未爬取的連結數量時發生錯誤"
+        )
+
+    def count_scraped_links(self, source: Optional[str] = None) -> int:
+        """計算已爬取的連結數量"""
+        def query_func():
+            query = self.session.query(func.count(self.model_class.id)).filter(self.model_class.is_scraped == True)
+            if source:
+                query = query.filter_by(source=source)
+            return query.scalar()
+            
+        return self.execute_query(
+            query_func,
+            err_msg="計算已爬取的連結數量時發生錯誤"
+        )
+    
+    def find_scraped_links(self, limit: Optional[int] = 100, source: Optional[str] = None) -> List[Articles]:
+        """查詢已爬取的連結"""
+        def query_func():
+            query = self.session.query(self.model_class).filter(self.model_class.is_scraped == True)
+            if source:
+                query = query.filter_by(source=source)
+            if limit:
+                query = query.limit(limit)
+            return query.all()
+            
+        return self.execute_query(
+            query_func,
+            err_msg="查詢已爬取的連結時發生錯誤"
+        )
+    
+    def find_unscraped_links(self, limit: Optional[int] = 100, source: Optional[str] = None) -> List[Articles]:
+        """查詢未爬取的連結"""
+        def query_func():
+            query = self.session.query(self.model_class).filter(self.model_class.is_scraped == False)
+            if source:
+                query = query.filter_by(source=source)
+            if limit:
+                query = query.limit(limit)
+            return query.all()
+            
+        return self.execute_query(
+            query_func,
+            err_msg="查詢未爬取的連結時發生錯誤"
+        )

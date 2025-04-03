@@ -9,12 +9,23 @@ class TestArticleModel:
         """測試只使用必填欄位創建 Article"""
         article = Articles(
             title="測試文章",
-            link="https://test.com/article"
+            link="https://test.com/article",
+            source="Bnext",
+            source_url="https://test.com/article",
+            summary="這是一篇測試文章的摘要",
+            category="科技",
+            is_ai_related=False,
+            is_scraped=True
         )
         
         assert article.title == "測試文章"
         assert article.link == "https://test.com/article"
+        assert article.source == "Bnext"
+        assert article.source_url == "https://test.com/article"
+        assert article.summary == "這是一篇測試文章的摘要"
+        assert article.category == "科技"
         assert article.is_ai_related is False
+        assert article.is_scraped is True
         assert article.created_at is not None
 
     def test_article_creation_with_all_fields(self):
@@ -25,23 +36,41 @@ class TestArticleModel:
             summary="這是一篇測試文章的摘要",
             content="這是一篇測試文章的完整內容，包含了多個段落...",
             category="科技",
-            published_at="2023-04-01",
+            published_at=datetime(2023, 4, 1, tzinfo=timezone.utc),
             author="測試作者",
             source="測試來源",
+            source_url="https://test.com/full-article",
             article_type="新聞",
             tags="AI,科技,測試",
-            is_ai_related=True
+            is_ai_related=True,
+            is_scraped=True
         )
         
         assert article.title == "完整測試文章"
         assert article.link == "https://test.com/full-article"
+        assert article.source == "測試來源"
+        assert article.source_url == "https://test.com/full-article"
+        assert article.summary == "這是一篇測試文章的摘要"
+        assert article.content == "這是一篇測試文章的完整內容，包含了多個段落..."
+        assert article.category == "科技"
+        assert article.published_at == datetime(2023, 4, 1, tzinfo=timezone.utc)
+        assert article.author == "測試作者"
+        assert article.article_type == "新聞"
+        assert article.tags == "AI,科技,測試"
         assert article.is_ai_related is True
+        assert article.is_scraped is True
 
     def test_article_is_ai_related_update(self):
         """測試 Article 的 is_ai_related 欄位更新"""
         article = Articles(
             title="測試文章",
-            link="https://test.com/article"
+            link="https://test.com/article",
+            source="Bnext",
+            source_url="https://test.com/article",
+            summary="這是一篇測試文章的摘要",
+            category="科技",
+            is_ai_related=False,
+            is_scraped=True
         )
         
         article.is_ai_related = True
@@ -49,22 +78,60 @@ class TestArticleModel:
         
         article.is_ai_related = False
         assert article.is_ai_related is False
+    
+    def test_article_is_scraped_update(self):
+        """測試 Article 的 is_scraped 欄位更新"""
+        article = Articles(
+            title="測試文章",
+            link="https://test.com/article",
+            source="Bnext",
+            source_url="https://test.com/article",
+            summary="這是一篇測試文章的摘要",
+            category="科技",
+            is_ai_related=False,
+            is_scraped=True
+        )   
+        article.is_scraped = True
+        assert article.is_scraped is True
+        article.is_scraped = False
+        assert article.is_scraped is False
+    
 
     def test_article_mutable_fields_update(self):
         """測試 Article 的可變欄位更新"""
         article = Articles(
             title="原始標題",
-            link="https://test.com/article"
+            link="https://test.com/article",
+            source="Bnext",
+            source_url="https://test.com/article",
+            summary="這是一篇測試文章的摘要",
+            category="科技",
+            is_ai_related=False,
+            is_scraped=True
         )
         
         # 更新可變欄位
         article.title = "更新後的標題"
         article.summary = "更新後的摘要"
         article.content = "新增的內容"
+        article.category = "娛樂"
+        article.published_at = datetime(2023, 4, 2, tzinfo=timezone.utc)
+        article.author = "更新後的作者"
+        article.source = "更新後的來源"
+        article.source_url = "https://test.com/updated-article"
+        article.article_type = "新聞"
+        article.tags = "AI,科技,測試"
         
         assert article.title == "更新後的標題"
         assert article.summary == "更新後的摘要"
         assert article.content == "新增的內容"
+        assert article.category == "娛樂"
+        assert article.published_at == datetime(2023, 4, 2, tzinfo=timezone.utc)
+        assert article.author == "更新後的作者"
+        assert article.source == "更新後的來源"
+        assert article.source_url == "https://test.com/updated-article"
+        assert article.article_type == "新聞"
+        assert article.tags == "AI,科技,測試"
 
     def test_article_repr(self):
         """測試 Article 的 __repr__ 方法"""
@@ -89,9 +156,11 @@ class TestArticleModel:
             published_at=test_time,
             author="測試作者",
             source="測試來源",
+            source_url="https://test.com/article",
             article_type="測試類型",
             tags="測試標籤",
             is_ai_related=True,
+            is_scraped=True,
             created_at=test_time,
             updated_at=test_time
         )
@@ -107,9 +176,11 @@ class TestArticleModel:
             'published_at': test_time,
             'author': "測試作者",
             'source': "測試來源",
+            'source_url': "https://test.com/article",
             'article_type': "測試類型",
             'tags': "測試標籤",
             'is_ai_related': True,
+            'is_scraped': True,
             'created_at': test_time,
             'updated_at': test_time
         }
@@ -118,7 +189,13 @@ class TestArticleModel:
         """測試 Article 的時間戳記預設值"""
         article = Articles(
             title="測試文章",
-            link="https://test.com/article"
+            link="https://test.com/article",
+            source="Bnext",
+            source_url="https://test.com/article",
+            summary="這是一篇測試文章的摘要",
+            category="科技",
+            is_ai_related=False,
+            is_scraped=True
         )
         
         assert isinstance(article.created_at, datetime)
@@ -138,6 +215,12 @@ class TestArticleModel:
         article = Articles(
             title="測試 UTC 轉換",
             link="https://test.com/utc-test",
+            source="Bnext",
+            source_url="https://test.com/utc-test",
+            summary="這是一篇測試文章的摘要",
+            category="科技",
+            is_ai_related=False,
+            is_scraped=True,
             published_at=naive_time
         )
         if article.published_at is not None:

@@ -278,9 +278,8 @@ def validate_datetime(field_name: str, required: bool = False):
         
         # 處理空字串
         if isinstance(value, str) and not value.strip():
-            if required:
-                raise ValidationError(f"{field_name}: 不能為空")
-            return None
+            raise ValidationError(f"{field_name}: 不能為空")
+
         
         # 處理字串輸入
         if isinstance(value, str):
