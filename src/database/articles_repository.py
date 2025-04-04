@@ -265,7 +265,7 @@ class ArticlesRepository(BaseRepository[Articles]):
     
     def batch_create(self, entities_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        批量創建實體
+        批量創建實體，使用 self.create 方法確保完整的驗證和錯誤處理
         
         Args:
             entities_data: 實體資料列表
@@ -275,32 +275,54 @@ class ArticlesRepository(BaseRepository[Articles]):
                 success_count: 成功創建數量
                 fail_count: 失敗數量
                 inserted_articles: 成功創建的實體列表
+                failed_entries: 創建失敗的實體資料及錯誤信息
         """
         success_count = 0
         fail_count = 0
         inserted_articles = []
+        failed_entries = []
         
         for entity_data in entities_data:
             try:
-                # 驗證連結唯一性
-                self.validate_unique_link(entity_data['link'])
-                
-                # 創建實體
-                entity = self.model_class(**entity_data)
-                self.session.add(entity)
-                self.session.flush()
-                
-                inserted_articles.append(entity)
-                success_count += 1
+                # 使用 self.create 方法創建實體，確保完整的驗證流程
+                created_entity = self.create(entity_data)
+                if created_entity:
+                    inserted_articles.append(created_entity)
+                    success_count += 1
+                else:
+                    fail_count += 1
+                    failed_entries.append({
+                        "data": entity_data,
+                        "error": "創建實體返回空值"
+                    })
             except Exception as e:
-                logger.error(f"批量創建實體失敗: {e}")
+                logger.error(f"批量創建實體失敗: {str(e)}")
                 fail_count += 1
+                failed_entries.append({
+                    "data": entity_data,
+                    "error": str(e)
+                })
                 continue
+        
+        try:
+            self.session.commit()
+        except Exception as e:
+            logger.error(f"提交批量創建時發生錯誤: {str(e)}")
+            self.session.rollback()
+            # 如果提交失敗，更新統計數據
+            fail_count = len(entities_data)
+            success_count = 0
+            inserted_articles = []
+            failed_entries = [{
+                "data": entity_data,
+                "error": f"提交事務失敗: {str(e)}"
+            } for entity_data in entities_data]
         
         return {
             "success_count": success_count,
             "fail_count": fail_count,
-            "inserted_articles": inserted_articles
+            "inserted_articles": inserted_articles,
+            "failed_entries": failed_entries
         }
 
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[Articles]:
