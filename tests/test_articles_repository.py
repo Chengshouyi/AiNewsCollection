@@ -301,6 +301,196 @@ class TestArticleRepository:
             
         except DatabaseOperationError as e:
             pytest.skip(f"資料庫操作錯誤: {str(e)}")
+    
+    def test_batch_create(self, article_repo, session):
+        """測試批量創建文章"""
+        session.expire_all()
+        
+        # 準備測試資料
+        articles_data = [
+            {
+                "title": "測試文章1",
+                "link": "https://test.com/article1",
+                "summary": "測試摘要1",
+                "content": "測試內容1",
+                "category": "測試",
+                "is_ai_related": True,
+                "is_scraped": True,
+                "source": "測試來源",
+                "source_url": "https://test.com/source1",
+                "published_at": datetime.now(timezone.utc)
+            }
+        ]
+        
+        result = article_repo.batch_create(articles_data)
+        session.expire_all()
+        
+        assert result["success_count"] == 1
+        assert result["fail_count"] == 0    
+        assert result["inserted_articles"] is not None
+        assert result["failed_entries"] == []
+    
+    def test_batch_create_with_missing_fields(self, article_repo, session):
+        """測試批量創建缺少必填欄位的文章"""
+        session.expire_all()
+        
+        # 準備測試資料
+        articles_data = [
+            {
+                "title": "測試文章1",
+                "content": "測試內容1"
+            }
+        ]
+        
+        result = article_repo.batch_create(articles_data)
+        session.expire_all()
+        
+        assert result["success_count"] == 0
+        assert result["fail_count"] == 1
+        assert result["inserted_articles"] == []
+        assert result["failed_entries"] is not None
+        assert "缺少必填欄位" in result["failed_entries"][0]["error"]
+        
+    def test_batch_create_with_existing_link(self, article_repo, sample_articles, session):
+        """測試批量創建已存在的連結"""
+        session.expire_all()
+        
+        # 準備測試資料
+        articles_data = [
+            {
+                "title": "測試文章2",
+                "link": "https://example.com/article1",
+                "summary": "測試摘要2",
+                "content": "測試內容2",
+                "category": "測試",
+                "is_ai_related": True,
+                "is_scraped": True,
+                "source": "測試來源",
+                "source_url": "https://example.com/source2",
+                "published_at": datetime.now(timezone.utc)
+            }
+        ]
+        
+        result = article_repo.batch_create(articles_data)
+        session.expire_all()
+        
+        assert result["success_count"] == 0
+        assert result["fail_count"] == 1
+        assert result["inserted_articles"] == []
+        assert result["failed_entries"] is not None
+        assert "已存在具有相同連結的文章" in result["failed_entries"][0]["error"]
+    
+    def test_batch_create_with_invalid_data(self, article_repo, session):
+        """測試批量創建無效資料"""
+        session.expire_all()
+        
+        # 準備測試資料
+        articles_data = [
+            {
+                "title": "測試文章3",
+                "link": "",
+                "summary": "測試摘要3",
+                "content": "測試內容3",
+                "category": "測試",
+                "is_ai_related": True,
+                "is_scraped": True,
+                "source": "測試來源",
+                "source_url": "https://test.com/source3",
+                "published_at": datetime.now(timezone.utc)
+            }
+        ]
+        
+        result = article_repo.batch_create(articles_data)
+        session.expire_all()
+        
+        assert result["success_count"] == 0
+        assert result["fail_count"] == 1
+        assert result["inserted_articles"] == []
+        assert result["failed_entries"] is not None
+        assert "link: URL不能為空" in result["failed_entries"][0]["error"]
+    
+    def test_batch_create_with_large_data(self, article_repo, session):
+        """測試批量創建大量資料"""
+        session.expire_all()    
+        
+        # 準備測試資料
+        articles_data = [
+            {
+                "title": f"測試文章{i}",
+                "link": f"https://test.com/batch_create_article{i}",
+                "summary": f"測試摘要{i}",
+                "content": f"測試內容{i}",
+                "category": "測試",
+                "is_ai_related": True,
+                "is_scraped": True,
+                "source": "測試來源",
+                "source_url": f"https://test.com/source{i}",
+                "published_at": datetime.now(timezone.utc)
+            }
+            for i in range(1000)
+        ]
+        
+        result = article_repo.batch_create(articles_data)
+        session.expire_all()    
+        
+        assert result["success_count"] == 1000
+        assert result["fail_count"] == 0
+        assert result["inserted_articles"] is not None
+        assert result["failed_entries"] == []
+        
+    def test_batch_create_with_large_data_and_pagination(self, article_repo, session):
+        """測試批量創建大量資料並進行分頁"""
+        session.expire_all()
+        
+        # 準備測試資料
+        articles_data = [
+            {
+                "title": f"測試文章{i}",
+                "link": f"https://test.com/large_data_article{i}",
+                "summary": f"測試摘要{i}",
+                "content": f"測試內容{i}",
+                "category": "測試",
+                "is_ai_related": True,
+                "is_scraped": True,
+                "source": "測試來源",
+                "source_url": f"https://test.com/source{i}",
+                "published_at": datetime.now(timezone.utc)
+            }   
+            for i in range(1000)
+        ]
+        
+        result = article_repo.batch_create(articles_data)
+        session.expire_all()    
+        
+        assert result["success_count"] == 1000
+        assert result["fail_count"] == 0
+        assert result["inserted_articles"] is not None
+        assert result["failed_entries"] == []
+        
+        # 分頁查詢測試
+        page_data = article_repo.get_paginated_by_filter(
+            filter_dict={},
+            page=1,
+            per_page=10
+        )
+        
+        assert page_data["total"] == 1000
+        assert page_data["total_pages"] == 100
+        assert page_data["items"] is not None
+        assert len(page_data["items"]) == 10
+        
+        # 測試分頁導航  
+        page_data = article_repo.get_paginated_by_filter(
+            filter_dict={},
+            page=100,
+            per_page=10
+        )
+        
+        assert page_data["page"] == 100
+        assert page_data["has_next"] is False
+        assert page_data["has_prev"] is True
+    
+
 
 # 新增測試類專門測試分頁過濾功能
 class TestArticlePaginationAndFiltering:

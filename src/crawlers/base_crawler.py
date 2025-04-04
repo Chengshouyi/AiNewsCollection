@@ -66,10 +66,10 @@ class BaseCrawler(ABC):
                 articles_data = articles_data
                 )
                 
-            if result["failed_pairs"]:
+            if result["fail_count"] > 0:
                 logger.warning(f"有 {result['fail_count']} 筆資料新增失敗:")
-                for failed_pair in result["failed_pairs"]:
-                    logger.warning(f"失敗原因: {failed_pair['error']}")
+                for failed_entity in result["failed_entries"]:
+                    logger.warning(f"失敗原因: {failed_entity['error']}")
             else:
                 logger.info("所有資料新增成功")
             
