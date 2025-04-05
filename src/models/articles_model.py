@@ -87,11 +87,12 @@ class Articles(Base, BaseEntity):
 
     # 文章資料repr
     def __repr__(self):
-        return f"<Article(id={self.id}, title='{self.title}', link='{self.link}')>"
+        return f"<Article(id={self.id}, title='{self.title[:30]}{'...' if len(self.title) > 30 else ''}', link='{self.link}')>"
     
     def to_dict(self):
-        return {
-            **super().to_dict(),
+        article_dict = super().to_dict()
+
+        article_dict.update({
             'title': self.title,
             'summary': self.summary,
             'content': self.content,
@@ -105,4 +106,6 @@ class Articles(Base, BaseEntity):
             'tags': self.tags,
             'is_ai_related': self.is_ai_related,
             'is_scraped': self.is_scraped
-        }
+        })
+
+        return article_dict

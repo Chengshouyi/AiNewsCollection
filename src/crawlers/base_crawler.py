@@ -294,7 +294,7 @@ class BaseCrawler(ABC):
             'message': '任務不存在'
         })
         
-    def retry_operation(self, operation, max_retries=3, retry_delay=2):
+    def retry_operation(self, operation, max_retries=3, retry_delay=2.0):
         """重試操作的通用方法"""
         retries = 0
         while retries < max_retries:

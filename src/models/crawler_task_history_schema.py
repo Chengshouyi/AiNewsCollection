@@ -39,12 +39,18 @@ class CrawlerTaskHistoryUpdateSchema(BaseUpdateSchema):
     message: Optional[Message] = None
     articles_count: Optional[ArticlesCount] = None
 
+    @classmethod
+    def get_immutable_fields(cls):
+        return ['task_id'] + BaseUpdateSchema.get_immutable_fields()
+    
+    @classmethod
+    def get_updated_fields(cls):
+        return ['end_time', 'start_time', 'success', 'message', 'articles_count'] + BaseUpdateSchema.get_updated_fields()
+    
     @model_validator(mode='before')
     @classmethod
     def validate_update(cls, data):
         """驗證更新操作"""
         if isinstance(data, dict):
-            immutable_fields = ['task_id'] + cls._get_immutable_fields()
-            updated_fields = ['end_time', 'start_time', 'success', 'message', 'articles_count'] + cls._get_updated_fields()
-            return validate_update_schema(immutable_fields, updated_fields, data)
+             return validate_update_schema(cls.get_immutable_fields(), cls.get_updated_fields(), data)
             

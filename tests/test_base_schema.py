@@ -111,14 +111,14 @@ def test_base_update_schema_custom_values():
 
 def test_immutable_fields():
     """測試不可變字段"""
-    immutable_fields = UpdateSchemaForTest._get_immutable_fields()
+    immutable_fields = UpdateSchemaForTest.get_immutable_fields()
     assert "id" in immutable_fields
     assert "created_at" in immutable_fields
 
 
 def test_updated_fields():
     """測試自動更新字段"""
-    updated_fields = UpdateSchemaForTest._get_updated_fields()
+    updated_fields = UpdateSchemaForTest.get_updated_fields()
     assert "updated_at" in updated_fields
 
 
@@ -164,7 +164,7 @@ def test_update_model_in_db(session, clean_db):
     update_data = UpdateSchemaForTest(name="Updated Name")
     
     # 更新模型 - 使用Pydantic v2的方式處理exclude
-    exclude_fields = set(UpdateSchemaForTest._get_immutable_fields())
+    exclude_fields = set(UpdateSchemaForTest.get_immutable_fields())
     model_data = update_data.model_dump(exclude=exclude_fields)
     for key, value in model_data.items():
         if value is not None:
@@ -235,7 +235,7 @@ def test_concurrent_model_operations(session, clean_db):
         update_data = UpdateSchemaForTest(name=f"Updated Model {i}")
         
         # 使用Pydantic v2的方式處理exclude
-        exclude_fields = set(UpdateSchemaForTest._get_immutable_fields())
+        exclude_fields = set(UpdateSchemaForTest.get_immutable_fields())
         model_data = update_data.model_dump(exclude=exclude_fields)
         for key, value in model_data.items():
             if value is not None:

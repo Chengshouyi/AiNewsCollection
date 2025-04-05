@@ -77,7 +77,7 @@ class DatabaseManager:
             db_path: 資料庫路徑 (可選)
             
         Returns:
-            資料庫URL字串
+            資料庫URL字串，會將所有非記憶體資料庫的路徑轉換為絕對路徑
             
         Raises:
             DatabaseConfigError: 資料庫路徑無效
@@ -93,16 +93,35 @@ class DatabaseManager:
                 db_path = f"sqlite:///{db_path}"
             
             file_path = db_path.replace('sqlite:///', '')
+            
+            # 處理相對路徑和絕對路徑
+            if not os.path.isabs(file_path):
+                # 如果是相對路徑，轉換為絕對路徑
+                file_path = os.path.abspath(file_path)
+                db_path = f"sqlite:///{file_path}"
+            
             db_dir = os.path.dirname(file_path)
             
             if db_dir:
+                # 檢查目錄是否存在，若不存在則創建
+                if not os.path.exists(db_dir):
+                    os.makedirs(db_dir, exist_ok=True)
+                
+                # 檢查目錄寫入權限
                 if not os.access(db_dir, os.W_OK):
                     raise DatabaseConfigError(f"資料庫目錄沒有寫入權限: {db_dir}")
-                os.makedirs(db_dir, exist_ok=True)
+                
+                # 如果文件存在，檢查文件寫入權限
+                if os.path.exists(file_path) and not os.access(file_path, os.W_OK):
+                    raise DatabaseConfigError(f"資料庫文件沒有寫入權限: {file_path}")
             
             return db_path
         except OSError as e:
-            error_msg = f"資料庫目錄沒有寫入權限: {e}"
+            error_msg = f"資料庫路徑錯誤: {e}"
+            logger.error(error_msg)
+            raise DatabaseConfigError(error_msg) from e
+        except Exception as e:
+            error_msg = f"處理資料庫URL時發生錯誤: {e}"
             logger.error(error_msg)
             raise DatabaseConfigError(error_msg) from e
     
@@ -116,9 +135,22 @@ class DatabaseManager:
         try:
             # 嘗試建立連接並執行簡單查詢
             with self.engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
+                result = conn.execute(text("SELECT 1")).fetchone()
+                
+                # 檢查查詢結果
+                if result is None or result[0] != 1:
+                    raise DatabaseConnectionError("資料庫連接測試失敗：無法獲取預期結果")
+                
         except OperationalError as e:
-            error_msg = f"數據庫連接驗證失敗: {e}"
+            error_msg = f"數據庫連接驗證失敗 (操作錯誤): {e}"
+            logger.error(error_msg)
+            raise DatabaseConnectionError(error_msg) from e
+        except SQLAlchemyError as e:
+            error_msg = f"數據庫連接驗證失敗 (SQL錯誤): {e}"
+            logger.error(error_msg)
+            raise DatabaseConnectionError(error_msg) from e
+        except Exception as e:
+            error_msg = f"數據庫連接驗證失敗 (未知錯誤): {e}"
             logger.error(error_msg)
             raise DatabaseConnectionError(error_msg) from e
     
@@ -136,17 +168,40 @@ class DatabaseManager:
         session = self.Session()
         try:
             yield session
-            session.commit()
+            # 如果session已經不活躍，不需要進行commit
+            if session.is_active:
+                session.commit()
         except Exception as e:
-            session.rollback()
+            # 如果session已經不活躍，不需要進行rollback
+            if session.is_active:
+                session.rollback()
             error_msg = f"數據庫操作失敗: {e}"
             logger.error(error_msg)
-            raise DatabaseOperationError(error_msg) from e
+            
+            # 根據不同異常類型提供更詳細的錯誤資訊
+            if isinstance(e, SQLAlchemyError):
+                raise DatabaseOperationError(f"數據庫操作錯誤: {e}") from e
+            else:
+                raise DatabaseOperationError(f"非數據庫相關的操作錯誤: {e}") from e
         finally:
-            if session.is_active:
-                session.close()
-                session.expire_all()
-                session.bind = None
+            try:
+                # 確保在任何情況下都會關閉session
+                if session:
+                    session.close()
+                    # 在某些情況下，expire_all可能會拋出異常
+                    try:
+                        session.expire_all()
+                    except Exception as expire_error:
+                        logger.warning(f"Session expire_all 錯誤 (忽略): {expire_error}")
+                    
+                    # 在某些情況下，設置bind=None可能會拋出異常
+                    try:
+                        session.bind = None
+                    except Exception as bind_error:
+                        logger.warning(f"Session unbind 錯誤 (忽略): {bind_error}")
+            except Exception as cleanup_error:
+                # 記錄清理錯誤但不拋出，避免掩蓋原始異常
+                logger.warning(f"Session 清理錯誤 (忽略): {cleanup_error}")
     
     def create_tables(self, base: Type[DeclarativeBase]) -> None:
         """
@@ -166,15 +221,36 @@ class DatabaseManager:
             raise DatabaseOperationError(error_msg) from e
 
 def check_session(func):
+    """
+    檢查資料庫會話狀態的裝飾器
+    
+    Args:
+        func: 被裝飾的函數
+        
+    Returns:
+        裝飾後的函數
+        
+    Raises:
+        DatabaseConnectionError: 資料庫連接已關閉或發生錯誤
+    """
     @wraps(func)
     def wrapper(self, *args, **kwargs):
         try:
+            # 檢查 session 對象是否存在
+            if not hasattr(self, 'session'):
+                raise DatabaseConnectionError("沒有有效的資料庫會話")
+                
             # 檢查 session 是否有效
-            if not self.session.bind:
+            if not self.session or not self.session.bind:
                 raise DatabaseConnectionError("資料庫連接已關閉")
+                
             return func(self, *args, **kwargs)
         except OperationalError as e:
             error_msg = f"資料庫連接錯誤: {e}"
+            logger.error(error_msg)
+            raise DatabaseConnectionError(error_msg) from e
+        except AttributeError as e:
+            error_msg = f"資料庫會話屬性錯誤: {e}"
             logger.error(error_msg)
             raise DatabaseConnectionError(error_msg) from e
     return wrapper

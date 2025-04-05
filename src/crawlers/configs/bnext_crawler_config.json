@@ -36,7 +36,7 @@
         "min_keywords": 3
     },
     "storage_settings": {
-        "save_to_csv": false,
+        "save_to_csv": true,
         "save_to_database": false
     },
     "valid_domains": [

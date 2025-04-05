@@ -1,0 +1,344 @@
+import pytest
+import pandas as pd
+import os
+import json
+from unittest.mock import MagicMock, patch, mock_open
+from datetime import datetime, timezone
+from typing import Dict, List, Any, Optional
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
+
+from src.crawlers.base_crawler import BaseCrawler
+from src.crawlers.configs.site_config import SiteConfig
+from src.services.article_service import ArticleService
+from src.database.database_manager import DatabaseManager
+from src.models.base_model import Base
+from src.models.articles_model import Articles
+from src.utils.model_utils import convert_hashable_dict_to_str_dict
+
+# 建立測試用的爬蟲配置
+TEST_CONFIG = {
+    "name": "test_crawler",
+    "base_url": "https://www.example.com",
+    "list_url_template": "{base_url}/categories/{category}",
+    "categories": ["test"],
+    "full_categories": ["test", "example"],
+    "article_settings": {
+        "max_pages": 2,
+        "ai_only": False,
+        "num_articles": 5,
+        "min_keywords": 3
+    },
+    "extraction_settings": {
+        "num_articles": 5,
+        "min_keywords": 3
+    },
+    "storage_settings": {
+        "save_to_csv": True,
+        "save_to_database": True
+    },
+    "selectors": {
+        "test": "test"
+    }
+}
+
+# 測試用的子類
+class MockCrawlerForTest(BaseCrawler):
+    def __init__(self, config_file_name=None, article_service=None):
+        self.fetch_article_links_called = False
+        self.fetch_articles_called = False
+        self.update_config_called = False
+        super().__init__(config_file_name, article_service)
+        
+    def fetch_article_links(self) -> Optional[pd.DataFrame]:
+        """測試用的實現"""
+        self.fetch_article_links_called = True
+        data = {
+            'link': ['https://example.com/1', 'https://example.com/2'],
+            'title': ['Test Article 1', 'Test Article 2'],
+            'summary': ['Test summary 1', 'Test summary 2'],
+            'published_date': [datetime.now(timezone.utc), datetime.now(timezone.utc)]
+        }
+        df = pd.DataFrame(data)
+        self.articles_df = df
+        return df
+        
+    def fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
+        """測試用的實現"""
+        self.fetch_articles_called = True
+        return [
+            {
+                'link': 'https://example.com/1',
+                'title': 'Test Article 1',
+                'content': 'Content of article 1',
+                'published_date': datetime.now(timezone.utc)
+            },
+            {
+                'link': 'https://example.com/2',
+                'title': 'Test Article 2',
+                'content': 'Content of article 2',
+                'published_date': datetime.now(timezone.utc)
+            }
+        ]
+        
+    def _update_config(self):
+        """測試用的實現"""
+        self.update_config_called = True
+
+@pytest.fixture(scope="session")
+def engine():
+    """創建測試用的資料庫引擎"""
+    return create_engine('sqlite:///:memory:')
+
+@pytest.fixture(scope="session")
+def tables(engine):
+    """創建測試用的資料表"""
+    Base.metadata.create_all(engine)
+    yield
+    Base.metadata.drop_all(engine)
+
+@pytest.fixture(scope="function")
+def session(engine, tables):
+    """創建測試用的資料庫會話"""
+    connection = engine.connect()
+    transaction = connection.begin()
+    session = sessionmaker(autocommit=False, autoflush=False, bind=connection)()
+    
+    yield session
+    
+    session.close()
+    transaction.rollback()
+    connection.close()
+
+@pytest.fixture(scope="function")
+def article_service(session):
+    """創建ArticleService實例"""
+    return ArticleService(session)
+
+@pytest.fixture(scope="function")
+def mock_config_file(monkeypatch):
+    """模擬配置文件"""
+    def mock_open_file(*args, **kwargs):
+        mock = mock_open(read_data=json.dumps(TEST_CONFIG))
+        return mock(*args, **kwargs)
+    
+    monkeypatch.setattr("builtins.open", mock_open_file)
+    return "test_config.json"
+
+@pytest.fixture
+def logs_dir(tmp_path):
+    """建立暫存的logs目錄"""
+    logs_path = tmp_path / "logs"
+    logs_path.mkdir()
+    with patch("os.makedirs"):
+        yield str(logs_path)
+
+class TestBaseCrawler:
+    """BaseCrawler 的測試類"""
+    
+    def test_init_with_config(self, mock_config_file, article_service):
+        """測試使用配置文件初始化 BaseCrawler"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        assert crawler.config_file_name == mock_config_file
+        assert crawler.article_service == article_service
+        assert isinstance(crawler.site_config, SiteConfig)
+        assert crawler.site_config.name == "test_crawler"
+        assert crawler.site_config.base_url == "https://www.example.com"
+    
+    def test_init_without_article_service(self, mock_config_file):
+        """測試沒有提供 article_service 時應拋出錯誤"""
+        with pytest.raises(ValueError, match="未提供文章服務"):
+            MockCrawlerForTest(mock_config_file)
+    
+    def test_execute_task_with_real_db(self, mock_config_file, article_service, logs_dir):
+        """測試使用真實記憶體資料庫執行任務的完整流程"""
+        with patch('os.makedirs', return_value=None):
+            crawler = MockCrawlerForTest(mock_config_file, article_service)
+            task_id = 1
+            task_args = {
+                "max_pages": 3,
+                "ai_only": True,
+                "num_articles": 10
+            }
+            
+            # 執行任務
+            crawler.execute_task(task_id, task_args)
+            
+            # 驗證任務狀態
+            task_status = crawler.get_task_status(task_id)
+            assert task_status["status"] == "completed"
+            assert task_status["progress"] == 100
+            
+            # 驗證方法調用
+            assert crawler.fetch_article_links_called
+            assert crawler.fetch_articles_called
+            assert crawler.update_config_called
+            
+            # 驗證資料是否確實被保存到資料庫
+            saved_articles = article_service.get_all_articles()
+            assert len(saved_articles) == 2
+            assert saved_articles[0].title == "Test Article 1"
+            assert saved_articles[1].title == "Test Article 2"
+    
+    def test_execute_task_no_articles(self, mock_config_file, article_service):
+        """測試執行任務但沒有獲取到文章的情況"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 模擬 fetch_article_links 返回空 DataFrame
+        crawler.fetch_article_links = MagicMock(return_value=None)
+        
+        task_id = 1
+        crawler.execute_task(task_id, {})
+        
+        # 驗證任務狀態
+        task_status = crawler.get_task_status(task_id)
+        assert task_status["status"] == "running"  # 任務狀態不會變為 completed
+        
+        # 驗證 fetch_articles 沒有被調用
+        assert not crawler.fetch_articles_called
+    
+    def test_execute_task_error(self, mock_config_file, article_service):
+        """測試執行任務發生錯誤的情況"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 模擬 fetch_article_links 拋出異常
+        crawler.fetch_article_links = MagicMock(side_effect=Exception("Test error"))
+        
+        task_id = 1
+        with pytest.raises(Exception, match="Test error"):
+            crawler.execute_task(task_id, {})
+        
+        # 驗證任務狀態
+        task_status = crawler.get_task_status(task_id)
+        assert task_status["status"] == "failed"
+        assert "Test error" in task_status["message"]
+    
+    def test_save_to_csv(self, mock_config_file, article_service, logs_dir):
+        """測試保存數據到CSV文件"""
+        with patch("pandas.DataFrame.to_csv") as mock_to_csv:
+            crawler = MockCrawlerForTest(mock_config_file, article_service)
+            data = pd.DataFrame({
+                "title": ["Test Title"],
+                "content": ["Test Content"]
+            })
+            
+            csv_path = f"{logs_dir}/test_output.csv"
+            crawler._save_to_csv(data, csv_path)
+            
+            # 驗證 to_csv 被調用
+            mock_to_csv.assert_called_once()
+    
+    def test_save_to_csv_no_path(self, mock_config_file, article_service):
+        """測試沒有提供CSV路徑的情況"""
+        with patch("pandas.DataFrame.to_csv") as mock_to_csv:
+            crawler = MockCrawlerForTest(mock_config_file, article_service)
+            data = pd.DataFrame({
+                "title": ["Test Title"],
+                "content": ["Test Content"]
+            })
+            
+            crawler._save_to_csv(data, None)
+            
+            # 驗證 to_csv 沒有被調用
+            mock_to_csv.assert_not_called()
+    
+    def test_save_to_database(self, mock_config_file, article_service, session):
+        """測試保存數據到資料庫"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 模擬文章資料
+        crawler.articles_df = pd.DataFrame({
+            "title": ["Test Title 1", "Test Title 2"],
+            "content": ["Test Content 1", "Test Content 2"],
+            "link": ["https://example.com/1", "https://example.com/2"],
+            "summary": ["Test Summary 1", "Test Summary 2"],
+            "published_date": [datetime.now(timezone.utc), datetime.now(timezone.utc)]
+        })
+        
+        # 先清除資料庫中的所有文章
+        session.query(Articles).delete()
+        session.commit()
+        
+        # 執行保存
+        crawler._save_to_database()
+        
+        # 驗證資料是否被保存到資料庫
+        saved_articles = article_service.get_all_articles()
+        assert len(saved_articles) == 2
+        assert saved_articles[0].title == "Test Title 1"
+        assert saved_articles[1].title == "Test Title 2"
+    
+    def test_get_task_status(self, mock_config_file, article_service):
+        """測試獲取任務狀態"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 測試獲取不存在任務的狀態
+        status = crawler.get_task_status(999)
+        assert status["status"] == "unknown"
+        
+        # 測試獲取存在任務的狀態
+        task_id = 1
+        crawler.task_status[task_id] = {
+            "status": "running",
+            "progress": 50,
+            "message": "測試任務"
+        }
+        
+        status = crawler.get_task_status(task_id)
+        assert status["status"] == "running"
+        assert status["progress"] == 50
+        assert status["message"] == "測試任務"
+    
+    def test_retry_operation(self, mock_config_file, article_service):
+        """測試重試操作功能"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 測試成功的操作
+        success_operation = MagicMock(return_value="success")
+        result = crawler.retry_operation(success_operation)
+        assert result == "success"
+        assert success_operation.call_count == 1
+        
+        # 測試需要重試的操作
+        fail_then_success = MagicMock(side_effect=[Exception("First failure"), "success"])
+        result = crawler.retry_operation(fail_then_success, max_retries=2, retry_delay=0.01)
+        assert result == "success"
+        assert fail_then_success.call_count == 2
+        
+        # 測試超過重試次數的操作
+        always_fail = MagicMock(side_effect=Exception("Always fail"))
+        with pytest.raises(Exception, match="Always fail"):
+            crawler.retry_operation(always_fail, max_retries=3, retry_delay=0.01)
+        assert always_fail.call_count == 3
+
+    def test_update_task_status(self, mock_config_file, article_service):
+        """測試更新任務狀態功能"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        task_id = 1
+        # 初始化任務狀態
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc)
+        }
+        
+        # 更新進度
+        crawler._update_task_status(task_id, 50, '處理中')
+        assert crawler.task_status[task_id]['progress'] == 50
+        assert crawler.task_status[task_id]['message'] == '處理中'
+        assert crawler.task_status[task_id]['status'] == 'running'
+        
+        # 更新狀態
+        crawler._update_task_status(task_id, 100, '完成', 'completed')
+        assert crawler.task_status[task_id]['progress'] == 100
+        assert crawler.task_status[task_id]['message'] == '完成'
+        assert crawler.task_status[task_id]['status'] == 'completed'
+        
+        # 測試更新不存在的任務
+        crawler._update_task_status(999, 50, '不存在的任務')
+        assert 999 not in crawler.task_status
+
+if __name__ == "__main__":
+    pytest.main()

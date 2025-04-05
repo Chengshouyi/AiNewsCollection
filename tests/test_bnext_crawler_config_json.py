@@ -21,8 +21,9 @@ def test_config_structure():
     assert "list_url_template" in config
     assert "categories" in config
     assert "full_category" in config
-    assert "crawler_settings" in config
-    assert "content_extraction" in config
+    assert "article_settings" in config
+    assert "extraction_settings" in config
+    assert "storage_settings" in config
     assert "valid_domains" in config
     assert "url_patterns" in config
     assert "url_file_extensions" in config
@@ -39,17 +40,22 @@ def test_config_values():
     assert "ai" in config["categories"]
     assert isinstance(config["full_category"], list)
     assert "cloudcomputing" in config["full_category"]
-    assert isinstance(config["crawler_settings"], dict)
-    assert config["crawler_settings"].get("max_pages") == 1
-    assert config["crawler_settings"].get("ai_only") is True
-    assert isinstance(config["content_extraction"], dict)
-    assert config["content_extraction"].get("num_articles") == 3
-    assert config["content_extraction"].get("ai_only") is True
-    assert config["content_extraction"].get("min_keywords") == 3
+    assert isinstance(config["article_settings"], dict)
+    assert config["article_settings"].get("max_pages") == 3
+    assert config["article_settings"].get("ai_only") is True
+    assert config["article_settings"].get("num_articles") == 10
+    assert config["article_settings"].get("min_keywords") == 3
+    assert isinstance(config["extraction_settings"], dict)
+    assert config["extraction_settings"].get("num_articles") == 3
+    assert config["extraction_settings"].get("min_keywords") == 3
+    assert isinstance(config["storage_settings"], dict)
+    assert config["storage_settings"].get("save_to_csv") is True
+    assert config["storage_settings"].get("save_to_database") is False
     assert isinstance(config["valid_domains"], list)
     assert "https://www.bnext.com.tw" in config["valid_domains"]
     assert isinstance(config["url_patterns"], list)
     assert "/categories/" in config["url_patterns"]
+    assert "/articles/" in config["url_patterns"]
     assert isinstance(config["url_file_extensions"], list)
     assert ".html" in config["url_file_extensions"]
     assert config["date_format"] == "%Y-%m-%d"
