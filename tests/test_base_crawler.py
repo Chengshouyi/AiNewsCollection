@@ -68,16 +68,34 @@ class MockCrawlerForTest(BaseCrawler):
         self.fetch_articles_called = True
         return [
             {
-                'link': 'https://example.com/1',
                 'title': 'Test Article 1',
+                'summary': 'Summary of article 1',
                 'content': 'Content of article 1',
-                'published_date': datetime.now(timezone.utc)
+                'link': 'https://example.com/1',
+                'category': 'Test Category',
+                'published_at': datetime.now(timezone.utc),
+                'author': 'Test Author',
+                'source': 'Test Source',
+                'source_url': 'https://example.com/1',
+                'article_type': 'Test Article Type',
+                'tags': 'Test Tags',
+                'is_ai_related': False,
+                'is_scraped': False
             },
             {
-                'link': 'https://example.com/2',
                 'title': 'Test Article 2',
+                'summary': 'Summary of article 2',
                 'content': 'Content of article 2',
-                'published_date': datetime.now(timezone.utc)
+                'link': 'https://example.com/2',
+                'category': 'Test Category',
+                'published_at': datetime.now(timezone.utc),
+                'author': 'Test Author',
+                'source': 'Test Source',
+                'source_url': 'https://example.com/2',
+                'article_type': 'Test Article Type',
+                'tags': 'Test Tags',
+                'is_ai_related': False,
+                'is_scraped': False
             }
         ]
         
