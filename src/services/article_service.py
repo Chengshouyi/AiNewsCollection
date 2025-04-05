@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Dict, Any, List, TypeVar, Tuple
+from typing import Optional, Dict, Any, List, TypeVar, Tuple, Hashable
 from src.models.articles_model import Base, Articles
 from datetime import datetime, timedelta
 from src.error.errors import DatabaseOperationError
@@ -51,7 +51,7 @@ class ArticleService:
             logger.error(f"創建文章失敗: {e}")
             raise e
 
-    def batch_insert_articles(self, articles_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def batch_create_articles(self, articles_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
         批量創建新文章
         
@@ -74,6 +74,8 @@ class ArticleService:
         article_repo, session = self._get_repository()
         try:
             # 直接使用 Repository 的批量創建功能
+
+            # 將 articles_data 轉換為 Dict[str, Any]
             result = article_repo.batch_create(articles_data)
             session.commit()
             return {

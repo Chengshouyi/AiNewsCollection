@@ -114,7 +114,7 @@ class TestArticleService:
         assert result.title == article_data["title"]
         assert result.link == article_data["link"]
 
-    def test_batch_insert_articles(self, article_service, session):
+    def test_batch_create_articles(self, article_service, session):
         """測試批量新增文章"""
         session.expire_all()  # 確保從數據庫重新讀取
         
@@ -135,7 +135,7 @@ class TestArticleService:
             for i in range(3)
         ]
         
-        result = article_service.batch_insert_articles(articles_data)
+        result = article_service.batch_create_articles(articles_data)
         session.expire_all()
         assert result["success_count"] == 3
         assert result["fail_count"] == 0

@@ -1,8 +1,27 @@
-from typing import Optional, Any, Callable
+from typing import Optional, Any, Callable, Dict, Hashable
 from datetime import datetime,  timezone
 from src.error.errors import ValidationError
 from croniter import croniter
 import re
+
+def is_str_dict(data: Dict[Hashable, Any]) -> bool:
+    """檢查字典的所有鍵是否都是字符串類型"""
+    return all(isinstance(k, str) for k in data.keys())
+
+def convert_hashable_dict_to_str_dict(data: Dict[Hashable, Any]) -> Dict[str, Any]:
+    """
+    將 Dict[Hashable, Any] 轉換為 Dict[str, Any]
+    
+    Args:
+        data: 包含 Hashable 鍵的字典
+        
+    Returns:
+        Dict[str, Any]: 包含字符串鍵的字典
+    """
+    if not is_str_dict(data):
+        raise ValueError("字典的所有鍵必須是字符串類型")
+    
+    return {str(k): v for k, v in data.items()}
 
 def validate_str(
     field_name: str, 

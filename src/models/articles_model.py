@@ -55,8 +55,7 @@ class Articles(Base, BaseEntity):
     author: Mapped[Optional[str]] = mapped_column(String(100))
     source: Mapped[str] = mapped_column(String(50))
     source_url: Mapped[str] = mapped_column(
-        String(1000), 
-        unique=True, 
+        String(1000),
         nullable=False
     )
     article_type: Mapped[Optional[str]] = mapped_column(String(20))

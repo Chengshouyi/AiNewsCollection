@@ -39,10 +39,14 @@ def article_repo(session):
     return ArticlesRepository(session, Articles)
 
 @pytest.fixture(scope="function")
-def sample_articles(session):
-    # 清除可能的干擾資料
+def clean_db(session):
+    """清空資料庫的 fixture"""
     session.query(Articles).delete()
     session.commit()
+    session.expire_all()
+
+@pytest.fixture(scope="function")
+def sample_articles(session, clean_db):
     
     articles = [
         Articles(
@@ -93,7 +97,7 @@ def sample_articles(session):
 class TestArticleRepository:
     """測試 ArticlesRepository 的核心功能"""
     
-    def test_get_schema_class(self, article_repo):
+    def test_get_schema_class(self, article_repo, clean_db):
         """測試獲取schema類的方法"""
         # 測試默認返回
         schema = article_repo.get_schema_class()
@@ -110,9 +114,8 @@ class TestArticleRepository:
             article_repo.get_schema_class(SchemaType.LIST)
         assert "未支援的 schema 類型" in str(exc_info.value)
     
-    def test_find_by_link(self, article_repo, sample_articles, session):
+    def test_find_by_link(self, article_repo, sample_articles, session, clean_db):
         """測試根據連結查詢文章"""
-        session.expire_all()  # 確保從數據庫重新讀取
         
         # 測試存在的連結
         article = article_repo.find_by_link("https://example.com/article1")
@@ -123,17 +126,15 @@ class TestArticleRepository:
         article = article_repo.find_by_link("https://nonexistent.com")
         assert article is None
     
-    def test_find_by_category(self, article_repo, sample_articles, session):
+    def test_find_by_category(self, article_repo, sample_articles, session, clean_db):
         """測試根據分類查詢文章"""
-        session.expire_all()
         
         articles = article_repo.find_by_category("科技")
         assert len(articles) == 2
         assert all(article.category == "科技" for article in articles)
     
-    def test_search_by_title(self, article_repo, sample_articles, session):
+    def test_search_by_title(self, article_repo, sample_articles, session, clean_db):
         """測試根據標題搜索文章"""
-        session.expire_all()
         
         # 測試模糊匹配
         articles = article_repo.search_by_title("Python")
@@ -145,9 +146,8 @@ class TestArticleRepository:
         assert len(articles) == 1
         assert articles[0].title == "Python編程技巧分享"
     
-    def test_get_by_filter(self, article_repo, sample_articles, session):
+    def test_get_by_filter(self, article_repo, sample_articles, session, clean_db):
         """測試根據過濾條件查詢文章"""
-        session.expire_all()
         
         # 測試單一條件過濾
         articles = article_repo.get_by_filter({"category": "科技"})
@@ -171,9 +171,8 @@ class TestArticleRepository:
         })
         assert len(articles) == 2
 
-    def test_count(self, article_repo, sample_articles, session):
+    def test_count(self, article_repo, sample_articles, session, clean_db):
         """測試計算符合條件的文章數量"""
-        session.expire_all()
         
         # 測試總數
         total = article_repo.count()
@@ -183,9 +182,8 @@ class TestArticleRepository:
         count = article_repo.count({"category": "科技"})
         assert count == 2
     
-    def test_get_category_distribution(self, article_repo, sample_articles, session):
+    def test_get_category_distribution(self, article_repo, sample_articles, session, clean_db):
         """測試獲取分類分布"""
-        session.expire_all()
         
         distribution = article_repo.get_category_distribution()
         assert distribution == {
@@ -193,9 +191,8 @@ class TestArticleRepository:
             "財經": 1
         }
     
-    def test_validate_unique_link(self, article_repo, sample_articles, session):
+    def test_validate_unique_link(self, article_repo, sample_articles, session, clean_db):
         """測試驗證連結唯一性"""
-        session.expire_all()
         
         # 測試新的唯一連結
         assert article_repo.validate_unique_link("https://new-link.com") is True
@@ -212,7 +209,7 @@ class TestArticleRepository:
             exclude_id=article_id
         ) is True
 
-    def test_create_article(self, article_repo, session):
+    def test_create_article(self, article_repo, session, clean_db):
         """測試創建文章"""
         article_data = {
             "title": "測試文章",
@@ -245,9 +242,8 @@ class TestArticleRepository:
             article_repo.create(incomplete_data)
         assert "缺少必填欄位" in str(exc_info.value)
     
-    def test_update_article(self, article_repo, sample_articles, session):
+    def test_update_article(self, article_repo, sample_articles, session, clean_db):
         """測試更新文章"""
-        session.expire_all()
         article_id = sample_articles[0].id
         update_data = {
             "title": "更新後的標題",
@@ -263,9 +259,8 @@ class TestArticleRepository:
         # 確認其他欄位保持不變
         assert updated.link == sample_articles[0].link
 
-    def test_batch_update(self, article_repo, sample_articles, session):
+    def test_batch_update(self, article_repo, sample_articles, session, clean_db):
         """測試批量更新文章"""
-        session.expire_all()
         article_ids = [sample_articles[0].id, sample_articles[1].id]
         update_data = {
             "category": "批量更新"
@@ -278,9 +273,8 @@ class TestArticleRepository:
         assert result["fail_count"] == 0
         assert all(entity.category == "批量更新" for entity in result["updated_articles"])
 
-    def test_get_paginated_by_filter(self, article_repo, sample_articles, session):
+    def test_get_paginated_by_filter(self, article_repo, sample_articles, session, clean_db):
         """測試分頁查詢"""
-        session.expire_all()
         
         try:
             # 基本分頁測試
@@ -302,9 +296,8 @@ class TestArticleRepository:
         except DatabaseOperationError as e:
             pytest.skip(f"資料庫操作錯誤: {str(e)}")
     
-    def test_batch_create(self, article_repo, session):
+    def test_batch_create(self, article_repo, session, clean_db):
         """測試批量創建文章"""
-        session.expire_all()
         
         # 準備測試資料
         articles_data = [
@@ -330,9 +323,8 @@ class TestArticleRepository:
         assert result["inserted_articles"] is not None
         assert result["failed_entries"] == []
     
-    def test_batch_create_with_missing_fields(self, article_repo, session):
+    def test_batch_create_with_missing_fields(self, article_repo, session, clean_db):
         """測試批量創建缺少必填欄位的文章"""
-        session.expire_all()
         
         # 準備測試資料
         articles_data = [
@@ -351,9 +343,8 @@ class TestArticleRepository:
         assert result["failed_entries"] is not None
         assert "缺少必填欄位" in result["failed_entries"][0]["error"]
         
-    def test_batch_create_with_existing_link(self, article_repo, sample_articles, session):
+    def test_batch_create_with_existing_link(self, article_repo, sample_articles, session, clean_db):
         """測試批量創建已存在的連結"""
-        session.expire_all()
         
         # 準備測試資料
         articles_data = [
@@ -380,9 +371,8 @@ class TestArticleRepository:
         assert result["failed_entries"] is not None
         assert "已存在具有相同連結的文章" in result["failed_entries"][0]["error"]
     
-    def test_batch_create_with_invalid_data(self, article_repo, session):
+    def test_batch_create_with_invalid_data(self, article_repo, session, clean_db):
         """測試批量創建無效資料"""
-        session.expire_all()
         
         # 準備測試資料
         articles_data = [
@@ -409,9 +399,8 @@ class TestArticleRepository:
         assert result["failed_entries"] is not None
         assert "link: URL不能為空" in result["failed_entries"][0]["error"]
     
-    def test_batch_create_with_large_data(self, article_repo, session):
+    def test_batch_create_with_large_data(self, article_repo, session, clean_db):
         """測試批量創建大量資料"""
-        session.expire_all()    
         
         # 準備測試資料
         articles_data = [
@@ -438,15 +427,14 @@ class TestArticleRepository:
         assert result["inserted_articles"] is not None
         assert result["failed_entries"] == []
         
-    def test_batch_create_with_large_data_and_pagination(self, article_repo, session):
+    def test_batch_create_with_large_data_and_pagination(self, article_repo, session, clean_db):
         """測試批量創建大量資料並進行分頁"""
-        session.expire_all()
         
         # 準備測試資料
         articles_data = [
             {
                 "title": f"測試文章{i}",
-                "link": f"https://test.com/large_data_article{i}",
+                "link": f"https://test.com/large_data_and_pagination_article{i}",
                 "summary": f"測試摘要{i}",
                 "content": f"測試內容{i}",
                 "category": "測試",
@@ -497,12 +485,9 @@ class TestArticlePaginationAndFiltering:
     """專門測試文章的分頁和過濾功能"""
     
     @pytest.fixture(scope="function")
-    def filter_test_articles(self, session):
+    def filter_test_articles(self, session, clean_db):
         """創建專門用於過濾測試的文章"""
-        # 清除可能的干擾資料
-        session.query(Articles).delete()
-        session.commit()
-        
+       
         articles = [
             Articles(
                 title="AI研究報告1",
@@ -570,9 +555,8 @@ class TestArticlePaginationAndFiltering:
         session.expire_all()
         return articles
     
-    def test_combined_filters_with_pagination(self, article_repo, filter_test_articles, session):
+    def test_combined_filters_with_pagination(self, article_repo, filter_test_articles, session, clean_db):
         """測試組合多種過濾條件並進行分頁"""
-        session.expire_all()
         
         try:
             combined_filter = {
@@ -595,9 +579,8 @@ class TestArticlePaginationAndFiltering:
         except DatabaseOperationError as e:
             pytest.skip(f"資料庫操作錯誤: {str(e)}")
     
-    def test_pagination_navigation(self, article_repo, filter_test_articles, session):
+    def test_pagination_navigation(self, article_repo, filter_test_articles, session, clean_db):
         """測試分頁導航功能"""
-        session.expire_all()
         
         try:
             # 第一頁

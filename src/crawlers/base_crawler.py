@@ -8,7 +8,7 @@ import json
 import os
 from src.crawlers.configs.site_config import SiteConfig
 from src.services.article_service import ArticleService
-
+from src.utils.model_utils import convert_hashable_dict_to_str_dict
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -60,10 +60,12 @@ class BaseCrawler(ABC):
             logger.error("article_service 未初始化")
             return
         try:
-            # 同時新增文章
+            # 新增文章
             articles_data = self.articles_df.to_dict('records')
-            result = self.article_service.batch_insert_articles(
-                articles_data = articles_data
+            if articles_data:
+                str_articles_data = [convert_hashable_dict_to_str_dict(article) for article in articles_data]
+                result = self.article_service.batch_create_articles(
+                    articles_data = str_articles_data
                 )
                 
             if result["fail_count"] > 0:
@@ -93,7 +95,21 @@ class BaseCrawler(ABC):
 
 
     def execute_task(self, task_id: int, task_args: dict):
-        """執行爬蟲任務的完整流程，並更新任務狀態"""
+        """執行爬蟲任務的完整流程，並更新任務狀態
+        
+        Args:
+            task_id: 任務ID
+            task_args: 任務參數 
+                - max_pages: 最大頁數
+                - ai_only: 是否只抓取AI相關文章
+                - num_articles: 抓取的文章數量
+                - min_keywords: 最小關鍵字數量
+                - save_to_csv: 是否保存到CSV文件
+                - save_to_database: 是否保存到資料庫
+                
+        Returns:
+            Dict[str, Any]: 任務狀態
+        """
         self.task_status[task_id] = {
             'status': 'running',
             'progress': 0,
@@ -105,23 +121,46 @@ class BaseCrawler(ABC):
             # 步驟1：抓取文章列表
             self._update_task_status(task_id, 10, '抓取文章列表中...')
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表中...")
+
             self.fetch_article_links()
+            
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表完成")
+            self._update_task_status(task_id, 20, '抓取文章列表完成')
             if self.articles_df.empty or self.articles_df is None:
                 logger.warning("沒有獲取到任何文章連結")
                 return
             
             # 步驟2：抓取文章詳細內容
-            self._update_task_status(task_id, 50, '抓取文章詳細內容中...')
+            self._update_task_status(task_id, 30, '抓取文章詳細內容中...')
+            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 抓取文章詳細內容中...")
+
             self.fetch_articles()
+
+            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 抓取文章詳細內容完成")
+            self._update_task_status(task_id, 40, '抓取文章詳細內容完成')
             if self.articles_df.empty or self.articles_df is None:
                 logger.warning("沒有獲取到任何文章")
                 return
+            
+
             # 步驟3：保存數據
             self._update_task_status(task_id, 80, '保存數據中...')
-            self._save_to_csv(self.articles_df, f'./logs/articles_{task_id}.csv')
-            self._save_to_database()
-            
+            if task_args.get('save_to_csv', False):
+                logger.debug(f"BaseCrawler(execute_task()) - call _save_to_csv： 保存數據到CSV文件中...")
+                self._update_task_status(task_id, 85, '保存數據到CSV文件中...')
+
+                self._save_to_csv(self.articles_df, f'./logs/articles_{task_id}.csv')
+
+                logger.debug(f"BaseCrawler(execute_task()) - call _save_to_csv： 保存數據到CSV文件完成")
+                self._update_task_status(task_id, 90, '保存數據到CSV文件完成')
+            if task_args.get('save_to_database', False):
+                logger.debug(f"BaseCrawler(execute_task()) - call _save_to_database： 保存數據到資料庫中...")
+                self._update_task_status(task_id, 95, '保存數據到資料庫中...')
+
+                self._save_to_database()
+
+                logger.debug(f"BaseCrawler(execute_task()) - call _save_to_database： 保存數據到資料庫完成")
+                self._update_task_status(task_id, 100, '保存數據到資料庫完成')
             self._update_task_status(task_id, 100, '任務完成', 'completed')
             
         except Exception as e:
