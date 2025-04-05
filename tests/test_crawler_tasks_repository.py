@@ -39,7 +39,15 @@ def crawler_tasks_repo(session):
     return CrawlerTasksRepository(session, CrawlerTasks)
 
 @pytest.fixture(scope="function")
-def sample_crawler(session):
+def clean_db(session):
+    """清空資料庫的 fixture"""
+    session.query(CrawlerTasks).delete()
+    session.query(Crawlers).delete()
+    session.commit()
+    session.expire_all()
+
+@pytest.fixture(scope="function")
+def sample_crawler(session, clean_db):
     crawler = Crawlers(
         crawler_name="測試爬蟲",
         base_url="https://example.com",
@@ -52,7 +60,7 @@ def sample_crawler(session):
     return crawler
 
 @pytest.fixture(scope="function")
-def sample_tasks(session, sample_crawler):
+def sample_tasks(session, clean_db, sample_crawler):
     # 先清理表
     session.query(CrawlerTasks).delete()
     session.commit()

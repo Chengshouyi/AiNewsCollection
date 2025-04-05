@@ -117,7 +117,7 @@ def main():
         
         # 獲取爬蟲實例
         crawler = CrawlerFactory.get_crawler(args.crawler)
-        crawler.execute_task(1, {})
+        crawler.execute_task(1, {'max_pages': args.max_pages, 'ai_only': args.ai_only, 'num_articles': args.num_articles, 'min_keywords': args.min_keywords})
         
         # logger.debug(f"CrawlerTest - call CrawlerFactory.get_crawler(args.crawler)： 獲取爬蟲實例完成")
         # # 執行爬蟲

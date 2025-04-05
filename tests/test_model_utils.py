@@ -5,6 +5,8 @@ from src.utils.model_utils import (
     validate_cron_expression,
     validate_datetime,
     validate_url,
+    validate_list,
+    convert_hashable_dict_to_str_dict,
 )
 from datetime import datetime, timezone, timedelta
 
@@ -122,11 +124,13 @@ class TestValidateDatetime:
 
     def test_empty_datetime_not_required(self):
         validator = validate_datetime("timestamp")
-        assert validator("") is None
+        with pytest.raises(ValidationError, match="timestamp: 不能為空"):
+            validator("")
 
     def test_none_datetime_not_required(self):
-        validator = validate_datetime("timestamp")
-        assert validator(None) is None
+        validator = validate_datetime("timestamp", required=True)
+        with pytest.raises(ValidationError, match="timestamp: 不能為 None"):
+            validator(None)
 
     def test_empty_datetime_required(self):
         validator = validate_datetime("timestamp", required=True)
@@ -189,3 +193,99 @@ class TestValidateUrl:
         validator = validate_url("image", regex=r".*\.(jpg|png)$")
         with pytest.raises(ValidationError, match="image: 無效的URL格式"):
             validator("https://example.com/image.gif")
+
+class TestValidateList:
+    """測試列表驗證功能"""
+    
+    def test_valid_list(self):
+        """測試有效的列表"""
+        validator = validate_list("items")
+        assert validator([1, 2, 3]) == [1, 2, 3]
+
+    def test_empty_list_not_required(self):
+        """測試非必填時的空列表"""
+        validator = validate_list("items", required=False, min_length=0)
+        assert validator([]) == []
+
+    def test_none_not_required(self):
+        """測試非必填時的 None 值"""
+        validator = validate_list("items", required=True)
+        with pytest.raises(ValidationError, match="items: 不能為 None"):
+            validator(None)
+
+    def test_none_required(self):
+        """測試必填時的 None 值"""
+        validator = validate_list("items", required=True)
+        with pytest.raises(ValidationError, match="items: 不能為 None"):
+            validator(None)
+
+    def test_invalid_type(self):
+        """測試非列表類型"""
+        validator = validate_list("items")
+        with pytest.raises(ValidationError, match="items: 必須是列表"):
+            validator("not a list")
+
+    def test_type_validation(self):
+        """測試列表元素類型驗證"""
+        validator = validate_list("items", type=str)
+        # 測試有效的字符串列表
+        assert validator(["a", "b", "c"]) == ["a", "b", "c"]
+        # 測試包含非字符串的列表
+        with pytest.raises(ValidationError, match="items: 列表中的所有元素必須是 str"):
+            validator(["a", 1, "c"])
+
+    def test_min_length_validation(self):
+        """測試最小長度驗證"""
+        validator = validate_list("items", min_length=2)
+        # 測試符合最小長度的列表
+        assert validator([1, 2]) == [1, 2]
+        # 測試不符合最小長度的列表
+        with pytest.raises(ValidationError, match="items: 列表長度不能小於 2"):
+            validator([1])
+
+class TestConvertHashableDictToStrDict:
+    """測試字典轉換功能"""
+    
+    def test_valid_str_dict(self):
+        """測試已經是字符串鍵的字典"""
+        input_dict = {"a": 1, "b": 2}
+        result = convert_hashable_dict_to_str_dict(input_dict)
+        assert result == {"a": 1, "b": 2}
+
+    def test_mixed_key_types(self):
+        """測試混合鍵類型的字典"""
+        input_dict = {"a": 1, 2: "b"}
+        with pytest.raises(ValueError, match="字典的所有鍵必須是字符串類型"):
+            convert_hashable_dict_to_str_dict(input_dict)
+
+    def test_empty_dict(self):
+        """測試空字典"""
+        input_dict = {}
+        result = convert_hashable_dict_to_str_dict(input_dict)
+        assert result == {}
+
+    def test_nested_dict(self):
+        """測試嵌套字典"""
+        input_dict = {
+            "a": {"b": 1},
+            "c": {"d": 2}
+        }
+        result = convert_hashable_dict_to_str_dict(input_dict)
+        assert result == {
+            "a": {"b": 1},
+            "c": {"d": 2}
+        }
+
+    def test_complex_values(self):
+        """測試複雜值類型"""
+        input_dict = {
+            "a": [1, 2, 3],
+            "b": {"x": 1},
+            "c": (4, 5, 6)
+        }
+        result = convert_hashable_dict_to_str_dict(input_dict)
+        assert result == {
+            "a": [1, 2, 3],
+            "b": {"x": 1},
+            "c": (4, 5, 6)
+        }

@@ -1,4 +1,4 @@
-from typing import Optional, Any, Callable, Dict, Hashable
+from typing import Optional, Any, Callable, Dict, Hashable, List, Type
 from datetime import datetime,  timezone
 from src.error.errors import ValidationError
 from croniter import croniter
@@ -8,7 +8,7 @@ def is_str_dict(data: Dict[Hashable, Any]) -> bool:
     """檢查字典的所有鍵是否都是字符串類型"""
     return all(isinstance(k, str) for k in data.keys())
 
-def convert_hashable_dict_to_str_dict(data: Dict[Hashable, Any]) -> Dict[str, Any]:
+def convert_hashable_dict_to_str_dict(data: Dict[Any, Any]) -> Dict[str, Any]:
     """
     將 Dict[Hashable, Any] 轉換為 Dict[str, Any]
     
@@ -22,6 +22,29 @@ def convert_hashable_dict_to_str_dict(data: Dict[Hashable, Any]) -> Dict[str, An
         raise ValueError("字典的所有鍵必須是字符串類型")
     
     return {str(k): v for k, v in data.items()}
+
+
+def validate_list(
+    field_name: str, 
+    type: Optional[Type[Any]] = None, 
+    min_length: int = 1, 
+    required: bool = False
+):
+    """列表驗證"""
+    def validator(value: Any) -> Optional[List[Any]]:
+        if value is None:
+            if required:
+                raise ValidationError(f"{field_name}: 不能為 None") 
+            
+        if not isinstance(value, list):
+            raise ValidationError(f"{field_name}: 必須是列表")
+        if type:
+            if not all(isinstance(item, type) for item in value):
+                raise ValidationError(f"{field_name}: 列表中的所有元素必須是 {type.__name__}")
+        if len(value) < min_length:
+            raise ValidationError(f"{field_name}: 列表長度不能小於 {min_length}")
+        return value
+    return validator
 
 def validate_str(
     field_name: str, 

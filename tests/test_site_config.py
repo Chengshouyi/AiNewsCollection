@@ -2,21 +2,35 @@ import pytest
 from unittest.mock import patch
 from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.crawlers.configs.site_config import SiteConfig
+from src.error.errors import ValidationError
 
 class TestSiteConfig:
     """測試 SiteConfig 類別的功能"""
 
     def test_default_initialization(self):
         """測試使用默認值創建 SiteConfig 實例"""
-        config = SiteConfig(name="test_site")
-        
+        config = SiteConfig(
+            name="test_site",
+            base_url="https://www.bnext.com.tw",
+            categories=["ai", "tech", "iot", "smartmedical", "smartcity", "cloudcomputing", "security"],
+            full_categories=["ai", "tech", "iot", "smartmedical", "smartcity", "cloudcomputing", "security"],
+            article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            list_url_template="{base_url}/categories/{category}"
+        )
+
         assert config.name == "test_site"
         assert config.base_url == "https://www.bnext.com.tw"
         assert config.categories == ["ai", "tech", "iot", "smartmedical", "smartcity", "cloudcomputing", "security"]
-        assert config.crawler_settings == {'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
+        assert config.full_categories == ["ai", "tech", "iot", "smartmedical", "smartcity", "cloudcomputing", "security"]
+        assert config.article_settings == {'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
+        assert config.extraction_settings == {'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
+        assert config.storage_settings == {'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
+        assert config.selectors == {'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
         assert config.headers == DEFAULT_HEADERS
         assert config.list_url_template == "{base_url}/categories/{category}"
-        assert config.valid_domains == ["https://www.bnext.com.tw"]
         assert config.url_file_extensions == ['.html', '.htm']
         assert config.date_format == '%Y/%m/%d %H:%M'
 
@@ -27,7 +41,11 @@ class TestSiteConfig:
             base_url="https://example.com",
             list_url_template="https://example.com/{category}/list",
             categories=["news", "blog"],
-            crawler_settings={'max_retries': 5, 'timeout': 15},
+            full_categories=["news", "blog"],
+            article_settings={'max_retries': 5, 'timeout': 15},
+            extraction_settings={'max_retries': 5, 'timeout': 15},
+            storage_settings={'max_retries': 5, 'timeout': 15},
+            selectors={'max_retries': 5, 'timeout': 15},
             headers={"User-Agent": "CustomAgent"},
             valid_domains=["https://example.com", "https://blog.example.com"],
             url_patterns=["/article/", "/post/"],
@@ -38,7 +56,11 @@ class TestSiteConfig:
         assert custom_config.base_url == "https://example.com"
         assert custom_config.list_url_template == "https://example.com/{category}/list"
         assert custom_config.categories == ["news", "blog"]
-        assert custom_config.crawler_settings == {'max_retries': 5, 'timeout': 15}
+        assert custom_config.full_categories == ["news", "blog"]
+        assert custom_config.article_settings == {'max_retries': 5, 'timeout': 15}
+        assert custom_config.extraction_settings == {'max_retries': 5, 'timeout': 15}
+        assert custom_config.storage_settings == {'max_retries': 5, 'timeout': 15}
+        assert custom_config.selectors == {'max_retries': 5, 'timeout': 15}
         assert custom_config.headers == {"User-Agent": "CustomAgent"}
         assert custom_config.valid_domains == ["https://example.com", "https://blog.example.com"]
         assert custom_config.url_patterns == ["/article/", "/post/"]
@@ -46,15 +68,91 @@ class TestSiteConfig:
 
     def test_empty_name_raises_error(self):
         """測試空名稱應該拋出錯誤"""
-        with pytest.raises(ValueError, match="網站名稱不能為空"):
-            SiteConfig(name="")
+        with pytest.raises(ValidationError, match="name: 不能為空"):
+            SiteConfig(
+                name="",
+                base_url="https://www.bnext.com.tw",
+                list_url_template="{base_url}/categories/{category}",
+                categories=["ai", "tech"],
+                full_categories=["ai", "tech"],
+                article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
+            )
+
+    def test_empty_base_url_raises_error(self):
+        """測試空基礎URL應該拋出錯誤"""
+        with pytest.raises(ValidationError, match="base_url: URL不能為空"):
+            SiteConfig(
+                name="test_site",
+                base_url="",
+                list_url_template="{base_url}/categories/{category}",
+                categories=["ai", "tech"],
+                full_categories=["ai", "tech"],
+                article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
+            )
+
+    def test_empty_list_url_template_raises_error(self):
+        """測試空列表URL模板應該拋出錯誤""" 
+        with pytest.raises(ValidationError, match="list_url_template: 不能為空"):
+            SiteConfig(
+                name="test_site",
+                base_url="https://www.bnext.com.tw",
+                list_url_template="",   
+                categories=["ai", "tech"],
+                full_categories=["ai", "tech"],
+                article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
+            )
+
+    def test_empty_categories_raises_error(self):
+        """測試空分類列表應該拋出錯誤"""
+        with pytest.raises(ValidationError, match="categories: 列表長度不能小於 1"):
+            SiteConfig(
+                name="test_site",
+                base_url="https://www.bnext.com.tw",
+                list_url_template="{base_url}/categories/{category}",
+                categories=[],
+                full_categories=["ai", "tech"],
+                article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},   
+                selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
+            )
+
+    def test_empty_full_categories_raises_error(self):
+        """測試空完整分類列表應該拋出錯誤"""
+        with pytest.raises(ValidationError, match="full_categories: 列表長度不能小於 1"):   
+            SiteConfig(
+                name="test_site",
+                base_url="https://www.bnext.com.tw",
+                list_url_template="{base_url}/categories/{category}",
+                categories=["ai", "tech"],
+                full_categories=[], 
+                article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+                selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
+            )
 
     def test_get_category_url(self):
         """測試 get_category_url 方法"""
         config = SiteConfig(
             name="test_site",
             base_url="https://test.com",
-            list_url_template="{base_url}/cat/{category}"
+            list_url_template="{base_url}/cat/{category}",
+            categories=["ai", "tech"],
+            full_categories=["ai", "tech"],
+            article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
         )
         
         # 測試有效分類
@@ -69,6 +167,14 @@ class TestSiteConfig:
         """測試 validate_url 方法"""
         config = SiteConfig(
             name="test_site",
+            base_url="https://example.com",
+            list_url_template="{base_url}/cat/{category}",
+            categories=["ai", "tech"],
+            full_categories=["ai", "tech"],
+            article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
             valid_domains=["https://example.com"],
             url_patterns=["/article/", "/blog/"],
             url_file_extensions=[".html"]
@@ -93,41 +199,18 @@ class TestSiteConfig:
     def test_validate_method(self):
         """測試 validate 方法"""
         # 有效配置
-        valid_config = SiteConfig(name="test_site", base_url="https://example.com")
+        valid_config = SiteConfig(
+            name="test_site",
+            base_url="https://example.com",
+            list_url_template="{base_url}/cat/{category}",
+            categories=["ai", "tech"],
+            full_categories=["ai", "tech"],
+            article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
+            selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
+        )
         assert valid_config.validate() is True
-        
-        # 無效配置測試已在 test_empty_name_raises_error 中涵蓋
-
-    @patch('logging.Logger.error')
-    def test_post_init_log_warnings(self, mock_logger):
-        """測試 __post_init__ 方法的日誌警告"""
-        # 測試沒有提供 base_url
-        config = SiteConfig(name="test_site", base_url="")
-        mock_logger.assert_any_call("未提供網站基礎URL，將使用預設值")
-        assert config.base_url == "https://www.bnext.com.tw"
-        
-        # 重置模擬
-        mock_logger.reset_mock()
-        
-        # 測試沒有提供 categories
-        config = SiteConfig(name="test_site", categories=[])
-        mock_logger.assert_any_call("未提供預設類別，將使用預設值")
-        assert config.categories == ["ai", "tech", "iot", "smartmedical", "smartcity", "cloudcomputing", "security"]
-        
-        # 重置模擬
-        mock_logger.reset_mock()
-        
-        # 測試沒有提供 selectors
-        config = SiteConfig(name="test_site", selectors={})
-        mock_logger.assert_any_call("未提供選擇器，將使用預設值")
-        
-        # 重置模擬
-        mock_logger.reset_mock()
-        
-        # 測試沒有提供 list_url_template
-        config = SiteConfig(name="test_site", list_url_template="")
-        mock_logger.assert_any_call("未提供列表URL模板，將使用預設值")
-        assert config.list_url_template == "{base_url}/categories/{category}"
 
 if __name__ == "__main__":
     pytest.main()

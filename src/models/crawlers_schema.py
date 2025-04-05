@@ -35,14 +35,20 @@ class CrawlersUpdateSchema(BaseUpdateSchema):
     is_active: Optional[IsActive] = None
     config_file_name: Optional[ConfigFileName] = None
 
+    @classmethod
+    def get_immutable_fields(cls):
+        return ['crawler_type'] + BaseUpdateSchema.get_immutable_fields()
+    
+    @classmethod
+    def get_updated_fields(cls):
+        return ['crawler_name', 'base_url', 'is_active', 'config_file_name'] + BaseUpdateSchema.get_updated_fields()
+    
     @model_validator(mode='before')
     @classmethod
     def validate_update(cls, data):
         """驗證更新操作"""
         if isinstance(data, dict):
-            immutable_fields = ['crawler_type'] + cls._get_immutable_fields()
-            updated_fields = ['crawler_name', 'base_url', 'is_active', 'config_file_name'] + cls._get_updated_fields()
-            return validate_update_schema(immutable_fields, updated_fields, data)
+            return validate_update_schema(cls.get_immutable_fields(), cls.get_updated_fields(), data)
 
 
 
