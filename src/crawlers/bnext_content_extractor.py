@@ -1,6 +1,6 @@
 import requests
 import logging
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any
 import pandas as pd
 
 import time
@@ -24,35 +24,26 @@ logger = logging.getLogger(__name__)
 
 class BnextContentExtractor:
     def __init__(self, config=None):
-        self.site_config = config
-        # 檢查配置
-        logger.debug("檢查爬蟲配置")
+        """
+        初始化爬蟲設定
+        """
         if config is None:
             logger.error("未提供網站配置，請提供有效的配置")
             raise ValueError("未提供網站配置，請提供有效的配置")
         else:
-            # 確保配置有必要的屬性
-            if not hasattr(config, 'base_url'):
-                logger.error("未提供網站基礎URL，將使用預設值")
-                config.base_url = "https://www.bnext.com.tw"
-
-            if not hasattr(config, 'categories'):
-                logger.error("未提供預設類別，將使用預設值")
-                config.categories = ["ai","tech","iot","smartmedical","smartcity",       "cloudcomputing","security"]
-
-            if not hasattr(config, 'selectors'):
-                logger.error("未提供選擇器，將使用預設值")
-                config.selectors = {}
-
-            if not hasattr(config, 'get_category_url'):
-                logger.error("未提供類別URL，將使用預設值")
-                config.get_category_url = lambda x: f"{config.base_url}/categories/{x}"
-            
             self.site_config = config
-            #logger.debug(f"使用選擇器: {self.site_config.selectors}")
+            
+    def update_config(self, config=None):
+        """
+        更新爬蟲設定
+        """
+        if config is None:
+            logger.error("未提供網站配置，請提供有效的配置")
+            raise ValueError("未提供網站配置，請提供有效的配置")
+        else:
+            self.site_config = config
 
-
-    def batch_get_articles_content(self, articles_df, num_articles=10, ai_only=True, min_keywords=3) -> pd.DataFrame:
+    def batch_get_articles_content(self, articles_df, num_articles=10, ai_only=True, min_keywords=3) -> List[Dict[str, Any]]:
         """批量獲取文章內容"""
         start_time = time.time()
         
@@ -60,7 +51,7 @@ class BnextContentExtractor:
         logger.debug(f"參數設置: num_articles={num_articles}, ai_only={ai_only}, min_keywords={min_keywords}")
         logger.debug(f"待處理文章數量: {len(articles_df)}")
         
-        articles_contents = []
+        article_contents = []
         successful_count = 0
         ai_related_count = 0
         failed_count = 0
@@ -83,17 +74,9 @@ class BnextContentExtractor:
                         logger.warning(f"文章內容獲取失敗或不符合AI相關條件: {article['title']}")
                         continue
                     
-                    articles_contents.append(content_data)
-                    articles_df.loc[articles_df['link'] == article['link'], 'is_scraped'] = True
+                    article_contents.append(content_data)
                     successful_count += 1
                     ai_related_count += 1
-                    
-                    # 檢查更新是否成功
-                    updated_row = articles_df.loc[articles_df['link'] == article['link']]
-                    if not updated_row.empty:
-                        logger.debug(f"成功更新文章狀態: {article['link']}")
-                    else:
-                        logger.warning(f"未找到對應文章進行更新: {article['link']}")
                     
                     # 記錄進度
                     if successful_count % 5 == 0:
@@ -125,21 +108,9 @@ class BnextContentExtractor:
             if successful_count > 0:
                 logger.debug(f"- 平均處理時間: {total_time/successful_count:.2f}秒/篇")
         
-        return self._process_content_to_dataframe(articles_contents)
+        return article_contents
 
-    def _prepare_db_article(self, content_data: Dict) -> Dict:
-        """準備資料庫文章格式"""
-        return {
-            'title': content_data['title'],
-            'summary': content_data.get('summary', ''),
-            'content': content_data.get('content', ''),
-            'link': content_data['link'],
-            'category': content_data.get('category', ''),
-            'published_at': content_data.get('publish_at', ''),
-            'author': content_data.get('author', ''),
-            'source': 'bnext_detail',
-            'tags': content_data.get('tags', '')
-        }
+
 
     def _get_article_content(self, article_url: str, ai_filter: bool = True, min_keywords: int = 3) -> Optional[Dict]:
         """獲取文章詳細內容"""
@@ -171,12 +142,10 @@ class BnextContentExtractor:
                 logger.error(f"無法找到文章container: {article_url}")
                 return None
             #logger.debug(f"article_content_container: {article_content_container}")
-            article_content = self._extract_article_parts(article_content_container, soup, get_article_contents_selectors)
+            article_content = self._extract_article_parts(article_content_container, soup, get_article_contents_selectors, article_url, ai_filter)
             if article_content is None:
                 logger.error(f"文章內容提取失敗: {article_url}")
                 return None
-            
-            article_content['link'] = article_url
             
             # AI 相關性檢查
             if ai_filter:
@@ -194,7 +163,7 @@ class BnextContentExtractor:
             logger.error(f"獲取文章內容失敗: {str(e)}", exc_info=True)
             return None
 
-    def _extract_article_parts(self, article_content_container, soup, get_article_contents_selectors):
+    def _extract_article_parts(self, article_content_container, soup, get_article_contents_selectors, article_url: str, ai_filter: bool = True):
         """提取文章各個部分"""
         logger.debug("開始提取文章各部分內容")
         
@@ -258,23 +227,23 @@ class BnextContentExtractor:
                 return None
 
             # 返回提取的所有部分
-            return {
-                'title': title_text,
-                'summary': summary_text,
-                'content': full_content,
-                'category': category_text,
-                'publish_at': published_date_text,
-                'author': author_text,
-                'source': "bnext",
-                'article_type': None,
-                'tags': ",".join(tags)
-            }
+            return BnextUtils.get_article_columns_dict(
+                title=title_text,
+                summary=summary_text,
+                content=full_content,
+                link=article_url,
+                category=category_text,
+                published_at=published_date_text,
+                author=author_text,
+                source=self.site_config.name,
+                source_url=self.site_config.base_url,
+                article_type=None,
+                tags=",".join(tags),
+                is_ai_related=ai_filter,
+                is_scraped=True
+            )
             
         except Exception as e:
             logger.error(f"提取文章部分時發生錯誤: {str(e)}", exc_info=True)
             return None
 
-    def _process_content_to_dataframe(self, articles_contents: List[Dict]) -> pd.DataFrame:
-        """將文章內容列表轉換為DataFrame"""
-        contents_df = pd.DataFrame(articles_contents)
-        return contents_df

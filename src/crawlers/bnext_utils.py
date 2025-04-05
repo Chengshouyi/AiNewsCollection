@@ -3,14 +3,12 @@
 
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-import re
 import time
 import logging
 import random
-from typing import Optional, Dict, Any
-from src.crawlers.configs.site_config import SiteConfig
-import json
-
+from typing import Dict, List, Optional
+from datetime import datetime
+import pandas as pd
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -73,5 +71,56 @@ class BnextUtils:
         """從HTML字符串創建BeautifulSoup對象"""
         return BeautifulSoup(html, 'html.parser')
     
+    @staticmethod
+    def get_article_columns_dict(
+        title: Optional[str] = '', 
+        summary: Optional[str] = '', 
+        content: Optional[str] = '', 
+        link: Optional[str] = '', 
+        category: Optional[str] = '', 
+        published_at: Optional[datetime] = None, 
+        author: Optional[str] = '', 
+        source: Optional[str] = '', 
+        source_url: Optional[str] = '', 
+        article_type: Optional[str] = '', 
+        tags: Optional[str] = '', 
+        is_ai_related: Optional[bool] = False, 
+        is_scraped: Optional[bool] = False) -> Dict:
+        """獲取文章欄位字典"""
+        return {
+            'title': title,
+            'summary': summary,
+            'content': content,
+            'link': link,
+            'category': category,
+            'published_at': published_at,
+            'author': author,
+            'source': source,
+            'source_url': source_url,
+            'article_type': article_type,
+            'tags': tags,
+            'is_ai_related': is_ai_related,
+            'is_scraped': is_scraped
+        }
+    
+    @staticmethod
+    def process_articles_to_dataframe(articles_list: List[Dict]) -> pd.DataFrame:
+        """處理文章列表並轉換為DataFrame"""
+        if not articles_list:
+            logger.warning("未爬取到任何文章")
+            return pd.DataFrame()
+            
+        df = pd.DataFrame(articles_list)
+        df = df.drop_duplicates(subset=['link'], keep='first')
+        
+        # 添加統計信息
+        stats = {
+            'total': len(df)
+        }
+        
+        logger.debug("爬取統計信息:")
+        logger.debug(f"總文章數: {stats['total']}")
+        
+        return df
 
  

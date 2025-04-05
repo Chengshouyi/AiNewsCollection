@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 import pandas as pd
 from datetime import datetime, timezone
 import logging
@@ -23,34 +23,102 @@ class BaseCrawler(ABC):
         self.task_status = {}
         self.config_file_name = config_file_name
         self.articles_df = pd.DataFrame()
-        self.article_service = article_service
-        
+        if article_service is None:
+            logger.error("未提供文章服務，請提供有效的文章服務")
+            raise ValueError("未提供文章服務，請提供有效的文章服務")
+        else:
+            self.article_service = article_service
 
-        
-    @abstractmethod
+        self._create_site_config()
+
     def _load_site_config(self):
-        """
-        從配置檔案讀取爬蟲設定，子類別需要實作
-        """
+        """載入爬蟲設定"""
+        if self.config_file_name:
+            try:
+                with open(f'src/crawlers/configs/{self.config_file_name}', 'r', encoding='utf-8') as f:
+                    file_config = json.load(f)
+                    # 使用文件配置更新默認配置
+                    self.config_data.update(file_config)
+                    
+                logger.debug(f"已載入 BNext 配置: {self.config_file_name}")
+                logger.debug(f"已載入 BNext 配置: {self.config_data}")
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                logger.warning(f"載入配置文件失敗: {str(e)}，使用預設配置")
+        else:
+            logger.error(f"未找到配置文件")
+            raise ValueError("未找到配置文件")  
+        
 
-    @abstractmethod
     def _create_site_config(self):
-        """
-        創建站點配置，子類別需要實作
-        """
-        pass
+        """創建站點配置"""
+        if not self.config_data:
+            logger.debug(f"BnextCrawler - call_load_site_config()： 載入站點配置")
+            self._load_site_config()
+        
+        # 創建 site_config
+        logger.debug(f"BnextCrawler - call_create_site_config()： 創建 site_config")
+        self.site_config = SiteConfig(
+            name=self.config_data.get("name", None),
+            base_url=self.config_data.get("base_url", None),
+            list_url_template=self.config_data.get("list_url_template", None),
+            categories=self.config_data.get("categories", None),
+            full_categories=self.config_data.get("full_categories", None),
+            article_settings=self.config_data.get("article_settings", None),
+            extraction_settings=self.config_data.get("extraction_settings", None),
+            storage_settings=self.config_data.get("storage_settings", None),
+            selectors=self.config_data.get("selectors", None)
+        )
+        for key, value in self.site_config.__dict__.items():
+            if value is None:
+                logger.error(f"未提供 {key} 值，請設定有效值")
+                raise ValueError(f"未提供 {key} 值，請設定有效值")
+            
+            if key == "article_settings":
+                if "max_pages" not in value.items():
+                    logger.error(f"未提供 max_pages 值，請設定有效值")
+                    raise ValueError(f"未提供 max_pages 值，請設定有效值")
+                if "ai_only" not in value.items():
+                    logger.error(f"未提供 ai_only 值，請設定有效值")
+                    raise ValueError(f"未提供 ai_only 值，請設定有效值")
+                if "num_articles" not in value.items():
+                    logger.error(f"未提供 num_articles 值，請設定有效值")
+                    raise ValueError(f"未提供 num_articles 值，請設定有效值")
+                if "min_keywords" not in value.items():
+                    logger.error(f"未提供 min_keywords 值，請設定有效值")
+                    raise ValueError(f"未提供 min_keywords 值，請設定有效值")
+            if key == "extraction_settings":
+                if "num_articles" not in value.items():
+                    logger.error(f"未提供 num_articles 值，請設定有效值")
+                    raise ValueError(f"未提供 num_articles 值，請設定有效值")
+                if "min_keywords" not in value.items():
+                    logger.error(f"未提供 min_keywords 值，請設定有效值")
+                    raise ValueError(f"未提供 min_keywords 值，請設定有效值")
+            if key == "storage_settings":
+                if "save_to_csv" not in value.items():
+                    logger.error(f"未提供 save_to_csv 值，請設定有效值")
+                    raise ValueError(f"未提供 save_to_csv 值，請設定有效值")
+                if "save_to_database" not in value.items():
+                    logger.error(f"未提供 save_to_database 值，請設定有效值")
+                    raise ValueError(f"未提供 save_to_database 值，請設定有效值")
 
     @abstractmethod
-    def fetch_article_links(self):
+    def fetch_article_links(self) -> Optional[pd.DataFrame]:
         """
         爬取新聞列表，子類別需要實作
         """
         pass
 
     @abstractmethod
-    def fetch_articles(self):
+    def fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
         """
         爬取文章詳細內容，子類別需要實作
+        """
+        pass
+    
+    @abstractmethod
+    def _update_config(self):
+        """
+        更新爬蟲設定，子類別需要實作
         """
         pass
 
@@ -104,12 +172,19 @@ class BaseCrawler(ABC):
                 - ai_only: 是否只抓取AI相關文章
                 - num_articles: 抓取的文章數量
                 - min_keywords: 最小關鍵字數量
+                - max_retries: 最大重試次數
+                - retry_delay: 重試延遲時間
+                - timeout: 超時時間
                 - save_to_csv: 是否保存到CSV文件
                 - save_to_database: 是否保存到資料庫
                 
         Returns:
             Dict[str, Any]: 任務狀態
         """
+        if self.site_config is None:
+            logger.error("site_config 未初始化")
+            raise ValueError("site_config 未初始化")
+        
         self.task_status[task_id] = {
             'status': 'running',
             'progress': 0,
@@ -117,16 +192,31 @@ class BaseCrawler(ABC):
             'start_time': datetime.now(timezone.utc)
         }
         
+        if task_args:
+            # 更新任務參數
+            for key, value in task_args.items():
+                if key in self.site_config.article_settings.items():
+                    self.site_config.article_settings[key] = value
+                elif key in self.site_config.extraction_settings.items():
+                    self.site_config.extraction_settings[key] = value
+                elif key in self.site_config.storage_settings.items():
+                    self.site_config.storage_settings[key] = value
+                else:
+                    logger.error(f"未知的任務參數: {key}")
+                    raise ValueError(f"未知的任務參數: {key}")
+                
+            self._update_config()
+        
         try:
             # 步驟1：抓取文章列表
             self._update_task_status(task_id, 10, '抓取文章列表中...')
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表中...")
 
-            self.fetch_article_links()
+            fetched_articles_df = self.fetch_article_links()
             
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表完成")
             self._update_task_status(task_id, 20, '抓取文章列表完成')
-            if self.articles_df.empty or self.articles_df is None:
+            if fetched_articles_df is None or fetched_articles_df.empty:
                 logger.warning("沒有獲取到任何文章連結")
                 return
             
@@ -134,18 +224,34 @@ class BaseCrawler(ABC):
             self._update_task_status(task_id, 30, '抓取文章詳細內容中...')
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 抓取文章詳細內容中...")
 
-            self.fetch_articles()
+            fetched_articles = self.fetch_articles()
 
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 抓取文章詳細內容完成")
             self._update_task_status(task_id, 40, '抓取文章詳細內容完成')
-            if self.articles_df.empty or self.articles_df is None:
+            if fetched_articles is None or len(fetched_articles) == 0:
                 logger.warning("沒有獲取到任何文章")
                 return
             
+            # 步驟3：以Link為key，更新articles_df
+            self._update_task_status(task_id, 60, '更新articles_df中...')
+            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 更新articles_df")
 
-            # 步驟3：保存數據
+            for article in fetched_articles:
+                if article:
+                    # 使用 link 作為 key 來更新整篇文章的所有欄位
+                    article_link = article['link']
+                    article_index = self.articles_df.index[self.articles_df['link'] == article_link].tolist()
+                    if article_index:
+                        # 更新該筆資料的所有欄位
+                        self.articles_df.loc[article_index[0]] = pd.Series(article)
+
+            # 步驟4：保存數據到CSV文件
+            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 更新articles_df完成")
+            self._update_task_status(task_id, 70, '更新articles_df完成')
+
+            # 步驟4：保存數據到CSV文件
             self._update_task_status(task_id, 80, '保存數據中...')
-            if task_args.get('save_to_csv', False):
+            if self.site_config.storage_settings.get('save_to_csv', False):
                 logger.debug(f"BaseCrawler(execute_task()) - call _save_to_csv： 保存數據到CSV文件中...")
                 self._update_task_status(task_id, 85, '保存數據到CSV文件中...')
 
@@ -153,7 +259,9 @@ class BaseCrawler(ABC):
 
                 logger.debug(f"BaseCrawler(execute_task()) - call _save_to_csv： 保存數據到CSV文件完成")
                 self._update_task_status(task_id, 90, '保存數據到CSV文件完成')
-            if task_args.get('save_to_database', False):
+
+            # 步驟4：保存數據到資料庫
+            if self.site_config.storage_settings.get('save_to_database', False):
                 logger.debug(f"BaseCrawler(execute_task()) - call _save_to_database： 保存數據到資料庫中...")
                 self._update_task_status(task_id, 95, '保存數據到資料庫中...')
 

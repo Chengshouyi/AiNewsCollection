@@ -29,33 +29,23 @@ class BnextScraper:
         初始化爬蟲
         
         Parameters:
-        config (SiteConfig, optional): 網站配置
+        config: 網站配置
         """
-        # 檢查配置
-        logger.debug("檢查爬蟲配置")
         if config is None:
             logger.error("未提供網站配置，請提供有效的配置")
             raise ValueError("未提供網站配置，請提供有效的配置")
         else:
-            # 確保配置有必要的屬性
-            if not hasattr(config, 'base_url'):
-                logger.error("未提供網站基礎URL，將使用預設值")
-                config.base_url = "https://www.bnext.com.tw"
-
-            if not hasattr(config, 'categories'):
-                logger.error("未提供預設類別，將使用預設值")
-                config.categories = ["ai","tech","iot","smartmedical","smartcity","cloudcomputing","security"]
-
-            if not hasattr(config, 'selectors'):
-                logger.error("未提供選擇器，將使用預設值")
-                config.selectors = {}
-
-            if not hasattr(config, 'get_category_url'):
-                logger.error("未提供類別URL，將使用預設值")
-                config.get_category_url = lambda x: f"{config.base_url}/categories/{x}"
-            
             self.site_config = config
-            #logger.debug(f"使用選擇器: {self.site_config.selectors}")
+
+    def update_config(self, config=None):
+        """
+        更新爬蟲設定
+        """
+        if config is None:
+            logger.error("未提供網站配置，請提供有效的配置")
+            raise ValueError("未提供網站配置，請提供有效的配置")
+        else:
+            self.site_config = config
 
     def scrape_article_list(self, max_pages=3, ai_only=True) -> pd.DataFrame:
         start_time = time.time()
@@ -155,7 +145,7 @@ class BnextScraper:
             # 修改儲存邏輯
             if all_article_links_list:
                 # 轉換為DataFrame
-                return self._process_articles_to_dataframe(all_article_links_list)
+                return BnextUtils.process_articles_to_dataframe(all_article_links_list)
             else:
                 logger.warning("未爬取到任何文章")
                 return pd.DataFrame()
@@ -203,24 +193,7 @@ class BnextScraper:
             logger.error(f"訪問下一頁時出錯: {str(e)}", exc_info=True)
             return False
 
-    def _process_articles_to_dataframe(self, links_list: List[Dict]) -> pd.DataFrame:
-        """處理文章列表並轉換為DataFrame"""
-        if not links_list:
-            logger.warning("未爬取到任何文章")
-            return pd.DataFrame()
-            
-        df = pd.DataFrame(links_list)
-        df = df.drop_duplicates(subset=['article_link'], keep='first')
-        
-        # 添加統計信息
-        stats = {
-            'total': len(df)
-        }
-        
-        logger.debug("爬取統計信息:")
-        logger.debug(f"總文章數: {stats['total']}")
-        
-        return df
+
 
     def extract_article_links(self, soup):
         """
@@ -249,20 +222,23 @@ class BnextScraper:
             title_text = title.get_text(strip=True) if title else None
             summary = articles_container[0].select_one(get_article_links_selectors.get("summary"))
             summary_text = summary.get_text(strip=True) if summary else None
-            published_age = articles_container[0].select_one(get_article_links_selectors.get("published_age"))
-            published_age_text = published_age.get_text(strip=True) if published_age else None
             
                     
-            article_links_list.append({
-                'source_name': self.site_config.name,
-                'source_url': self.site_config.base_url,
-                'title': title_text,
-                'summary': summary_text,
-                'article_link': link_text,
-                'category': category_text,
-                'published_age': published_age_text,
-                'is_scraped': False
-            })
+            article_links_list.append(BnextUtils.get_article_columns_dict(
+                title=title_text,
+                summary=summary_text,
+                content='',
+                link=link_text,
+                category=category_text,
+                published_at=None,
+                author='',
+                source=self.site_config.name,
+                source_url=self.site_config.base_url,
+                article_type='',
+                tags='',
+                is_ai_related=self.site_config.article_settings.get("ai_only"),
+                is_scraped=False
+            ))
             
             logger.debug(f"成功提取文章連結，標題: {title_text}")
             
@@ -292,23 +268,25 @@ class BnextScraper:
                     g_article_summary = container.select_one(get_grid_contentainer_selector.get("summary"))
                     if g_article_summary:
                         g_article_summary_text = g_article_summary.get_text(strip=True)
-                        print(f"第{idx}篇網格文章摘要: {g_article_summary_text}")  # 列印文章摘要
-                    g_articel_published_age = container.select_one(get_grid_contentainer_selector.get("published_age"))
-                    if g_articel_published_age:
-                        g_articel_published_age_text = g_articel_published_age.get_text(strip=True)
-                        print(f"第{idx}篇網格文章發佈時間: {g_articel_published_age_text}")  # 列印文章發佈時間
-                        # 添加網格文章連結到列表
-                        article_links_list.append({
-                            'source_name': self.site_config.name,
-                            'source_url': self.site_config.base_url,
-                            'title': g_article_title_text,
-                            'summary': g_article_summary_text,
-                            'article_link': g_article_link_text,
-                            'category': category_text,
-                            'published_age': g_articel_published_age_text,
-                            'is_scraped': False
-                        })
-                        logger.debug(f"成功添加網格文章連結到列表: {g_article_title_text}")
+                        print(f"第{idx}篇網格文章摘要: {g_article_summary_text}")
+
+                    # 添加網格文章連結到列表
+                    article_links_list.append(BnextUtils.get_article_columns_dict(
+                        title=g_article_title_text,
+                        summary=g_article_summary_text,
+                        content='',
+                        link=g_article_link_text,
+                        category=category_text,
+                        published_at=None,
+                        author='',
+                        source=self.site_config.name,
+                        source_url=self.site_config.base_url,
+                        article_type='',
+                        tags='',
+                        is_ai_related=self.site_config.article_settings.get("ai_only"),
+                        is_scraped=False
+                    ))
+                    logger.debug(f"成功添加網格文章連結到列表: {g_article_title_text}")
                 except Exception as e:
                     print(f"發生錯誤: {e}")
            
