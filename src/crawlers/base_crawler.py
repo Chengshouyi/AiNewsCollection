@@ -68,38 +68,33 @@ class BaseCrawler(ABC):
             storage_settings=self.config_data.get("storage_settings", None),
             selectors=self.config_data.get("selectors", None)
         )
+        
+        # 檢查必要的配置值
         for key, value in self.site_config.__dict__.items():
             if value is None:
                 logger.error(f"未提供 {key} 值，請設定有效值")
                 raise ValueError(f"未提供 {key} 值，請設定有效值")
             
             if key == "article_settings":
-                if "max_pages" not in value.items():
-                    logger.error(f"未提供 max_pages 值，請設定有效值")
-                    raise ValueError(f"未提供 max_pages 值，請設定有效值")
-                if "ai_only" not in value.items():
-                    logger.error(f"未提供 ai_only 值，請設定有效值")
-                    raise ValueError(f"未提供 ai_only 值，請設定有效值")
-                if "num_articles" not in value.items():
-                    logger.error(f"未提供 num_articles 值，請設定有效值")
-                    raise ValueError(f"未提供 num_articles 值，請設定有效值")
-                if "min_keywords" not in value.items():
-                    logger.error(f"未提供 min_keywords 值，請設定有效值")
-                    raise ValueError(f"未提供 min_keywords 值，請設定有效值")
-            if key == "extraction_settings":
-                if "num_articles" not in value.items():
-                    logger.error(f"未提供 num_articles 值，請設定有效值")
-                    raise ValueError(f"未提供 num_articles 值，請設定有效值")
-                if "min_keywords" not in value.items():
-                    logger.error(f"未提供 min_keywords 值，請設定有效值")
-                    raise ValueError(f"未提供 min_keywords 值，請設定有效值")
-            if key == "storage_settings":
-                if "save_to_csv" not in value.items():
-                    logger.error(f"未提供 save_to_csv 值，請設定有效值")
-                    raise ValueError(f"未提供 save_to_csv 值，請設定有效值")
-                if "save_to_database" not in value.items():
-                    logger.error(f"未提供 save_to_database 值，請設定有效值")
-                    raise ValueError(f"未提供 save_to_database 值，請設定有效值")
+                required_settings = ["max_pages", "ai_only", "num_articles", "min_keywords"]
+                for setting in required_settings:
+                    if setting not in value:  # 直接檢查字典鍵
+                        logger.error(f"未提供 {setting} 值，請設定有效值")
+                        raise ValueError(f"未提供 {setting} 值，請設定有效值")
+                    
+            elif key == "extraction_settings":
+                required_settings = ["num_articles", "min_keywords"]
+                for setting in required_settings:
+                    if setting not in value:
+                        logger.error(f"未提供 {setting} 值，請設定有效值")
+                        raise ValueError(f"未提供 {setting} 值，請設定有效值")
+                    
+            elif key == "storage_settings":
+                required_settings = ["save_to_csv", "save_to_database"]
+                for setting in required_settings:
+                    if setting not in value:
+                        logger.error(f"未提供 {setting} 值，請設定有效值")
+                        raise ValueError(f"未提供 {setting} 值，請設定有效值")
 
     @abstractmethod
     def fetch_article_links(self) -> Optional[pd.DataFrame]:
@@ -195,11 +190,11 @@ class BaseCrawler(ABC):
         if task_args:
             # 更新任務參數
             for key, value in task_args.items():
-                if key in self.site_config.article_settings.items():
+                if key in self.site_config.article_settings:
                     self.site_config.article_settings[key] = value
-                elif key in self.site_config.extraction_settings.items():
+                elif key in self.site_config.extraction_settings:
                     self.site_config.extraction_settings[key] = value
-                elif key in self.site_config.storage_settings.items():
+                elif key in self.site_config.storage_settings:
                     self.site_config.storage_settings[key] = value
                 else:
                     logger.error(f"未知的任務參數: {key}")
