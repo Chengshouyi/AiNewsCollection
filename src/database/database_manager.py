@@ -220,6 +220,8 @@ class DatabaseManager:
             logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e
 
+    
+
 def check_session(func):
     """
     檢查資料庫會話狀態的裝飾器

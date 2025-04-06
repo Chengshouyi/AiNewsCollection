@@ -11,6 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.models.base_model import Base
 import json
+from src.database.database_manager import DatabaseManager
 
 # 測試用的配置
 TEST_CONFIG = {
@@ -132,28 +133,33 @@ def engine():
 
 @pytest.fixture(scope="session")
 def tables(engine):
-    """創建測試用的資料表"""
+    """創建資料表"""
     Base.metadata.create_all(engine)
     yield
     Base.metadata.drop_all(engine)
 
 @pytest.fixture(scope="function")
-def session(engine, tables):
-    """創建測試用的資料庫會話"""
-    connection = engine.connect()
-    transaction = connection.begin()
-    session = sessionmaker(autocommit=False, autoflush=False, bind=connection)()
-    
-    yield session
-    
-    session.close()
-    transaction.rollback()
-    connection.close()
+def session_factory(engine):
+    """創建會話工廠"""
+    return sessionmaker(bind=engine)
 
 @pytest.fixture(scope="function")
-def article_service(session):
+def article_service(engine, tables):
     """創建ArticleService實例"""
-    return ArticleService(session)
+    # 使用記憶體資料庫
+    db_manager = DatabaseManager('sqlite:///:memory:')
+    # 設置測試用的引擎
+    db_manager.engine = engine
+    # 創建新的會話工廠
+    db_manager.Session = sessionmaker(bind=engine)
+    # 創建資料表
+    db_manager.create_tables(Base)
+    
+    service = ArticleService(db_manager)
+    yield service
+    
+    # 清理資源
+    service.cleanup()
 
 class TestBnextCrawler:
     """BnextCrawler 的測試類"""
@@ -262,7 +268,7 @@ class TestBnextCrawler:
         assert articles[1]['content'] == "文章內容2"
         
     @patch('builtins.open', new_callable=mock_open)
-    def test_execute_task(self, mock_file, mock_config_file, article_service, mock_scraper, mock_extractor, session):
+    def test_execute_task(self, mock_file, mock_config_file, article_service, mock_scraper, mock_extractor):
         """測試完整的爬蟲任務執行"""
         # 設置 mock_file 的返回值
         mock_file.return_value.__enter__.return_value.read.return_value = json.dumps(TEST_CONFIG)
@@ -290,14 +296,17 @@ class TestBnextCrawler:
         assert task_status["progress"] == 100
         
         # 驗證資料庫中的文章
-        saved_articles = article_service.get_all_articles()
-        assert len(saved_articles) == 2
-        assert saved_articles[0].title == "測試文章1"
-        assert saved_articles[0].content == "文章內容1"
-        assert saved_articles[0].is_ai_related == True
-        assert saved_articles[1].title == "測試文章2"
-        assert saved_articles[1].content == "文章內容2"
-        assert saved_articles[1].is_ai_related == False
+        result = article_service.get_all_articles()
+        assert result["success"] is True
+        assert len(result["articles"]) == 2
+        
+        articles = result["articles"]
+        assert articles[0].title == "測試文章1"
+        assert articles[0].content == "文章內容1"
+        assert articles[0].is_ai_related is True
+        assert articles[1].title == "測試文章2"
+        assert articles[1].content == "文章內容2"
+        assert articles[1].is_ai_related is False
         
     def test_fetch_article_links_no_config(self, mock_config_file, article_service, mock_scraper, mock_extractor):
         """測試沒有配置時抓取文章列表"""

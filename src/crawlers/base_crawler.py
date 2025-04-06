@@ -131,13 +131,12 @@ class BaseCrawler(ABC):
                     articles_data = str_articles_data
                 )
                 
-            if result["fail_count"] > 0:
-                logger.warning(f"有 {result['fail_count']} 筆資料新增失敗:")
-                for failed_article in result["failed_articles"]:
-                    logger.warning(f"失敗原因: {failed_article['error']}")
-            else:
-                logger.info("所有資料新增成功")
-            
+                if not result["success"]:
+                    logger.error(f"批量創建文章失敗: {result['message']}")
+                    return
+                
+                logger.info(f"批量創建文章成功: {result['message']}")
+                
         except Exception as e:
             logger.error(f"保存到資料庫失敗: {str(e)}")
             raise e

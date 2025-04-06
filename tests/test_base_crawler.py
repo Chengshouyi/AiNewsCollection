@@ -14,6 +14,7 @@ from src.services.article_service import ArticleService
 from src.models.base_model import Base
 from src.models.articles_model import Articles
 from src.crawlers.bnext_scraper import BnextUtils
+from src.database.database_manager import DatabaseManager
 # 建立測試用的爬蟲配置
 TEST_CONFIG = {
     "name": "test_crawler",
@@ -137,28 +138,42 @@ def engine():
 
 @pytest.fixture(scope="session")
 def tables(engine):
-    """創建測試用的資料表"""
+    """創建資料表"""
     Base.metadata.create_all(engine)
     yield
     Base.metadata.drop_all(engine)
 
 @pytest.fixture(scope="function")
-def session(engine, tables):
-    """創建測試用的資料庫會話"""
-    connection = engine.connect()
-    transaction = connection.begin()
-    session = sessionmaker(autocommit=False, autoflush=False, bind=connection)()
-    
-    yield session
-    
-    session.close()
-    transaction.rollback()
-    connection.close()
+def session_factory(engine):
+    """創建會話工廠"""
+    return sessionmaker(bind=engine)
 
 @pytest.fixture(scope="function")
-def article_service(session):
+def session(session_factory, tables):
+    """為每個測試函數創建新的會話"""
+    session = session_factory()
+    try:
+        yield session
+    finally:
+        session.close()
+
+@pytest.fixture(scope="function")
+def article_service(engine, tables):
     """創建ArticleService實例"""
-    return ArticleService(session)
+    # 使用記憶體資料庫
+    db_manager = DatabaseManager('sqlite:///:memory:')
+    # 設置測試用的引擎
+    db_manager.engine = engine
+    # 創建新的會話工廠
+    db_manager.Session = sessionmaker(bind=engine)
+    # 創建資料表
+    db_manager.create_tables(Base)
+    
+    service = ArticleService(db_manager)
+    yield service
+    
+    # 清理資源
+    service.cleanup()
 
 @pytest.fixture(scope="function")
 def mock_config_file(monkeypatch):
@@ -220,10 +235,11 @@ class TestBaseCrawler:
             assert crawler.update_config_called
             
             # 驗證資料是否確實被保存到資料庫
-            saved_articles = article_service.get_all_articles()
-            assert len(saved_articles) == 2
-            assert saved_articles[0].title == "Test Article 1"
-            assert saved_articles[1].title == "Test Article 2"
+            result = article_service.get_all_articles()
+            assert result["success"] is True
+            assert len(result["articles"]) == 2
+            assert result["articles"][0].title == "Test Article 1"
+            assert result["articles"][1].title == "Test Article 2"
     
     def test_execute_task_no_articles(self, mock_config_file, article_service):
         """測試執行任務但沒有獲取到文章的情況"""
@@ -316,36 +332,37 @@ class TestBaseCrawler:
         crawler._save_to_database()
         
         # 驗證資料是否被保存到資料庫
-        saved_articles = article_service.get_all_articles()
-        assert len(saved_articles) == 2
-        assert saved_articles[0].title == "Test Title 1"
-        assert saved_articles[1].title == "Test Title 2"
-        assert saved_articles[0].summary == "Test Summary 1"
-        assert saved_articles[1].summary == "Test Summary 2"
-        assert saved_articles[0].content == "Test Content 1"
-        assert saved_articles[1].content == "Test Content 2"
-        assert saved_articles[0].link == "https://example.com/1"
-        assert saved_articles[1].link == "https://example.com/2"
-        assert saved_articles[0].category == "Test Category 1"
-        assert saved_articles[1].category == "Test Category 2"
-        assert saved_articles[0].published_at.tzinfo == timezone.utc
-        assert saved_articles[1].published_at.tzinfo == timezone.utc
-        assert saved_articles[0].author == "Test Author 1"
-        assert saved_articles[1].author == "Test Author 2"
-        assert saved_articles[0].source == "Test Source 1"
-        assert saved_articles[1].source == "Test Source 2"
-        assert saved_articles[0].source_url == "https://example.com/1"
-        assert saved_articles[1].source_url == "https://example.com/2"
-        assert saved_articles[0].article_type == "Test Article Type 1"
-        assert saved_articles[1].article_type == "Test Article Type 2"
-        assert saved_articles[0].tags == "Test Tags 1"
-        assert saved_articles[1].tags == "Test Tags 2"
-        assert saved_articles[0].is_ai_related == False
-        assert saved_articles[1].is_ai_related == False
-        assert saved_articles[0].is_scraped == False
-        assert saved_articles[1].is_scraped == False
+        result = article_service.get_all_articles()
+        assert result["success"] is True
+        assert len(result["articles"]) == 2
         
-        
+        articles = result["articles"]
+        assert articles[0].title == "Test Title 1"
+        assert articles[1].title == "Test Title 2"
+        assert articles[0].summary == "Test Summary 1"
+        assert articles[1].summary == "Test Summary 2"
+        assert articles[0].content == "Test Content 1"
+        assert articles[1].content == "Test Content 2"
+        assert articles[0].link == "https://example.com/1"
+        assert articles[1].link == "https://example.com/2"
+        assert articles[0].category == "Test Category 1"
+        assert articles[1].category == "Test Category 2"
+        assert articles[0].published_at.tzinfo == timezone.utc
+        assert articles[1].published_at.tzinfo == timezone.utc
+        assert articles[0].author == "Test Author 1"
+        assert articles[1].author == "Test Author 2"
+        assert articles[0].source == "Test Source 1"
+        assert articles[1].source == "Test Source 2"
+        assert articles[0].source_url == "https://example.com/1"
+        assert articles[1].source_url == "https://example.com/2"
+        assert articles[0].article_type == "Test Article Type 1"
+        assert articles[1].article_type == "Test Article Type 2"
+        assert articles[0].tags == "Test Tags 1"
+        assert articles[1].tags == "Test Tags 2"
+        assert articles[0].is_ai_related is False
+        assert articles[1].is_ai_related is False
+        assert articles[0].is_scraped is False
+        assert articles[1].is_scraped is False
     
     def test_get_task_status(self, mock_config_file, article_service):
         """測試獲取任務狀態"""
