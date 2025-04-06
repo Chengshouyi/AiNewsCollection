@@ -6,16 +6,14 @@ from unittest.mock import MagicMock, patch, mock_open
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.orm import sessionmaker
 
 from src.crawlers.base_crawler import BaseCrawler
 from src.crawlers.configs.site_config import SiteConfig
 from src.services.article_service import ArticleService
-from src.database.database_manager import DatabaseManager
 from src.models.base_model import Base
 from src.models.articles_model import Articles
-from src.utils.model_utils import convert_hashable_dict_to_str_dict
-
+from src.crawlers.bnext_scraper import BnextUtils
 # 建立測試用的爬蟲配置
 TEST_CONFIG = {
     "name": "test_crawler",
@@ -53,12 +51,41 @@ class MockCrawlerForTest(BaseCrawler):
     def fetch_article_links(self) -> Optional[pd.DataFrame]:
         """測試用的實現"""
         self.fetch_article_links_called = True
-        data = {
-            'link': ['https://example.com/1', 'https://example.com/2'],
-            'title': ['Test Article 1', 'Test Article 2'],
-            'summary': ['Test summary 1', 'Test summary 2'],
-            'published_date': [datetime.now(timezone.utc), datetime.now(timezone.utc)]
-        }
+        data = []
+        data.append(
+            BnextUtils.get_article_columns_dict(
+            title='Test Article 1',
+            summary='Test summary 1',
+            content='',
+            link='https://example.com/1',
+            category='Test Category',
+            published_at=datetime.now(timezone.utc),
+            author='',
+            source='test_crawler',
+            source_url='https://www.example.com',
+            article_type='',
+            tags='',
+            is_ai_related=False,
+            is_scraped=False
+            )
+        )
+        data.append(
+            BnextUtils.get_article_columns_dict(
+                title='Test Article 2',
+                summary='Test summary 2',
+                content='',
+                link='https://example.com/2',
+                category='Test Category',
+                published_at=datetime.now(timezone.utc),
+                author='',
+                source='test_crawler',
+                source_url='https://www.example.com',
+                article_type='',
+                tags='',
+                is_ai_related=False,
+                is_scraped=False
+            )
+        )
         df = pd.DataFrame(data)
         self.articles_df = df
         return df
@@ -267,10 +294,18 @@ class TestBaseCrawler:
         # 模擬文章資料
         crawler.articles_df = pd.DataFrame({
             "title": ["Test Title 1", "Test Title 2"],
+            "summary": ["Test Summary 1", "Test Summary 2"],
             "content": ["Test Content 1", "Test Content 2"],
             "link": ["https://example.com/1", "https://example.com/2"],
-            "summary": ["Test Summary 1", "Test Summary 2"],
-            "published_date": [datetime.now(timezone.utc), datetime.now(timezone.utc)]
+            "category": ["Test Category 1", "Test Category 2"],
+            "published_at": [datetime.now(timezone.utc), datetime.now(timezone.utc)],
+            "author": ["Test Author 1", "Test Author 2"],
+            "source": ["Test Source 1", "Test Source 2"],
+            "source_url": ["https://example.com/1", "https://example.com/2"],
+            "article_type": ["Test Article Type 1", "Test Article Type 2"],
+            "tags": ["Test Tags 1", "Test Tags 2"],
+            "is_ai_related": [False, False],
+            "is_scraped": [False, False],
         })
         
         # 先清除資料庫中的所有文章
@@ -285,6 +320,32 @@ class TestBaseCrawler:
         assert len(saved_articles) == 2
         assert saved_articles[0].title == "Test Title 1"
         assert saved_articles[1].title == "Test Title 2"
+        assert saved_articles[0].summary == "Test Summary 1"
+        assert saved_articles[1].summary == "Test Summary 2"
+        assert saved_articles[0].content == "Test Content 1"
+        assert saved_articles[1].content == "Test Content 2"
+        assert saved_articles[0].link == "https://example.com/1"
+        assert saved_articles[1].link == "https://example.com/2"
+        assert saved_articles[0].category == "Test Category 1"
+        assert saved_articles[1].category == "Test Category 2"
+        assert saved_articles[0].published_at.tzinfo == timezone.utc
+        assert saved_articles[1].published_at.tzinfo == timezone.utc
+        assert saved_articles[0].author == "Test Author 1"
+        assert saved_articles[1].author == "Test Author 2"
+        assert saved_articles[0].source == "Test Source 1"
+        assert saved_articles[1].source == "Test Source 2"
+        assert saved_articles[0].source_url == "https://example.com/1"
+        assert saved_articles[1].source_url == "https://example.com/2"
+        assert saved_articles[0].article_type == "Test Article Type 1"
+        assert saved_articles[1].article_type == "Test Article Type 2"
+        assert saved_articles[0].tags == "Test Tags 1"
+        assert saved_articles[1].tags == "Test Tags 2"
+        assert saved_articles[0].is_ai_related == False
+        assert saved_articles[1].is_ai_related == False
+        assert saved_articles[0].is_scraped == False
+        assert saved_articles[1].is_scraped == False
+        
+        
     
     def test_get_task_status(self, mock_config_file, article_service):
         """測試獲取任務狀態"""

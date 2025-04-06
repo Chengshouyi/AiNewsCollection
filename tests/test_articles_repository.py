@@ -321,7 +321,7 @@ class TestArticleRepository:
         assert result["success_count"] == 1
         assert result["fail_count"] == 0    
         assert result["inserted_articles"] is not None
-        assert result["failed_entries"] == []
+        assert result["failed_articles"] == []
     
     def test_batch_create_with_missing_fields(self, article_repo, session, clean_db):
         """測試批量創建缺少必填欄位的文章"""
@@ -340,8 +340,8 @@ class TestArticleRepository:
         assert result["success_count"] == 0
         assert result["fail_count"] == 1
         assert result["inserted_articles"] == []
-        assert result["failed_entries"] is not None
-        assert "缺少必填欄位" in result["failed_entries"][0]["error"]
+        assert result["failed_articles"] is not None
+        assert "缺少必填欄位" in result["failed_articles"][0]["error"]
         
     def test_batch_create_with_existing_link(self, article_repo, sample_articles, session, clean_db):
         """測試批量創建已存在的連結"""
@@ -368,8 +368,8 @@ class TestArticleRepository:
         assert result["success_count"] == 0
         assert result["fail_count"] == 1
         assert result["inserted_articles"] == []
-        assert result["failed_entries"] is not None
-        assert "已存在具有相同連結的文章" in result["failed_entries"][0]["error"]
+        assert result["failed_articles"] is not None
+        assert "已存在具有相同連結的文章" in result["failed_articles"][0]["error"]
     
     def test_batch_create_with_invalid_data(self, article_repo, session, clean_db):
         """測試批量創建無效資料"""
@@ -396,8 +396,8 @@ class TestArticleRepository:
         assert result["success_count"] == 0
         assert result["fail_count"] == 1
         assert result["inserted_articles"] == []
-        assert result["failed_entries"] is not None
-        assert "link: URL不能為空" in result["failed_entries"][0]["error"]
+        assert result["failed_articles"] is not None
+        assert "link: URL不能為空" in result["failed_articles"][0]["error"]
     
     def test_batch_create_with_large_data(self, article_repo, session, clean_db):
         """測試批量創建大量資料"""
@@ -425,7 +425,7 @@ class TestArticleRepository:
         assert result["success_count"] == 1000
         assert result["fail_count"] == 0
         assert result["inserted_articles"] is not None
-        assert result["failed_entries"] == []
+        assert result["failed_articles"] == []
         
     def test_batch_create_with_large_data_and_pagination(self, article_repo, session, clean_db):
         """測試批量創建大量資料並進行分頁"""
@@ -453,7 +453,7 @@ class TestArticleRepository:
         assert result["success_count"] == 1000
         assert result["fail_count"] == 0
         assert result["inserted_articles"] is not None
-        assert result["failed_entries"] == []
+        assert result["failed_articles"] == []
         
         # 分頁查詢測試
         page_data = article_repo.get_paginated_by_filter(

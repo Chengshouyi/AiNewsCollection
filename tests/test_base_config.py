@@ -1,4 +1,3 @@
-
 import pytest
 import requests
 from src.crawlers.configs.base_config import DEFAULT_HEADERS, DEFAULT_TIMEOUT, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_DELAY, DEFAULT_MIN_DELAY, DEFAULT_MAX_DELAY, DEFAULT_REQUEST_CONFIG, get_default_session, random_sleep
@@ -62,10 +61,22 @@ def test_random_sleep_within_range():
     min_delay = 0.5
     max_delay = 1.0
     start_time = time.time()
-    random_sleep(min_seconds=int(min_delay), max_seconds=int(max_delay))
+    random_sleep(min_seconds=min_delay, max_seconds=max_delay)
     end_time = time.time()
     elapsed_time = end_time - start_time
     assert min_delay <= elapsed_time <= max_delay + 0.1  # 允許一點浮點數誤差
+
+def test_random_sleep_invalid_range():
+    """測試當最小值大於最大值時是否拋出異常"""
+    with pytest.raises(ValueError, match="最小暫停時間不能大於最大暫停時間"):
+        random_sleep(min_seconds=2.0, max_seconds=1.0)
+
+def test_random_sleep_negative_values():
+    """測試當輸入負數時是否拋出異常"""
+    with pytest.raises(ValueError, match="暫停時間不能小於 0 秒"):
+        random_sleep(min_seconds=-1.0, max_seconds=1.0)
+    with pytest.raises(ValueError, match="暫停時間不能小於 0 秒"):
+        random_sleep(min_seconds=1.0, max_seconds=-1.0)
 
 @patch('time.sleep')
 @patch('random.uniform')
@@ -74,6 +85,14 @@ def test_random_sleep_calls(mock_uniform, mock_sleep):
     min_delay = 2.0
     max_delay = 5.0
     mock_uniform.return_value = 3.0  # 模擬 random.uniform 的返回值
-    random_sleep(min_seconds=int(min_delay), max_seconds=int(max_delay))
+    random_sleep(min_seconds=min_delay, max_seconds=max_delay)
     mock_uniform.assert_called_once_with(min_delay, max_delay)
     mock_sleep.assert_called_once_with(mock_uniform.return_value)
+
+def test_random_sleep_default_values():
+    """測試 random_sleep 函數的預設參數是否正常工作"""
+    start_time = time.time()
+    random_sleep()  # 使用預設參數
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    assert 1.0 <= elapsed_time <= 3.0 + 0.1  # 預設範圍是 1.0 到 3.0 秒

@@ -275,12 +275,12 @@ class ArticlesRepository(BaseRepository[Articles]):
                 success_count: 成功創建數量
                 fail_count: 失敗數量
                 inserted_articles: 成功創建的實體列表
-                failed_entries: 創建失敗的實體資料及錯誤信息
+                failed_articles: 創建失敗的實體資料及錯誤信息
         """
         success_count = 0
         fail_count = 0
         inserted_articles = []
-        failed_entries = []
+        failed_articles = []
         
         for entity_data in entities_data:
             try:
@@ -291,14 +291,14 @@ class ArticlesRepository(BaseRepository[Articles]):
                     success_count += 1
                 else:
                     fail_count += 1
-                    failed_entries.append({
+                    failed_articles.append({
                         "data": entity_data,
                         "error": "創建實體返回空值"
                     })
             except Exception as e:
                 logger.error(f"批量創建實體失敗: {str(e)}")
                 fail_count += 1
-                failed_entries.append({
+                failed_articles.append({
                     "data": entity_data,
                     "error": str(e)
                 })
@@ -313,7 +313,7 @@ class ArticlesRepository(BaseRepository[Articles]):
             fail_count = len(entities_data)
             success_count = 0
             inserted_articles = []
-            failed_entries = [{
+            failed_articles = [{
                 "data": entity_data,
                 "error": f"提交事務失敗: {str(e)}"
             } for entity_data in entities_data]
@@ -322,7 +322,7 @@ class ArticlesRepository(BaseRepository[Articles]):
             "success_count": success_count,
             "fail_count": fail_count,
             "inserted_articles": inserted_articles,
-            "failed_entries": failed_entries
+            "failed_articles": failed_articles
         }
 
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[Articles]:

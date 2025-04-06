@@ -86,7 +86,7 @@ class BnextCrawler(BaseCrawler):
                 - min_keywords (int): 最小關鍵字數量
                 
         Returns:
-            pd.DataFrame: 包含文章詳細內容的資料框
+            List[Dict[str, Any]]: 包含文章詳細內容的列表
         """
         if self.articles_df is None or self.articles_df.empty:
             logger.warning("沒有文章列表可供處理")
@@ -111,6 +111,8 @@ class BnextCrawler(BaseCrawler):
         for article_content in article_contents:
             if article_content:
                 self.articles_df.loc[self.articles_df['link'] == article_content['link'], 'is_scraped'] = True
+        
+        return article_contents
 
 
 

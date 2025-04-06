@@ -86,7 +86,11 @@ class BnextUtils:
         tags: Optional[str] = '', 
         is_ai_related: Optional[bool] = False, 
         is_scraped: Optional[bool] = False) -> Dict:
-        """獲取文章欄位字典"""
+        """獲取文章欄位字典（用於資料庫操作）
+        
+        Returns:
+            Dict: 單一文章的字典格式
+        """
         return {
             'title': title,
             'summary': summary,
@@ -102,16 +106,62 @@ class BnextUtils:
             'is_ai_related': is_ai_related,
             'is_scraped': is_scraped
         }
-    
+
+    @staticmethod
+    def get_article_columns_dict_for_df(
+        title: Optional[str] = '', 
+        summary: Optional[str] = '', 
+        content: Optional[str] = '', 
+        link: Optional[str] = '', 
+        category: Optional[str] = '', 
+        published_at: Optional[datetime] = None, 
+        author: Optional[str] = '', 
+        source: Optional[str] = '', 
+        source_url: Optional[str] = '', 
+        article_type: Optional[str] = '', 
+        tags: Optional[str] = '', 
+        is_ai_related: Optional[bool] = False, 
+        is_scraped: Optional[bool] = False) -> Dict:
+        """獲取文章欄位字典（用於 DataFrame 創建）
+        
+        Returns:
+            Dict: 包含列表形式值的字典，適合直接轉換為 DataFrame
+        """
+        return {
+            'title': [title],
+            'summary': [summary],
+            'content': [content],
+            'link': [link],
+            'category': [category],
+            'published_at': [published_at],
+            'author': [author],
+            'source': [source],
+            'source_url': [source_url],
+            'article_type': [article_type],
+            'tags': [tags],
+            'is_ai_related': [is_ai_related],
+            'is_scraped': [is_scraped]
+        }
+
     @staticmethod
     def process_articles_to_dataframe(articles_list: List[Dict]) -> pd.DataFrame:
         """處理文章列表並轉換為DataFrame"""
         if not articles_list:
             logger.warning("未爬取到任何文章")
             return pd.DataFrame()
-            
-        df = pd.DataFrame(articles_list)
-        df = df.drop_duplicates(subset=['link'], keep='first')
+        
+        # 將每個文章字典轉換為 DataFrame 格式
+        df_articles = []
+        for article in articles_list:
+            #df_article = BnextUtils.get_article_columns_dict_for_df(**article)
+            df_articles.append(pd.DataFrame([article], columns=list(article.keys())))
+        
+        # 合併所有 DataFrame
+        if df_articles:
+            df = pd.concat(df_articles, ignore_index=True)
+            df = df.drop_duplicates(subset=['link'], keep='first')
+        else:
+            df = pd.DataFrame()
         
         # 添加統計信息
         stats = {

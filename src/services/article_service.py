@@ -63,12 +63,14 @@ class ArticleService:
                 success_count: 成功插入數量
                 fail_count: 失敗數量
                 inserted_articles: 成功插入的文章列表
+                failed_articles: 失敗的資料
         """
         if not articles_data:
             return {
                 "success_count": 0,
                 "fail_count": 0,
-                "inserted_articles": []
+                "inserted_articles": [],
+                "failed_articles": []
             }
 
         article_repo, session = self._get_repository()
@@ -81,7 +83,8 @@ class ArticleService:
             return {
                 "success_count": result["success_count"],
                 "fail_count": result["fail_count"],
-                "inserted_articles": result["inserted_articles"]
+                "inserted_articles": result["inserted_articles"],
+                "failed_articles": result["failed_articles"]
             }
         except Exception as e:
             session.rollback()

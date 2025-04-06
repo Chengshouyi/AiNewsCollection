@@ -269,21 +269,23 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
                     
                 # 確保 last_run_at 也是帶時區的
                 last_run = task.last_run_at
-                #print("")
-                #print(f"------Task ID: {task.id}------")
-                #print(f"last_run: {last_run}")
                 if last_run.tzinfo is None:
                     # 如果 last_run_at 沒有時區信息，假設它是 UTC
                     last_run = enforce_utc_datetime_transform(last_run)
-                    #print(f"last_run(after enforce_utc_datetime_transform): {last_run}")
-                # 使用 croniter 計算下次執行時間（使用 UTC）
+                    
+                # 特殊處理每小時執行的任務 (0 * * * *)
+                if cron_expression == "0 * * * *":
+                    # 檢查上次執行時間是否超過1小時
+                    if now - last_run >= timedelta(hours=1):
+                        result_tasks.append(task)
+                    continue
+                    
+                # 對於其他 cron 表達式，使用 croniter 計算下次執行時間
                 cron = croniter(cron_expression, last_run)
                 next_run = cron.get_next(datetime)
-                #print(f"next_run(from croniter): {next_run}")
                 # 確保 next_run 也有時區
                 if next_run.tzinfo is None:
                     next_run = enforce_utc_datetime_transform(next_run)
-                    #print(f"next_run(after enforce_utc_datetime_transform): {next_run}")
                 # 只有下次執行時間已經過了，才加入待執行列表
                 if next_run <= now:
                     result_tasks.append(task)

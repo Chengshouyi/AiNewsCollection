@@ -39,8 +39,22 @@ def get_default_session() -> requests.Session:
     session.headers.update(DEFAULT_HEADERS)
     return session
 
-def random_sleep(min_seconds=1, max_seconds=3):
-    """隨機暫停，避免請求過於頻繁"""
+def random_sleep(min_seconds: float = 1.0, max_seconds: float = 3.0) -> None:
+    """隨機暫停，避免請求過於頻繁
+    
+    Args:
+        min_seconds (float): 最小暫停時間（秒），預設為 1.0 秒
+        max_seconds (float): 最大暫停時間（秒），預設為 3.0 秒
+        
+    Raises:
+        ValueError: 當 min_seconds 大於 max_seconds 時
+        ValueError: 當 min_seconds 或 max_seconds 小於 0 時
+    """
+    if min_seconds < 0 or max_seconds < 0:
+        raise ValueError("暫停時間不能小於 0 秒")
+    if min_seconds > max_seconds:
+        raise ValueError("最小暫停時間不能大於最大暫停時間")
+        
     sleep_time = random.uniform(min_seconds, max_seconds)
     logger.debug(f"等待 {sleep_time:.2f} 秒...")
     time.sleep(sleep_time)
