@@ -14,7 +14,7 @@ from src.crawlers.crawler_factory import CrawlerFactory
 from src.models.base_model import Base
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawlers_model import Crawlers
-from src.models.crawler_task_history_model import CrawlerTaskHistory
+from src.models.crawler_task_history_model import CrawlerTaskHistory        
 from src.error.errors import DatabaseOperationError, ValidationError
 from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
 from src.models.crawler_task_history_schema import CrawlerTaskHistoryCreateSchema
@@ -79,13 +79,22 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not tasks_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'task': None
                     }
                     
-                success = tasks_repo.update(task_id, task_data)
+                result = tasks_repo.update(task_id, task_data)
+                if result is None:
+                    return {
+                        'success': False,
+                        'message': '任務不存在',
+                        'task': None
+                    }
+                    
                 return {
-                    'success': success,
-                    'message': '任務更新成功' if success else '任務不存在'
+                    'success': True,
+                    'message': '任務更新成功',
+                    'task': result
                 }
         except Exception as e:
             error_msg = f"更新任務失敗, ID={task_id}: {str(e)}"
@@ -121,18 +130,21 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not tasks_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'task': None
                     }
                     
                 task = tasks_repo.get_by_id(task_id)
                 if task:
                     return {
                         'success': True,
+                        'message': '任務獲取成功',
                         'task': task
                     }
                 return {
                     'success': False,
-                    'message': '任務不存在'
+                    'message': '任務不存在',
+                    'task': None
                 }
         except Exception as e:
             error_msg = f"獲取任務失敗, ID={task_id}: {str(e)}"
@@ -147,12 +159,14 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not tasks_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'tasks': []
                     }
                     
                 tasks = tasks_repo.get_all(filters)
                 return {
                     'success': True,
+                    'message': '任務獲取成功',
                     'tasks': tasks
                 }
         except Exception as e:
@@ -168,12 +182,14 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not history_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'history': []
                     }
                     
                 history = history_repo.find_by_task_id(task_id)
                 return {
                     'success': True,
+                    'message': '任務歷史獲取成功',
                     'history': history
                 }
         except Exception as e:
@@ -190,7 +206,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     return {
                         'status': 'error',
                         'progress': 0,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'task': None
                     }
                     
                 # 檢查任務是否存在
@@ -199,7 +216,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     return {
                         'status': 'unknown',
                         'progress': 0,
-                        'message': '任務不存在'
+                        'message': '任務不存在',
+                        'task': None
                     }
                     
                 # 從資料庫獲取最新一筆歷史記錄
@@ -209,7 +227,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     return {
                         'status': 'unknown',
                         'progress': 0,
-                        'message': '無執行歷史'
+                        'message': '無執行歷史',
+                        'task': task
                     }
                 
                 # 計算進度

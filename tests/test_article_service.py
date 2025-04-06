@@ -141,9 +141,9 @@ class TestArticleService:
         
         result = article_service.batch_create_articles(articles_data)
         assert result["success"] is True
-        assert result["success_count"] == 3
-        assert result["fail_count"] == 0
-        assert len(result["inserted_articles"]) == 3
+        assert result["resultMsg"]["success_count"] == 3
+        assert result["resultMsg"]["fail_count"] == 0
+        assert len(result["resultMsg"]["inserted_articles"]) == 3
 
     def test_get_article_by_id(self, article_service, sample_articles):
         """測試根據ID獲取文章"""
@@ -157,21 +157,21 @@ class TestArticleService:
     def test_get_article_by_link(self, article_service, sample_articles):
         """測試根據連結獲取文章"""
         link = sample_articles[0].link
-        article = article_service.get_article_by_link(link)
+        result = article_service.get_article_by_link(link)
         
-        assert article is not None
-        assert article.link == link
+        assert result["success"] is True
+        assert result["article"].link == link
 
     def test_get_articles_paginated(self, article_service, sample_articles):
         """測試分頁獲取文章"""
         result = article_service.get_articles_paginated(page=1, per_page=2)
         
         assert result["success"] is True
-        assert len(result["items"]) == 2
-        assert result["total"] == 3
-        assert result["page"] == 1
-        assert result["per_page"] == 2
-        assert result["total_pages"] == 2
+        assert len(result["resultMsg"]["items"]) == 2
+        assert result["resultMsg"]["total"] == 3
+        assert result["resultMsg"]["page"] == 1
+        assert result["resultMsg"]["per_page"] == 2
+        assert result["resultMsg"]["total_pages"] == 2
 
     def test_get_ai_related_articles(self, article_service, sample_articles):
         """測試獲取AI相關文章"""
@@ -208,9 +208,10 @@ class TestArticleService:
         }
         
         result = article_service.batch_update_articles(article_ids, update_data)
-        assert result["success_count"] == 2
-        assert result["fail_count"] == 0
-        assert len(result["updated_articles"]) == 2
+        assert result["success"] is True
+        assert result["resultMsg"]["success_count"] == 2
+        assert result["resultMsg"]["fail_count"] == 0
+        assert len(result["resultMsg"]["updated_articles"]) == 2
 
     def test_delete_article(self, article_service, sample_articles):
         """測試刪除文章"""
@@ -228,11 +229,11 @@ class TestArticleService:
         """測試獲取文章統計資訊"""
         result = article_service.get_articles_statistics()
         
-        assert result["total_articles"] == 3
-        assert result["ai_related_articles"] == 2
-        assert "category_distribution" in result
-        assert result["category_distribution"]["AI研究"] == 2
-        assert result["category_distribution"]["財經"] == 1
+        assert result["resultMsg"]["total_articles"] == 3
+        assert result["resultMsg"]["ai_related_articles"] == 2
+        assert "category_distribution" in result["resultMsg"]
+        assert result["resultMsg"]["category_distribution"]["AI研究"] == 2
+        assert result["resultMsg"]["category_distribution"]["財經"] == 1
 
     def test_error_handling(self, article_service):
         """測試錯誤處理"""

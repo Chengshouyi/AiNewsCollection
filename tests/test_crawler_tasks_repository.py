@@ -67,6 +67,7 @@ def sample_tasks(session, clean_db, sample_crawler):
 
     tasks = [
         CrawlerTasks(
+            task_name="AI任務1",
             crawler_id=sample_crawler.id,
             is_auto=True,
             ai_only=True,
@@ -74,6 +75,7 @@ def sample_tasks(session, clean_db, sample_crawler):
             cron_expression="* * * * *"
         ),
         CrawlerTasks(
+            task_name="一般任務",
             crawler_id=sample_crawler.id,
             is_auto=True,
             ai_only=False,
@@ -81,6 +83,7 @@ def sample_tasks(session, clean_db, sample_crawler):
             cron_expression="* * * * *"
         ),
         CrawlerTasks(
+            task_name="手動AI任務",
             crawler_id=sample_crawler.id,
             is_auto=False,
             ai_only=True,
@@ -199,19 +202,22 @@ class TestCrawlerTasksRepository:
         # 建立測試資料
         tasks = [
             CrawlerTasks(
+                task_name="每小時執行任務",
                 crawler_id=sample_crawler.id,
                 is_auto=True,
                 cron_expression="0 * * * *"  # 每小時執行
             ),
             CrawlerTasks(
+                task_name="每天執行任務",
                 crawler_id=sample_crawler.id,
                 is_auto=True,
                 cron_expression="0 0 * * *"  # 每天執行
             ),
             CrawlerTasks(
+                task_name="每週執行任務",
                 crawler_id=sample_crawler.id,
-                is_auto=False,  # 不應該被查詢到
-                cron_expression="0 * * * *"
+                is_auto=True,
+                cron_expression="0 0 * * 1"  # 每週一執行
             )
         ]
         session.add_all(tasks)
@@ -238,6 +244,7 @@ class TestCrawlerTasksRepository:
         # 創建三種情況的任務：
         # 1. 上次執行超過1小時（應該被找到）
         task1 = CrawlerTasks(
+            task_name="超過1小時任務",
             crawler_id=sample_crawler.id,
             is_auto=True,
             cron_expression="0 * * * *",  # 每小時執行（整點）
@@ -246,6 +253,7 @@ class TestCrawlerTasksRepository:
         
         # 2. 上次執行不到1小時（不應該被找到）
         task2 = CrawlerTasks(
+            task_name="不到1小時任務",
             crawler_id=sample_crawler.id,
             is_auto=True,
             cron_expression="0 * * * *",
@@ -254,6 +262,7 @@ class TestCrawlerTasksRepository:
         
         # 3. 從未執行過（應該被找到）
         task3 = CrawlerTasks(
+            task_name="從未執行任務",
             crawler_id=sample_crawler.id,
             is_auto=True,
             cron_expression="0 * * * *",
@@ -289,16 +298,19 @@ class TestCrawlerTasksRepository:
         base_time = datetime.now(timezone.utc)  # 使用 UTC 時間作為基準
         tasks = [
             CrawlerTasks(
+                task_name="失敗任務1",
                 crawler_id=sample_crawler.id,
                 last_run_success=False,
                 last_run_at=base_time - timedelta(days=2)  # 超過1天，不應該被查到
             ),
             CrawlerTasks(
+                task_name="失敗任務2",
                 crawler_id=sample_crawler.id,
                 last_run_success=False,
                 last_run_at=base_time - timedelta(hours=12)  # 應該被查到
             ),
             CrawlerTasks(
+                task_name="成功任務",
                 crawler_id=sample_crawler.id,
                 last_run_success=True,
                 last_run_at=base_time - timedelta(hours=1)  # 成功的任務，不應該被查到
@@ -333,6 +345,7 @@ class TestCrawlerTasksRepository:
         
         # 測試成功創建
         task = crawler_tasks_repo.create({
+            "task_name": "測試任務",
             "crawler_id": sample_crawler.id,
             "is_auto": True,
             "cron_expression": "0 * * * *"
@@ -345,6 +358,7 @@ class TestCrawlerTasksRepository:
         """測試更新任務時的驗證規則"""
         # 創建新任務
         task = CrawlerTasks(
+            task_name="測試任務",
             crawler_id=sample_crawler.id,
             is_auto=False
         )
@@ -385,6 +399,7 @@ class TestCrawlerTasksRepository:
     def test_default_values(self, crawler_tasks_repo, sample_crawler):
         """測試新建任務時的預設值"""
         task = crawler_tasks_repo.create({
+            "task_name": "測試任務",
             "crawler_id": sample_crawler.id,
             "is_auto": False  # 手動執行不需要 cron_expression
         })
@@ -401,6 +416,7 @@ class TestCrawlerTasksConstraints:
     def test_boolean_defaults(self, session, sample_crawler):
         """測試布林欄位的默認值"""
         task = CrawlerTasks(
+            task_name="測試任務",
             crawler_id=sample_crawler.id
         )
         session.add(task)
@@ -484,6 +500,7 @@ class TestSpecialCases:
         session.commit()
         
         task = CrawlerTasks(
+            task_name="測試任務",
             crawler_id=sample_crawler.id,
             is_auto=False,
             cron_expression="0 * * * *"

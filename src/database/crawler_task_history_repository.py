@@ -187,7 +187,7 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
             if task_id is not None:
                 query = query.filter_by(task_id=task_id)
             
-            return sum(history.articles_count for history in query.all())
+            return sum(int(history.articles_count or 0) for history in query.all())
             
         return self.execute_query(
             query_builder,

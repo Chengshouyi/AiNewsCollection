@@ -55,6 +55,7 @@ def sample_crawler(session):
 @pytest.fixture
 def sample_task(session, sample_crawler):
     task = CrawlerTasks(
+        task_name="測試任務",
         crawler_id=sample_crawler.id,
         is_auto=True,
         ai_only=True,

@@ -8,6 +8,7 @@ from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
 
 
 # 通用字段定義
+TaskName = Annotated[str, BeforeValidator(validate_str("task_name", max_length=255, required=True))]
 CrawlerId = Annotated[int, BeforeValidator(validate_positive_int("crawler_id", required=True))]
 MaxPages = Annotated[int, BeforeValidator(validate_positive_int("max_pages", required=True))]
 NumArticles = Annotated[int, BeforeValidator(validate_positive_int("num_articles", required=True))]
@@ -21,6 +22,7 @@ LastRunMessage = Annotated[Optional[str], BeforeValidator(validate_str("last_run
 
 class CrawlerTasksCreateSchema(BaseCreateSchema):
     """爬蟲任務創建模型"""
+    task_name: TaskName
     crawler_id: CrawlerId
     is_auto: IsAuto = True
     ai_only: AiOnly = False
@@ -39,7 +41,7 @@ class CrawlerTasksCreateSchema(BaseCreateSchema):
     def validate_required_fields(cls, data):
         """驗證必填欄位"""
         if isinstance(data, dict):
-            required_fields = ['crawler_id']
+            required_fields = ['task_name', 'crawler_id']
             if data.get('is_auto') is True:
                 if data.get('cron_expression') is None:
                     raise ValidationError("cron_expression: 當設定為自動執行時,此欄位不能為空")
@@ -47,6 +49,7 @@ class CrawlerTasksCreateSchema(BaseCreateSchema):
 
 class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     """爬蟲任務更新模型"""
+    task_name: Optional[TaskName] = None
     is_auto: Optional[IsAuto] = None
     ai_only: Optional[AiOnly] = None
     notes: Optional[Notes] = None
@@ -65,7 +68,7 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     
     @classmethod
     def get_updated_fields(cls):
-        return ['is_auto', 'ai_only', 'notes', 'max_pages', 'num_articles', 'min_keywords', 'fetch_details', 'last_run_at', 'last_run_success', 'last_run_message', 'cron_expression'] + BaseUpdateSchema.get_updated_fields()
+        return ['task_name', 'is_auto', 'ai_only', 'notes', 'max_pages', 'num_articles', 'min_keywords', 'fetch_details', 'last_run_at', 'last_run_success', 'last_run_message', 'cron_expression'] + BaseUpdateSchema.get_updated_fields()
     
 
     @model_validator(mode='before')

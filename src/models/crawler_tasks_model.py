@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text, VARCHAR
+from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text, VARCHAR, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from typing import Optional
@@ -9,6 +9,7 @@ class CrawlerTasks(Base, BaseEntity):
     """爬蟲任務模型
     
     欄位說明：
+    - task_name: 任務名稱
     - crawler_id: 外鍵，關聯爬蟲
     - is_auto: 是否自動爬取
     - ai_only: 是否僅收集 AI 相關
@@ -24,6 +25,10 @@ class CrawlerTasks(Base, BaseEntity):
     """
     __tablename__ = 'crawler_tasks'
 
+    task_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False
+    )
     crawler_id: Mapped[int] = mapped_column(
         Integer,
         ForeignKey('crawlers.id'),
@@ -66,7 +71,8 @@ class CrawlerTasks(Base, BaseEntity):
     cron_expression: Mapped[Optional[str]] = mapped_column(VARCHAR(255))
 
 
-    crawlers = relationship("Crawlers", back_populates="crawler_tasks")
+    crawler = relationship("Crawlers", back_populates="crawler_tasks", lazy="joined")
+
     history = relationship("CrawlerTaskHistory", back_populates="task", lazy="joined")
 
         
@@ -91,11 +97,12 @@ class CrawlerTasks(Base, BaseEntity):
                          self._datetime_fields_to_watch, **kwargs)
 
     def __repr__(self):
-        return f"<CrawlerTask(id={self.id}, crawler_id={self.crawler_id})>"
+        return f"<CrawlerTask(id={self.id}, task_name={self.task_name}, crawler_id={self.crawler_id})>"
     
     def to_dict(self):
         return {
             **super().to_dict(),
+            'task_name': self.task_name,
             'crawler_id': self.crawler_id,
             'is_auto': self.is_auto,
             'ai_only': self.ai_only,

@@ -1,12 +1,12 @@
 import logging
-from typing import Optional, Dict, Any, List, TypeVar, Tuple, cast
+from typing import Optional, Dict, Any, List, TypeVar, Tuple, Type, cast
 from src.models.crawlers_model import Base, Crawlers
 from datetime import datetime, timezone
 from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
 from src.error.errors import DatabaseOperationError, ValidationError
-from src.database.database_manager import DatabaseManager
 from src.database.crawlers_repository import CrawlersRepository
-from sqlalchemy import func, or_
+from src.services.base_service import BaseService
+from src.database.base_repository import BaseRepository
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -22,308 +22,294 @@ class DatetimeProvider:
     def now(tz=None):
         return datetime.now(tz)
 
-class CrawlersService:
+class CrawlersService(BaseService[Crawlers]):
     """爬蟲服務，提供爬蟲相關業務邏輯"""
     
-    def __init__(self, db_manager: DatabaseManager):
-        self.db_manager = db_manager
-        self.datetime_provider = DatetimeProvider()  # 使用輔助類
+    def __init__(self, db_manager=None):
+        super().__init__(db_manager)
+        self.datetime_provider = DatetimeProvider()
 
-    def _get_repository(self):
-        """取得儲存庫的上下文管理器"""
-        session = self.db_manager.Session()
-        try:
-            return CrawlersRepository(session, Crawlers), session
-        except Exception as e:
-            error_msg = f"取得儲存庫失敗: {e}"
-            logger.error(error_msg)
-            session.close()
-            raise DatabaseOperationError(error_msg) from e
+    def _get_repository_mapping(self) -> Dict[str, Tuple[Type[BaseRepository], Type[Base]]]:
+        """提供儲存庫映射"""
+        return {
+            'Crawler': (CrawlersRepository, Crawlers)
+        }
     
-    def create_crawler(self, crawler_data: Dict[str, Any]) -> Optional[Crawlers]:
-        """
-        創建新爬蟲設定
-        
-        Args:
-            crawler_data: 爬蟲設定資料字典
-            
-        Returns:
-            創建成功的爬蟲設定或 None
-        """
-        repo, session = None, None
-        try:
-            # 添加必要的欄位
-            now = self.datetime_provider.now(timezone.utc)
-            crawler_data.update({
-                'created_at': now,
-                'updated_at': now
-            })
-            
-            # 使用 Pydantic 驗證資料
-            try:
-                validated_data = CrawlersCreateSchema.model_validate(crawler_data).model_dump()
-                logger.debug(f"爬蟲設定資料驗證成功: {validated_data}")
-            except Exception as e:
-                error_msg = f"爬蟲設定資料驗證失敗: {e}"
-                logger.error(error_msg)
-                raise ValidationError(error_msg) from e
+    def _get_repository(self) -> CrawlersRepository:
+        """獲取爬蟲資料庫訪問對象"""
+        return cast(CrawlersRepository, super()._get_repository('Crawler'))
 
-            repo, session = self._get_repository()
-            try:
-                result = repo.create(validated_data)
-                session.commit()
-                if result:
-                    logger.debug(f"成功創建爬蟲設定, ID={result.id}")
-                    return self._ensure_fresh_instance(result)
-                else:
-                    logger.error("創建爬蟲設定失敗，結果為 None")
-                    raise DatabaseOperationError("創建爬蟲設定失敗，結果為 None")
-            except Exception as e:
-                session.rollback()
-                raise e
-        except ValidationError as e:
-            # 直接重新引發驗證錯誤
-            if session:
-                session.rollback()
-            raise e
-        except Exception as e:
-            error_msg = f"創建爬蟲設定失敗: {e}"
-            logger.error(error_msg)
-            if session:
-                session.rollback()
-            # 將其他例外轉換為 ValidationError，保持一致性
-            raise ValidationError(f"創建爬蟲設定失敗: {str(e)}")
+    def create_crawler(self, crawler_data: Dict[str, Any]) -> Dict[str, Any]:
+        """創建新爬蟲設定"""
+        try:
+            with self._transaction():
+                # 添加必要的欄位
+                now = self.datetime_provider.now(timezone.utc)
+                crawler_data.update({
+                    'created_at': now,
+                    'updated_at': now
+                })
+                
+                # 使用 Pydantic 驗證資料
+                try:
+                    validated_data = CrawlersCreateSchema.model_validate(crawler_data).model_dump()
+                except Exception as e:
+                    return {
+                        'success': False,
+                        'message': f"爬蟲設定資料驗證失敗: {str(e)}"
+                    }
 
-    def get_all_crawlers(self, limit: Optional[int] = None, offset: Optional[int] = None, 
-                         sort_by: Optional[str] = None, sort_desc: bool = False) -> List[Crawlers]:
-        """
-        獲取所有爬蟲設定，支持分頁和排序
-        
-        Args:
-            limit: 限制返回數量，預設為 None（返回全部）
-            offset: 起始偏移，預設為 None
-            sort_by: 排序欄位，預設為 None
-            sort_desc: 是否降序排序，預設為 False
-            
-        Returns:
-            爬蟲設定列表
-        """
-        try:
-            repo, session = self._get_repository()
-            crawlers = repo.get_all(
-                limit=limit,
-                offset=offset,
-                sort_by=sort_by,
-                sort_desc=sort_desc
-            )
-            if not crawlers:
-                return []
-            return crawlers
-        except Exception as e:
-            error_msg = f"獲取所有爬蟲設定失敗: {e}"
-            logger.error(error_msg)
-            raise e
-    
-    def get_crawler_by_id(self, crawler_id: int) -> Optional[Crawlers]:
-        """
-        根據ID獲取爬蟲設定
-        
-        Args:
-            crawler_id: 爬蟲設定ID
-            
-        Returns:
-            爬蟲設定或 None
-        """  
-        try:
-            repo, session = self._get_repository()
-            crawler = repo.get_by_id(crawler_id)
-            return crawler
-        except Exception as e:
-            error_msg = f"獲取爬蟲設定失敗，ID={crawler_id}: {e}"
-            logger.error(error_msg)
-            raise e
-
-    def get_active_crawlers(self) -> List[Crawlers]:
-        """
-        獲取所有活動中的爬蟲設定
-        
-        Returns:
-            活動中的爬蟲設定列表
-        """
-        try:
-            repo, session = self._get_repository()
-            crawlers = repo.find_active_crawlers()
-            return crawlers
-        except Exception as e:
-            error_msg = f"獲取活動中的爬蟲設定失敗: {e}"
-            logger.error(error_msg)
-            raise e
-    
-    def get_crawlers_by_name(self, crawler_name: str) -> List[Crawlers]:
-        """
-        根據名稱模糊查詢爬蟲設定
-        
-        Args:
-            crawler_name: 爬蟲名稱關鍵字
-            
-        Returns:
-            符合條件的爬蟲設定列表
-        """
-        try:
-            repo, session = self._get_repository()
-            crawlers = repo.find_by_crawler_name(crawler_name)
-            return crawlers
-        except Exception as e:
-            error_msg = f"根據名稱查詢爬蟲設定失敗: {e}"
-            logger.error(error_msg)
-            raise e
-    
-    def update_crawler(self, crawler_id: int, crawler_data: Dict[str, Any]) -> Optional[Crawlers]:
-        """
-        更新爬蟲設定
-        
-        Args:
-            crawler_id: 爬蟲設定ID
-            crawler_data: 要更新的爬蟲設定資料
-            
-        Returns:
-            更新成功的爬蟲設定或 None
-        
-        Raises:
-            ValidationError: 當嘗試更新不可變欄位或資料驗證失敗時
-        """
-        repo, session = None, None
-        try:
-            # 自動更新 updated_at 欄位
-            crawler_data['updated_at'] = self.datetime_provider.now(timezone.utc)
-            
-            # 使用 Pydantic 驗證資料
-            try:
-                validated_data = CrawlersUpdateSchema.model_validate(crawler_data).model_dump()
-                logger.debug(f"爬蟲設定更新資料驗證成功: {validated_data}")
-            except Exception as e:
-                error_msg = f"爬蟲設定更新資料驗證失敗: {str(e)}"
-                logger.error(error_msg)
-                raise ValidationError(error_msg)
-            
-            repo, session = self._get_repository()
-            
-            # 檢查爬蟲是否存在
-            original_crawler = repo.get_by_id(crawler_id)
-            if not original_crawler:
-                error_msg = f"爬蟲設定不存在，ID={crawler_id}"
-                logger.error(error_msg)
-                return None
-            
-            # 嘗試執行更新
-            try:
-                result = repo.update(crawler_id, validated_data)
+                crawler_repo = self._get_repository()
+                if not crawler_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'crawler': None
+                    }
+                result = crawler_repo.create(validated_data)
                 
                 if not result:
-                    error_msg = f"爬蟲設定更新失敗，ID不存在: {crawler_id}"
-                    logger.error(error_msg)
-                    return None
-                    
-                session.commit()
-                logger.debug(f"成功更新爬蟲設定，ID={crawler_id}")
-                return self._ensure_fresh_instance(result)
-            except ValidationError as e:
-                session.rollback()
-                raise e
-        except ValidationError as e:
-            if session:
-                session.rollback()
-            raise e
-        except Exception as e:
-            error_msg = f"更新爬蟲設定失敗，ID={crawler_id}: {e}"
-            logger.error(error_msg)
-            if session:
-                session.rollback()
-            raise ValidationError(f"更新爬蟲設定失敗: {str(e)}")
-    
-    def delete_crawler(self, crawler_id: int) -> bool:
-        """
-        刪除爬蟲設定
-        
-        Args:
-            crawler_id: 爬蟲設定ID
-            
-        Returns:
-            是否成功刪除
-        """              
-        try:
-            repo, session = self._get_repository()
-            result = repo.delete(crawler_id)
-            
-            if not result:
-                error_msg = f"欲刪除的爬蟲設定不存在，ID={crawler_id}"
-                logger.error(error_msg)
-                return False
+                    return {
+                        'success': False,
+                        'message': "創建爬蟲設定失敗",
+                        'crawler': None
+                    }
                 
-            session.commit()
-            log_info = f"成功刪除爬蟲設定，ID={crawler_id}"
-            logger.debug(log_info)
-            return True
+                return {
+                    'success': True,
+                    'message': "爬蟲設定創建成功",
+                    'crawler': result
+                }
+                
         except Exception as e:
-            error_msg = f"刪除爬蟲設定失敗，ID={crawler_id}: {str(e)}"
-            logger.error(error_msg)
-            if repo and session:
-                session.rollback()
+            logger.error(f"創建爬蟲設定失敗: {str(e)}")
             raise e
 
-    
-    def toggle_crawler_status(self, crawler_id: int) -> Optional[Crawlers]:
-        """
-        切換爬蟲活躍狀態
-        
-        Args:
-            crawler_id: 爬蟲設定ID
-            
-        Returns:
-            更新後的爬蟲設定或 None
-        """
+    def get_all_crawlers(self, limit: Optional[int] = None, offset: Optional[int] = None,
+                        sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
+        """獲取所有爬蟲設定"""
         try:
-            repo, session = self._get_repository()
-            result = repo.toggle_active_status(crawler_id)
-            
-            if not result:
-                logger.warning(f"切換爬蟲狀態失敗，爬蟲不存在，ID={crawler_id}")
-                return None
+            with self._transaction():
+                crawler_repo = self._get_repository()
+                if not crawler_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'crawlers': []
+                    }
+                crawlers = crawler_repo.get_all(
+                    limit=limit,
+                    offset=offset,
+                    sort_by=sort_by,
+                    sort_desc=sort_desc
+                )
                 
-            # 獲取更新後的爬蟲設定
-            updated_crawler = repo.get_by_id(crawler_id)
-            if updated_crawler:
-                logger.debug(f"成功切換爬蟲狀態，ID={crawler_id}, 新狀態={updated_crawler.is_active}")
-                return updated_crawler
-            else:
-                logger.warning(f"切換爬蟲狀態失敗，爬蟲不存在，ID={crawler_id}")
-                return None
+                return {
+                    'success': True,
+                    'message': "獲取爬蟲設定列表成功",
+                    'crawlers': crawlers or []
+                }
         except Exception as e:
-            error_msg = f"切換爬蟲狀態失敗，ID={crawler_id}: {e}"
-            logger.error(error_msg)
+            logger.error(f"獲取所有爬蟲設定失敗: {str(e)}")
+            raise e
+
+    def get_crawler_by_id(self, crawler_id: int) -> Dict[str, Any]:
+        """根據ID獲取爬蟲設定"""
+        try:
+            with self._transaction():
+                crawler_repo = self._get_repository()
+                if not crawler_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'crawler': None
+                    }
+                crawler = crawler_repo.get_by_id(crawler_id)
+                
+                if not crawler:
+                    return {
+                        'success': False,
+                        'message': f"爬蟲設定不存在，ID={crawler_id}",
+                        'crawler': None
+                    }
+                
+                return {
+                    'success': True,
+                    'message': "獲取爬蟲設定成功",
+                    'crawler': crawler
+                }
+        except Exception as e:
+            logger.error(f"獲取爬蟲設定失敗，ID={crawler_id}: {str(e)}")
+            raise e
+
+    def update_crawler(self, crawler_id: int, crawler_data: Dict[str, Any]) -> Dict[str, Any]:
+        """更新爬蟲設定"""
+        try:
+            with self._transaction():
+                # 自動更新 updated_at 欄位
+                crawler_data['updated_at'] = self.datetime_provider.now(timezone.utc)
+                
+                # 使用 Pydantic 驗證資料
+                try:
+                    validated_data = CrawlersUpdateSchema.model_validate(crawler_data).model_dump()
+                except Exception as e:
+                    return {
+                        'success': False,
+                        'message': f"爬蟲設定更新資料驗證失敗: {str(e)}",
+                        'crawler': None
+                    }
+                
+                crawler_repo = self._get_repository()
+                if not crawler_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'crawler': None
+                    }
+                
+                # 檢查爬蟲是否存在
+                original_crawler = crawler_repo.get_by_id(crawler_id)
+                if not original_crawler:
+                    return {
+                        'success': False,
+                        'message': f"爬蟲設定不存在，ID={crawler_id}",
+                        'crawler': None
+                    }
+                
+                result = crawler_repo.update(crawler_id, validated_data)
+                
+                if not result:
+                    return {
+                        'success': False,
+                        'message': f"更新爬蟲設定失敗，ID={crawler_id}",
+                        'crawler': None
+                    }
+                
+                return {
+                    'success': True,
+                    'message': "爬蟲設定更新成功",
+                    'crawler': result
+                }
+                
+        except Exception as e:
+            logger.error(f"更新爬蟲設定失敗，ID={crawler_id}: {str(e)}")
+            raise e
+
+    def delete_crawler(self, crawler_id: int) -> Dict[str, Any]:
+        """刪除爬蟲設定"""
+        try:
+            with self._transaction():
+                crawler_repo = self._get_repository()
+                if not crawler_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                    }
+                result = crawler_repo.delete(crawler_id)
+                
+                if not result:
+                    return {
+                        'success': False,
+                        'message': f"爬蟲設定不存在，ID={crawler_id}"
+                    }
+                
+                return {
+                    'success': True,
+                    'message': "爬蟲設定刪除成功"
+                }
+                
+        except Exception as e:
+            logger.error(f"刪除爬蟲設定失敗，ID={crawler_id}: {str(e)}")
+            raise e
+
+    def get_active_crawlers(self) -> Dict[str, Any]:
+        """獲取所有活動中的爬蟲設定"""
+        try:
+            with self._transaction():
+                crawler_repo = self._get_repository()
+                if not crawler_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'crawlers': []
+                    }
+                crawlers = crawler_repo.find_active_crawlers()
+                if not crawlers:
+                    return {
+                        'success': False,
+                        'message': "找不到任何活動中的爬蟲設定",
+                        'crawlers': []
+                    }
+                return {
+                    'success': True,
+                    'message': "獲取活動中的爬蟲設定成功",
+                    'crawlers': crawlers or []
+                }
+        except Exception as e:
+            logger.error(f"獲取活動中的爬蟲設定失敗: {str(e)}")
+            raise e
+
+    def toggle_crawler_status(self, crawler_id: int) -> Dict[str, Any]:
+        """切換爬蟲活躍狀態"""
+        try:
+            with self._transaction():
+                crawler_repo = self._get_repository()
+                if not crawler_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'crawler': None
+                    }
+                result = crawler_repo.toggle_active_status(crawler_id)
+                
+                if not result:
+                    return {
+                        'success': False,
+                        'message': f"爬蟲設定不存在或切換失敗，ID={crawler_id}",
+                        'crawler': None
+                    }
+                
+                updated_crawler = crawler_repo.get_by_id(crawler_id)
+                if updated_crawler: 
+                    return {
+                        'success': True,
+                        'message': f"成功切換爬蟲狀態，新狀態={updated_crawler.is_active}",
+                        'crawler': updated_crawler
+                    }
+                else:
+                    return {
+                        'success': False,
+                        'message': f"爬蟲設定不存在，ID={crawler_id}",
+                        'crawler': None
+                    }
+                
+        except Exception as e:
+            logger.error(f"切換爬蟲狀態失敗，ID={crawler_id}: {str(e)}")
             raise e
     
-    
-    def _ensure_fresh_instance(self, entity: Optional[T]) -> Optional[T]:
-        """
-        確保實體不是分離的實例
-        
-        如果實體已分離，則重新查詢；如果實體不存在，則返回 None
-        """
-        if entity is None:
-            return None
-        
+    def get_crawlers_by_name(self, name: str) -> Dict[str, Any]:
+        """根據名稱模糊查詢爬蟲設定"""
         try:
-            # 使用 getattr 安全訪問 id 屬性
-            entity_id = getattr(entity, 'id', None)
-            if entity_id is not None:
-                return entity
-            return None
-        except Exception:
-            # 如果實體已分離，則重新查詢
-            if isinstance(entity, Crawlers):
-                entity_id = getattr(entity, 'id', None)
-                if entity_id is not None:
-                    refreshed = self.get_crawler_by_id(entity_id)
-                    return cast(T, refreshed)  # 使用 cast 進行類型轉換
-            return None
+            with self._transaction():
+                crawler_repo = self._get_repository()
+                if not crawler_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'crawlers': []
+                    }
+                crawlers = crawler_repo.find_by_crawler_name(name)
+                if not crawlers:
+                    return {
+                        'success': False,
+                        'message': "找不到任何符合條件的爬蟲設定",
+                        'crawlers': []
+                    }
+                return {
+                    'success': True,
+                    'message': "獲取爬蟲設定列表成功",
+                    'crawlers': crawlers or []
+                }   
+        except Exception as e:
+            logger.error(f"獲取爬蟲設定列表失敗: {str(e)}")
+            raise e

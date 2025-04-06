@@ -7,6 +7,7 @@ class TestCrawlerTasksModel:
     def test_crawler_tasks_creation_with_required_fields(self):
         """測試使用必填欄位創建 CrawlerTasks"""
         task = CrawlerTasks(
+            task_name="測試任務",
             crawler_id=1,
             is_auto=True,
             ai_only=False,
@@ -14,6 +15,7 @@ class TestCrawlerTasksModel:
         )
         
         # 測試必填欄位
+        assert task.task_name == "測試任務"
         assert task.crawler_id == 1
         assert task.is_auto is True
         assert task.ai_only is False
@@ -60,10 +62,11 @@ class TestCrawlerTasksModel:
         """測試 CrawlerTasks 的 __repr__ 方法"""
         task = CrawlerTasks(
             id=1,
+            task_name="測試任務",
             crawler_id=1
         )
         
-        expected_repr = "<CrawlerTask(id=1, crawler_id=1)>"
+        expected_repr = "<CrawlerTask(id=1, task_name=測試任務, crawler_id=1)>"
         assert repr(task) == expected_repr
     
     def test_field_updates(self):
@@ -87,9 +90,11 @@ class TestCrawlerTasksModel:
         assert task.min_keywords == 4
         
         # 測試文字欄位更新
+        task.task_name = "更新後的任務名稱"
         task.notes = "更新的備註"
         task.cron_expression = "hourly"
         task.last_run_message = "執行成功"
+        assert task.task_name == "更新後的任務名稱"
         assert task.notes == "更新的備註"
         assert task.last_run_message == "執行成功"
         
@@ -100,6 +105,7 @@ class TestCrawlerTasksModel:
         """測試 to_dict 方法"""
         task = CrawlerTasks(
             id=1,
+            task_name="測試任務",
             crawler_id=1,
             notes="測試任務"
         )
@@ -108,7 +114,7 @@ class TestCrawlerTasksModel:
         
         # 驗證所有欄位都在字典中
         expected_keys = {
-            'id', 'crawler_id', 'is_auto', 'ai_only', 'notes',
+            'id', 'task_name', 'crawler_id', 'is_auto', 'ai_only', 'notes',
             'max_pages', 'num_articles', 'min_keywords', 'fetch_details',
             'created_at', 'updated_at', 'last_run_at', 'last_run_success',
             'last_run_message', 'cron_expression'

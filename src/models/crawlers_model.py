@@ -42,7 +42,7 @@ class Crawlers(Base, BaseEntity):
         String(100), 
         nullable=False
     )
-    crawler_tasks = relationship("CrawlerTasks", back_populates="crawlers", lazy="joined")
+    crawler_tasks = relationship("CrawlerTasks", back_populates="crawler", lazy="joined")
 
     def __init__(self, **kwargs):
         # 設置默認值

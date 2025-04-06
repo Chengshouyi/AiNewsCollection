@@ -41,7 +41,8 @@ class ArticleService(BaseService[Articles]):
                 if not article_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'article': None
                     }
                 
                 result = article_repo.create(article_data)
@@ -55,7 +56,8 @@ class ArticleService(BaseService[Articles]):
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
-                'message': error_msg
+                'message': error_msg,
+                'article': None
             }
 
     def batch_create_articles(self, articles_data: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -66,21 +68,23 @@ class ArticleService(BaseService[Articles]):
                 if not article_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'resultMsg': None
                     }
                 
                 result = article_repo.batch_create(articles_data)
                 return {
                     'success': True,
                     'message': '批量創建文章成功',
-                    **result
+                    'resultMsg': result
                 }
         except Exception as e:
             error_msg = f"批量創建文章失敗: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
-                'message': error_msg
+                'message': error_msg,
+                'resultMsg': None
             }
 
     def get_all_articles(self, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
@@ -91,12 +95,14 @@ class ArticleService(BaseService[Articles]):
                 if not article_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'articles': []
                     }
                 
                 articles = article_repo.get_by_filter({}, limit=limit, offset=offset)
                 return {
                     'success': True,
+                    'message': '獲取所有文章成功',
                     'articles': articles
                 }
         except Exception as e:
@@ -104,7 +110,8 @@ class ArticleService(BaseService[Articles]):
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
-                'message': error_msg
+                'message': error_msg,
+                'articles': []
             }
 
     def get_article_by_id(self, article_id: int) -> Dict[str, Any]:
@@ -115,25 +122,29 @@ class ArticleService(BaseService[Articles]):
                 if not article_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'article': None
                     }
                 
                 article = article_repo.get_by_id(article_id)
                 if article:
                     return {
                         'success': True,
+                        'message': '獲取文章成功',
                         'article': article
                     }
                 return {
                     'success': False,
-                    'message': '文章不存在'
+                    'message': '文章不存在',
+                    'article': None
                 }
         except Exception as e:
             error_msg = f"獲取文章失敗, ID={article_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
-                'message': error_msg
+                'message': error_msg,
+                'article': None
             }
 
     def update_article(self, article_id: int, article_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -152,7 +163,8 @@ class ArticleService(BaseService[Articles]):
                 if not article:
                     return {
                         'success': False,
-                        'message': '文章不存在'
+                        'message': '文章不存在',
+                        'article': None
                     }
                 else:
                     return {
@@ -178,14 +190,12 @@ class ArticleService(BaseService[Articles]):
                     return {
                         'success': False,
                         'message': '無法取得資料庫存取器',
-                        'article': None
                     }
                 
                 success = article_repo.delete(article_id)
                 return {
                     'success': success,
                     'message': '文章刪除成功' if success else '文章不存在',
-                    'article': None
                 }
         except Exception as e:
             error_msg = f"刪除文章失敗, ID={article_id}: {str(e)}"
@@ -193,15 +203,31 @@ class ArticleService(BaseService[Articles]):
             return {
                 'success': False,
                 'message': error_msg,
-                'article': None
             }
 
-    def get_article_by_link(self, link: str) -> Optional[Articles]:
+    def get_article_by_link(self, link: str) -> Dict[str, Any]:
         """根據連結獲取文章"""
         try:
             with self._transaction():
                 article_repo = self._get_repository()
-                return article_repo.find_by_link(link)
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'article': None
+                    }
+                article = article_repo.find_by_link(link)
+                if article:
+                    return {
+                        'success': True,
+                        'message': '獲取文章成功',
+                        'article': article
+                    }
+                return {
+                    'success': False,
+                    'message': '文章不存在',
+                    'article': None
+                }
         except Exception as e:
             logger.error(f"根據連結獲取文章失敗，link={link}: {e}")
             raise e
@@ -211,22 +237,24 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction():
                 article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'resultMsg': None
+                    }
+                
                 result = article_repo.get_paginated_by_filter({}, page, per_page, sort_by, sort_desc)
                 if not result:
                     return {
                         'success': False,
-                        'message': '分頁獲取文章失敗'
+                        'message': '分頁獲取文章失敗',
+                        'resultMsg': None
                     }
                 return {
                     'success': True,
                     'message': '分頁獲取文章成功',
-                    'items': result['items'],
-                    'page': result['page'],
-                    'per_page': result['per_page'],
-                    'total': result['total'],
-                    'total_pages': result['total_pages'],
-                    'has_next': result['has_next'],
-                    'has_prev': result['has_prev']
+                    'resultMsg': result
                 }
         except Exception as e:
             logger.error(f"分頁獲取文章失敗: {e}")
@@ -237,11 +265,18 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction():
                 article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'articles': []
+                    }
                 result = article_repo.get_by_filter({"is_ai_related": True}, limit=limit, offset=offset)
                 if not result:
                     return {
                         'success': False,
-                        'message': '獲取AI相關文章失敗'
+                        'message': '獲取AI相關文章失敗',
+                        'articles': []
                     }
                 return {
                     'success': True,
@@ -257,11 +292,18 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction():
                 article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'articles': []
+                    }
                 result = article_repo.find_by_category(category)
                 if not result:
                     return {
                         'success': False,
-                        'message': '獲取分類文章失敗'
+                        'message': '獲取分類文章失敗',
+                        'articles': []
                     }
                 return {
                     'success': True,
@@ -277,7 +319,19 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction():
                 article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'articles': []
+                    }
                 articles = article_repo.find_by_tags(tags)
+                if not articles:
+                    return {
+                        'success': False,
+                        'message': '獲取標籤文章失敗',
+                        'articles': []
+                    }
                 if offset is not None and limit is not None:
                     return {
                         'success': True,
@@ -304,14 +358,23 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction():
                 article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'resultMsg': None
+                    }
                 result = article_repo.batch_update(article_ids, article_data)
+                if not result:
+                    return {
+                        'success': False,
+                        'message': '批量更新文章失敗',
+                        'resultMsg': None
+                    }
                 return {
-                    "success_count": result["success_count"],
-                    "fail_count": result["fail_count"],
-                    "updated_articles": result["updated_articles"],
-                    "missing_ids": result["missing_ids"],
-                    "error_ids": result["error_ids"],
-                    "invalid_fields": result["invalid_fields"]
+                    'success': True,
+                    'message': '批量更新文章成功',
+                    'resultMsg': result
                 }
         except Exception as e:
             logger.error(f"批量更新文章失敗: {e}")
@@ -322,6 +385,11 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction():
                 article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                    }
                 result = article_repo.delete_by_link(link)
                 if not result:
                     return {
@@ -340,14 +408,20 @@ class ArticleService(BaseService[Articles]):
         """批量刪除文章"""
         if not article_ids:
             return {
-                "success_count": 0,
-                "fail_count": 0,
-                "missing_ids": []
+                'success': False,
+                'message': '無法取得資料庫存取器',
+                'resultMsg': None
             }
         
         try:
             with self._transaction():
                 article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'resultMsg': None
+                    }
                 deleted_count = 0
                 missing_ids = []
                 
@@ -358,9 +432,13 @@ class ArticleService(BaseService[Articles]):
                         missing_ids.append(article_id)
                 
                 return {
-                    "success_count": deleted_count,
-                    "fail_count": len(missing_ids),
-                    "missing_ids": missing_ids
+                    'success': True,
+                    'message': '批量刪除文章成功',
+                    'resultMsg': {
+                        'success_count': deleted_count,
+                        'fail_count': len(missing_ids),
+                        'missing_ids': missing_ids
+                    }
                 }
         except Exception as e:
             logger.error(f"批量刪除文章失敗: {e}")
@@ -371,12 +449,19 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction():
                 article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'article': None
+                    }
                 tags_str = ','.join(tags)
                 result = article_repo.update(article_id, {"tags": tags_str})
                 if not result:
                     return {
                         'success': False,
-                        'message': '更新文章標籤失敗'
+                        'message': '更新文章標籤失敗',
+                        'article': None
                     }
                 return {
                     'success': True,
@@ -392,6 +477,12 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction():
                 article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'resultMsg': None
+                    }
                 total_count = article_repo.count()
                 ai_related_count = article_repo.count({"is_ai_related": True})
                 category_distribution = article_repo.get_category_distribution()
@@ -399,10 +490,14 @@ class ArticleService(BaseService[Articles]):
                 recent_count = article_repo.count({"published_at": {"$gte": week_ago}})
                 
                 return {
-                    "total_articles": total_count,
-                    "ai_related_articles": ai_related_count,
-                    "category_distribution": category_distribution,
-                    "recent_articles": recent_count
+                    'success': True,
+                    'message': '獲取文章統計資訊成功',
+                    'resultMsg': {
+                        'total_articles': total_count,
+                        'ai_related_articles': ai_related_count,
+                        'category_distribution': category_distribution,
+                        'recent_articles': recent_count
+                    }
                 }
         except Exception as e:
             logger.error(f"獲取文章統計資訊失敗: {e}")
@@ -423,6 +518,12 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction():
                 article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'articles': []
+                    }
                 query = article_repo.session.query(Articles)
                 
                 if keywords:
@@ -458,7 +559,8 @@ class ArticleService(BaseService[Articles]):
                 if not result:
                     return {
                         'success': False,
-                        'message': '進階搜尋文章失敗'
+                        'message': '進階搜尋文章失敗',
+                        'articles': []
                     }
                 return {
                     'success': True,
