@@ -353,10 +353,10 @@ class ArticleService(BaseService[Articles]):
             logger.error(f"根據標籤獲取文章失敗: {e}")
             raise e
 
-    def batch_update_articles(self, article_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def batch_update_articles_by_link(self, article_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """批量更新文章
         Args:
-            article_data: 文章資料(使用同一筆資料更新多筆文章)
+            article_data: 文章資料
 
         Returns:
             Dict[str, Any]: 包含成功和失敗資訊的字典
@@ -370,7 +370,7 @@ class ArticleService(BaseService[Articles]):
                         'message': '無法取得資料庫存取器',
                         'resultMsg': None
                     }
-                result = article_repo.batch_update(article_data)
+                result = article_repo.batch_update_by_link(article_data)
                 if not result:
                     return {
                         'success': False,

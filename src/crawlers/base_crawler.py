@@ -137,12 +137,7 @@ class BaseCrawler(ABC):
                 str_articles_data = [convert_hashable_dict_to_str_dict(article) for article in articles_data]
 
                 if self.site_config.article_settings.get('from_db_link', False):
-                    article_ids = self.articles_df['id'].tolist()
-                    #取代 entity_id 為 id
-                    for article in str_articles_data:
-                        article['entity_id'] = article['id']
-                        del article['id']
-                    result = self.article_service.batch_update_articles(
+                    result = self.article_service.batch_update_articles_by_link(
                         article_data = str_articles_data
                     )
                 else:

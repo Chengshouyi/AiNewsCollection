@@ -176,7 +176,7 @@ def main():
         
         crawler.execute_task(1, task_params)
 
-                # 執行爬蟲任務
+        # 執行爬蟲任務
         task_params = {
             'max_pages': args.max_pages,
             'ai_only': args.ai_only,

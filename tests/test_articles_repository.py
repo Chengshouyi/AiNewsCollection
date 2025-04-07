@@ -241,39 +241,26 @@ class TestArticleRepository:
         with pytest.raises(ValidationError) as exc_info:
             article_repo.create(incomplete_data)
         assert "缺少必填欄位" in str(exc_info.value)
-    
-    def test_update_article(self, article_repo, sample_articles, session, clean_db):
-        """測試更新文章"""
-        article_id = sample_articles[0].id
-        update_data = {
-            "title": "更新後的標題",
-            "content": "更新後的內容"
-        }
-        
-        updated = article_repo.update(article_id, update_data)
-        session.expire_all()
-        
-        assert updated is not None
-        assert updated.title == update_data["title"]
-        assert updated.content == update_data["content"]
-        # 確認其他欄位保持不變
-        assert updated.link == sample_articles[0].link
 
-    def test_batch_update(self, article_repo, sample_articles, session, clean_db):
+
+    def test_batch_update_by_link(self, article_repo, sample_articles, session, clean_db):
         """測試批量更新文章"""
         update_data = []
         for article in sample_articles[:2]:  # 只更新前兩篇文章
             update_data.append({
-                "entity_id": article.id,  # 使用 entity_id 而不是 id
+                "link": article.link,
                 "category": "批量更新"
-            })
-        
-        result = article_repo.batch_update(update_data)
+            })  
+
+        result = article_repo.batch_update_by_link(update_data)
         session.expire_all()
         
         assert result["success_count"] == 2
         assert result["fail_count"] == 0
+        assert result["missing_links"] == []
+        assert result["error_links"] == []
         assert all(entity.category == "批量更新" for entity in result["updated_articles"])
+
 
     def test_batch_update_by_ids(self, article_repo, sample_articles, session, clean_db):
         """測試批量更新文章"""

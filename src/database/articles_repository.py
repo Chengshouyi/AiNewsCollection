@@ -372,11 +372,11 @@ class ArticlesRepository(BaseRepository[Articles]):
             err_msg=f"更新文章連結爬取狀態時發生錯誤: {link}"
         )
 
-    def batch_update(self, entities_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def batch_update_by_link(self, entities_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """批量更新文章
         Args:
             entities_data: 實體資料列表
-                entity_id: 實體ID<必要>-->取代 id
+                link: 文章連結<必要>
                 other_data: 其他要更新的資料<必要>
 
         Returns:
@@ -384,37 +384,33 @@ class ArticlesRepository(BaseRepository[Articles]):
                 success_count: 成功更新數量
                 fail_count: 失敗數量
                 updated_articles: 成功更新的文章列表
-                missing_ids: 未找到的文章ID列表
-                error_ids: 更新過程中出錯的ID列表
+                missing_links: 未找到的文章連結列表
+                error_links: 更新過程中出錯的連結列表
         """
         success_count = 0
         fail_count = 0
         updated_articles = []
-        missing_ids = []
-        error_ids = []
+        missing_links = []
+        error_links = []
 
         for entity_data in entities_data:
             try:
-                if not entity_data.get('entity_id'):
-                    logger.error(f"更新實體 ID={entity_data.get('id')} 時發生錯誤: 缺少 entity_id")
-                    error_ids.append(entity_data.get('id'))
-                    fail_count += 1
-                    continue
                 # 取出 entity_id 並從更新資料中移除
-                entity_id = entity_data.pop('entity_id') 
-                
-                update_data = {k: v for k, v in entity_data.items() if k != 'entity_id'}  # 建立不含 entity_id 的更新資料
-                
-                updated_entity = self.update(entity_id, update_data)
+                entity = self.find_by_link(entity_data['link'])
+                if not entity:
+                    missing_links.append(entity_data['link'])
+                    continue
+                entity_data.pop('link')
+                updated_entity = self.update(entity.id, entity_data)
                 if updated_entity:
                     updated_articles.append(updated_entity)
                     success_count += 1
                 else:
                     fail_count += 1
-                    missing_ids.append(entity_id)
+                    error_links.append(entity_data['link'])
             except Exception as e:
-                logger.error(f"更新實體 ID={entity_data.get('id')} 時發生錯誤: {str(e)}")
-                error_ids.append(entity_data.get('id'))
+                logger.error(f"更新實體 link={entity_data.get('link')} 時發生錯誤: {str(e)}")
+                error_links.append(entity_data.get('link'))
                 fail_count += 1
                 continue
 
@@ -422,8 +418,8 @@ class ArticlesRepository(BaseRepository[Articles]):
             "success_count": success_count,
             "fail_count": fail_count,
             "updated_articles": updated_articles,
-            "missing_ids": missing_ids,
-            "error_ids": error_ids
+            "missing_links": missing_links,
+            "error_links": error_links
         }
 
     def batch_update_by_ids(self, entity_ids: List[Any], entity_data: Dict[str, Any]) -> Dict[str, Any]:
