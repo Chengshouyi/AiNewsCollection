@@ -11,16 +11,16 @@ from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
 
 # 設置日誌記錄器(校正用)
-# custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-# logger = LoggerSetup.setup_logger(
-#     module_name='bnext_scraper',
-#     log_dir='logs',  # 這會在專案根目錄下創建 logs 目錄
-#     log_format=custom_format,
-#     level=logging.DEBUG,
-#     date_format='%Y-%m-%d %H:%M:%S' # 設置日期格式  
-# )
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logger = LoggerSetup.setup_logger(
+    module_name='bnext_scraper',
+    log_dir='logs',  # 這會在專案根目錄下創建 logs 目錄
+    log_format=custom_format,
+    level=logging.DEBUG,
+    date_format='%Y-%m-%d %H:%M:%S' # 設置日期格式  
+)
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# logger = logging.getLogger(__name__)
 
 
 class BnextScraper:
@@ -47,7 +47,7 @@ class BnextScraper:
         else:
             self.site_config = config
 
-    def scrape_article_list(self, max_pages=3, ai_only=True) -> pd.DataFrame:
+    def scrape_article_list(self, max_pages=3, ai_only=True, min_keywords=3) -> pd.DataFrame:
         start_time = time.time()
         all_article_links_list = []
         
@@ -101,22 +101,22 @@ class BnextScraper:
                         # 根據提供的選擇器爬取內容
                         # 1. 爬取文章連結
                         logger.debug(f"BnextScraper(scrape_article_list()) - call self.extract_article_links() 爬取文章連結")
-                        current_page_article_links_list = self.extract_article_links(soup)
+                        current_page_article_links_list = self.extract_article_links(soup, ai_filter=ai_only, min_keywords=min_keywords)
                         
-                        # 篩選是否為AI相關文章
-                        # 先透過標題和分類快速篩選
-                        if ai_only:
-                            # 只對當前頁面新增的文章進行篩選
-                            filtered_article_links_list = []
-                            for article in current_page_article_links_list:
-                                if ArticleAnalyzer().is_ai_related(article, check_content=False):
-                                    filtered_article_links_list.append(article)
-                            # 將之前累積的文章和當前頁面篩選後的文章合併
-                            all_article_links_list.extend(filtered_article_links_list)
-                            logger.debug(f"共爬取 {len(all_article_links_list)} 篇與AI相關文章連結")
-                        else:
-                            all_article_links_list.extend(current_page_article_links_list)
-                            logger.debug(f"共爬取 {len(all_article_links_list)} 篇文章連結")
+                        # # 篩選是否為AI相關文章
+                        # # 先透過標題和分類快速篩選
+                        # if ai_only:
+                        #     # 只對當前頁面新增的文章進行篩選
+                        #     filtered_article_links_list = []
+                        #     for article in current_page_article_links_list:
+                        #         if ArticleAnalyzer().is_ai_related(article, check_content=False):
+                        #             filtered_article_links_list.append(article)
+                        #     # 將之前累積的文章和當前頁面篩選後的文章合併
+                        #     all_article_links_list.extend(filtered_article_links_list)
+                        #     logger.debug(f"共爬取 {len(all_article_links_list)} 篇與AI相關文章連結")
+                        # else:
+                        all_article_links_list.extend(current_page_article_links_list)
+                        logger.debug(f"共爬取 {len(all_article_links_list)} 篇文章連結")
                         
                         # 檢查是否有下一頁
                         next_page = soup.select_one('.pagination .next, .pagination a[rel="next"]')
@@ -195,7 +195,7 @@ class BnextScraper:
 
 
 
-    def extract_article_links(self, soup):
+    def extract_article_links(self, soup, ai_filter: bool = True, min_keywords: int = 3):
         """
         提取文章連結，增加容錯和詳細日誌
         """
@@ -223,8 +223,7 @@ class BnextScraper:
             summary = articles_container[0].select_one(get_article_links_selectors.get("summary"))
             summary_text = summary.get_text(strip=True) if summary else None
             
-                    
-            article_links_list.append(BnextUtils.get_article_columns_dict(
+            article_link_dict = BnextUtils.get_article_columns_dict(
                 title=title_text,
                 summary=summary_text,
                 content='',
@@ -238,9 +237,18 @@ class BnextScraper:
                 tags='',
                 is_ai_related=self.site_config.article_settings.get("ai_only"),
                 is_scraped=False
-            ))
-            
-            logger.debug(f"成功提取文章連結，標題: {title_text}")
+            )
+
+            # AI 相關性檢查
+            if ai_filter:
+                is_ai_related = ArticleAnalyzer().is_ai_related(article_link_dict, min_keywords=min_keywords)
+                logger.debug(f"AI相關性檢查: {'通過' if is_ai_related else '未通過'}")
+                if not is_ai_related:
+                    article_link_dict = None
+
+            if article_link_dict:
+                article_links_list.append(article_link_dict)
+                logger.debug(f"成功提取文章連結，標題: {title_text}")
             
             # 提取網格文章連結
             logger.debug(f"開始提取網格文章連結")
@@ -270,8 +278,8 @@ class BnextScraper:
                         g_article_summary_text = g_article_summary.get_text(strip=True)
                         print(f"第{idx}篇網格文章摘要: {g_article_summary_text}")
 
-                    # 添加網格文章連結到列表
-                    article_links_list.append(BnextUtils.get_article_columns_dict(
+
+                    article_link_dict=BnextUtils.get_article_columns_dict(
                         title=g_article_title_text,
                         summary=g_article_summary_text,
                         content='',
@@ -285,8 +293,19 @@ class BnextScraper:
                         tags='',
                         is_ai_related=self.site_config.article_settings.get("ai_only"),
                         is_scraped=False
-                    ))
-                    logger.debug(f"成功添加網格文章連結到列表: {g_article_title_text}")
+                    )
+
+                     # AI 相關性檢查
+                    if ai_filter:
+                        is_ai_related = ArticleAnalyzer().is_ai_related(article_link_dict, min_keywords=min_keywords)
+                        logger.debug(f"AI相關性檢查: {'通過' if is_ai_related else '未通過'}")
+                        if not is_ai_related:
+                            article_link_dict = None
+
+                    if article_link_dict:
+                        article_links_list.append(article_link_dict)
+                        logger.debug(f"成功添加網格文章連結到列表: {g_article_title_text}")
+                    
                 except Exception as e:
                     print(f"發生錯誤: {e}")
            

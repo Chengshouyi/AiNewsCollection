@@ -9,7 +9,7 @@
         "smartmedical",
         "smartcity"
     ],
-    "full_category": [
+    "full_categories": [
         "ai",
         "tech",
         "iot",
@@ -37,6 +37,7 @@
     },
     "storage_settings": {
         "save_to_csv": true,
+        "csv_file_name": "articles_bnext.csv",
         "save_to_database": false
     },
     "valid_domains": [

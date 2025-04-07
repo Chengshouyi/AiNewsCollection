@@ -62,10 +62,11 @@ class BnextCrawler(BaseCrawler):
         max_pages = self.site_config.article_settings.get("max_pages", 3)
         categories = self.site_config.categories
         ai_only = self.site_config.article_settings.get("ai_only", True)
+        min_keywords = self.site_config.article_settings.get("min_keywords", 3)
         logger.debug(f"抓取文章列表參數設定：最大頁數: {max_pages}, 文章類別: {categories}, AI 相關文章: {ai_only}")
         logger.debug(f"抓取文章列表中...")
         self.articles_df = self.retry_operation(
-            lambda: self.scraper.scrape_article_list(max_pages, ai_only)
+            lambda: self.scraper.scrape_article_list(max_pages, ai_only, min_keywords)
         )
         if self.articles_df is None or self.articles_df.empty:
             logger.warning("沒有文章列表可供處理")

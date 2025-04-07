@@ -55,7 +55,8 @@ class DatabaseManager:
                 raise DatabaseConfigError(error_msg) from engine_error
             
             # 連接驗證
-            self._verify_connection()
+            self.check_database_health()
+            self.database_path = self.db_url.replace('sqlite:///', '')
         
         except OperationalError as e:
             error_msg = f"數據庫連接驗證失敗: {e}"
@@ -220,7 +221,27 @@ class DatabaseManager:
             logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e
 
-    
+    def create_engine(self):
+        """重新創建並返回資料庫引擎"""
+        try:
+            self.engine = create_engine(self.db_url)
+            self.Session = sessionmaker(bind=self.engine)  # 重新綁定 Session
+            self._verify_connection()  # 驗證連接
+            return self.engine
+        except Exception as e:
+            logger.error(f"重建引擎失敗: {str(e)}")
+            raise DatabaseConfigError(str(e))
+
+    def check_database_health(self):
+        """檢查資料庫健康狀態"""
+        try:
+            self._verify_connection()
+            return True
+        except Exception as e:
+            logger.error(f"資料庫健康檢查失敗: {str(e)}")
+            return False
+
+
 
 def check_session(func):
     """

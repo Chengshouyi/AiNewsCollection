@@ -239,7 +239,6 @@ class BaseCrawler(ABC):
                         # 更新該筆資料的所有欄位
                         self.articles_df.loc[article_index[0]] = pd.Series(article)
 
-            # 步驟4：保存數據到CSV文件
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 更新articles_df完成")
             self._update_task_status(task_id, 70, '更新articles_df完成')
 
@@ -249,7 +248,7 @@ class BaseCrawler(ABC):
                 logger.debug(f"BaseCrawler(execute_task()) - call _save_to_csv： 保存數據到CSV文件中...")
                 self._update_task_status(task_id, 85, '保存數據到CSV文件中...')
 
-                self._save_to_csv(self.articles_df, f'./logs/articles_{task_id}.csv')
+                self._save_to_csv(self.articles_df, f'./logs/{self.site_config.storage_settings.get("csv_file_name", "articles_{task_id}.csv")}')
 
                 logger.debug(f"BaseCrawler(execute_task()) - call _save_to_csv： 保存數據到CSV文件完成")
                 self._update_task_status(task_id, 90, '保存數據到CSV文件完成')

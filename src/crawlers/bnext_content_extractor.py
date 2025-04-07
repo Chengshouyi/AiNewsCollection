@@ -2,25 +2,24 @@ import requests
 import logging
 from typing import Dict, Optional, List, Any
 import pandas as pd
-
 import time
-
 from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
+from src.utils import datetime_utils
 
 # 設置日誌記錄器(校正用)
-# custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-# logger = LoggerSetup.setup_logger(
-#     module_name='bnext_content_extractor',
-#     log_dir='logs',  # 這會在專案根目錄下創建 logs 目錄
-#     log_format=custom_format,
-#     level=logging.DEBUG,
-#     date_format='%Y-%m-%d %H:%M:%S'
-# )
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+logger = LoggerSetup.setup_logger(
+    module_name='bnext_content_extractor',
+    log_dir='logs',  # 這會在專案根目錄下創建 logs 目錄
+    log_format=custom_format,
+    level=logging.DEBUG,
+    date_format='%Y-%m-%d %H:%M:%S'
+)
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# logger = logging.getLogger(__name__)
 
 class BnextContentExtractor:
     def __init__(self, config=None):
@@ -65,7 +64,7 @@ class BnextContentExtractor:
                 try:
                     content_data = self._get_article_content(
                         article['link'], 
-                        ai_filter=ai_only, 
+                        ai_only=ai_only, 
                         min_keywords=min_keywords
                     )
                     
@@ -112,7 +111,7 @@ class BnextContentExtractor:
 
 
 
-    def _get_article_content(self, article_url: str, ai_filter: bool = True, min_keywords: int = 3) -> Optional[Dict]:
+    def _get_article_content(self, article_url: str, ai_only: bool = True, min_keywords: int = 3) -> Optional[Dict]:
         """獲取文章詳細內容"""
         logger.debug(f"開始獲取文章內容: {article_url}")
         start_time = time.time()
@@ -142,13 +141,13 @@ class BnextContentExtractor:
                 logger.error(f"無法找到文章container: {article_url}")
                 return None
             #logger.debug(f"article_content_container: {article_content_container}")
-            article_content = self._extract_article_parts(article_content_container, soup, get_article_contents_selectors, article_url, ai_filter)
+            article_content = self._extract_article_parts(article_content_container, soup, get_article_contents_selectors, article_url, ai_only)
             if article_content is None:
                 logger.error(f"文章內容提取失敗: {article_url}")
                 return None
             
             # AI 相關性檢查
-            if ai_filter:
+            if ai_only:
                 is_ai_related = ArticleAnalyzer().is_ai_related(article_content, min_keywords=min_keywords)
                 logger.debug(f"AI相關性檢查: {'通過' if is_ai_related else '未通過'}")
                 if not is_ai_related:
@@ -163,7 +162,7 @@ class BnextContentExtractor:
             logger.error(f"獲取文章內容失敗: {str(e)}", exc_info=True)
             return None
 
-    def _extract_article_parts(self, article_content_container, soup, get_article_contents_selectors, article_url: str, ai_filter: bool = True):
+    def _extract_article_parts(self, article_content_container, soup, get_article_contents_selectors, article_url: str, ai_only: bool = True):
         """提取文章各個部分"""
         logger.debug("開始提取文章各部分內容")
         
@@ -185,6 +184,13 @@ class BnextContentExtractor:
             published_date = main_container.select_one(get_article_contents_selectors.get("published_date"))
             published_date_text = published_date.get_text(strip=True) if published_date else None
             logger.debug(f"提取文章published_date: {published_date_text}")
+            try:
+                if published_date_text:
+                    published_date_text = datetime_utils.convert_str_to_utc_ISO_str(published_date_text)
+            except Exception as e:
+                logger.error(f"日期格式轉換錯誤: {str(e)}", exc_info=True)
+                published_date_text = None
+            logger.debug(f"轉換文章published_date: {published_date_text}")
             
             title = main_container.select_one(get_article_contents_selectors.get("title"))
             title_text = title.get_text(strip=True) if title else None
@@ -199,7 +205,7 @@ class BnextContentExtractor:
             tag_container_selector = get_article_contents_selectors.get("tags").get("container")
             tag_container = main_container.select_one(tag_container_selector)
             if not tag_container:
-                logger.error("沒有標籤容器")
+                logger.debug(f"該文章沒有標籤容器: {article_url}")
             else:
                 logger.debug(f"找到標籤容器數量: {len(tag_container)}")
                 for container in tag_container.find_all(get_article_contents_selectors.get("tags").get("tag"), recursive=False):
@@ -239,7 +245,7 @@ class BnextContentExtractor:
                 source_url=self.site_config.base_url,
                 article_type=None,
                 tags=",".join(tags),
-                is_ai_related=ai_filter,
+                is_ai_related=ai_only,
                 is_scraped=True
             )
             

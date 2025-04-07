@@ -227,7 +227,7 @@ class ArticlesRepository(BaseRepository[Articles]):
         processed_data = entity_data.copy()
         
         # 檢查必填欄位，排除不可修改欄位link
-        required_fields = ['summary', 'source', 'source_url','category', 'is_ai_related', 'title', 'published_at','is_scraped']
+        required_fields = ['summary', 'source', 'source_url','category', 'is_ai_related', 'title','is_scraped']
         
         # 如果是更新操作，從現有實體中補充必填欄位
         if existing_entity:

@@ -7,7 +7,7 @@ import time
 import logging
 import random
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import pandas as pd
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -78,7 +78,7 @@ class BnextUtils:
         content: Optional[str] = '', 
         link: Optional[str] = '', 
         category: Optional[str] = '', 
-        published_at: Optional[datetime] = None, 
+        published_at: Optional[str] = None, 
         author: Optional[str] = '', 
         source: Optional[str] = '', 
         source_url: Optional[str] = '', 
@@ -114,7 +114,7 @@ class BnextUtils:
         content: Optional[str] = '', 
         link: Optional[str] = '', 
         category: Optional[str] = '', 
-        published_at: Optional[datetime] = None, 
+        published_at: Optional[str] = None, 
         author: Optional[str] = '', 
         source: Optional[str] = '', 
         source_url: Optional[str] = '', 
