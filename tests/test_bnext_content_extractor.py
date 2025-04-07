@@ -185,7 +185,7 @@ def test_get_article_content_success(mock_is_ai_related, mock_get_article_column
     # 測試 _get_article_content 方法
     result = extractor._get_article_content(
         'https://www.bnext.com.tw/article/82812/deepl-ai100',
-        ai_filter=True,
+        ai_only=True,
         min_keywords=3
     )
     
@@ -207,7 +207,7 @@ def test_get_article_content_request_failed(mock_get, extractor):
     # 測試 _get_article_content 方法
     result = extractor._get_article_content(
         'https://www.bnext.com.tw/article/invalid',
-        ai_filter=True,
+        ai_only=True,
         min_keywords=3
     )
     
@@ -252,7 +252,7 @@ def test_get_article_content_not_ai_related(mock_is_ai_related, mock_get_article
     # 測試 _get_article_content 方法，設置 ai_filter=True
     result = extractor._get_article_content(
         'https://www.bnext.com.tw/article/12345/non-ai',
-        ai_filter=True,
+        ai_only=True,
         min_keywords=3
     )
     
@@ -363,7 +363,7 @@ def test_extract_article_parts(mock_get_article_columns, extractor, example_html
         soup,
         extractor.site_config.selectors['get_article_contents'],
         'https://test.com/article',
-        ai_filter=True
+        ai_only=True
     )
     
     # 驗證結果
@@ -376,7 +376,7 @@ def test_extract_article_parts_no_container(extractor):
         BeautifulSoup('', 'html.parser'),
         extractor.site_config.selectors['get_article_contents'],
         'https://test.com/article',
-        ai_filter=True
+        ai_only=True
     )
     
     # 驗證結果

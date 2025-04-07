@@ -20,7 +20,7 @@ def test_config_structure():
     assert "base_url" in config
     assert "list_url_template" in config
     assert "categories" in config
-    assert "full_category" in config
+    assert "full_categories" in config
     assert "article_settings" in config
     assert "extraction_settings" in config
     assert "storage_settings" in config
@@ -38,8 +38,8 @@ def test_config_values():
     assert config["list_url_template"] == "{base_url}/categories/{category}"
     assert isinstance(config["categories"], list)
     assert "ai" in config["categories"]
-    assert isinstance(config["full_category"], list)
-    assert "cloudcomputing" in config["full_category"]
+    assert isinstance(config["full_categories"], list)
+    assert "cloudcomputing" in config["full_categories"]
     assert isinstance(config["article_settings"], dict)
     assert config["article_settings"].get("max_pages") == 3
     assert config["article_settings"].get("ai_only") is True
