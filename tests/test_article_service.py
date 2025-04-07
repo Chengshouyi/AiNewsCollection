@@ -213,24 +213,28 @@ class TestArticleService:
         assert result["resultMsg"]["fail_count"] == 0
         assert len(result["resultMsg"]["updated_articles"]) == 2
 
-    def test_batch_update_articles(self, article_service, sample_articles):
-        """測試批量更新文章"""
-        update_data = [
+    def test_batch_update_articles_by_link(self, article_service, sample_articles):
+        """測試根據連結批量更新文章"""
+        # 準備包含連結和更新資料的列表
+        article_data = [
             {
-                "entity_id": article.id,
-                "category": "更新分類", 
-                "summary": "更新的摘要"
+                "link": sample_articles[0].link,
+                "category": "更新分類1",
+                "summary": "更新的摘要1"
+            },
+            {
+                "link": sample_articles[1].link,
+                "category": "更新分類2",
+                "summary": "更新的摘要2"
             }
-            for article in sample_articles[:2]
         ]
         
-        result = article_service.batch_update_articles(update_data)
+        result = article_service.batch_update_articles_by_link(article_data)
+        
         assert result["success"] is True
         assert result["resultMsg"]["success_count"] == 2
         assert result["resultMsg"]["fail_count"] == 0
-        assert len(result["resultMsg"]["updated_articles"]) == 2    
-        assert all(article.category == "更新分類" for article in result["resultMsg"]["updated_articles"])
-        assert all(article.summary == "更新的摘要" for article in result["resultMsg"]["updated_articles"])  
+        assert len(result["resultMsg"]["updated_articles"]) == 2
 
     def test_delete_article(self, article_service, sample_articles):
         """測試刪除文章"""

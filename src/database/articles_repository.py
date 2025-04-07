@@ -395,7 +395,6 @@ class ArticlesRepository(BaseRepository[Articles]):
 
         for entity_data in entities_data:
             try:
-                # 取出 entity_id 並從更新資料中移除
                 entity = self.find_by_link(entity_data['link'])
                 if not entity:
                     missing_links.append(entity_data['link'])

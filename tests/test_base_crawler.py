@@ -417,7 +417,6 @@ class TestBaseCrawler:
         # 保存測試用的時間
         test_time = datetime.now(timezone.utc)
         crawler.articles_df = pd.DataFrame({
-            "id": [1, 2],
             "title": ["Test Title 1", "Test Title 2"],
             "summary": ["Test Summary 1", "Test Summary 2"],
             "content": ["Test Content 1", "Test Content 2"],
@@ -433,27 +432,23 @@ class TestBaseCrawler:
             "is_scraped": [False, False],
         })
         
-        # 模擬 batch_update_articles 方法
-        article_service.batch_update_articles = MagicMock(return_value={"success": True, "message": "更新成功"})
+        # 模擬 batch_update_articles_by_link 方法 (而不是 batch_update_articles)
+        article_service.batch_update_articles_by_link = MagicMock(return_value={"success": True, "message": "更新成功"})
         
         # 執行保存
         crawler._save_to_database()
         
-        # 驗證 batch_update_articles 被正確調用
-        article_service.batch_update_articles.assert_called_once()
+        # 驗證 batch_update_articles_by_link 被正確調用
+        article_service.batch_update_articles_by_link.assert_called_once()
         
-        # 獲取傳遞給 batch_update_articles 的參數
-        call_args = article_service.batch_update_articles.call_args[1]
+        # 獲取傳遞給 batch_update_articles_by_link 的參數
+        call_args = article_service.batch_update_articles_by_link.call_args[1]
         article_data = call_args.get('article_data', [])
         
-        # 驗證 id 已轉為 entity_id 且 id 欄位已刪除
+        # 驗證資料格式
         assert len(article_data) == 2
-        assert 'entity_id' in article_data[0]
-        assert 'entity_id' in article_data[1]
-        assert 'id' not in article_data[0]
-        assert 'id' not in article_data[1]
-        assert article_data[0]['entity_id'] == 1
-        assert article_data[1]['entity_id'] == 2
+        assert article_data[0]['link'] == "https://example.com/1"
+        assert article_data[1]['link'] == "https://example.com/2"
     
     def test_get_task_status(self, mock_config_file, article_service):
         """測試獲取任務狀態"""
