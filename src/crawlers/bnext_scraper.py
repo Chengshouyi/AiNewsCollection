@@ -103,18 +103,6 @@ class BnextScraper:
                         logger.debug(f"BnextScraper(scrape_article_list()) - call self.extract_article_links() 爬取文章連結")
                         current_page_article_links_list = self.extract_article_links(soup, ai_filter=ai_only, min_keywords=min_keywords)
                         
-                        # # 篩選是否為AI相關文章
-                        # # 先透過標題和分類快速篩選
-                        # if ai_only:
-                        #     # 只對當前頁面新增的文章進行篩選
-                        #     filtered_article_links_list = []
-                        #     for article in current_page_article_links_list:
-                        #         if ArticleAnalyzer().is_ai_related(article, check_content=False):
-                        #             filtered_article_links_list.append(article)
-                        #     # 將之前累積的文章和當前頁面篩選後的文章合併
-                        #     all_article_links_list.extend(filtered_article_links_list)
-                        #     logger.debug(f"共爬取 {len(all_article_links_list)} 篇與AI相關文章連結")
-                        # else:
                         all_article_links_list.extend(current_page_article_links_list)
                         logger.debug(f"共爬取 {len(all_article_links_list)} 篇文章連結")
                         
