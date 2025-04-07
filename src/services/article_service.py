@@ -353,8 +353,14 @@ class ArticleService(BaseService[Articles]):
             logger.error(f"根據標籤獲取文章失敗: {e}")
             raise e
 
-    def batch_update_articles(self, article_ids: List[int], article_data: Dict[str, Any]) -> Dict[str, Any]:
-        """批量更新文章"""
+    def batch_update_articles(self, article_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """批量更新文章
+        Args:
+            article_data: 文章資料(使用同一筆資料更新多筆文章)
+
+        Returns:
+            Dict[str, Any]: 包含成功和失敗資訊的字典
+        """
         try:
             with self._transaction():
                 article_repo = self._get_repository()
@@ -364,7 +370,42 @@ class ArticleService(BaseService[Articles]):
                         'message': '無法取得資料庫存取器',
                         'resultMsg': None
                     }
-                result = article_repo.batch_update(article_ids, article_data)
+                result = article_repo.batch_update(article_data)
+                if not result:
+                    return {
+                        'success': False,
+                        'message': '批量更新文章失敗',
+                        'resultMsg': None
+                    }   
+                return {
+                    'success': True,
+                    'message': '批量更新文章成功',
+                    'resultMsg': result
+                }
+        except Exception as e:
+            logger.error(f"批量更新文章失敗: {e}")
+            raise e
+        
+
+    def batch_update_articles_by_ids(self, article_ids: List[int], article_data: Dict[str, Any]) -> Dict[str, Any]:
+        """批量更新文章
+        Args:
+            article_ids: 文章ID列表
+            article_data: 文章資料(使用同一筆資料更新多筆文章)
+
+        Returns:
+            Dict[str, Any]: 包含成功和失敗資訊的字典
+        """
+        try:
+            with self._transaction():
+                article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'resultMsg': None
+                    }
+                result = article_repo.batch_update_by_ids(article_ids, article_data)
                 if not result:
                     return {
                         'success': False,
@@ -509,6 +550,7 @@ class ArticleService(BaseService[Articles]):
         category: Optional[str] = None,
         date_range: Optional[Tuple[datetime, datetime]] = None,
         is_ai_related: Optional[bool] = None,
+        is_scraped: Optional[bool] = None,
         tags: Optional[List[str]] = None,
         source: Optional[str] = None,
         limit: Optional[int] = None,
@@ -541,6 +583,9 @@ class ArticleService(BaseService[Articles]):
                     
                 if is_ai_related is not None:
                     query = query.filter(Articles.is_ai_related == is_ai_related)
+                    
+                if is_scraped is not None:
+                    query = query.filter(Articles.is_scraped == is_scraped)
                     
                 if tags:
                     for tag in tags:

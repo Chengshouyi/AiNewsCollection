@@ -372,9 +372,63 @@ class ArticlesRepository(BaseRepository[Articles]):
             err_msg=f"更新文章連結爬取狀態時發生錯誤: {link}"
         )
 
-    def batch_update(self, entity_ids: List[Any], entity_data: Dict[str, Any]) -> Dict[str, Any]:
+    def batch_update(self, entities_data: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """批量更新文章
+        Args:
+            entities_data: 實體資料列表
+                entity_id: 實體ID<必要>-->取代 id
+                other_data: 其他要更新的資料<必要>
+
+        Returns:
+            包含成功和失敗資訊的字典
+                success_count: 成功更新數量
+                fail_count: 失敗數量
+                updated_articles: 成功更新的文章列表
+                missing_ids: 未找到的文章ID列表
+                error_ids: 更新過程中出錯的ID列表
         """
-        批量更新文章，使用單一更新方法確保一致性
+        success_count = 0
+        fail_count = 0
+        updated_articles = []
+        missing_ids = []
+        error_ids = []
+
+        for entity_data in entities_data:
+            try:
+                if not entity_data.get('entity_id'):
+                    logger.error(f"更新實體 ID={entity_data.get('id')} 時發生錯誤: 缺少 entity_id")
+                    error_ids.append(entity_data.get('id'))
+                    fail_count += 1
+                    continue
+                # 取出 entity_id 並從更新資料中移除
+                entity_id = entity_data.pop('entity_id') 
+                
+                update_data = {k: v for k, v in entity_data.items() if k != 'entity_id'}  # 建立不含 entity_id 的更新資料
+                
+                updated_entity = self.update(entity_id, update_data)
+                if updated_entity:
+                    updated_articles.append(updated_entity)
+                    success_count += 1
+                else:
+                    fail_count += 1
+                    missing_ids.append(entity_id)
+            except Exception as e:
+                logger.error(f"更新實體 ID={entity_data.get('id')} 時發生錯誤: {str(e)}")
+                error_ids.append(entity_data.get('id'))
+                fail_count += 1
+                continue
+
+        return {
+            "success_count": success_count,
+            "fail_count": fail_count,
+            "updated_articles": updated_articles,
+            "missing_ids": missing_ids,
+            "error_ids": error_ids
+        }
+
+    def batch_update_by_ids(self, entity_ids: List[Any], entity_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        批量更新文章的同一組資料，使用單一更新方法確保一致性
         
         Args:
             entity_ids: 要更新的文章ID列表
@@ -391,9 +445,7 @@ class ArticlesRepository(BaseRepository[Articles]):
         """
         updated_articles = []
         missing_ids = []
-        error_ids = []
-        invalid_fields = []
-        
+        error_ids = []        
         # 如果更新資料為空，直接返回結果
         if not entity_data:
             return {
@@ -401,37 +453,36 @@ class ArticlesRepository(BaseRepository[Articles]):
                 "fail_count": 0,
                 "updated_articles": [],
                 "missing_ids": [],
-                "error_ids": [],
-                "invalid_fields": []
+                "error_ids": []
             }
         
-        # 檢查並移除不合規的欄位
-        cleaned_data = entity_data.copy()
-        schema_class = self.get_schema_class(SchemaType.UPDATE)
-        non_updatable_fields = schema_class.get_immutable_fields()  # 從 schema 獲取不可更新的欄位
+        # # 檢查並移除不合規的欄位
+        # cleaned_data = entity_data.copy()
+        # schema_class = self.get_schema_class(SchemaType.UPDATE)
+        # non_updatable_fields = schema_class.get_immutable_fields()  # 從 schema 獲取不可更新的欄位
         
-        for field in non_updatable_fields:
-            if field in cleaned_data:
-                invalid_fields.append(field)
-                cleaned_data.pop(field)
-                logger.warning(f"欄位 '{field}' 不允許更新，該筆資料已從更新資料中移除")
+        # for field in non_updatable_fields:
+        #     if field in cleaned_data:
+        #         invalid_fields.append(field)
+        #         cleaned_data.pop(field)
+        #         logger.warning(f"欄位 '{field}' 不允許更新，該筆資料已從更新資料中移除")
         
-        # 如果清理後沒有要更新的資料，直接返回結果
-        if not cleaned_data:
-            return {
-                "success_count": 0,
-                "fail_count": 0,  # 修改為 0，因為沒有實際的更新操作
-                "updated_articles": [],
-                "missing_ids": [],
-                "error_ids": [],  # 清空 error_ids，因為沒有實際的更新操作
-                "invalid_fields": invalid_fields
-            }
+        # # 如果清理後沒有要更新的資料，直接返回結果
+        # if not cleaned_data:
+        #     return {
+        #         "success_count": 0,
+        #         "fail_count": 0,  # 修改為 0，因為沒有實際的更新操作
+        #         "updated_articles": [],
+        #         "missing_ids": [],
+        #         "error_ids": [],  # 清空 error_ids，因為沒有實際的更新操作
+        #         "invalid_fields": invalid_fields
+        #     }
         
         # 逐一更新實體
         for entity_id in entity_ids:
             try:
                 # 使用 self.update 方法更新實體
-                updated_entity = self.update(entity_id, cleaned_data)
+                updated_entity = self.update(entity_id, entity_data)
                 
                 if updated_entity is None:
                     # 如果返回 None，表示實體不存在
@@ -459,8 +510,7 @@ class ArticlesRepository(BaseRepository[Articles]):
             "fail_count": len(missing_ids) + len(error_ids),
             "updated_articles": updated_articles,
             "missing_ids": missing_ids,
-            "error_ids": error_ids,
-            "invalid_fields": invalid_fields
+            "error_ids": error_ids
         }
     
 

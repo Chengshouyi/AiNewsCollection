@@ -120,6 +120,7 @@ def parse_args():
     parser.add_argument('--max-pages', type=int, default=2, help='最大爬取頁數')
     parser.add_argument('--num-articles', type=int, default=5, help='要獲取詳情的文章數量')
     parser.add_argument('--ai-only', action='store_true', help='僅獲取 AI 相關文章')
+    parser.add_argument('--from-db-link', action='store_true', help='從資料庫連結獲取文章')
     parser.add_argument('--min-keywords', type=int, default=3, help='判定為 AI 相關的最小關鍵詞數量')
     parser.add_argument('--csv-output', type=str, default='articles_test.csv', help='CSV 文件保存路徑')
     parser.add_argument('--save-to-database', action='store_true', help='是否保存到資料庫')
@@ -164,7 +165,8 @@ def main():
         # 執行爬蟲任務
         task_params = {
             'max_pages': args.max_pages,
-            'ai_only': False, #args.ai_only,
+            'ai_only': args.ai_only,
+            'from_db_link': False,
             'num_articles': args.num_articles,
             'min_keywords': args.min_keywords,
             'save_to_database': args.save_to_database,
@@ -172,6 +174,20 @@ def main():
             'csv_file_name': args.csv_output
         }
         
+        crawler.execute_task(1, task_params)
+
+                # 執行爬蟲任務
+        task_params = {
+            'max_pages': args.max_pages,
+            'ai_only': args.ai_only,
+            'from_db_link': True,
+            'num_articles': 0,
+            'min_keywords': args.min_keywords,
+            'save_to_database': args.save_to_database,
+            'save_to_csv': False,
+            'csv_file_name': None
+        }
+
         crawler.execute_task(1, task_params)
         
     except Exception as e:

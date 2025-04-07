@@ -100,36 +100,6 @@ class TestArticleCreateSchema:
                 "is_ai_related": True,
                 "is_scraped": True
             },
-            # 缺少 summary
-            {
-                "title": "測試文章",
-                "link": "https://test.com/article",
-                "published_at": datetime.now(timezone.utc).isoformat(),
-                "source": "test_source",
-                "source_url": "https://test.com/article",
-                "content": "這是文章內容",
-                "category": "測試",
-                "author": "測試作者",
-                "article_type": "news",
-                "tags": "tag1,tag2,tag3",
-                "is_ai_related": True,
-                "is_scraped": True
-            },
-            # 缺少 category
-            {
-                "title": "測試文章",
-                "link": "https://test.com/article",
-                "published_at": datetime.now(timezone.utc).isoformat(),
-                "source": "test_source",
-                "source_url": "https://test.com/article",   
-                "summary": "這是文章摘要",
-                "content": "這是文章內容",
-                "author": "測試作者",
-                "article_type": "news",
-                "tags": "tag1,tag2,tag3",
-                "is_ai_related": True,
-                "is_scraped": True
-            },
             # 缺少 is_ai_related
             {
                 "title": "測試文章",
@@ -160,13 +130,11 @@ class TestArticleCreateSchema:
                 "tags": "tag1,tag2,tag3",
                 "is_ai_related": True
             }
-            
-
         ]
         
         required_fields = {
             "title", "link", "source", "source_url", 
-            "summary", "category", "is_ai_related", "is_scraped"
+             "is_ai_related", "is_scraped"
         }
 
         for test_case in test_cases:

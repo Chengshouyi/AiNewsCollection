@@ -42,13 +42,24 @@ class BnextContentExtractor:
         else:
             self.site_config = config
 
-    def batch_get_articles_content(self, articles_df, num_articles=10, ai_only=True, min_keywords=3) -> List[Dict[str, Any]]:
-        """批量獲取文章內容"""
+    def batch_get_articles_content(self, articles_df, num_articles=0, ai_only=True, min_keywords=3) -> List[Dict[str, Any]]:
+        """批量獲取文章內容
+        
+        Args:
+            articles_df: 包含文章資訊的DataFrame
+            num_articles: 要處理的文章數量，0表示處理所有文章
+            ai_only: 是否只處理AI相關文章
+            min_keywords: AI相關關鍵字最小匹配數
+        """
         start_time = time.time()
         
         logger.debug("開始批量獲取文章內容")
         logger.debug(f"參數設置: num_articles={num_articles}, ai_only={ai_only}, min_keywords={min_keywords}")
         logger.debug(f"待處理文章數量: {len(articles_df)}")
+        
+        # 根據num_articles決定要處理的文章
+        articles_to_process = articles_df if num_articles == 0 else articles_df.head(num_articles)
+        total_articles = len(articles_to_process)
         
         article_contents = []
         successful_count = 0
@@ -56,8 +67,8 @@ class BnextContentExtractor:
         failed_count = 0
         
         try:
-            for i, (_, article) in enumerate(articles_df.head(num_articles).iterrows(), 1):
-                logger.debug(f"處理第 {i}/{num_articles} 篇文章")
+            for i, (_, article) in enumerate(articles_to_process.iterrows(), 1):
+                logger.debug(f"處理第 {i}/{total_articles} 篇文章")
                 logger.debug(f"文章標題: {article['title']}")
                 logger.debug(f"文章連結: {article['link']}")
                 
@@ -82,7 +93,7 @@ class BnextContentExtractor:
                         elapsed_time = time.time() - start_time
                         avg_time = elapsed_time / successful_count
                         logger.debug(f"進度報告:")
-                        logger.debug(f"- 已處理: {i}/{num_articles}")
+                        logger.debug(f"- 已處理: {i}/{total_articles}")
                         logger.debug(f"- 成功數: {successful_count}")
                         logger.debug(f"- AI相關: {ai_related_count}")
                         logger.debug(f"- 失敗數: {failed_count}")
@@ -100,7 +111,7 @@ class BnextContentExtractor:
             logger.debug("爬取任務完成")
             logger.debug(f"總耗時: {total_time:.2f}秒")
             logger.debug(f"處理統計:")
-            logger.debug(f"- 總處理文章: {num_articles}")
+            logger.debug(f"- 總處理文章: {total_articles}")
             logger.debug(f"- 成功獲取: {successful_count}")
             logger.debug(f"- AI相關文章: {ai_related_count}")
             logger.debug(f"- 處理失敗: {failed_count}")
@@ -200,6 +211,7 @@ class BnextContentExtractor:
             summary_text = summary.get_text(strip=True) if summary else None
             logger.debug(f"提取文章summary: {summary_text}")
 
+            
             # 提取標籤
             tags = []
             tag_container_selector = get_article_contents_selectors.get("tags").get("container")
@@ -228,6 +240,16 @@ class BnextContentExtractor:
                         all_text.append(text)
                 full_content = "\n".join(all_text)
                 logger.debug(f'提取content: {full_content[:100]}...') # 只記錄前100個字符
+
+                if summary_text is None:
+                    summary_text = full_content[:100]
+                    logger.debug(f"文章摘要為空，使用內容前100字作為摘要")
+                if title_text is None:
+                    title_text = full_content[:50]
+                    logger.debug(f"文章標題為空，使用內容前50字作為標題")
+                if category_text is None:
+                    category_text = "未分類"
+                    logger.debug(f"文章分類為空，使用「未分類」作為分類")
             else:
                 logger.error("找不到文章內容容器")
                 return None

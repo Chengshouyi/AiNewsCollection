@@ -189,7 +189,7 @@ class TestBnextCrawler:
             extractor=mock_extractor
         )
         
-        articles_df = crawler.fetch_article_links()
+        articles_df = crawler._fetch_article_links()
         assert articles_df is not None
         assert not articles_df.empty
         assert len(articles_df) == 2
@@ -207,10 +207,10 @@ class TestBnextCrawler:
         )
         
         # 先抓取文章列表
-        articles_df = crawler.fetch_article_links()
+        articles_df = crawler._fetch_article_links()
         assert articles_df is not None
         assert not articles_df.empty
-        
+        crawler.articles_df = articles_df # 模擬articles_df
         # 模擬文章內容資料
         test_articles = [
             {
@@ -249,7 +249,7 @@ class TestBnextCrawler:
         mock_extractor.batch_get_articles_content.return_value = test_articles
         
         # 測試抓取文章內容
-        articles = crawler.fetch_articles()
+        articles = crawler._fetch_articles()
         
         # 驗證 mock_extractor 被正確調用
         mock_extractor.batch_get_articles_content.assert_called_once_with(
@@ -317,7 +317,7 @@ class TestBnextCrawler:
                 scraper=mock_scraper,
                 extractor=mock_extractor
             )
-            crawler.fetch_article_links()
+            crawler._fetch_article_links()
             
     def test_fetch_articles_no_links(self, mock_config_file, article_service, mock_scraper, mock_extractor):
         """測試沒有文章列表時抓取文章內容"""
@@ -328,5 +328,5 @@ class TestBnextCrawler:
             extractor=mock_extractor
         )
         
-        articles = crawler.fetch_articles()
+        articles = crawler._fetch_articles()
         assert articles is None

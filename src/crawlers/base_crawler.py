@@ -9,6 +9,7 @@ import os
 from src.crawlers.configs.site_config import SiteConfig
 from src.services.article_service import ArticleService
 from src.utils.model_utils import convert_hashable_dict_to_str_dict
+
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -97,25 +98,32 @@ class BaseCrawler(ABC):
                         raise ValueError(f"未提供 {setting} 值，請設定有效值")
 
     @abstractmethod
-    def fetch_article_links(self) -> Optional[pd.DataFrame]:
+    def _fetch_article_links(self) -> Optional[pd.DataFrame]:
         """
         爬取新聞列表，子類別需要實作
         """
-        pass
+        raise NotImplementedError("子類別需要實作 _fetch_article_links 方法")
 
     @abstractmethod
-    def fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
+    def _fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
         """
         爬取文章詳細內容，子類別需要實作
         """
-        pass
+        raise NotImplementedError("子類別需要實作 _fetch_articles 方法")
+
+    @abstractmethod
+    def _fetch_article_links_from_db(self) -> Optional[pd.DataFrame]:
+        """
+        從資料庫連結獲取文章列表，子類別需要實作
+        """
+        raise NotImplementedError("子類別需要實作 _fetch_article_links_from_db 方法")
     
     @abstractmethod
     def _update_config(self):
         """
         更新爬蟲設定，子類別需要實作
         """
-        pass
+        raise NotImplementedError("子類別需要實作 _update_config 方法")
 
     def _save_to_database(self):
         """保存爬取到的文章數據"""
@@ -127,9 +135,20 @@ class BaseCrawler(ABC):
             articles_data = self.articles_df.to_dict('records')
             if articles_data:
                 str_articles_data = [convert_hashable_dict_to_str_dict(article) for article in articles_data]
-                result = self.article_service.batch_create_articles(
-                    articles_data = str_articles_data
-                )
+
+                if self.site_config.article_settings.get('from_db_link', False):
+                    article_ids = self.articles_df['id'].tolist()
+                    #取代 entity_id 為 id
+                    for article in str_articles_data:
+                        article['entity_id'] = article['id']
+                        del article['id']
+                    result = self.article_service.batch_update_articles(
+                        article_data = str_articles_data
+                    )
+                else:
+                    result = self.article_service.batch_create_articles(
+                        articles_data = str_articles_data
+                    )
                 
                 if not result["success"]:
                     logger.error(f"批量創建文章失敗: {result['message']}")
@@ -154,6 +173,8 @@ class BaseCrawler(ABC):
             logger.debug(f"文章數據已保存到 CSV 文件: {csv_path}")
         except Exception as e:
             logger.error(f"保存文章到 CSV 文件失敗: {str(e)}", exc_info=True)
+
+
 
 
     def execute_task(self, task_id: int, task_args: dict):
@@ -203,27 +224,42 @@ class BaseCrawler(ABC):
         
         try:
             # 步驟1：抓取文章列表
-            self._update_task_status(task_id, 10, '抓取文章列表中...')
-            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表中...")
+            if not self.site_config.article_settings.get('from_db_link', False):
+                self._update_task_status(task_id, 10, '連接網站抓取文章列表中...')
+                logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 連接網站抓取文章列表中...")
 
-            fetched_articles_df = self.fetch_article_links()
+                fetched_articles_df = self._fetch_article_links()
             
-            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 抓取文章列表完成")
-            self._update_task_status(task_id, 20, '抓取文章列表完成')
+                logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 連接網站抓取文章列表完成")
+                self._update_task_status(task_id, 20, '連接網站抓取文章列表完成')
+            else:
+                self._update_task_status(task_id, 10, '從資料庫連結獲取文章列表中...')
+                logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler._fetch_article_links_from_db： 從資料庫連結獲取文章列表中...")
+
+                fetched_articles_df = self._fetch_article_links_from_db()
+
+                self._update_task_status(task_id, 20, '從資料庫連結獲取文章列表完成')
+                logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler._fetch_article_links_from_db： 從資料庫連結獲取文章列表完成")
+
             if fetched_articles_df is None or fetched_articles_df.empty:
                 logger.warning("沒有獲取到任何文章連結")
+                self._update_task_status(task_id, 100, '沒有獲取到任何文章連結', 'completed')
                 return
+            
+            # 將获取的文章列表赋值给 self.articles_df(TODO:將來要改成用參數傳入)
+            self.articles_df = fetched_articles_df
             
             # 步驟2：抓取文章詳細內容
             self._update_task_status(task_id, 30, '抓取文章詳細內容中...')
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 抓取文章詳細內容中...")
 
-            fetched_articles = self.fetch_articles()
+            fetched_articles = self._fetch_articles()
 
             logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 抓取文章詳細內容完成")
             self._update_task_status(task_id, 40, '抓取文章詳細內容完成')
             if fetched_articles is None or len(fetched_articles) == 0:
                 logger.warning("沒有獲取到任何文章")
+                self._update_task_status(task_id, 100, '沒有獲取到任何文章', 'completed')
                 return
             
             # 步驟3：以Link為key，更新articles_df

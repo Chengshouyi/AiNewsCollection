@@ -4,7 +4,7 @@ from src.crawlers.base_crawler import BaseCrawler
 from src.crawlers.bnext_scraper import BnextScraper
 from src.crawlers.bnext_content_extractor import BnextContentExtractor
 from typing import Optional, List, Dict, Any
-
+from src.crawlers.bnext_utils import BnextUtils
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -43,7 +43,7 @@ class BnextCrawler(BaseCrawler):
         self.extractor.update_config(self.site_config)
         
 
-    def fetch_article_links(self) -> Optional[pd.DataFrame]:
+    def _fetch_article_links(self) -> Optional[pd.DataFrame]:
         """
         抓取文章列表
         
@@ -65,17 +65,51 @@ class BnextCrawler(BaseCrawler):
         min_keywords = self.site_config.article_settings.get("min_keywords", 3)
         logger.debug(f"抓取文章列表參數設定：最大頁數: {max_pages}, 文章類別: {categories}, AI 相關文章: {ai_only}")
         logger.debug(f"抓取文章列表中...")
-        self.articles_df = self.retry_operation(
+        article_links_df = self.retry_operation(
             lambda: self.scraper.scrape_article_list(max_pages, ai_only, min_keywords)
         )
-        if self.articles_df is None or self.articles_df.empty:
+        if article_links_df is None or article_links_df.empty:
             logger.warning("沒有文章列表可供處理")
             return None
         else:
             logger.debug(f"成功抓取文章列表")
-            return self.articles_df
+            return article_links_df
 
-    def fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
+    def _fetch_article_links_from_db(self) -> Optional[pd.DataFrame]:
+        """從資料庫連結獲取文章列表"""
+        try:
+            # 從資料庫連結獲取文章列表
+            articles_response = self.article_service.advanced_search_articles(is_scraped=False)
+            if articles_response["success"] and articles_response["articles"]:
+                # 將文章列表轉換為 DataFrame
+                articles_data = []
+                for article in articles_response["articles"]:
+                    articles_data.append(BnextUtils.get_article_columns_dict(
+                        title=article.title,
+                        summary=article.summary,
+                        content=article.content,
+                        link=article.link,
+                        category=article.category,
+                        published_at=article.published_at,
+                        author=article.author,
+                        source=article.source,
+                        source_url=article.source_url,
+                        article_type=article.article_type,
+                        tags=article.tags,
+                        is_ai_related=article.is_ai_related,
+                        is_scraped=article.is_scraped
+                    ))
+                    
+                logger.debug(f"從資料庫連結獲取文章列表成功: {articles_data}")
+                return pd.DataFrame(articles_data)
+            else:
+                logger.error(f"從資料庫連結獲取文章列表失敗: {articles_response['message']}")
+                return None
+        except Exception as e:
+            logger.error(f"從資料庫連結獲取文章列表失敗: {str(e)}", exc_info=True)
+            return None
+
+    def _fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
         """
         抓取文章詳細內容
         

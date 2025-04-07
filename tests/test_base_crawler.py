@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+import logging
 
 from src.crawlers.base_crawler import BaseCrawler
 from src.crawlers.configs.site_config import SiteConfig
@@ -15,6 +16,10 @@ from src.models.base_model import Base
 from src.models.articles_model import Articles
 from src.crawlers.bnext_scraper import BnextUtils
 from src.database.database_manager import DatabaseManager
+
+# 配置日誌
+logger = logging.getLogger(__name__)
+
 # 建立測試用的爬蟲配置
 TEST_CONFIG = {
     "name": "test_crawler",
@@ -49,7 +54,7 @@ class MockCrawlerForTest(BaseCrawler):
         self.update_config_called = False
         super().__init__(config_file_name, article_service)
         
-    def fetch_article_links(self) -> Optional[pd.DataFrame]:
+    def _fetch_article_links(self) -> Optional[pd.DataFrame]:
         """測試用的實現"""
         self.fetch_article_links_called = True
         data = []
@@ -60,7 +65,7 @@ class MockCrawlerForTest(BaseCrawler):
             content='',
             link='https://example.com/1',
             category='Test Category',
-            published_at=datetime.now(timezone.utc),
+            published_at=datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
             author='',
             source='test_crawler',
             source_url='https://www.example.com',
@@ -77,7 +82,7 @@ class MockCrawlerForTest(BaseCrawler):
                 content='',
                 link='https://example.com/2',
                 category='Test Category',
-                published_at=datetime.now(timezone.utc),
+                published_at=datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
                 author='',
                 source='test_crawler',
                 source_url='https://www.example.com',
@@ -91,7 +96,7 @@ class MockCrawlerForTest(BaseCrawler):
         self.articles_df = df
         return df
         
-    def fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
+    def _fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
         """測試用的實現"""
         self.fetch_articles_called = True
         return [
@@ -130,6 +135,43 @@ class MockCrawlerForTest(BaseCrawler):
     def _update_config(self):
         """測試用的實現"""
         self.update_config_called = True
+
+    def _fetch_article_links_from_db(self) -> Optional[pd.DataFrame]:
+        """測試用的實現"""
+        try:
+            # 使用 article_service 獲取未爬取的文章
+            result = self.article_service.advanced_search_articles(
+                is_scraped=False,
+                limit=100
+            )
+            
+            if not result["success"] or not result["articles"]:
+                return None
+                
+            # 將文章列表轉換為 DataFrame
+            articles_data = []
+            for article in result["articles"]:
+                articles_data.append({
+                    "title": article.title,
+                    "summary": article.summary,
+                    "content": article.content,
+                    "link": article.link,
+                    "category": article.category,
+                    "published_at": article.published_at,
+                    "author": article.author,
+                    "source": article.source,
+                    "source_url": article.source_url,
+                    "article_type": article.article_type,
+                    "tags": article.tags,
+                    "is_ai_related": article.is_ai_related,
+                    "is_scraped": article.is_scraped
+                })
+                
+            return pd.DataFrame(articles_data)
+            
+        except Exception as e:
+            logger.error(f"從資料庫獲取文章連結失敗: {str(e)}")
+            return None
 
 @pytest.fixture(scope="session")
 def engine():
@@ -246,14 +288,14 @@ class TestBaseCrawler:
         crawler = MockCrawlerForTest(mock_config_file, article_service)
         
         # 模擬 fetch_article_links 返回空 DataFrame
-        crawler.fetch_article_links = MagicMock(return_value=None)
+        crawler._fetch_article_links = MagicMock(return_value=None)
         
         task_id = 1
         crawler.execute_task(task_id, {})
         
         # 驗證任務狀態
         task_status = crawler.get_task_status(task_id)
-        assert task_status["status"] == "running"  # 任務狀態不會變為 completed
+        assert task_status["status"] == "completed"  # 任務狀態不會變為 completed
         
         # 驗證 fetch_articles 沒有被調用
         assert not crawler.fetch_articles_called
@@ -263,7 +305,7 @@ class TestBaseCrawler:
         crawler = MockCrawlerForTest(mock_config_file, article_service)
         
         # 模擬 fetch_article_links 拋出異常
-        crawler.fetch_article_links = MagicMock(side_effect=Exception("Test error"))
+        crawler._fetch_article_links = MagicMock(side_effect=Exception("Test error"))
         
         task_id = 1
         with pytest.raises(Exception, match="Test error"):
@@ -307,14 +349,15 @@ class TestBaseCrawler:
         """測試保存數據到資料庫"""
         crawler = MockCrawlerForTest(mock_config_file, article_service)
         
-        # 模擬文章資料
+        # 保存測試用的時間
+        test_time = datetime.now(timezone.utc)
         crawler.articles_df = pd.DataFrame({
             "title": ["Test Title 1", "Test Title 2"],
             "summary": ["Test Summary 1", "Test Summary 2"],
             "content": ["Test Content 1", "Test Content 2"],
             "link": ["https://example.com/1", "https://example.com/2"],
             "category": ["Test Category 1", "Test Category 2"],
-            "published_at": [datetime.now(timezone.utc), datetime.now(timezone.utc)],
+            "published_at": [test_time, test_time],
             "author": ["Test Author 1", "Test Author 2"],
             "source": ["Test Source 1", "Test Source 2"],
             "source_url": ["https://example.com/1", "https://example.com/2"],
@@ -347,8 +390,8 @@ class TestBaseCrawler:
         assert articles[1].link == "https://example.com/2"
         assert articles[0].category == "Test Category 1"
         assert articles[1].category == "Test Category 2"
-        assert articles[0].published_at.tzinfo == timezone.utc
-        assert articles[1].published_at.tzinfo == timezone.utc
+        assert articles[0].published_at == test_time
+        assert articles[1].published_at == test_time
         assert articles[0].author == "Test Author 1"
         assert articles[1].author == "Test Author 2"
         assert articles[0].source == "Test Source 1"
@@ -363,6 +406,54 @@ class TestBaseCrawler:
         assert articles[1].is_ai_related is False
         assert articles[0].is_scraped is False
         assert articles[1].is_scraped is False
+    
+    def test_save_to_database_with_db_link(self, mock_config_file, article_service, session):
+        """測試從資料庫連結獲取的文章保存到資料庫時，將id轉為entity_id的情況"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 設定從資料庫連結獲取文章
+        crawler.site_config.article_settings['from_db_link'] = True
+        
+        # 保存測試用的時間
+        test_time = datetime.now(timezone.utc)
+        crawler.articles_df = pd.DataFrame({
+            "id": [1, 2],
+            "title": ["Test Title 1", "Test Title 2"],
+            "summary": ["Test Summary 1", "Test Summary 2"],
+            "content": ["Test Content 1", "Test Content 2"],
+            "link": ["https://example.com/1", "https://example.com/2"],
+            "category": ["Test Category 1", "Test Category 2"],
+            "published_at": [test_time, test_time],
+            "author": ["Test Author 1", "Test Author 2"],
+            "source": ["Test Source 1", "Test Source 2"],
+            "source_url": ["https://example.com/1", "https://example.com/2"],
+            "article_type": ["Test Article Type 1", "Test Article Type 2"],
+            "tags": ["Test Tags 1", "Test Tags 2"],
+            "is_ai_related": [False, False],
+            "is_scraped": [False, False],
+        })
+        
+        # 模擬 batch_update_articles 方法
+        article_service.batch_update_articles = MagicMock(return_value={"success": True, "message": "更新成功"})
+        
+        # 執行保存
+        crawler._save_to_database()
+        
+        # 驗證 batch_update_articles 被正確調用
+        article_service.batch_update_articles.assert_called_once()
+        
+        # 獲取傳遞給 batch_update_articles 的參數
+        call_args = article_service.batch_update_articles.call_args[1]
+        article_data = call_args.get('article_data', [])
+        
+        # 驗證 id 已轉為 entity_id 且 id 欄位已刪除
+        assert len(article_data) == 2
+        assert 'entity_id' in article_data[0]
+        assert 'entity_id' in article_data[1]
+        assert 'id' not in article_data[0]
+        assert 'id' not in article_data[1]
+        assert article_data[0]['entity_id'] == 1
+        assert article_data[1]['entity_id'] == 2
     
     def test_get_task_status(self, mock_config_file, article_service):
         """測試獲取任務狀態"""
@@ -435,6 +526,81 @@ class TestBaseCrawler:
         # 測試更新不存在的任務
         crawler._update_task_status(999, 50, '不存在的任務')
         assert 999 not in crawler.task_status
+
+    def test_fetch_article_links_from_db(self, mock_config_file, article_service, session):
+        """測試從資料庫獲取未爬取的文章連結"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 準備測試資料
+        test_articles = [
+            Articles(
+                title="測試文章1",
+                summary="測試摘要1",
+                content="測試內容1",
+                link="https://example.com/1",
+                category="測試分類",
+                published_at=datetime.now(timezone.utc),
+                author="測試作者",
+                source="test_source",
+                source_url="https://example.com",
+                article_type="test",
+                tags="test",
+                is_ai_related=False,
+                is_scraped=False
+            ),
+            Articles(
+                title="測試文章2",
+                summary="測試摘要2",
+                content="測試內容2",
+                link="https://example.com/2",
+                category="測試分類",
+                published_at=datetime.now(timezone.utc),
+                author="測試作者",
+                source="test_source",
+                source_url="https://example.com",
+                article_type="test",
+                tags="test",
+                is_ai_related=False,
+                is_scraped=False
+            )
+        ]
+        
+        # 清除現有資料並新增測試資料
+        session.query(Articles).delete()
+        session.add_all(test_articles)
+        session.commit()
+        
+        # 測試成功情況
+        result_df = crawler._fetch_article_links_from_db()
+        assert result_df is not None
+        assert len(result_df) == 2
+        assert result_df.iloc[0]['title'] == "測試文章1"
+        assert result_df.iloc[1]['title'] == "測試文章2"
+        assert result_df.iloc[0]['link'] == "https://example.com/1"
+        assert result_df.iloc[1]['link'] == "https://example.com/2"
+
+    def test_fetch_article_links_from_db_empty(self, mock_config_file, article_service, session):
+        """測試從空資料庫獲取未爬取的文章連結"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 清除所有資料
+        session.query(Articles).delete()
+        session.commit()
+        
+        # 測試空資料庫情況
+        result_df = crawler._fetch_article_links_from_db()
+        assert result_df is None
+
+    def test_fetch_article_links_from_db_error(self, mock_config_file, article_service):
+        """測試從資料庫獲取文章連結時發生錯誤的情況"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 模擬 article_service.advanced_search_articles 拋出異常
+        crawler.article_service.advanced_search_articles = MagicMock(side_effect=Exception("資料庫錯誤"))
+        
+        # 測試錯誤情況
+        result_df = crawler._fetch_article_links_from_db()
+        assert result_df is None
 
 if __name__ == "__main__":
     pytest.main()

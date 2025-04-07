@@ -11,12 +11,12 @@ Link = Annotated[str, BeforeValidator(validate_url("link", max_length=1000, requ
 Source = Annotated[str, BeforeValidator(validate_str("source", max_length=50, required=True))]
 SourceUrl = Annotated[str, BeforeValidator(validate_url("source_url", max_length=1000, required=True))]
 PublishedAt = Annotated[Optional[datetime], BeforeValidator(validate_datetime("published_at", required=False))]
-Summary = Annotated[str, BeforeValidator(validate_str("summary", 10000))]
-Content = Annotated[Optional[str], BeforeValidator(validate_str("content", 65536))]
-Category = Annotated[str, BeforeValidator(validate_str("category", 100))]
-Author = Annotated[Optional[str], BeforeValidator(validate_str("author", 100))]
-ArticleType = Annotated[Optional[str], BeforeValidator(validate_str("article_type", 20))]
-Tags = Annotated[Optional[str], BeforeValidator(validate_str("tags", 500))]
+Summary = Annotated[Optional[str], BeforeValidator(validate_str("summary", 10000, required=False))]
+Content = Annotated[Optional[str], BeforeValidator(validate_str("content", 65536, required=False))]
+Category = Annotated[Optional[str], BeforeValidator(validate_str("category", 100, required=False))]
+Author = Annotated[Optional[str], BeforeValidator(validate_str("author", 100, required=False))]
+ArticleType = Annotated[Optional[str], BeforeValidator(validate_str("article_type", 20, required=False))]
+Tags = Annotated[Optional[str], BeforeValidator(validate_str("tags", 500, required=False))]
 IsAiRelated = Annotated[bool, BeforeValidator(validate_boolean("is_ai_related", required=True))]
 IsScraped = Annotated[bool, BeforeValidator(validate_boolean("is_scraped", required=True))]
 
@@ -24,12 +24,12 @@ class ArticleCreateSchema(BaseCreateSchema):
     """文章創建模型"""
     title: Title
     link: Link
-    summary: Summary
+    summary: Summary = None
     content: Content = None
     source: Source
     source_url: SourceUrl
     published_at: PublishedAt = None
-    category: Category
+    category: Category = None
     author: Author = None
     article_type: ArticleType = None
     tags: Tags = None
@@ -41,7 +41,7 @@ class ArticleCreateSchema(BaseCreateSchema):
     def validate_required_fields(cls, data):
         """驗證必填欄位"""
         if isinstance(data, dict):
-            required_fields = ['title', 'link', 'source', 'source_url', 'summary', 'category', 'is_ai_related', 'is_scraped']
+            required_fields = ['title', 'link', 'source', 'source_url', 'is_ai_related', 'is_scraped']
             return validate_required_fields_schema(required_fields, data)
 
 class ArticleUpdateSchema(BaseUpdateSchema):
