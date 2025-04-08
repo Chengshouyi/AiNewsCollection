@@ -4,6 +4,7 @@ import inspect
 import importlib.util
 import sys
 import traceback
+from datetime import datetime
 
 # 確保 src 目錄在 Python 路徑中
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
@@ -137,22 +138,281 @@ def analyze_class_details(folder_path):
     
     return class_details
 
-# 使用範例
-if __name__ == '__main__':
-
+def analyze_module_details(folder_path, exclude_dirs=None):
     """
-    folder_path = './src'  # 替換成你要掃描的資料夾路徑
-    class_analysis = analyze_class_details(folder_path)
+    分析整個專案的模組詳細資訊
     
-    # 印出類別詳細資訊
-    for cls, details in class_analysis.items():
-        print(f"類別: {cls}")
-        print(f"檔案路徑: {details['file_path']}")
-        print("繼承自:", details['inherits_from'])
-        print("普通方法:", details['methods'])
-        print("類別方法:", details['class_methods'])
-        print("靜態方法:", details['static_methods'])
-        print("屬性:", details['attributes'])
-        print("使用關係:", details['uses'])
-        print("---")
+    參數:
+    folder_path (str): 要掃描的資料夾路徑
+    exclude_dirs (list): 要排除的資料夾列表
+    
+    回傳:
+    dict: 包含模組詳細資訊的字典
     """
+    if exclude_dirs is None:
+        exclude_dirs = []
+        
+    module_details = {}
+    
+    # 收集所有 Python 檔案
+    python_files = []
+    for root, dirs, files in os.walk(folder_path):
+        # 排除指定的資料夾
+        dirs[:] = [d for d in dirs if d not in exclude_dirs]
+        
+        for file in files:
+            if file.endswith('.py') and not file.startswith('__'):
+                python_files.append(os.path.join(root, file))
+    
+    # 第一階段：收集所有類別資訊
+    all_classes = {}
+    for file_path in python_files:
+        try:
+            # 轉換檔案路徑為模組路徑
+            rel_path = os.path.relpath(file_path, project_root)
+            module_path = rel_path.replace('/', '.').replace('\\', '.')[:-3]
+            
+            # 動態導入模組
+            spec = importlib.util.spec_from_file_location(module_path, file_path)
+            if spec is None or spec.loader is None:
+                print(f"無法載入模組 {module_path}")
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            
+            # 收集模組中的類別
+            for name, obj in inspect.getmembers(module):
+                if inspect.isclass(obj) and obj.__module__ == module.__name__:
+                    all_classes[f"{module_path}.{name}"] = obj
+        except Exception as e:
+            print(f"分析模組 {file_path} 時發生錯誤: {e}")
+            print(traceback.format_exc())
+    
+    # 第二階段：分析每個模組的詳細資訊
+    for file_path in python_files:
+        try:
+            rel_path = os.path.relpath(file_path, project_root)
+            module_path = rel_path.replace('/', '.').replace('\\', '.')[:-3]
+            
+            spec = importlib.util.spec_from_file_location(module_path, file_path)
+            if spec is None or spec.loader is None:
+                continue
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            
+            module_info = {
+                'file_path': file_path,
+                'classes': {},
+                'functions': [],
+                'imports': [],
+                'variables': []
+            }
+            
+            for name, obj in inspect.getmembers(module):
+                if not hasattr(obj, '__module__') or obj.__module__ != module.__name__:
+                    continue
+                    
+                if inspect.isclass(obj):
+                    class_info = {
+                        'docstring': inspect.getdoc(obj),
+                        'methods': [],
+                        'attributes': [],
+                        'inherits_from': []
+                    }
+                    
+                    # 收集方法
+                    for method_name, method in inspect.getmembers(obj, inspect.isfunction):
+                        if not method_name.startswith('__') and method.__module__ == module.__name__:
+                            class_info['methods'].append({
+                                'name': method_name,
+                                'docstring': inspect.getdoc(method),
+                                'parameters': inspect.signature(method).parameters
+                            })
+                    
+                    # 收集屬性
+                    for attr_name, attr in inspect.getmembers(obj, lambda x: not inspect.isfunction(x)):
+                        if not attr_name.startswith('__'):
+                            class_info['attributes'].append(attr_name)
+                    
+                    # 分析繼承關係
+                    for base in obj.__bases__:
+                        if base != object:
+                            # 檢查基類是否在專案中
+                            base_class_path = None
+                            for class_path, class_obj in all_classes.items():
+                                if class_obj == base:
+                                    base_class_path = class_path
+                                    break
+                            
+                            if base_class_path:
+                                # 如果是專案中的類別，使用相對路徑
+                                base_module = base.__module__
+                                if base_module.startswith(project_root.replace('/', '.').replace('\\', '.')):
+                                    base_class_path = base_class_path.replace(project_root.replace('/', '.').replace('\\', '.'), '')
+                                class_info['inherits_from'].append(base_class_path)
+                            else:
+                                # 如果是外部類別，使用完整路徑
+                                class_info['inherits_from'].append(f"{base.__module__}.{base.__name__}")
+                    
+                    module_info['classes'][name] = class_info
+                
+                elif inspect.isfunction(obj) and not name.startswith('__'):
+                    module_info['functions'].append({
+                        'name': name,
+                        'docstring': inspect.getdoc(obj),
+                        'parameters': inspect.signature(obj).parameters
+                    })
+                
+                elif not name.startswith('__'):
+                    module_info['variables'].append(name)
+            
+            # 分析導入
+            with open(file_path, 'r', encoding='utf-8') as file:
+                tree = ast.parse(file.read())
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        for name in node.names:
+                            module_info['imports'].append(name.name)
+                    elif isinstance(node, ast.ImportFrom):
+                        module_info['imports'].append(f"{node.module}.{node.names[0].name}")
+            
+            if module_info['classes'] or module_info['functions'] or module_info['variables']:
+                module_details[module_path] = module_info
+            
+        except Exception as e:
+            print(f"分析模組 {file_path} 時發生錯誤: {e}")
+            print(traceback.format_exc())
+    
+    return module_details
+
+def save_module_details_to_markdown(module_details, output_path):
+    """
+    將模組詳細資訊保存為 Markdown 格式
+    
+    參數:
+    module_details (dict): 模組詳細資訊
+    output_path (str): 輸出檔案路徑
+    """
+    # 確保輸出目錄存在
+    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    
+    with open(output_path, 'w', encoding='utf-8') as f:
+        # 寫入標題
+        f.write(f"# 專案模組分析報告\n\n")
+        f.write(f"生成時間: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        
+        # 寫入每個模組的資訊
+        for module_path, details in module_details.items():
+            f.write(f"## 模組: {module_path}\n\n")
+            f.write(f"檔案路徑: {details['file_path']}\n\n")
+            
+            # 寫入類別資訊
+            if details['classes']:
+                f.write("### 類別\n\n")
+                for class_name, class_info in details['classes'].items():
+                    f.write(f"#### {class_name}\n\n")
+                    if class_info['docstring']:
+                        f.write(f"{class_info['docstring']}\n\n")
+                    
+                    f.write("##### 繼承關係\n")
+                    f.write(f"- 繼承自: {', '.join(class_info['inherits_from']) if class_info['inherits_from'] else '無'}\n\n")
+                    
+                    f.write("##### 方法\n")
+                    for method in class_info['methods']:
+                        f.write(f"- {method['name']}\n")
+                        if method['docstring']:
+                            f.write(f"  - 說明: {method['docstring']}\n")
+                        f.write(f"  - 參數: {', '.join(method['parameters'].keys())}\n")
+                    f.write("\n")
+                    
+                    f.write("##### 屬性\n")
+                    for attr in class_info['attributes']:
+                        f.write(f"- {attr}\n")
+                    f.write("\n")
+            
+            # 寫入函數資訊
+            if details['functions']:
+                f.write("### 函數\n\n")
+                for func in details['functions']:
+                    f.write(f"- {func['name']}\n")
+                    if func['docstring']:
+                        f.write(f"  - 說明: {func['docstring']}\n")
+                    f.write(f"  - 參數: {', '.join(func['parameters'].keys())}\n")
+                f.write("\n")
+            
+            # 寫入導入資訊
+            if details['imports']:
+                f.write("### 導入\n\n")
+                for imp in details['imports']:
+                    f.write(f"- {imp}\n")
+                f.write("\n")
+            
+            # 寫入變數資訊
+            if details['variables']:
+                f.write("### 變數\n\n")
+                for var in details['variables']:
+                    f.write(f"- {var}\n")
+                f.write("\n")
+            
+            f.write("---\n\n")
+
+def print_module_details(module_details):
+    """
+    在終端機中打印模組詳細資訊
+    
+    參數:
+    module_details (dict): 模組詳細資訊
+    """
+    for module_path, details in module_details.items():
+        print(f"\n模組: {module_path}")
+        print(f"檔案路徑: {details['file_path']}")
+        
+        if details['classes']:
+            print("\n類別:")
+            for class_name, class_info in details['classes'].items():
+                print(f"\n  {class_name}")
+                if class_info['docstring']:
+                    print(f"    說明: {class_info['docstring']}")
+                print(f"    繼承自: {', '.join(class_info['inherits_from']) if class_info['inherits_from'] else '無'}")
+                print("    方法:")
+                for method in class_info['methods']:
+                    print(f"      - {method['name']}")
+                print("    屬性:")
+                for attr in class_info['attributes']:
+                    print(f"      - {attr}")
+        
+        if details['functions']:
+            print("\n函數:")
+            for func in details['functions']:
+                print(f"  - {func['name']}")
+        
+        if details['imports']:
+            print("\n導入:")
+            for imp in details['imports']:
+                print(f"  - {imp}")
+        
+        if details['variables']:
+            print("\n變數:")
+            for var in details['variables']:
+                print(f"  - {var}")
+        
+        print("\n" + "="*80)
+
+if __name__ == '__main__':
+    # 確保專案根目錄在 Python 路徑中
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    if project_root not in sys.path:
+        sys.path.insert(0, project_root)
+    
+    # 掃描整個專案，排除tests資料夾
+    folder_path = project_root
+    exclude_dirs = ['tests', '__pycache__', '.git', '.github', '.vscode']
+    module_details = analyze_module_details(folder_path, exclude_dirs)
+    
+    # 輸出到終端機
+    print_module_details(module_details)
+    
+    # 保存到檔案
+    output_path = os.path.join(project_root, 'logs', 'class_data.md')
+    save_module_details_to_markdown(module_details, output_path)
+    print(f"\n分析報告已保存至: {output_path}")
