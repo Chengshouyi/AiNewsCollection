@@ -1,0 +1,456 @@
+from typing import List, Optional, Dict, Any, Type, TypeVar, Tuple, cast
+from datetime import datetime, timezone
+from pydantic import ValidationError
+from src.models.crawler_task_history_model import CrawlerTaskHistory
+from src.models.crawler_task_history_schema import CrawlerTaskHistoryUpdateSchema, CrawlerTaskHistoryCreateSchema
+from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
+from src.database.base_repository import BaseRepository
+from src.models.base_model import Base
+from src.error.errors import DatabaseOperationError
+from src.services.base_service import BaseService
+
+import logging
+# 設定 logger
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# 通用類型變數，用於泛型方法
+T = TypeVar('T', bound=Base)
+
+class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
+    """爬蟲任務歷史記錄服務"""
+    
+    def __init__(self, db_manager=None):
+        super().__init__(db_manager)
+
+    def _get_repository_mapping(self) -> Dict[str, Tuple[Type[BaseRepository], Type[Base]]]:
+        """提供儲存庫映射"""
+        return {
+            'CrawlerTaskHistory': (CrawlerTaskHistoryRepository, CrawlerTaskHistory)
+        }
+    
+    def _get_repository(self) -> CrawlerTaskHistoryRepository:
+        """獲取爬蟲任務歷史記錄資料庫訪問對象"""
+        return cast(CrawlerTaskHistoryRepository, super()._get_repository('CrawlerTaskHistory'))
+
+    def get_all_histories(self, limit: Optional[int] = None, offset: Optional[int] = None, 
+                          sort_by: Optional[str] = None, sort_desc: bool = True) -> Dict[str, Any]:
+        """獲取所有歷史記錄"""
+        try:
+            with self._transaction():
+                history_repo = self._get_repository()
+                if not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'histories': []
+                    }
+                histories = history_repo.get_all(
+                    limit=limit,
+                    offset=offset,
+                    sort_by=sort_by,
+                    sort_desc=sort_desc
+                )
+                return {
+                    'success': True,
+                    'message': '獲取所有歷史記錄成功',
+                    'histories': histories
+                }
+        except Exception as e:
+            error_msg = f"獲取所有歷史記錄失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'histories': []
+            }
+    
+    def get_successful_histories(self) -> Dict[str, Any]:
+        """獲取所有成功的歷史記錄"""
+        try:
+            with self._transaction():
+                history_repo = self._get_repository()
+                if not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'histories': []
+                    }
+                histories = history_repo.find_successful_histories()
+                return {
+                    'success': True,
+                    'message': '獲取成功的歷史記錄成功',
+                    'histories': histories
+                }
+        except Exception as e:
+            error_msg = f"獲取成功的歷史記錄失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'histories': []
+            }
+    
+    def get_failed_histories(self) -> Dict[str, Any]:
+        """
+        獲取所有失敗的歷史記錄
+        
+        Returns:
+            失敗的歷史記錄列表
+        """
+        try:
+            with self._transaction():
+                history_repo = self._get_repository()
+                if not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'histories': []
+                    }
+                histories = history_repo.find_failed_histories()
+                return {
+                    'success': True,
+                    'message': '獲取失敗的歷史記錄成功',
+                    'histories': histories
+                }
+        except Exception as e:
+            error_msg = f"獲取失敗的歷史記錄失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'histories': []
+            }
+    
+    def get_histories_with_articles(self, min_articles: int = 1) -> Dict[str, Any]:
+        """
+        獲取爬取文章數量大於指定值的歷史記錄
+        
+        Args:
+            min_articles: 最小文章數量
+            
+        Returns:
+            符合條件的歷史記錄列表
+        """
+        try:
+            with self._transaction():
+                history_repo = self._get_repository()
+                if not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'histories': []
+                    }
+                histories = history_repo.find_histories_with_articles(min_articles)
+                return {
+                    'success': True,
+                    'message': '獲取有文章的歷史記錄成功',
+                    'histories': histories
+                }
+        except Exception as e:
+            error_msg = f"獲取有文章的歷史記錄失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'histories': []
+            }
+    
+
+    def get_histories_by_date_range(self, start_date: Optional[datetime] = None, end_date: Optional[datetime] = None) -> Dict[str, Any]:
+        """
+        根據日期範圍獲取歷史記錄
+        
+        Args:
+            start_date: 開始日期
+            end_date: 結束日期
+            
+        Returns:
+            符合條件的歷史記錄列表
+        """
+        try:
+            with self._transaction():
+                history_repo = self._get_repository()
+                if not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'histories': []
+                    }
+                histories = history_repo.find_histories_by_date_range(start_date, end_date)
+                return {
+                    'success': True,
+                    'message': '獲取日期範圍內的歷史記錄成功',
+                    'histories': histories
+                }
+        except Exception as e:
+            error_msg = f"獲取日期範圍內的歷史記錄失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'histories': []
+            }
+    
+
+    def get_total_articles_count(self, task_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        獲取總文章數量
+        
+        Args:
+            task_id: 可選的任務ID
+            
+        Returns:
+            總文章數量
+        """
+        try:
+            with self._transaction():
+                history_repo = self._get_repository()
+                if not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'count': 0
+                    }
+                count = history_repo.get_total_articles_count(task_id)
+                return {
+                    'success': True,
+                    'message': '獲取總文章數量成功',
+                    'count': count
+                }
+        except Exception as e:
+            error_msg = f"獲取總文章數量失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'count': 0
+            }
+    
+
+    def get_latest_history(self, task_id: int) -> Dict[str, Any]:
+        """
+        獲取指定任務的最新歷史記錄
+        
+        Args:
+            task_id: 任務ID
+            
+        Returns:
+            最新的歷史記錄或 None
+        """
+        try:
+            with self._transaction():
+                history_repo = self._get_repository()
+                if not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'history': None
+                    }
+                history = history_repo.get_latest_history(task_id)
+                if history is None:
+                    return {
+                        'success': False,
+                        'message': '無法取得最新歷史記錄',
+                        'history': None
+                    }
+                return {
+                    'success': True,
+                    'message': '獲取最新歷史記錄成功',
+                    'history': history
+                }
+        except Exception as e:
+            error_msg = f"獲取最新歷史記錄失敗, 任務ID={task_id}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'history': None
+            }
+    
+    def get_histories_older_than(self, days: int) -> Dict[str, Any]:
+        """
+        獲取超過指定天數的歷史記錄
+        
+        Args:
+            days: 天數
+            
+        Returns:
+            超過指定天數的歷史記錄列表
+        """
+        try:
+            with self._transaction():
+                history_repo = self._get_repository()
+                if not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'histories': []
+                    }
+                histories = history_repo.get_histories_older_than(days)
+                return {
+                    'success': True,
+                    'message': '獲取超過指定天數的歷史記錄成功',
+                    'histories': histories
+                }
+        except Exception as e:
+            error_msg = f"獲取超過{days}天的歷史記錄失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'histories': []
+            }
+        
+    def update_history_status(self, history_id: int, success: bool, message: Optional[str] = None, articles_count: Optional[int] = None) -> Dict[str, Any]:
+        """更新歷史記錄的狀態"""
+        try:
+            with self._transaction():
+                history_repo = self._get_repository()
+                
+                # 準備更新資料
+                update_data = {
+                    'success': success,
+                    'end_time': datetime.now(timezone.utc)
+                }
+                
+                if message is not None:
+                    update_data['message'] = message
+                    
+                if articles_count is not None:
+                    update_data['articles_count'] = articles_count
+
+                # 執行更新
+                result = history_repo.update(history_id, update_data)
+                if not result:
+                    return {
+                        'success': False,
+                        'message': f"歷史記錄不存在，ID={history_id}",
+                        'history': None
+                    }
+                    
+                return {
+                    'success': True,
+                    'message': '更新歷史記錄狀態成功',
+                    'history': result
+                }
+                
+        except Exception as e:
+            error_msg = f"更新歷史記錄狀態失敗, ID={history_id}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'history': None
+            }
+    
+    def delete_history(self, history_id: int) -> Dict[str, Any]:
+        """
+        刪除歷史記錄
+        
+        Args:
+            history_id: 歷史記錄ID
+            
+        Returns:
+            是否成功刪除
+        """
+        try:
+            with self._transaction():
+                history_repo = self._get_repository()
+                if not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'result': False
+                    }
+                result = history_repo.delete(history_id)
+                if not result:
+                    return {
+                        'success': False,
+                        'message': f"欲刪除的歷史記錄不存在，ID={history_id}",
+                        'result': False
+                    }
+                
+                return {
+                    'success': True,
+                    'message': f"成功刪除歷史記錄，ID={history_id}",
+                    'result': True
+                }
+        except Exception as e:
+            error_msg = f"刪除歷史記錄失敗，ID={history_id}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'result': False
+            }
+    
+    def delete_old_histories(self, days: int) -> Dict[str, Any]:
+        """
+        刪除超過指定天數的歷史記錄
+        
+        Args:
+            days: 天數
+            
+        Returns:
+            包含刪除結果的字典
+        """
+        try:
+            with self._transaction():
+                history_repo = self._get_repository()
+                if not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'resultMsg': {
+                            'deleted_count': 0,
+                            'failed_ids': [],
+                        }
+                    }
+                old_histories = history_repo.get_histories_older_than(days)
+                
+            if not old_histories:
+                return {
+                    "success": True,
+                    "message": f"沒有超過 {days} 天的歷史記錄",
+                    "resultMsg": {
+                        "deleted_count": 0,
+                        "failed_ids": []
+                    }
+                }
+            
+            deleted_count = 0
+            failed_ids = []
+            
+            for history in old_histories:
+                try:
+                    result = history_repo.delete(history.id)
+                    if result:
+                        deleted_count += 1
+                    else:
+                        failed_ids.append(history.id)
+                except Exception as e:
+                    logger.error(f"刪除歷史記錄失敗，ID={history.id}: {str(e)}")
+                    failed_ids.append(history.id)
+            
+            
+            return {
+                "success": True,
+                "message": f"成功刪除 {deleted_count} 條歷史記錄",
+                "resultMsg": {
+                    "deleted_count": deleted_count,
+                    "failed_ids": failed_ids,
+                }
+            }
+        except Exception as e:
+            error_msg = f"批量刪除歷史記錄失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'resultMsg': {
+                    'deleted_count': 0,
+                    'failed_ids': []
+                }
+            }

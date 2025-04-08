@@ -2,7 +2,12 @@
 __pycache__/
 *.py[cod]
 *$py.class
+.github/
+tech163_ai_news.json
+bnext_ai_articles.csv
+bnext_tech_articles.csv
 
+output/
 # C extensions
 *.so
 
