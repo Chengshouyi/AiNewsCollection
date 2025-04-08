@@ -454,7 +454,7 @@ class TestBaseCrawler:
         assert articles[1].is_scraped is False
     
     def test_save_to_database_with_db_link(self, mock_config_file, article_service, session):
-        """測試從資料庫連結獲取的文章保存到資料庫時，將id轉為entity_id的情況"""
+        """測試從資料庫連結獲取文章"""
         crawler = MockCrawlerForTest(mock_config_file, article_service)
         
         # 設定從資料庫連結獲取文章
