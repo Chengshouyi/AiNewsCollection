@@ -29,6 +29,7 @@ class TestCrawlerTasksCreateSchema:
             "task_name": "測試任務",
             "crawler_id": 1,
             "is_auto": True,
+            "ai_only": False,
             "task_args": task_args,
             "notes": "測試任務",
             "cron_expression": "*/10 * * * *",
@@ -41,6 +42,7 @@ class TestCrawlerTasksCreateSchema:
         assert schema.task_name == "測試任務"
         assert schema.crawler_id == 1
         assert schema.is_auto is True
+        assert schema.ai_only is False
         assert schema.notes == "測試任務"
         assert schema.cron_expression == "*/10 * * * *"
         assert schema.last_run_message == "測試訊息"
@@ -98,6 +100,7 @@ class TestCrawlerTasksCreateSchema:
             "task_name": "測試任務",
             "crawler_id": 1,
             "is_auto": True,
+            "ai_only": False,
             "task_args": task_args,
             "notes": "測試任務",
             "created_at": datetime.now(timezone.utc),
@@ -111,6 +114,7 @@ class TestCrawlerTasksCreateSchema:
         assert schema.task_name == "測試任務"
         assert schema.crawler_id == 1
         assert schema.is_auto is True
+        assert schema.ai_only is False
         assert schema.notes == "測試任務"
         
         # task_args 測試
@@ -125,6 +129,7 @@ class TestCrawlerTasksCreateSchema:
             "task_name": "測試任務",
             "crawler_id": 0,
             "is_auto": True,
+            "ai_only": False,
             "task_args": {},
             "cron_expression": "* * * * *"
         }
@@ -139,6 +144,7 @@ class TestCrawlerTasksCreateSchema:
             "task_name": "測試任務",
             "crawler_id": 1,
             "is_auto": "tru",
+            "ai_only": False,
             "task_args": {},
             "cron_expression": "* * * * *"
         }
@@ -151,7 +157,8 @@ class TestCrawlerTasksCreateSchema:
         data = {
             "task_name": "測試任務",
             "crawler_id": 1,
-            "task_args": {}
+            "task_args": {},
+            "ai_only": False
         }
         schema = CrawlerTasksCreateSchema.model_validate(data)
         assert schema.is_auto is True
@@ -166,42 +173,42 @@ class TestCrawlerTasksCreateSchema:
         """測試欄位驗證"""
         # 測試 crawler_id 為 None
         try:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": None})
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": None, "ai_only": False})
             pytest.fail("預期 ValidationError for crawler_id=None")
         except ValidationError as e:
             assert "crawler_id: 不能為空" in str(e)
             
         # 測試 crawler_id 為空字串
         try:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": ""})
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": "", "ai_only": False})
             pytest.fail("預期 ValidationError for crawler_id=''")
         except ValidationError as e:
             assert "crawler_id: 必須是整數" in str(e)
             
         # 測試 crawler_id 為 0
         try:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": 0})
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": 0, "ai_only": False})
             pytest.fail("預期 ValidationError for crawler_id=0")
         except ValidationError as e:
             assert "crawler_id: 必須大於0" in str(e)
             
         # 測試 crawler_id 為負數
         try:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": -1})
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": -1, "ai_only": False})
             pytest.fail("預期 ValidationError for crawler_id=-1")
         except ValidationError as e:
             assert "crawler_id: 必須大於0" in str(e)
             
         # 測試 crawler_id 為非數字
         try:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": "abc"})
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": "abc", "ai_only": False})
             pytest.fail("預期 ValidationError for crawler_id='abc'")
         except ValidationError as e:
             assert "crawler_id: 必須是整數" in str(e)
 
         # 測試 task_args 驗證
         with pytest.raises(ValidationError) as exc_info:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "crawler_id": 1, "task_args": "not_a_dict"})
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "crawler_id": 1, "task_args": "not_a_dict", "ai_only": False})
         assert "task_args: 必須是字典格式" in str(exc_info.value)
 
         # 測試文字欄位驗證
@@ -210,13 +217,13 @@ class TestCrawlerTasksCreateSchema:
             "last_run_message": "a" * 65537
         }
         for field, value in text_fields.items():
-            data = {"task_name": "測試任務", "crawler_id": 1, "task_args": {}, field: value}
+            data = {"task_name": "測試任務", "crawler_id": 1, "task_args": {}, "ai_only": False, field: value}
             with pytest.raises(ValidationError) as exc_info:
                 CrawlerTasksCreateSchema.model_validate(data)
             assert f"{field}: 長度不能超過 65536 字元" in str(exc_info.value)
         # 測試 task_name 驗證
         with pytest.raises(ValidationError) as exc_info:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "a" * 256, "crawler_id": 1, "task_args": {}})
+            CrawlerTasksCreateSchema.model_validate({"task_name": "a" * 256, "crawler_id": 1, "task_args": {}, "ai_only": False})
         assert "task_name: 長度不能超過 255 字元" in str(exc_info.value)
 
 class TestCrawlerTasksUpdateSchema:
@@ -237,6 +244,7 @@ class TestCrawlerTasksUpdateSchema:
         data = {
             "task_name": "更新任務",
             "is_auto": False,
+            "ai_only": False,
             "task_args": task_args,
             "notes": "更新的備註",
             "cron_expression": "* */2 * * *",
@@ -248,6 +256,7 @@ class TestCrawlerTasksUpdateSchema:
         # 基本字段測試
         assert schema.task_name == "更新任務"
         assert schema.is_auto is False
+        assert schema.ai_only is False
         assert schema.notes == "更新的備註"
         assert schema.cron_expression == "* */2 * * *"
         assert schema.last_run_message == "更新測試"

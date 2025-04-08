@@ -97,7 +97,9 @@ class TestCrawlerTaskService:
             "crawler_id": 1,
             "schedule": "0 0 * * *",
             "is_active": True,
-            "config": {"max_items": 100}
+            "config": {"max_items": 100},
+            "ai_only": False,
+            "task_args": {}
         }
         
         result = crawler_task_service.create_task(task_data)
@@ -110,7 +112,9 @@ class TestCrawlerTaskService:
         task_id = sample_tasks[0].id
         update_data = {
             "task_name": "更新後的任務名稱",
-            "is_active": False
+            "is_active": False,
+            "ai_only": False,
+            "task_args": {}
         }
         
         result = crawler_task_service.update_task(task_id, update_data)

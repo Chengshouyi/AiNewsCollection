@@ -339,7 +339,9 @@ class TestCrawlerTasksRepository:
             crawler_tasks_repo.create({
                 "crawler_id": sample_crawler.id,
                 "is_auto": True,
-                "cron_expression": None
+                "cron_expression": None,
+                "ai_only": False,
+                "task_args": {}
             })
         assert "當設定為自動執行時，cron_expression 不能為空" in str(excinfo.value)
         
@@ -347,12 +349,15 @@ class TestCrawlerTasksRepository:
         task = crawler_tasks_repo.create({
             "task_name": "測試任務",
             "crawler_id": sample_crawler.id,
+            "task_args": {},
             "is_auto": True,
-            "cron_expression": "0 * * * *"
+            "cron_expression": "0 * * * *",
+            "ai_only": False
         })
         assert task.crawler_id == sample_crawler.id
         assert task.is_auto is True
         assert task.cron_expression == "0 * * * *"
+        assert task.ai_only is False
 
     def test_update_task_with_validation(self, crawler_tasks_repo, session, sample_crawler):
         """測試更新任務時的驗證規則"""
@@ -401,14 +406,13 @@ class TestCrawlerTasksRepository:
         task = crawler_tasks_repo.create({
             "task_name": "測試任務",
             "crawler_id": sample_crawler.id,
-            "is_auto": False  # 手動執行不需要 cron_expression
+            "is_auto": False,  # 手動執行不需要 cron_expression
+            "ai_only": False,
+            "task_args": {}
         })
         assert task.is_auto is False
         assert task.ai_only is False
-        assert task.max_pages == 3
-        assert task.num_articles == 10
-        assert task.min_keywords == 3
-        assert task.fetch_details is False
+        assert task.task_args == {}
 
 class TestCrawlerTasksConstraints:
     """測試CrawlerTasks的模型約束"""
