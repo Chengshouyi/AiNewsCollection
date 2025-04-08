@@ -1,11 +1,12 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Optional, Any, List
+from typing import Dict, Optional, Any, List, Tuple, Callable
 import pandas as pd
 from datetime import datetime, timezone
 import logging
 import time
 import json
 import os
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.crawlers.configs.site_config import SiteConfig
 from src.services.article_service import ArticleService
 from src.utils.model_utils import convert_hashable_dict_to_str_dict
@@ -15,8 +16,21 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class BaseCrawler(ABC):
-
-
+    # 任務權重配置，用於動態計算進度百分比
+    TASK_WEIGHTS = {
+        'fetch_links': 20,         # 抓取文章列表佔 20%
+        'fetch_contents': 50,      # 抓取文章內容佔 50%
+        'update_dataframe': 10,    # 更新數據佔 10%
+        'save_to_csv': 10,         # 保存到 CSV 佔 10%
+        'save_to_database': 10     # 保存到數據庫佔 10%
+    }
+    
+    # 默認任務參數
+    DEFAULT_TASK_PARAMS = {
+        'max_retries': 3,         # 最大重試次數
+        'retry_delay': 2.0,       # 重試延遲時間（秒）
+        'timeout': 15             # 超時時間（秒）
+    }
 
     def __init__(self, config_file_name: Optional[str] = None, article_service: Optional[ArticleService] = None):
         self.config_data: Dict[str, Any] = {}
@@ -69,6 +83,9 @@ class BaseCrawler(ABC):
             storage_settings=self.config_data.get("storage_settings", None),
             selectors=self.config_data.get("selectors", None)
         )
+        
+        # 初始化默認參數
+        self.global_params = self.DEFAULT_TASK_PARAMS.copy()
         
         # 檢查必要的配置值
         for key, value in self.site_config.__dict__.items():
@@ -169,8 +186,150 @@ class BaseCrawler(ABC):
         except Exception as e:
             logger.error(f"保存文章到 CSV 文件失敗: {str(e)}", exc_info=True)
 
+    def _update_articles_with_content(self, articles_df: pd.DataFrame, articles_content: List[Dict[str, Any]]) -> pd.DataFrame:
+        """
+        使用批量更新方式更新 DataFrame 中的文章內容
+        
+        Args:
+            articles_df: 原始文章 DataFrame
+            articles_content: 包含文章內容的列表
+            
+        Returns:
+            更新後的 DataFrame
+        """
+        if not articles_content:
+            return articles_df
+        
+        try:
+            # 創建一個新的 DataFrame 包含文章內容
+            content_df = pd.DataFrame(articles_content)
+            
+            if content_df.empty:
+                return articles_df
+                
+            # 確保兩個 DataFrame 都有 'link' 列
+            if 'link' not in articles_df.columns or 'link' not in content_df.columns:
+                logger.error("文章資料缺少 'link' 欄位，無法更新")
+                return articles_df
+            
+            # 以 'link' 為鍵合併兩個 DataFrame
+            # 使用 left 連接保留原始 DataFrame 中的所有行
+            # 更新重複的列使用右側 DataFrame (文章內容) 的值
+            merged_df = articles_df.merge(
+                content_df, 
+                on='link', 
+                how='left', 
+                suffixes=('', '_new')
+            )
+            
+            # 處理合併後的列
+            for col in content_df.columns:
+                if col != 'link' and f'{col}_new' in merged_df.columns:
+                    # 優先使用新值，如果是 NaN 則保留原值
+                    mask = merged_df[f'{col}_new'].notna()
+                    merged_df.loc[mask, col] = merged_df.loc[mask, f'{col}_new']
+                    # 刪除臨時列
+                    merged_df = merged_df.drop(f'{col}_new', axis=1)
+                    
+            # 更新 is_scraped 標記
+            merged_df.loc[merged_df['link'].isin(content_df['link']), 'is_scraped'] = True
+            
+            return merged_df
+            
+        except Exception as e:
+            logger.error(f"更新文章內容失敗: {str(e)}", exc_info=True)
+            return articles_df
 
+    def _validate_and_update_task_params(self, task_id: int, task_args: Dict[str, Any]) -> bool:
+        """
+        驗證並更新任務參數
+        
+        Args:
+            task_id: 任務ID
+            task_args: 任務參數
+            
+        Returns:
+            更新是否成功
+        """
+        if not task_args:
+            return True
+            
+        try:
+            # 驗證參數
+            for key, value in task_args.items():
+                # 檢查參數是否存在於配置或全局參數中
+                if key in self.site_config.article_settings:
+                    setting_container = self.site_config.article_settings
+                elif key in self.site_config.extraction_settings:
+                    setting_container = self.site_config.extraction_settings
+                elif key in self.site_config.storage_settings:
+                    setting_container = self.site_config.storage_settings
+                elif key in self.global_params:
+                    setting_container = self.global_params
+                else:
+                    logger.error(f"未知的任務參數: {key}")
+                    raise ValueError(f"未知的任務參數: {key}")
+                
+                # 根據參數類型進行驗證
+                if key in ['max_pages', 'num_articles', 'min_keywords', 'max_retries', 'timeout']:
+                    if not isinstance(value, int) or value < 0:
+                        logger.error(f"參數 {key} 必須為非負整數")
+                        raise ValueError(f"參數 {key} 必須為非負整數")
+                elif key in ['ai_only', 'save_to_csv', 'save_to_database']:
+                    if not isinstance(value, bool):
+                        logger.error(f"參數 {key} 必須為布爾值")
+                        raise ValueError(f"參數 {key} 必須為布爾值")
+                elif key == 'retry_delay':
+                    if not isinstance(value, (int, float)) or value < 0:
+                        logger.error(f"參數 {key} 必須為非負數")
+                        raise ValueError(f"參數 {key} 必須為非負數")
+                
+                # 更新參數
+                setting_container[key] = value
+            
+            # 應用配置更新
+            self._update_config()
+            return True
+            
+        except Exception as e:
+            logger.error(f"更新任務參數失敗: {str(e)}", exc_info=True)
+            self._update_task_status(task_id, 0, f'更新任務參數失敗: {str(e)}', 'failed')
+            return False
 
+    def _calculate_progress(self, stage: str, sub_progress: float = 1.0) -> int:
+        """
+        根據任務階段和子進度計算整體進度百分比
+        
+        Args:
+            stage: 任務階段名稱
+            sub_progress: 該階段的完成進度 (0.0-1.0)
+            
+        Returns:
+            整體進度百分比 (0-100)
+        """
+        # 確保子進度在有效範圍內
+        sub_progress = max(0.0, min(1.0, sub_progress))
+        
+        # 獲取階段權重
+        stage_weight = self.TASK_WEIGHTS.get(stage, 0)
+        
+        # 計算已完成的階段總權重
+        completed_weight = 0
+        stages = list(self.TASK_WEIGHTS.keys())
+        stage_index = stages.index(stage) if stage in stages else -1
+        
+        if stage_index > 0:
+            for i in range(stage_index):
+                completed_weight += self.TASK_WEIGHTS.get(stages[i], 0)
+        
+        # 計算當前階段的權重貢獻
+        current_weight = stage_weight * sub_progress
+        
+        # 計算總進度
+        total_progress = int((completed_weight + current_weight) / sum(self.TASK_WEIGHTS.values()) * 100)
+        
+        # 確保進度在 0-100 範圍內
+        return max(0, min(100, total_progress))
 
     def execute_task(self, task_id: int, task_args: dict):
         """執行爬蟲任務的完整流程，並更新任務狀態
@@ -195,6 +354,7 @@ class BaseCrawler(ABC):
             logger.error("site_config 未初始化")
             raise ValueError("site_config 未初始化")
         
+        # 初始化任務狀態
         self.task_status[task_id] = {
             'status': 'running',
             'progress': 0,
@@ -202,40 +362,24 @@ class BaseCrawler(ABC):
             'start_time': datetime.now(timezone.utc)
         }
         
-        if task_args:
-            # 更新任務參數
-            for key, value in task_args.items():
-                if key in self.site_config.article_settings:
-                    self.site_config.article_settings[key] = value
-                elif key in self.site_config.extraction_settings:
-                    self.site_config.extraction_settings[key] = value
-                elif key in self.site_config.storage_settings:
-                    self.site_config.storage_settings[key] = value
-                else:
-                    logger.error(f"未知的任務參數: {key}")
-                    raise ValueError(f"未知的任務參數: {key}")
-                
-            self._update_config()
+        # 驗證並更新任務參數
+        if not self._validate_and_update_task_params(task_id, task_args):
+            return {
+                'success': False,
+                'message': '任務參數驗證失敗',
+                'articles_count': 0,
+                'task_status': self.get_task_status(task_id)
+            }
         
         try:
-            # 步驟1：抓取文章列表
-            if not self.site_config.article_settings.get('from_db_link', False):
-                self._update_task_status(task_id, 10, '連接網站抓取文章列表中...')
-                logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 連接網站抓取文章列表中...")
-
-                fetched_articles_df = self._fetch_article_links()
+            # 獲取重試參數
+            max_retries = self.global_params.get('max_retries', 3)
+            retry_delay = self.global_params.get('retry_delay', 2.0)
             
-                logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_list： 連接網站抓取文章列表完成")
-                self._update_task_status(task_id, 20, '連接網站抓取文章列表完成')
-            else:
-                self._update_task_status(task_id, 10, '從資料庫連結獲取文章列表中...')
-                logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler._fetch_article_links_from_db： 從資料庫連結獲取文章列表中...")
-
-                fetched_articles_df = self._fetch_article_links_from_db()
-
-                self._update_task_status(task_id, 20, '從資料庫連結獲取文章列表完成')
-                logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler._fetch_article_links_from_db： 從資料庫連結獲取文章列表完成")
-
+            # 步驟1：抓取文章列表
+            fetched_articles_df = self._fetch_article_list(task_id, max_retries, retry_delay)
+            
+            # 檢查是否成功獲取文章列表
             if fetched_articles_df is None or fetched_articles_df.empty:
                 logger.warning("沒有獲取到任何文章連結")
                 self._update_task_status(task_id, 100, '沒有獲取到任何文章連結', 'completed')
@@ -246,64 +390,56 @@ class BaseCrawler(ABC):
                     'task_status': self.get_task_status(task_id)
                 }
             
-            # 將获取的文章列表赋值给 self.articles_df(TODO:將來要改成用參數傳入)
+            # 記錄找到的文章數量
+            articles_count = len(fetched_articles_df)
+            logger.info(f"找到 {articles_count} 篇文章連結")
+            
+            # 將获取的文章列表赋值给 self.articles_df
             self.articles_df = fetched_articles_df
             
             # 步驟2：抓取文章詳細內容
-            self._update_task_status(task_id, 30, '抓取文章詳細內容中...')
-            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 抓取文章詳細內容中...")
-
-            fetched_articles = self._fetch_articles()
-
-            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 抓取文章詳細內容完成")
-            self._update_task_status(task_id, 40, '抓取文章詳細內容完成')
+            progress_msg = f'抓取文章詳細內容中 (0/{articles_count})...'
+            progress = self._calculate_progress('fetch_contents', 0)
+            self._update_task_status(task_id, progress, progress_msg)
+            
+            # 使用重試機制抓取文章內容
+            fetched_articles = self.retry_operation(
+                lambda: self._fetch_articles(),
+                max_retries=max_retries,
+                retry_delay=retry_delay
+            )
+            
+            # 檢查是否成功獲取文章內容
             if fetched_articles is None or len(fetched_articles) == 0:
-                logger.warning("沒有獲取到任何文章")
-                self._update_task_status(task_id, 100, '沒有獲取到任何文章', 'completed')
+                logger.warning("沒有獲取到任何文章內容")
+                self._update_task_status(task_id, 100, '沒有獲取到任何文章內容', 'completed')
                 return {
                     'success': False,
-                    'message': '沒有獲取到任何文章',
+                    'message': '沒有獲取到任何文章內容',
                     'articles_count': 0,
                     'task_status': self.get_task_status(task_id)
                 }
             
-            # 步驟3：以Link為key，更新articles_df
-            self._update_task_status(task_id, 60, '更新articles_df中...')
-            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 更新articles_df")
-
-            for article in fetched_articles:
-                if article:
-                    # 使用 link 作為 key 來更新整篇文章的所有欄位
-                    article_link = article['link']
-                    article_index = self.articles_df.index[self.articles_df['link'] == article_link].tolist()
-                    if article_index:
-                        # 更新該筆資料的所有欄位
-                        self.articles_df.loc[article_index[0]] = pd.Series(article)
-
-            logger.debug(f"BaseCrawler(execute_task()) - call BnextCrawler.fetch_article_content： 更新articles_df完成")
-            self._update_task_status(task_id, 70, '更新articles_df完成')
-
-            # 步驟4：保存數據到CSV文件
-            self._update_task_status(task_id, 80, '保存數據中...')
-            if self.site_config.storage_settings.get('save_to_csv', False):
-                logger.debug(f"BaseCrawler(execute_task()) - call _save_to_csv： 保存數據到CSV文件中...")
-                self._update_task_status(task_id, 85, '保存數據到CSV文件中...')
-
-                self._save_to_csv(self.articles_df, f'./logs/{self.site_config.storage_settings.get("csv_file_name", "articles_{task_id}.csv")}')
-
-                logger.debug(f"BaseCrawler(execute_task()) - call _save_to_csv： 保存數據到CSV文件完成")
-                self._update_task_status(task_id, 90, '保存數據到CSV文件完成')
-
-            # 步驟4：保存數據到資料庫
-            if self.site_config.storage_settings.get('save_to_database', False):
-                logger.debug(f"BaseCrawler(execute_task()) - call _save_to_database： 保存數據到資料庫中...")
-                self._update_task_status(task_id, 95, '保存數據到資料庫中...')
-
-                self._save_to_database()
-
-                logger.debug(f"BaseCrawler(execute_task()) - call _save_to_database： 保存數據到資料庫完成")
-                self._update_task_status(task_id, 100, '保存數據到資料庫完成')
+            # 記錄成功獲取的文章內容數量
+            content_count = len(fetched_articles)
+            logger.info(f"成功獲取 {content_count}/{articles_count} 篇文章內容")
+            
+            # 步驟3：更新 articles_df 添加文章內容
+            progress = self._calculate_progress('update_dataframe', 0)
+            self._update_task_status(task_id, progress, '更新文章數據中...')
+            
+            # 使用優化的批量更新方法
+            self.articles_df = self._update_articles_with_content(self.articles_df, fetched_articles)
+            
+            progress = self._calculate_progress('update_dataframe', 1)
+            self._update_task_status(task_id, progress, '更新文章數據完成')
+            
+            # 步驟4：保存結果
+            self._save_results(task_id)
+            
+            # 任務完成
             self._update_task_status(task_id, 100, '任務完成', 'completed')
+            
             # 返回成功結果
             return {
                 'success': True,
@@ -323,15 +459,93 @@ class BaseCrawler(ABC):
                 'task_status': self.get_task_status(task_id)
             }
     
+    def _fetch_article_list(self, task_id: int, max_retries: int = 3, retry_delay: float = 2.0) -> Optional[pd.DataFrame]:
+        """抓取文章列表"""
+        try:
+            progress = self._calculate_progress('fetch_links', 0)
+            
+            if not self.site_config.article_settings.get('from_db_link', False):
+                self._update_task_status(task_id, progress, '連接網站抓取文章列表中...')
+                logger.info("開始從網站抓取文章列表")
+                
+                # 使用重試機制
+                fetched_articles_df = self.retry_operation(
+                    lambda: self._fetch_article_links(),
+                    max_retries=max_retries,
+                    retry_delay=retry_delay
+                )
+                
+                progress = self._calculate_progress('fetch_links', 1)
+                self._update_task_status(task_id, progress, '連接網站抓取文章列表完成')
+            else:
+                self._update_task_status(task_id, progress, '從資料庫連結獲取文章列表中...')
+                logger.info("開始從資料庫連結獲取文章列表")
+                
+                # 使用重試機制
+                fetched_articles_df = self.retry_operation(
+                    lambda: self._fetch_article_links_from_db(),
+                    max_retries=max_retries,
+                    retry_delay=retry_delay
+                )
+                
+                progress = self._calculate_progress('fetch_links', 1)
+                self._update_task_status(task_id, progress, '從資料庫連結獲取文章列表完成')
+                
+            return fetched_articles_df
+            
+        except Exception as e:
+            logger.error(f"抓取文章列表失敗: {str(e)}", exc_info=True)
+            raise
+    
+    def _save_results(self, task_id: int) -> None:
+        """儲存爬蟲結果（CSV和資料庫）"""
+        try:
+            # 確認是否有數據要保存
+            if self.articles_df.empty:
+                logger.warning("沒有數據可供保存")
+                return
+                
+            # 保存到CSV
+            if self.site_config.storage_settings.get('save_to_csv', False):
+                progress = self._calculate_progress('save_to_csv', 0)
+                self._update_task_status(task_id, progress, '保存數據到CSV文件中...')
+                
+                csv_file_name = self.site_config.storage_settings.get("csv_file_name", f"articles_{task_id}.csv")
+                csv_path = f'./logs/{csv_file_name}'
+                
+                self._save_to_csv(self.articles_df, csv_path)
+                
+                progress = self._calculate_progress('save_to_csv', 1)
+                self._update_task_status(task_id, progress, '保存數據到CSV文件完成')
+            
+            # 保存到資料庫
+            if self.site_config.storage_settings.get('save_to_database', False):
+                progress = self._calculate_progress('save_to_database', 0)
+                self._update_task_status(task_id, progress, '保存數據到資料庫中...')
+                
+                self._save_to_database()
+                
+                progress = self._calculate_progress('save_to_database', 1)
+                self._update_task_status(task_id, progress, '保存數據到資料庫完成')
+                
+        except Exception as e:
+            logger.error(f"保存結果失敗: {str(e)}", exc_info=True)
+            raise
+    
     def _update_task_status(self, task_id: int, progress: int, message: str, status: Optional[str] = None):
-        """更新任務狀態"""
+        """更新任務狀態並記錄日誌"""
         if task_id in self.task_status:
+            # 更新狀態
             self.task_status[task_id]['progress'] = progress
             self.task_status[task_id]['message'] = message
             if status:
                 self.task_status[task_id]['status'] = status
                 
-            logger.debug(f"任務進度更新 (ID={task_id}): {progress}%, {message}")
+            # 記錄日誌
+            if status:
+                logger.info(f"任務 {task_id} {status}: {progress}%, {message}")
+            else:
+                logger.debug(f"任務進度更新 (ID={task_id}): {progress}%, {message}")
     
     def get_task_status(self, task_id: int):
         """獲取任務狀態"""
@@ -355,5 +569,31 @@ class BaseCrawler(ABC):
                 
                 logger.warning(f"操作失敗，正在重試 ({retries}/{max_retries}): {str(e)}")
                 time.sleep(retry_delay)
+                
+    def cancel_task(self, task_id: int) -> bool:
+        """取消正在執行的任務
+        
+        Args:
+            task_id: 要取消的任務ID
+            
+        Returns:
+            是否成功取消
+        """
+        if task_id not in self.task_status:
+            logger.warning(f"任務 {task_id} 不存在，無法取消")
+            return False
+            
+        status = self.task_status[task_id]['status']
+        if status not in ['running', 'paused']:
+            logger.warning(f"任務 {task_id} 當前狀態為 {status}，無法取消")
+            return False
+            
+        # 更新任務狀態
+        self._update_task_status(task_id, self.task_status[task_id]['progress'], '任務已取消', 'cancelled')
+        logger.info(f"任務 {task_id} 已被取消")
+        return True
+
+
+
 
    

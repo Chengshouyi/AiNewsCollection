@@ -136,7 +136,7 @@ class TestCrawlerTasksModel:
         
         # 驗證所有欄位都在字典中
         expected_keys = {
-            'id', 'task_name', 'crawler_id', 'is_auto', 'task_args', 'notes',
+            'id', 'task_name', 'crawler_id', 'is_auto', 'ai_only','task_args', 'notes',
             'created_at', 'updated_at', 'last_run_at', 'last_run_success',
             'last_run_message', 'cron_expression'
         }
