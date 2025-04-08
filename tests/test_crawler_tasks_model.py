@@ -10,7 +10,24 @@ class TestCrawlerTasksModel:
             task_name="測試任務",
             crawler_id=1,
             is_auto=True,
-            ai_only=False,
+            task_args={
+                "article_settings": {
+                    "max_pages": 3,
+                    "ai_only": True,
+                    "num_articles": 10,
+                    "min_keywords": 3,
+                    "from_db_link": False
+                },
+                "extraction_settings": {
+                    "num_articles": 3,
+                    "min_keywords": 3
+                },
+                "storage_settings": {
+                    "save_to_csv": True,
+                    "csv_file_name": "articles_bnext.csv",
+                    "save_to_database": False
+                }
+            },
             notes="測試任務"
         )
         
@@ -18,18 +35,29 @@ class TestCrawlerTasksModel:
         assert task.task_name == "測試任務"
         assert task.crawler_id == 1
         assert task.is_auto is True
-        assert task.ai_only is False
+        assert task.task_args == {
+            "article_settings": {
+                "max_pages": 3,
+                "ai_only": True,
+                "num_articles": 10,
+                "min_keywords": 3,
+                "from_db_link": False
+            },
+            "extraction_settings": {
+                "num_articles": 3,
+                "min_keywords": 3
+            },
+            "storage_settings": {
+                "save_to_csv": True,
+                "csv_file_name": "articles_bnext.csv",
+                "save_to_database": False
+            }
+        }
         assert task.notes == "測試任務"
         
         # 測試自動生成的欄位
         assert task.created_at is not None
         assert task.updated_at is None
-        
-        # 測試預設值
-        assert task.max_pages == 3
-        assert task.num_articles == 10
-        assert task.min_keywords == 3
-        assert task.fetch_details is False
         
         # 測試可選欄位預設值
         assert task.last_run_at is None
@@ -43,13 +71,9 @@ class TestCrawlerTasksModel:
         
         # 測試布林欄位預設值
         assert task.is_auto is True
-        assert task.ai_only is False
-        assert task.fetch_details is False
         
-        # 測試數值欄位預設值
-        assert task.max_pages == 3
-        assert task.num_articles == 10
-        assert task.min_keywords == 3
+        # 測試默認的 task_args
+        assert task.task_args == {}
         
         # 測試可選欄位預設值
         assert task.notes is None
@@ -75,19 +99,17 @@ class TestCrawlerTasksModel:
         
         # 測試布林欄位更新
         task.is_auto = False
-        task.ai_only = True
-        task.fetch_details = True
         assert task.is_auto is False
-        assert task.ai_only is True
-        assert task.fetch_details is True
         
-        # 測試數值欄位更新
-        task.max_pages = 5
-        task.num_articles = 20
-        task.min_keywords = 4
-        assert task.max_pages == 5
-        assert task.num_articles == 20
-        assert task.min_keywords == 4
+        # 測試 task_args 更新
+        task.task_args = {
+            "article_settings": {
+                "max_pages": 5,
+                "num_articles": 20
+            }
+        }
+        assert task.task_args["article_settings"]["max_pages"] == 5
+        assert task.task_args["article_settings"]["num_articles"] == 20
         
         # 測試文字欄位更新
         task.task_name = "更新後的任務名稱"
@@ -114,8 +136,7 @@ class TestCrawlerTasksModel:
         
         # 驗證所有欄位都在字典中
         expected_keys = {
-            'id', 'task_name', 'crawler_id', 'is_auto', 'ai_only', 'notes',
-            'max_pages', 'num_articles', 'min_keywords', 'fetch_details',
+            'id', 'task_name', 'crawler_id', 'is_auto', 'task_args', 'notes',
             'created_at', 'updated_at', 'last_run_at', 'last_run_success',
             'last_run_message', 'cron_expression'
         }

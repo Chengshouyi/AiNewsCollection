@@ -4,6 +4,7 @@ from src.models.base_model import Base
 from typing import Optional
 from datetime import datetime
 from .base_entity import BaseEntity
+from sqlalchemy.dialects.mysql import JSON
 
 class CrawlerTasks(Base, BaseEntity):
     """爬蟲任務模型
@@ -12,12 +13,8 @@ class CrawlerTasks(Base, BaseEntity):
     - task_name: 任務名稱
     - crawler_id: 外鍵，關聯爬蟲
     - is_auto: 是否自動爬取
-    - ai_only: 是否僅收集 AI 相關
+    - task_args: 任務參數
     - notes: 備註
-    - max_pages: 最大爬取頁數
-    - num_articles: 最大爬取文章數
-    - min_keywords: 最小關鍵字數
-    - fetch_details: 是否抓取詳細資料
     - last_run_at: 上次執行時間
     - last_run_success: 上次執行成功與否
     - last_run_message: 上次執行訊息
@@ -39,32 +36,8 @@ class CrawlerTasks(Base, BaseEntity):
         default=True, 
         nullable=False
     )
-    ai_only: Mapped[bool] = mapped_column(
-        Boolean, 
-        default=False, 
-        nullable=False
-    )
+    task_args: Mapped[dict] = mapped_column(JSON)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    max_pages: Mapped[int] = mapped_column(
-        Integer,
-        default=3,
-        nullable=False
-    )
-    num_articles: Mapped[int] = mapped_column(
-        Integer,
-        default=10,
-        nullable=False
-    )
-    min_keywords: Mapped[int] = mapped_column(
-        Integer,
-        default=3,
-        nullable=False
-    )
-    fetch_details: Mapped[bool] = mapped_column(
-        Boolean,
-        default=False,
-        nullable=False
-    )
     last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     last_run_success: Mapped[Optional[bool]] = mapped_column(Boolean)
     last_run_message: Mapped[Optional[str]] = mapped_column(Text)
@@ -82,16 +55,9 @@ class CrawlerTasks(Base, BaseEntity):
     def __init__(self, **kwargs):
         if 'is_auto' not in kwargs:
             kwargs['is_auto'] = True
-        if 'ai_only' not in kwargs:
-            kwargs['ai_only'] = False
-        if 'max_pages' not in kwargs:   
-            kwargs['max_pages'] = 3
-        if 'num_articles' not in kwargs:
-            kwargs['num_articles'] = 10
-        if 'min_keywords' not in kwargs:
-            kwargs['min_keywords'] = 3
-        if 'fetch_details' not in kwargs:
-            kwargs['fetch_details'] = False
+        if 'task_args' not in kwargs:
+            kwargs['task_args'] = {}
+
         # 告知父類需要監聽的 datetime 欄位
         super().__init__(datetime_fields_to_watch=
                          self._datetime_fields_to_watch, **kwargs)
@@ -105,11 +71,7 @@ class CrawlerTasks(Base, BaseEntity):
             'task_name': self.task_name,
             'crawler_id': self.crawler_id,
             'is_auto': self.is_auto,
-            'ai_only': self.ai_only,
-            'max_pages': self.max_pages,
-            'num_articles': self.num_articles,
-            'min_keywords': self.min_keywords,
-            'fetch_details': self.fetch_details,
+            'task_args': self.task_args,
             'notes': self.notes,
             'last_run_at': self.last_run_at,
             'last_run_success': self.last_run_success,

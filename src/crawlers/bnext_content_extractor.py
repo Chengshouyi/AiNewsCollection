@@ -10,16 +10,16 @@ from src.utils.log_utils import LoggerSetup
 from src.utils import datetime_utils
 
 # 設置日誌記錄器(校正用)
-custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-logger = LoggerSetup.setup_logger(
-    module_name='bnext_content_extractor',
-    log_dir='logs',  # 這會在專案根目錄下創建 logs 目錄
-    log_format=custom_format,
-    level=logging.DEBUG,
-    date_format='%Y-%m-%d %H:%M:%S'
-)
-# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-# logger = logging.getLogger(__name__)
+# custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+# logger = LoggerSetup.setup_logger(
+#     module_name='bnext_content_extractor',
+#     log_dir='logs',  # 這會在專案根目錄下創建 logs 目錄
+#     log_format=custom_format,
+#     level=logging.DEBUG,
+#     date_format='%Y-%m-%d %H:%M:%S'
+# )
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 class BnextContentExtractor:
     def __init__(self, config=None):

@@ -1,5 +1,6 @@
 from src.error.errors import ValidationError
 
+
 def validate_update_schema(immutable_fields: list, update_fields: list, data: dict):
     """驗證更新操作"""
     if isinstance(data, dict):

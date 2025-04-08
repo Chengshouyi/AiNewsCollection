@@ -46,6 +46,17 @@ def validate_list(
         return value
     return validator
 
+def validate_dict(field_name: str, required: bool = True):
+    """驗證字典格式"""
+    def validate_dict_validator(v):
+        if not isinstance(v, dict):
+            if required:
+                raise ValidationError(f"{field_name}: 必須是字典格式")
+            else:
+                return {}
+        return v
+    return validate_dict_validator
+
 def validate_str(
     field_name: str, 
     max_length: int = 255, 

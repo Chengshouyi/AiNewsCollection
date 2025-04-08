@@ -8,61 +8,115 @@ class TestCrawlerTasksCreateSchema:
     
     def test_crawler_tasks_schema_with_valid_data(self):
         """測試有效的爬蟲任務資料"""
+        task_args = {
+            "article_settings": {
+                "max_pages": 5,
+                "ai_only": False,
+                "num_articles": 20,
+                "min_keywords": 4,
+                "fetch_details": True,
+                "from_db_link": False
+            },
+            "extraction_settings": {
+                "num_articles": 3
+            },
+            "storage_settings": {
+                "save_to_csv": True
+            }
+        }
+        
         data = {
             "task_name": "測試任務",
             "crawler_id": 1,
             "is_auto": True,
-            "ai_only": False,
+            "task_args": task_args,
             "notes": "測試任務",
-            "max_pages": 5,
-            "num_articles": 20,
-            "min_keywords": 4,
-            "fetch_details": True,
             "cron_expression": "*/10 * * * *",
             "last_run_message": "測試訊息"
         }
+        
         schema = CrawlerTasksCreateSchema.model_validate(data)
+        
+        # 基本字段測試
         assert schema.task_name == "測試任務"
         assert schema.crawler_id == 1
         assert schema.is_auto is True
-        assert schema.ai_only is False
         assert schema.notes == "測試任務"
-        assert schema.max_pages == 5
-        assert schema.num_articles == 20
-        assert schema.min_keywords == 4
-        assert schema.fetch_details is True
         assert schema.cron_expression == "*/10 * * * *"
         assert schema.last_run_message == "測試訊息"
+        
+        # task_args 測試
+        assert schema.task_args is not None
+        assert isinstance(schema.task_args, dict)
+        
+        # 文章設置
+        article_settings = schema.task_args["article_settings"]
+        assert article_settings["ai_only"] is False
+        assert article_settings["max_pages"] == 5
+        assert article_settings["num_articles"] == 20
+        assert article_settings["min_keywords"] == 4
+        assert article_settings["fetch_details"] is True
+        assert article_settings["from_db_link"] is False
+        
+        # 提取設置
+        extraction_settings = schema.task_args["extraction_settings"]
+        assert extraction_settings["num_articles"] == 3
+        
+        # 儲存設置
+        storage_settings = schema.task_args["storage_settings"]
+        assert storage_settings["save_to_csv"] is True
 
     def test_missing_required_fields(self):
         """測試缺少必要欄位"""
         data = {
             "task_name": "測試任務",
-            "is_auto": False,
-            "ai_only": False,
+            "is_auto": False
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data)
         assert "crawler_id: 不能為空" in str(exc_info.value)
 
+        # 測試缺少task_args
+        data = {
+            "task_name": "測試任務",
+            "crawler_id": 1,
+            "is_auto": False
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlerTasksCreateSchema.model_validate(data)
+        assert "task_args: 不能為空" in str(exc_info.value)
+
     def test_crawler_tasks_with_all_fields(self):
         """測試包含所有欄位的爬蟲任務資料"""
+        task_args = {
+            "article_settings": {
+                "ai_only": False
+            }
+        }
+        
         data = {
             "task_name": "測試任務",
             "crawler_id": 1,
             "is_auto": True,
-            "ai_only": False,
+            "task_args": task_args,
             "notes": "測試任務",
             "created_at": datetime.now(timezone.utc),
             "updated_at": None,
             "cron_expression": "* * * * *"
         }
+        
         schema = CrawlerTasksCreateSchema.model_validate(data)
+        
+        # 基本字段測試
         assert schema.task_name == "測試任務"
         assert schema.crawler_id == 1
         assert schema.is_auto is True
-        assert schema.ai_only is False
         assert schema.notes == "測試任務"
+        
+        # task_args 測試
+        assert schema.task_args is not None
+        assert "article_settings" in schema.task_args
+        assert schema.task_args["article_settings"]["ai_only"] is False
 
     def test_crawler_id_validation(self):
         """測試 crawler_id 的驗證"""
@@ -71,6 +125,7 @@ class TestCrawlerTasksCreateSchema:
             "task_name": "測試任務",
             "crawler_id": 0,
             "is_auto": True,
+            "task_args": {},
             "cron_expression": "* * * * *"
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -84,37 +139,24 @@ class TestCrawlerTasksCreateSchema:
             "task_name": "測試任務",
             "crawler_id": 1,
             "is_auto": "tru",
+            "task_args": {},
             "cron_expression": "* * * * *"
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_invalid_is_auto)
         assert "is_auto: 必須是布爾值" in str(exc_info.value)
 
-        # 測試 ai_only 非布林值
-        data_invalid_ai_only = {
-            "task_name": "測試任務",
-            "crawler_id": 1,
-            "ai_only": "fals",
-            "cron_expression": "* * * * *"
-        }
-        with pytest.raises(ValidationError) as exc_info:
-            CrawlerTasksCreateSchema.model_validate(data_invalid_ai_only)
-        assert "ai_only: 必須是布爾值" in str(exc_info.value)
-
     def test_default_values(self):
         """測試默認值設置"""
         data = {
             "task_name": "測試任務",
-            "crawler_id": 1
+            "crawler_id": 1,
+            "task_args": {}
         }
         schema = CrawlerTasksCreateSchema.model_validate(data)
         assert schema.is_auto is True
-        assert schema.ai_only is False
+        assert schema.task_args == {}
         assert schema.notes is None
-        assert schema.max_pages == 3
-        assert schema.num_articles == 10
-        assert schema.min_keywords == 3
-        assert schema.fetch_details is False
         assert schema.cron_expression is None
         assert schema.last_run_at is None
         assert schema.last_run_success is None
@@ -122,49 +164,45 @@ class TestCrawlerTasksCreateSchema:
 
     def test_field_validations(self):
         """測試欄位驗證"""
-        # 測試 crawler_id 驗證
-        empty_values = [None, "", 0]
-        for value in empty_values:
-            with pytest.raises(ValidationError) as exc_info:
-                CrawlerTasksCreateSchema.model_validate({"crawler_id": value})
-                if value is None:
-                    assert "crawler_id: 不能為空" in str(exc_info.value)
-                else:
-                    assert "crawler_id: 必須大於0" in str(exc_info.value)
+        # 測試 crawler_id 為 None
+        try:
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": None})
+            pytest.fail("預期 ValidationError for crawler_id=None")
+        except ValidationError as e:
+            assert "crawler_id: 不能為空" in str(e)
+            
+        # 測試 crawler_id 為空字串
+        try:
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": ""})
+            pytest.fail("預期 ValidationError for crawler_id=''")
+        except ValidationError as e:
+            assert "crawler_id: 必須是整數" in str(e)
+            
+        # 測試 crawler_id 為 0
+        try:
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": 0})
+            pytest.fail("預期 ValidationError for crawler_id=0")
+        except ValidationError as e:
+            assert "crawler_id: 必須大於0" in str(e)
+            
+        # 測試 crawler_id 為負數
+        try:
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": -1})
+            pytest.fail("預期 ValidationError for crawler_id=-1")
+        except ValidationError as e:
+            assert "crawler_id: 必須大於0" in str(e)
+            
+        # 測試 crawler_id 為非數字
+        try:
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": "abc"})
+            pytest.fail("預期 ValidationError for crawler_id='abc'")
+        except ValidationError as e:
+            assert "crawler_id: 必須是整數" in str(e)
 
-        # 測試負數
+        # 測試 task_args 驗證
         with pytest.raises(ValidationError) as exc_info:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "crawler_id": -1})
-        assert "crawler_id: 必須大於0" in str(exc_info.value)
-
-        # 測試非數字
-        with pytest.raises(ValidationError) as exc_info:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "crawler_id": "abc"})
-        assert "crawler_id: 必須是整數" in str(exc_info.value)
-
-        # 測試正整數欄位驗證
-        number_fields = {
-            "max_pages": [0, -1, "abc"],
-            "num_articles": [0, -1, "abc"],
-            "min_keywords": [0, -1, "abc"]
-        }
-        for field, invalid_values in number_fields.items():
-            for value in invalid_values:
-                data = {"task_name": "測試任務", "crawler_id": 1, field: value}
-                with pytest.raises(ValidationError) as exc_info:
-                    CrawlerTasksCreateSchema.model_validate(data)
-                if isinstance(value, str):
-                    assert f"{field}: 必須是整數" in str(exc_info.value)
-                else:
-                    assert f"{field}: 必須大於0" in str(exc_info.value)
-
-        # 測試布林欄位驗證
-        boolean_fields = ["is_auto", "ai_only", "fetch_details"]
-        for field in boolean_fields:
-            data = {"task_name": "測試任務", "crawler_id": 1, field: "not_boolean"}
-            with pytest.raises(ValidationError) as exc_info:
-                CrawlerTasksCreateSchema.model_validate(data)
-            assert f"{field}: 必須是布爾值" in str(exc_info.value)
+            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "crawler_id": 1, "task_args": "not_a_dict"})
+        assert "task_args: 必須是字典格式" in str(exc_info.value)
 
         # 測試文字欄位驗證
         text_fields = {
@@ -172,13 +210,13 @@ class TestCrawlerTasksCreateSchema:
             "last_run_message": "a" * 65537
         }
         for field, value in text_fields.items():
-            data = {"task_name": "測試任務", "crawler_id": 1, field: value}
+            data = {"task_name": "測試任務", "crawler_id": 1, "task_args": {}, field: value}
             with pytest.raises(ValidationError) as exc_info:
                 CrawlerTasksCreateSchema.model_validate(data)
             assert f"{field}: 長度不能超過 65536 字元" in str(exc_info.value)
         # 測試 task_name 驗證
         with pytest.raises(ValidationError) as exc_info:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "a" * 256, "crawler_id": 1})
+            CrawlerTasksCreateSchema.model_validate({"task_name": "a" * 256, "crawler_id": 1, "task_args": {}})
         assert "task_name: 長度不能超過 255 字元" in str(exc_info.value)
 
 class TestCrawlerTasksUpdateSchema:
@@ -186,29 +224,45 @@ class TestCrawlerTasksUpdateSchema:
     
     def test_valid_update(self):
         """測試有效的更新資料"""
+        task_args = {
+            "article_settings": {
+                "ai_only": True,
+                "max_pages": 5,
+                "num_articles": 15,
+                "min_keywords": 4,
+                "fetch_details": True
+            }
+        }
+        
         data = {
             "task_name": "更新任務",
             "is_auto": False,
-            "ai_only": True,
+            "task_args": task_args,
             "notes": "更新的備註",
-            "max_pages": 5,
-            "num_articles": 15,
-            "min_keywords": 4,
-            "fetch_details": True,
             "cron_expression": "* */2 * * *",
             "last_run_message": "更新測試"
         }
+        
         schema = CrawlerTasksUpdateSchema.model_validate(data)
+        
+        # 基本字段測試
         assert schema.task_name == "更新任務"
         assert schema.is_auto is False
-        assert schema.ai_only is True
         assert schema.notes == "更新的備註"
-        assert schema.max_pages == 5
-        assert schema.num_articles == 15
-        assert schema.min_keywords == 4
-        assert schema.fetch_details is True
         assert schema.cron_expression == "* */2 * * *"
         assert schema.last_run_message == "更新測試"
+        
+        # task_args 測試
+        assert schema.task_args is not None
+        assert isinstance(schema.task_args, dict)
+        assert "article_settings" in schema.task_args
+        
+        article_settings = schema.task_args["article_settings"]
+        assert article_settings["ai_only"] is True
+        assert article_settings["max_pages"] == 5
+        assert article_settings["num_articles"] == 15
+        assert article_settings["min_keywords"] == 4
+        assert article_settings["fetch_details"] is True
 
     def test_invalid_cron_expressions(self):
         """測試無效的 cron 表達式"""
@@ -288,21 +342,29 @@ class TestCrawlerTasksUpdateSchema:
 
     def test_partial_update(self):
         """測試部分欄位更新"""
-        test_cases = {
-            "is_auto": False,
-            "notes": "新備註",
-            "max_pages": 5,
-            "cron_expression": "30 18 * * 0",
-            "last_run_message": "部分更新測試"
-        }
+        test_cases = [
+            {"field": "is_auto", "value": False},
+            {"field": "notes", "value": "新備註"},
+            {"field": "task_args", "value": {"article_settings": {"max_pages": 5}}},
+            {"field": "cron_expression", "value": "30 18 * * 0"},
+            {"field": "last_run_message", "value": "部分更新測試"}
+        ]
         
-        for field, value in test_cases.items():
-            schema = CrawlerTasksUpdateSchema.model_validate({field: value})
+        for case in test_cases:
+            field = case["field"]
+            value = case["value"]
+            
+            data = {field: value}
+            schema = CrawlerTasksUpdateSchema.model_validate(data)
+            
+            # 驗證指定的字段已正確設置
             assert getattr(schema, field) == value
-            # 確認其他欄位為 None
-            for other_field in test_cases.keys():
+            
+            # 驗證其他字段為 None
+            for other_case in test_cases:
+                other_field = other_case["field"]
                 if other_field != field:
-                    assert getattr(schema, other_field) is None 
+                    assert getattr(schema, other_field) is None
 
 
 
