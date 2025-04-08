@@ -83,8 +83,8 @@ class TaskExecutor:
                     'message': error_msg
                 }
                 
-            # 執行爬蟲任務
-            result = crawler.execute_task(task_id)
+            # 執行爬蟲任務，並傳遞任務參數
+            result = crawler.execute_task(task_id, task.task_args)
             
             # 記錄結束時間和結果
             end_time = datetime.now(timezone.utc)
@@ -100,6 +100,9 @@ class TaskExecutor:
                 end_time, 
                 articles_count
             )
+            
+            # 更新任務表中的任務狀態
+            self._update_task(task_id, success, message)
             
             return result
         except Exception as e:
@@ -165,3 +168,18 @@ class TaskExecutor:
             bool: 如果任務正在執行中，返回 True；否則返回 False
         """
         return task_id in self.executing_tasks
+
+    def _update_task(self, task_id: int, success: bool, message: str) -> None:
+        """更新任務表中的任務狀態
+        
+        注意：由於歷史記錄已經包含了任務執行的狀態，這裡不再重複更新任務表，
+        任務表的狀態將由CrawlerTaskService定期從歷史記錄中同步。
+        
+        Args:
+            task_id: 任務 ID
+            success: 執行是否成功
+            message: 執行結果消息
+        """
+        # 僅記錄狀態更新，但不實際執行更新
+        logger.debug(f"任務狀態已更新 (ID={task_id}): success={success}, message='{message}'")
+        # 具體的任務狀態更新將通過歷史記錄同步到任務表

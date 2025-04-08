@@ -121,7 +121,7 @@ class TestTaskExecutor:
         
         # 驗證函數調用
         mock_factory.get_crawler.assert_called_once_with(mock_task.crawler.crawler_name)
-        mock_crawler.execute_task.assert_called_once_with(mock_task.id)
+        mock_crawler.execute_task.assert_called_once_with(mock_task.id, mock_task.task_args)
         
         # 驗證歷史記錄創建和更新
         mock_task_history_repo.create.assert_called_once()
@@ -148,6 +148,9 @@ class TestTaskExecutor:
         assert result['success'] is False
         assert '執行任務' in result['message']
         assert '爬蟲執行錯誤' in result['message']
+        
+        # 驗證爬蟲執行時使用了正確的參數
+        mock_crawler.execute_task.assert_called_once_with(mock_task.id, mock_task.task_args)
         
         # 驗證任務從執行中集合移除
         assert mock_task.id not in executor.executing_tasks

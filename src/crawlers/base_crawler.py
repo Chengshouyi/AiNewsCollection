@@ -239,7 +239,12 @@ class BaseCrawler(ABC):
             if fetched_articles_df is None or fetched_articles_df.empty:
                 logger.warning("沒有獲取到任何文章連結")
                 self._update_task_status(task_id, 100, '沒有獲取到任何文章連結', 'completed')
-                return
+                return {
+                    'success': False,
+                    'message': '沒有獲取到任何文章連結',
+                    'articles_count': 0,
+                    'task_status': self.get_task_status(task_id)
+                }
             
             # 將获取的文章列表赋值给 self.articles_df(TODO:將來要改成用參數傳入)
             self.articles_df = fetched_articles_df
@@ -255,7 +260,12 @@ class BaseCrawler(ABC):
             if fetched_articles is None or len(fetched_articles) == 0:
                 logger.warning("沒有獲取到任何文章")
                 self._update_task_status(task_id, 100, '沒有獲取到任何文章', 'completed')
-                return
+                return {
+                    'success': False,
+                    'message': '沒有獲取到任何文章',
+                    'articles_count': 0,
+                    'task_status': self.get_task_status(task_id)
+                }
             
             # 步驟3：以Link為key，更新articles_df
             self._update_task_status(task_id, 60, '更新articles_df中...')
@@ -294,11 +304,24 @@ class BaseCrawler(ABC):
                 logger.debug(f"BaseCrawler(execute_task()) - call _save_to_database： 保存數據到資料庫完成")
                 self._update_task_status(task_id, 100, '保存數據到資料庫完成')
             self._update_task_status(task_id, 100, '任務完成', 'completed')
+            # 返回成功結果
+            return {
+                'success': True,
+                'message': '任務完成',
+                'articles_count': len(self.articles_df) if hasattr(self, 'articles_df') and not self.articles_df.empty else 0,
+                'task_status': self.get_task_status(task_id)
+            }
             
         except Exception as e:
             self._update_task_status(task_id, 0, f'任務失敗: {str(e)}', 'failed')
             logger.error(f"執行任務失敗 (ID={task_id}): {str(e)}", exc_info=True)
-            raise e
+            # 返回失敗結果
+            return {
+                'success': False,
+                'message': f'任務失敗: {str(e)}',
+                'articles_count': 0,
+                'task_status': self.get_task_status(task_id)
+            }
     
     def _update_task_status(self, task_id: int, progress: int, message: str, status: Optional[str] = None):
         """更新任務狀態"""
