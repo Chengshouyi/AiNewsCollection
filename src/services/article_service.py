@@ -73,9 +73,14 @@ class ArticleService(BaseService[Articles]):
                     }
                 
                 result = article_repo.batch_create(articles_data)
+                message = (
+                    f"批量處理文章完成：新增 {result['success_count']} 筆，"
+                    f"更新 {result['update_count']} 筆，"
+                    f"失敗 {result['fail_count']} 筆"
+                )
                 return {
                     'success': True,
-                    'message': '批量創建文章成功',
+                    'message': message,
                     'resultMsg': result
                 }
         except Exception as e:

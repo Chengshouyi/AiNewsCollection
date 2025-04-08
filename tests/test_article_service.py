@@ -275,8 +275,8 @@ class TestArticleService:
         }
         
         result = article_service.insert_article(article_data)
-        assert result["success"] is False
-        assert "已存在具有相同連結的文章" in result["message"]
+        assert result["success"] is True #自動轉為更新
+        assert "文章創建成功" in result["message"]
 
         # 測試更新不存在的文章
         result = article_service.update_article(999999, {"title": "新標題"})

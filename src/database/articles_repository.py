@@ -244,7 +244,7 @@ class ArticlesRepository(BaseRepository[Articles]):
     
     def create(self, entity_data: Dict[str, Any]) -> Optional[Articles]:
         """
-        創建文章，添加針對 Articles 的特殊驗證
+        創建文章，如果存在相同 link 則更新
         
         Args:
             entity_data: 實體資料
@@ -252,9 +252,13 @@ class ArticlesRepository(BaseRepository[Articles]):
         Returns:
             創建的文章實體
         """
-        # 驗證連結唯一性
+        # 檢查是否有 link
         if 'link' in entity_data and entity_data['link']:
-            self.validate_unique_link(entity_data['link'])
+            # 查找是否存在相同 link 的文章
+            existing_article = self.find_by_link(entity_data['link'])
+            if existing_article:
+                # 如果存在，則更新現有文章
+                return self.update(existing_article.id, entity_data)
         
         # 驗證並補充必填欄位
         validated_data = self._validate_required_fields(entity_data)
@@ -265,7 +269,7 @@ class ArticlesRepository(BaseRepository[Articles]):
     
     def batch_create(self, entities_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
-        批量創建實體，使用 self.create 方法確保完整的驗證和錯誤處理
+        批量創建實體，如果存在相同 link 則更新
         
         Args:
             entities_data: 實體資料列表
@@ -278,17 +282,30 @@ class ArticlesRepository(BaseRepository[Articles]):
                 failed_articles: 創建失敗的實體資料及錯誤信息
         """
         success_count = 0
+        update_count = 0
         fail_count = 0
         inserted_articles = []
+        updated_articles = []
         failed_articles = []
         
         for entity_data in entities_data:
             try:
-                # 使用 self.create 方法創建實體，確保完整的驗證流程
-                created_entity = self.create(entity_data)
-                if created_entity:
-                    inserted_articles.append(created_entity)
-                    success_count += 1
+                # 先檢查是否為更新操作
+                is_update = False
+                if 'link' in entity_data and entity_data['link']:
+                    existing_article = self.find_by_link(entity_data['link'])
+                    if existing_article:
+                        is_update = True
+                # 使用 create 方法，它會自動處理更新邏輯
+                result = self.create(entity_data)
+                if result:
+                    # 檢查是否為更新操作
+                    if is_update:
+                        updated_articles.append(result)
+                        update_count += 1
+                    else:
+                        inserted_articles.append(result)
+                        success_count += 1
                 else:
                     fail_count += 1
                     failed_articles.append({
@@ -312,7 +329,9 @@ class ArticlesRepository(BaseRepository[Articles]):
             # 如果提交失敗，更新統計數據
             fail_count = len(entities_data)
             success_count = 0
+            update_count = 0
             inserted_articles = []
+            updated_articles = []
             failed_articles = [{
                 "data": entity_data,
                 "error": f"提交事務失敗: {str(e)}"
@@ -320,14 +339,17 @@ class ArticlesRepository(BaseRepository[Articles]):
         
         return {
             "success_count": success_count,
+            "update_count": update_count,
             "fail_count": fail_count,
             "inserted_articles": inserted_articles,
+            "updated_articles": updated_articles,
             "failed_articles": failed_articles
         }
 
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[Articles]:
         """
-        更新文章，添加針對 Articles 的特殊驗證
+        更新文章，因為網文的特性，更新資料會有Link，但是底層不允許更新，
+        因此添加針對Link的特殊處理(先pop->更新->恢復)，避免影響後續物件操作
         
         Args:
             entity_id: 實體ID
@@ -345,17 +367,25 @@ class ArticlesRepository(BaseRepository[Articles]):
         # 如果更新資料為空，直接返回已存在的實體
         if not entity_data:
             return existing_entity
-            
-        # 驗證連結唯一性（如果要更新連結）
-        if 'link' in entity_data and entity_data['link'] != getattr(existing_entity, 'link', None):
-            self.validate_unique_link(entity_data['link'], exclude_id=entity_id)
+
+        original_link = None
+        # 如果連結存在更新資料中，則移除
+        if 'link' in entity_data:
+            original_link = entity_data['link']
+            entity_data.pop('link')
             
         # 驗證並補充必填欄位
         validated_data = self._validate_required_fields(entity_data, existing_entity)
         
         # 獲取並使用適當的schema進行驗證和更新
         schema_class = self.get_schema_class(SchemaType.UPDATE)
-        return self._update_internal(entity_id, validated_data, schema_class)
+        result = self._update_internal(entity_id, validated_data, schema_class)
+
+        # 如果原本有連結，則恢復連結，避免影響後續物件操作
+        if original_link:
+            entity_data['link'] = original_link
+
+        return result
 
     def update_scrape_status(self, link: str, is_scraped: bool = True) -> bool:
         """更新文章連結的爬取狀態"""
@@ -399,7 +429,7 @@ class ArticlesRepository(BaseRepository[Articles]):
                 if not entity:
                     missing_links.append(entity_data['link'])
                     continue
-                entity_data.pop('link')
+
                 updated_entity = self.update(entity.id, entity_data)
                 if updated_entity:
                     updated_articles.append(updated_entity)
@@ -451,27 +481,6 @@ class ArticlesRepository(BaseRepository[Articles]):
                 "error_ids": []
             }
         
-        # # 檢查並移除不合規的欄位
-        # cleaned_data = entity_data.copy()
-        # schema_class = self.get_schema_class(SchemaType.UPDATE)
-        # non_updatable_fields = schema_class.get_immutable_fields()  # 從 schema 獲取不可更新的欄位
-        
-        # for field in non_updatable_fields:
-        #     if field in cleaned_data:
-        #         invalid_fields.append(field)
-        #         cleaned_data.pop(field)
-        #         logger.warning(f"欄位 '{field}' 不允許更新，該筆資料已從更新資料中移除")
-        
-        # # 如果清理後沒有要更新的資料，直接返回結果
-        # if not cleaned_data:
-        #     return {
-        #         "success_count": 0,
-        #         "fail_count": 0,  # 修改為 0，因為沒有實際的更新操作
-        #         "updated_articles": [],
-        #         "missing_ids": [],
-        #         "error_ids": [],  # 清空 error_ids，因為沒有實際的更新操作
-        #         "invalid_fields": invalid_fields
-        #     }
         
         # 逐一更新實體
         for entity_id in entity_ids:

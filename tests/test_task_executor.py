@@ -5,7 +5,6 @@ from src.services.task_executor import TaskExecutor
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
-from src.crawlers.crawler_factory import CrawlerFactory
 
 
 class TestTaskExecutor:
