@@ -286,3 +286,98 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             batch_update,
             err_msg=f"批量{'啟用' if active_status else '停用'}爬蟲時發生錯誤"
         )
+
+    def _build_filter_query(self, query, filter_dict: Dict[str, Any]):
+        """根據過濾條件構建查詢"""
+        for key, value in filter_dict.items():
+            if key not in self.model_class.__table__.columns.keys() and key != "created_at_range":
+                logger.warning(f"忽略未知的過濾條件: {key}")
+                continue
+            
+            if isinstance(value, dict):
+                # 處理特殊操作符，如 $gt, $lt 等
+                for op, op_value in value.items():
+                    if op == "$gte":
+                        query = query.filter(getattr(self.model_class, key) >= op_value)
+                    elif op == "$gt":
+                        query = query.filter(getattr(self.model_class, key) > op_value)
+                    elif op == "$lte":
+                        query = query.filter(getattr(self.model_class, key) <= op_value)
+                    elif op == "$lt":
+                        query = query.filter(getattr(self.model_class, key) < op_value)
+                    elif op == "$eq":
+                        query = query.filter(getattr(self.model_class, key) == op_value)
+                    elif op == "$ne":
+                        query = query.filter(getattr(self.model_class, key) != op_value)
+                    else:
+                        logger.warning(f"忽略未知的操作符: {op}")
+            elif isinstance(value, list):
+                # 處理列表值，如 "crawler_type": ["web", "rss"]
+                query = query.filter(getattr(self.model_class, key).in_(value))
+            else:
+                # 處理普通的等值條件
+                query = query.filter(getattr(self.model_class, key) == value)
+            
+        return query
+    
+    def get_paginated_by_filter(self, filter_dict: Dict[str, Any], page: int, per_page: int, 
+                               sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
+        """根據過濾條件獲取分頁資料
+        
+        Args:
+            filter_dict: 過濾條件字典
+            page: 當前頁碼，從1開始
+            per_page: 每頁數量
+            sort_by: 排序欄位
+            sort_desc: 是否降序排列
+            
+        Returns:
+            包含分頁資訊和結果的字典
+        """
+        def paginated_query():
+            # 計算總記錄數和過濾後的記錄數
+            # 構建基本查詢
+            query = self.session.query(self.model_class)
+            query = self._build_filter_query(query, filter_dict)
+            
+            # 計算過濾後的總記錄數
+            total = query.count()
+            
+            # 計算總頁數
+            total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
+            
+            # 確保頁碼有效
+            current_page = max(1, min(page, total_pages)) if total_pages > 0 else 1
+            
+            # 計算偏移量
+            offset = (current_page - 1) * per_page
+            
+            # 添加排序 - 使用兼容 SQLite 的方式
+            if sort_by and hasattr(self.model_class, sort_by):
+                order_column = getattr(self.model_class, sort_by)
+                # SQLite 兼容的排序方式
+                query = query.order_by(order_column.desc() if sort_desc else order_column.asc())
+            else:
+                # 默認按創建時間降序排列
+                query = query.order_by(self.model_class.created_at.desc())
+            
+            # 應用分頁
+            query = query.offset(offset).limit(per_page)
+            
+            # 執行查詢
+            items = query.all()
+            
+            return {
+                "items": items,
+                "page": current_page,
+                "per_page": per_page,
+                "total": total,
+                "total_pages": total_pages,
+                "has_next": current_page < total_pages,
+                "has_prev": current_page > 1
+            }
+        
+        return self.execute_query(
+            paginated_query,
+            err_msg="根據過濾條件獲取分頁資料時發生錯誤"
+        )
