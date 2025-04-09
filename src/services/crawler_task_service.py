@@ -10,16 +10,11 @@ from src.database.base_repository import BaseRepository
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
 from src.database.crawlers_repository import CrawlersRepository
 from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
-from src.crawlers.crawler_factory import CrawlerFactory
 from src.models.base_model import Base
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawlers_model import Crawlers
 from src.models.crawler_task_history_model import CrawlerTaskHistory        
-from src.error.errors import DatabaseOperationError, ValidationError
-from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
-from src.models.crawler_task_history_schema import CrawlerTaskHistoryCreateSchema
-from src.utils.datetime_utils import enforce_utc_datetime_transform
-from src.utils.schema_utils import validate_crawler_config
+from src.utils.validators import validate_crawler_data, validate_task_data
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -419,12 +414,21 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         """
         try:
             # 驗證爬蟲配置
-            crawler_errors = validate_crawler_config(data)
+            crawler_errors = validate_crawler_data(data)
             if crawler_errors:
                 return {
                     'success': False,
                     'message': '爬蟲配置驗證失敗',
                     'errors': crawler_errors
+                }
+            
+            # 驗證任務資料
+            task_errors = validate_task_data(data)
+            if task_errors:
+                return {
+                    'success': False,
+                    'message': '任務資料驗證失敗',
+                    'errors': task_errors
                 }
             
             # TODO: 實作實際的爬蟲測試邏輯
