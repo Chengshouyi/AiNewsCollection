@@ -252,11 +252,31 @@ class TestArticleService:
         """測試獲取文章統計資訊"""
         result = article_service.get_articles_statistics()
         
-        assert result["resultMsg"]["total_articles"] == 3
-        assert result["resultMsg"]["ai_related_articles"] == 2
-        assert "category_distribution" in result["resultMsg"]
-        assert result["resultMsg"]["category_distribution"]["AI研究"] == 2
-        assert result["resultMsg"]["category_distribution"]["財經"] == 1
+        assert result["success"] is True
+        assert "statistics" in result
+        stats = result["statistics"]
+        
+        # 驗證基本統計資訊
+        assert "total_articles" in stats
+        assert "ai_related_count" in stats
+        assert "categories" in stats
+        assert "sources" in stats
+        assert "daily_counts" in stats
+        
+        # 驗證具體數值
+        assert stats["total_articles"] == 3
+        assert stats["ai_related_count"] == 2
+        assert len(stats["categories"]) == 2  # AI研究和財經
+        assert len(stats["sources"]) == 2  # 科技日報和財經週刊
+        
+        # 驗證日期範圍內的統計
+        date_range = {
+            "start_date": datetime(2023, 1, 1, tzinfo=timezone.utc),
+            "end_date": datetime(2023, 1, 3, tzinfo=timezone.utc)
+        }
+        result = article_service.get_articles_statistics(date_range)
+        assert result["success"] is True
+        assert len(result["statistics"]["daily_counts"]) == 3
 
     def test_error_handling(self, article_service):
         """測試錯誤處理"""
@@ -326,3 +346,74 @@ class TestArticleServiceAdvancedFeatures:
         assert result["success"] is True
         assert result["message"] == "更新文章標籤成功"
         assert result["article"].tags == ",".join(new_tags)
+
+    def test_fetch_article_content(self, article_service, sample_articles):
+        """測試抓取文章內容功能"""
+        # 創建一個未抓取內容的文章
+        article_data = {
+            "title": "待抓取文章",
+            "link": "https://test.com/article_to_fetch",
+            "summary": "測試摘要",
+            "content": None,  # 內容為空
+            "source": "測試來源",
+            "source_url": "https://test.com/source",
+            "category": "測試",
+            "published_at": datetime.now(timezone.utc),
+            "is_ai_related": True,
+            "is_scraped": False,  # 未抓取
+            "tags": "測試,文章"
+        }
+        
+        # 先插入文章
+        insert_result = article_service.insert_article(article_data)
+        assert insert_result["success"] is True
+        article_id = insert_result["article"].id
+        
+        # 測試抓取內容
+        result = article_service.fetch_article_content(article_id)
+        assert result["success"] is True
+        assert result["message"] == "文章內容抓取成功"
+        
+        # 確認文章內容已更新
+        article_result = article_service.get_article_by_id(article_id)
+        assert article_result["success"] is True
+        assert article_result["article"].content is not None
+        assert article_result["article"].is_scraped is True
+
+    def test_batch_fetch_article_content(self, article_service):
+        """測試批量抓取文章內容"""
+        # 創建多個未抓取內容的文章
+        articles_data = [
+            {
+                "title": f"待抓取文章{i}",
+                "link": f"https://test.com/article_to_fetch_{i}",
+                "summary": f"測試摘要{i}",
+                "content": None,
+                "source": "測試來源",
+                "source_url": f"https://test.com/source_{i}",
+                "category": "測試",
+                "published_at": datetime.now(timezone.utc),
+                "is_ai_related": True,
+                "is_scraped": False,
+                "tags": "測試,文章"
+            }
+            for i in range(3)
+        ]
+        
+        # 批量插入文章
+        insert_result = article_service.batch_create_articles(articles_data)
+        assert insert_result["success"] is True
+        article_ids = [article.id for article in insert_result["resultMsg"]["inserted_articles"]]
+        
+        # 測試批量抓取內容
+        result = article_service.batch_fetch_article_content(article_ids)
+        assert result["success"] is True
+        assert result["resultMsg"]["success_count"] == 3
+        assert result["resultMsg"]["fail_count"] == 0
+        
+        # 確認所有文章內容都已更新
+        for article_id in article_ids:
+            article_result = article_service.get_article_by_id(article_id)
+            assert article_result["success"] is True
+            assert article_result["article"].content is not None
+            assert article_result["article"].is_scraped is True

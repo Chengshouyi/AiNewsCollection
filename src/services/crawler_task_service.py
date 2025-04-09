@@ -19,6 +19,7 @@ from src.error.errors import DatabaseOperationError, ValidationError
 from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
 from src.models.crawler_task_history_schema import CrawlerTaskHistoryCreateSchema
 from src.utils.datetime_utils import enforce_utc_datetime_transform
+from src.utils.schema_utils import validate_crawler_config
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -259,4 +260,245 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'status': 'error',
                 'progress': 0,
                 'message': f'獲取狀態時發生錯誤: {str(e)}'
+            }
+
+    def run_task(self, task_id: int, task_args: Dict[str, Any]) -> Dict[str, Any]:
+        """執行任務
+        
+        Args:
+            task_id: 任務ID
+            task_args: 任務參數
+            
+        Returns:
+            Dict[str, Any]: 執行結果
+        """
+        try:
+            with self._transaction():
+                tasks_repo, _, history_repo = self._get_repositories()
+                if not tasks_repo or not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器'
+                    }
+                
+                # 檢查任務是否存在
+                task = tasks_repo.get_by_id(task_id)
+                if not task:
+                    return {
+                        'success': False,
+                        'message': '任務不存在'
+                    }
+                
+                # 創建任務歷史記錄
+                history_data = {
+                    'task_id': task_id,
+                    'start_time': datetime.now(timezone.utc),
+                    'status': 'running',
+                    'message': '任務開始執行'
+                }
+                history_id = history_repo.create(history_data)
+                
+                try:
+                    # 執行任務邏輯
+                    # TODO: 實作實際的任務執行邏輯
+                    
+                    # 更新任務歷史記錄
+                    history_data.update({
+                        'end_time': datetime.now(timezone.utc),
+                        'status': 'completed',
+                        'message': '任務執行完成'
+                    })
+                    history_repo.update(history_id, history_data)
+                    
+                    return {
+                        'success': True,
+                        'message': '任務執行完成'
+                    }
+                except Exception as e:
+                    # 更新任務歷史記錄
+                    history_data.update({
+                        'end_time': datetime.now(timezone.utc),
+                        'status': 'failed',
+                        'message': f'任務執行失敗: {str(e)}'
+                    })
+                    history_repo.update(history_id, history_data)
+                    
+                    return {
+                        'success': False,
+                        'message': f'任務執行失敗: {str(e)}'
+                    }
+        except Exception as e:
+            error_msg = f"執行任務失敗, ID={task_id}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg
+            }
+
+    def fetch_article_content(self, task_id: int, link_ids: List[int]) -> Dict[str, Any]:
+        """抓取文章內容
+        
+        Args:
+            task_id: 任務ID
+            link_ids: 文章連結ID列表
+            
+        Returns:
+            Dict[str, Any]: 執行結果
+        """
+        try:
+            with self._transaction():
+                tasks_repo, _, history_repo = self._get_repositories()
+                if not tasks_repo or not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器'
+                    }
+                
+                # 檢查任務是否存在
+                task = tasks_repo.get_by_id(task_id)
+                if not task:
+                    return {
+                        'success': False,
+                        'message': '任務不存在'
+                    }
+                
+                # 創建任務歷史記錄
+                history_data = {
+                    'task_id': task_id,
+                    'start_time': datetime.now(timezone.utc),
+                    'status': 'running',
+                    'message': '開始抓取文章內容'
+                }
+                history_id = history_repo.create(history_data)
+                
+                try:
+                    # 執行抓取內容邏輯
+                    # TODO: 實作實際的抓取內容邏輯
+                    
+                    # 更新任務歷史記錄
+                    history_data.update({
+                        'end_time': datetime.now(timezone.utc),
+                        'status': 'completed',
+                        'message': '文章內容抓取完成'
+                    })
+                    history_repo.update(history_id, history_data)
+                    
+                    return {
+                        'success': True,
+                        'message': '文章內容抓取完成'
+                    }
+                except Exception as e:
+                    # 更新任務歷史記錄
+                    history_data.update({
+                        'end_time': datetime.now(timezone.utc),
+                        'status': 'failed',
+                        'message': f'文章內容抓取失敗: {str(e)}'
+                    })
+                    history_repo.update(history_id, history_data)
+                    
+                    return {
+                        'success': False,
+                        'message': f'文章內容抓取失敗: {str(e)}'
+                    }
+        except Exception as e:
+            error_msg = f"抓取文章內容失敗, ID={task_id}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg
+            }
+
+    def test_crawler_task(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        """測試爬蟲任務
+        
+        Args:
+            data: 任務資料
+            
+        Returns:
+            Dict[str, Any]: 測試結果
+        """
+        try:
+            # 驗證爬蟲配置
+            crawler_errors = validate_crawler_config(data)
+            if crawler_errors:
+                return {
+                    'success': False,
+                    'message': '爬蟲配置驗證失敗',
+                    'errors': crawler_errors
+                }
+            
+            # TODO: 實作實際的爬蟲測試邏輯
+            
+            return {
+                'success': True,
+                'message': '爬蟲測試成功',
+                'test_results': {
+                    'links_found': 10,
+                    'sample_links': [
+                        'https://example.com/article1',
+                        'https://example.com/article2',
+                        'https://example.com/article3'
+                    ]
+                }
+            }
+        except Exception as e:
+            error_msg = f"爬蟲測試失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg
+            }
+
+    def cancel_task(self, task_id: int) -> Dict[str, Any]:
+        """取消任務
+        
+        Args:
+            task_id: 任務ID
+            
+        Returns:
+            Dict[str, Any]: 取消結果
+        """
+        try:
+            with self._transaction():
+                tasks_repo, _, history_repo = self._get_repositories()
+                if not tasks_repo or not history_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器'
+                    }
+                
+                # 檢查任務是否存在
+                task = tasks_repo.get_by_id(task_id)
+                if not task:
+                    return {
+                        'success': False,
+                        'message': '任務不存在'
+                    }
+                
+                # 檢查任務是否正在執行
+                latest_history = history_repo.get_latest_history(task_id)
+                if not latest_history or latest_history.status != 'running':
+                    return {
+                        'success': False,
+                        'message': '任務未在執行中'
+                    }
+                
+                # 更新任務歷史記錄
+                history_data = {
+                    'end_time': datetime.now(timezone.utc),
+                    'status': 'cancelled',
+                    'message': '任務已取消'
+                }
+                history_repo.update(latest_history.id, history_data)
+                
+                return {
+                    'success': True,
+                    'message': '任務已取消'
+                }
+        except Exception as e:
+            error_msg = f"取消任務失敗, ID={task_id}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg
             }

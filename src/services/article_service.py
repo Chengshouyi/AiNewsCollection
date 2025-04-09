@@ -620,3 +620,70 @@ class ArticleService(BaseService[Articles]):
         except Exception as e:
             logger.error(f"進階搜尋文章失敗: {e}")
             raise e
+
+    def get_articles_by_task(self, filters: Dict[str, Any]) -> Dict[str, Any]:
+        """根據任務ID獲取文章
+        
+        Args:
+            filters: 過濾條件，包含：
+                - task_id: 任務ID
+                - scraped: 是否已抓取內容
+                - preview: 是否只返回預覽資料
+                
+        Returns:
+            Dict[str, Any]: 包含文章列表的字典
+        """
+        try:
+            with self._transaction():
+                article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'articles': []
+                    }
+                
+                # 檢查必要參數
+                task_id = filters.get('task_id')
+                if not task_id:
+                    return {
+                        'success': False,
+                        'message': '必須提供任務ID',
+                        'articles': []
+                    }
+                
+                # 構建查詢條件
+                query_filters = {'task_id': task_id}
+                if 'scraped' in filters:
+                    query_filters['scraped'] = filters['scraped']
+                
+                # 獲取文章列表
+                articles = article_repo.get_by_filter(query_filters)
+                
+                # 如果需要預覽，只返回部分欄位
+                if filters.get('preview'):
+                    preview_articles = []
+                    for article in articles:
+                        preview_articles.append({
+                            'id': article.id,
+                            'title': article.title,
+                            'link': article.link,
+                            'source': article.source,
+                            'published_at': article.published_at,
+                            'scraped': article.scraped
+                        })
+                    articles = preview_articles
+                
+                return {
+                    'success': True,
+                    'message': '獲取文章成功',
+                    'articles': articles
+                }
+        except Exception as e:
+            error_msg = f"獲取任務相關文章失敗, task_id={filters.get('task_id')}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'articles': []
+            }

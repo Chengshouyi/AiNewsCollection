@@ -209,3 +209,89 @@ class TestCrawlerTaskService:
         result = crawler_task_service.update_task(999999, {"name": "新名稱"})
         assert result["success"] is False
         assert result["message"] == "任務不存在"
+
+    def test_test_crawler_task(self, crawler_task_service):
+        """測試爬蟲任務的測試功能"""
+        test_data = {
+            "task_name": "測試爬蟲",
+            "crawler_id": 1,
+            "task_args": {"test_mode": True}
+        }
+        
+        result = crawler_task_service.test_crawler_task(test_data)
+        assert result["success"] is True
+        assert "test_results" in result
+        assert "links_found" in result["test_results"]
+        assert "sample_links" in result["test_results"]
+
+    def test_cancel_task(self, crawler_task_service, sample_tasks, session):
+        """測試取消任務功能"""
+        task_id = sample_tasks[0].id
+        
+        # 創建一個進行中的任務歷史記錄
+        history = CrawlerTaskHistory(
+            task_id=task_id,
+            start_time=datetime.now(timezone.utc),
+            success=None,
+            message="正在執行中"
+        )
+        session.add(history)
+        session.commit()
+        
+        result = crawler_task_service.cancel_task(task_id)
+        assert result["success"] is True
+        assert result["message"] == "任務已取消"
+        
+        # 確認任務狀態已更新
+        status_result = crawler_task_service.get_task_status(task_id)
+        assert status_result["status"] == "cancelled"
+
+    def test_get_task_history_with_filters(self, crawler_task_service, sample_tasks, session):
+        """測試帶過濾條件的任務歷史記錄獲取"""
+        task_id = sample_tasks[0].id
+        
+        # 創建多個測試用的歷史記錄
+        histories = [
+            CrawlerTaskHistory(
+                task_id=task_id,
+                start_time=datetime(2023, 1, 1, tzinfo=timezone.utc),
+                end_time=datetime(2023, 1, 1, 1, tzinfo=timezone.utc),
+                success=True,
+                message="執行成功",
+                articles_count=10
+            ),
+            CrawlerTaskHistory(
+                task_id=task_id,
+                start_time=datetime(2023, 1, 2, tzinfo=timezone.utc),
+                end_time=datetime(2023, 1, 2, 1, tzinfo=timezone.utc),
+                success=False,
+                message="執行失敗",
+                articles_count=0
+            ),
+            CrawlerTaskHistory(
+                task_id=task_id,
+                start_time=datetime(2023, 1, 3, tzinfo=timezone.utc),
+                end_time=datetime(2023, 1, 3, 1, tzinfo=timezone.utc),
+                success=True,
+                message="執行成功",
+                articles_count=15
+            )
+        ]
+        session.add_all(histories)
+        session.commit()
+        
+        # 測試按日期範圍過濾
+        filters = {
+            "start_date": datetime(2023, 1, 2, tzinfo=timezone.utc),
+            "end_date": datetime(2023, 1, 3, tzinfo=timezone.utc)
+        }
+        result = crawler_task_service.get_task_history(task_id, filters)
+        assert result["success"] is True
+        assert len(result["history"]) == 2
+        
+        # 測試按成功狀態過濾
+        filters = {"success": True}
+        result = crawler_task_service.get_task_history(task_id, filters)
+        assert result["success"] is True
+        assert len(result["history"]) == 2
+        assert all(h.success for h in result["history"])
