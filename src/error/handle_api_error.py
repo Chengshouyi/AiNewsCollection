@@ -1,5 +1,5 @@
 import logging
-from flask import jsonify
+from flask import jsonify, Response
 import requests
 from werkzeug.exceptions import HTTPException
 from src.error.errors import (
@@ -8,9 +8,10 @@ from src.error.errors import (
 )
 
 # 設置日誌記錄器
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-def handle_api_error(error):
+def handle_api_error(error: Exception) -> tuple[Response, int]:
     """
     處理 API 錯誤，並返回相應的 HTTP 狀態碼和錯誤訊息
     
@@ -67,7 +68,28 @@ def handle_api_error(error):
     
     elif isinstance(error, HTTPException):
         # Flask/Werkzeug HTTP 異常
-        return jsonify({"error": error.description, "type": "http_error"}), error.code
+        return jsonify({"error": error.description, "type": "http_error"}), error.code if error.code is not None else 500
+    
+    elif isinstance(error, ValueError):
+        return jsonify({"error": str(error), "type": "validation_error"}), 400
+    
+    elif isinstance(error, KeyError):
+        return jsonify({"error": "無效的請求資料", "type": "invalid_request"}), 400
+    
+    elif isinstance(error, FileNotFoundError):
+        return jsonify({"error": "找不到資源", "type": "not_found"}), 404
+    
+    elif isinstance(error, PermissionError):
+        return jsonify({"error": "權限不足", "type": "permission_denied"}), 403
+    
+    elif isinstance(error, TimeoutError):
+        return jsonify({"error": "請求超時", "type": "timeout"}), 504
+    
+    elif isinstance(error, ConnectionError):
+        return jsonify({"error": "連線錯誤", "type": "connection_error"}), 503
+    
+    elif isinstance(error, requests.exceptions.RequestException):
+        return jsonify({"error": "外部服務錯誤", "type": "external_service_error"}), 502
     
     # 其他未處理的錯誤
     return jsonify({"error": "內部服務器錯誤", "type": "internal_error"}), 500

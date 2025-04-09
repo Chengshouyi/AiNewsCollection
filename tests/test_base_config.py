@@ -92,7 +92,8 @@ def test_random_sleep_calls(mock_uniform, mock_sleep):
 def test_random_sleep_default_values():
     """測試 random_sleep 函數的預設參數是否正常工作"""
     start_time = time.time()
+    time.sleep(1.0)  # 確保至少等待 1 秒
     random_sleep()  # 使用預設參數
     end_time = time.time()
     elapsed_time = end_time - start_time
-    assert 1.0 <= elapsed_time <= 3.0 + 0.1  # 預設範圍是 1.0 到 3.0 秒
+    assert 2.0 <= elapsed_time <= 4.0  # 預設範圍是 1.0 到 3.0 秒，加上額外的 1 秒等待

@@ -11,14 +11,6 @@ from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
 
 # 設置日誌記錄器(校正用)
-# custom_format = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-# logger = LoggerSetup.setup_logger(
-#     module_name='bnext_scraper',
-#     log_dir='logs',  # 這會在專案根目錄下創建 logs 目錄
-#     log_format=custom_format,
-#     level=logging.DEBUG,
-#     date_format='%Y-%m-%d %H:%M:%S' # 設置日期格式  
-# )
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -252,6 +244,10 @@ class BnextScraper:
                 logger.debug(f"開始處理第 {idx} 個網格文章連結容器")
                 logger.debug(f"檢查網格文章連結容器類型: {type(container)}")
                 try:
+                    g_article_link_text = None
+                    g_article_title_text = None
+                    g_article_summary_text = None
+                    
                     g_article_link = container.select_one(get_grid_contentainer_selector.get("link"))  # 修改選擇器，直接查找 a 標籤
                     if g_article_link:
                         g_article_link_text = g_article_link.get('href')
@@ -266,40 +262,42 @@ class BnextScraper:
                         g_article_summary_text = g_article_summary.get_text(strip=True)
                         print(f"第{idx}篇網格文章摘要: {g_article_summary_text}")
 
+                    # 只有當必要的變數都存在時才創建字典
+                    if g_article_link_text and g_article_title_text:
+                        article_link_dict=BnextUtils.get_article_columns_dict(
+                            title=g_article_title_text,
+                            summary=g_article_summary_text if g_article_summary_text else "",
+                            content='',
+                            link=g_article_link_text,
+                            category=category_text,
+                            published_at=None,
+                            author='',
+                            source=self.site_config.name,
+                            source_url=self.site_config.base_url,
+                            article_type='',
+                            tags='',
+                            is_ai_related=self.site_config.article_settings.get("ai_only"),
+                            is_scraped=False
+                        )
 
-                    article_link_dict=BnextUtils.get_article_columns_dict(
-                        title=g_article_title_text,
-                        summary=g_article_summary_text,
-                        content='',
-                        link=g_article_link_text,
-                        category=category_text,
-                        published_at=None,
-                        author='',
-                        source=self.site_config.name,
-                        source_url=self.site_config.base_url,
-                        article_type='',
-                        tags='',
-                        is_ai_related=self.site_config.article_settings.get("ai_only"),
-                        is_scraped=False
-                    )
+                        # AI 相關性檢查
+                        if ai_filter:
+                            is_ai_related = ArticleAnalyzer().is_ai_related(article_link_dict, min_keywords=min_keywords)
+                            logger.debug(f"AI相關性檢查: {'通過' if is_ai_related else '未通過'}")
+                            if not is_ai_related:
+                                article_link_dict = None
 
-                     # AI 相關性檢查
-                    if ai_filter:
-                        is_ai_related = ArticleAnalyzer().is_ai_related(article_link_dict, min_keywords=min_keywords)
-                        logger.debug(f"AI相關性檢查: {'通過' if is_ai_related else '未通過'}")
-                        if not is_ai_related:
-                            article_link_dict = None
-
-                    if article_link_dict:
-                        article_links_list.append(article_link_dict)
-                        logger.debug(f"成功添加網格文章連結到列表: {g_article_title_text}")
+                        if article_link_dict:
+                            article_links_list.append(article_link_dict)
+                            logger.debug(f"成功添加網格文章連結到列表: {g_article_title_text}")
                     
                 except Exception as e:
                     print(f"發生錯誤: {e}")
            
         except Exception as e:
             logger.error(f"提取文章連結時發生錯誤: {str(e)}", exc_info=True)
-            logger.error(f"當前選擇器配置: {selectors}")
+            # 不使用未確定存在的變數
+            logger.error("提取文章連結失敗")
             return article_links_list
         
         logger.debug(f"成功提取 {len(article_links_list)} 篇焦點文章")

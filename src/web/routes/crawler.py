@@ -1,7 +1,11 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, Response
 from src.services.crawlers_service import CrawlersService
 from src.utils.schema_utils import validate_crawler_config
 from src.error.handle_api_error import handle_api_error
+import logging
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # 創建藍圖
 crawler_bp = Blueprint('crawlerapi', __name__, url_prefix='/api/crawlers')
