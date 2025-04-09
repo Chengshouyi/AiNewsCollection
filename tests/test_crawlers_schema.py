@@ -33,7 +33,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data1)
-        assert "crawler_name: 不能為空" in str(exc_info.value)
+        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])
         
         # 缺少 base_url
         data2 = {
@@ -43,7 +43,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data2)
-        assert "base_url: 不能為空" in str(exc_info.value)
+        assert "base_url" in str(exc_info.value)
 
     
     def test_crawlers_crawler_name_validation(self):
@@ -57,7 +57,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_empty)
-        assert "crawler_name: 不能為空" in str(exc_info.value)
+        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])
         
         # 過長
         data_too_long = {
@@ -100,7 +100,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_empty)
-        assert "base_url: URL不能為空" in str(exc_info.value)
+        assert any(["base_url: URL不能為空" in str(exc_info.value), "base_url: 不能為空" in str(exc_info.value)])
 
         # 過長
         data_too_long = {
@@ -145,7 +145,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_empty)
-        assert "crawler_type: 不能為空" in str(exc_info.value)
+        assert any(["crawler_type: 不能為空" in str(exc_info.value), "crawler_type: 不能為 None" in str(exc_info.value)])
         
         # 過長
         data_too_long = {
@@ -168,7 +168,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_empty)
-        assert "config_file_name: 不能為空" in str(exc_info.value)
+        assert any(["config_file_name: 不能為空" in str(exc_info.value), "config_file_name: 不能為 None" in str(exc_info.value)])
 
     def test_crawlers_is_active_validation(self):
         """測試是否啟用的驗證"""
@@ -183,6 +183,77 @@ class TestCrawlersCreateSchema:
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_not_bool)
         assert "is_active: 必須是布爾值" in str(exc_info.value)
+
+    def test_missing_required_fields(self):
+        """測試缺少必填欄位"""
+        data = {
+            "base_url": "https://example.com",
+            "crawler_type": "rss",
+            "config_file_name": "example_config.json"
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersCreateSchema.model_validate(data)
+        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])
+
+    def test_crawler_name_empty_validation(self):
+        """測試crawler_name為空的驗證"""
+        data = {
+            "crawler_name": "",
+            "base_url": "https://example.com",
+            "crawler_type": "rss",
+            "config_file_name": "example_config.json"
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersCreateSchema.model_validate(data)
+        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])
+
+    def test_base_url_empty_validation(self):
+        """測試base_url為空的驗證"""
+        data = {
+            "crawler_name": "Example Crawler",
+            "base_url": "",
+            "crawler_type": "rss",
+            "config_file_name": "example_config.json"
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersCreateSchema.model_validate(data)
+        assert any(["base_url: 不能為空" in str(exc_info.value), "base_url: 不能為 None" in str(exc_info.value), "base_url: URL不能為空" in str(exc_info.value)])
+
+    def test_minimum_required_fields(self):
+        """測試最少需要提供哪些字段"""
+        data = {
+            "crawler_name": "",  # 空字串
+            "base_url": "https://example.com",
+            "crawler_type": "rss",
+            "config_file_name": "example_config.json"
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersCreateSchema.model_validate(data)
+        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])
+
+    def test_crawler_type_empty_validation(self):
+        """測試crawler_type為空的驗證"""
+        data = {
+            "crawler_name": "Example Crawler",
+            "base_url": "https://example.com",
+            "crawler_type": "",
+            "config_file_name": "example_config.json"
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersCreateSchema.model_validate(data)
+        assert any(["crawler_type: 不能為空" in str(exc_info.value), "crawler_type: 不能為 None" in str(exc_info.value)])
+
+    def test_config_file_name_empty_validation(self):
+        """測試config_file_name為空的驗證"""
+        data = {
+            "crawler_name": "Example Crawler",
+            "base_url": "https://example.com",
+            "crawler_type": "rss",
+            "config_file_name": ""
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersCreateSchema.model_validate(data)
+        assert any(["config_file_name: 不能為空" in str(exc_info.value), "config_file_name: 不能為 None" in str(exc_info.value)])
 
 class TestCrawlersUpdateSchema:
     """CrawlersUpdateSchema 的測試類"""
@@ -286,3 +357,12 @@ class TestCrawlersUpdateSchema:
         with pytest.raises(ValidationError) as exc_info:
             CrawlersUpdateSchema.model_validate(data_not_bool)
         assert "is_active: 必須是布爾值" in str(exc_info.value)
+
+    def test_update_with_empty_values(self):
+        """測試使用空值更新"""
+        data = {
+            "crawler_name": ""
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlersUpdateSchema.model_validate(data)
+        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])

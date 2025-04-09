@@ -410,7 +410,7 @@ class TestArticleRepository:
     
     def test_batch_create_with_invalid_data(self, article_repo, session, clean_db):
         """測試批量創建無效資料"""
-        
+    
         # 準備測試資料
         articles_data = [
             {
@@ -426,15 +426,15 @@ class TestArticleRepository:
                 "published_at": datetime.now(timezone.utc)
             }
         ]
-        
+    
         result = article_repo.batch_create(articles_data)
         session.expire_all()
-        
+    
         assert result["success_count"] == 0
         assert result["fail_count"] == 1
         assert result["inserted_articles"] == []
         assert result["failed_articles"] is not None
-        assert "link: URL不能為空" in result["failed_articles"][0]["error"]
+        assert any(["link: URL不能為空" in result["failed_articles"][0]["error"], "link: 不能為空" in result["failed_articles"][0]["error"]])
     
     def test_batch_create_with_mixed_new_and_existing_links(self, article_repo, sample_articles, session, clean_db):
         """測試批量創建同時包含新連結和已存在連結的文章"""

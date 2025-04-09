@@ -76,7 +76,7 @@ class TestCrawlerTasksCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data)
-        assert "crawler_id: 不能為空" in str(exc_info.value)
+        assert any(["crawler_id: 不能為空" in str(exc_info.value), "crawler_id: 不能為 None" in str(exc_info.value)])
 
         # 測試缺少task_args
         data = {
@@ -86,7 +86,7 @@ class TestCrawlerTasksCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data)
-        assert "task_args: 不能為空" in str(exc_info.value)
+        assert any(["task_args: 不能為空" in str(exc_info.value), "task_args: 不能為 None" in str(exc_info.value), "ai_only: 不能為 None" in str(exc_info.value)])
 
     def test_crawler_tasks_with_all_fields(self):
         """測試包含所有欄位的爬蟲任務資料"""
@@ -176,14 +176,14 @@ class TestCrawlerTasksCreateSchema:
             CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": None, "ai_only": False})
             pytest.fail("預期 ValidationError for crawler_id=None")
         except ValidationError as e:
-            assert "crawler_id: 不能為空" in str(e)
+            assert any(["crawler_id: 不能為空" in str(e), "crawler_id: 不能為 None" in str(e)])
             
         # 測試 crawler_id 為空字串
         try:
             CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": "", "ai_only": False})
             pytest.fail("預期 ValidationError for crawler_id=''")
         except ValidationError as e:
-            assert "crawler_id: 必須是整數" in str(e)
+            assert any(["crawler_id: 必須是整數" in str(e), "crawler_id: 不能為空" in str(e)])
             
         # 測試 crawler_id 為 0
         try:

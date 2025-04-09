@@ -21,11 +21,23 @@ RUN apt-get update && apt-get install -y \
     vim \
     procps \
     lsb-release \
+    apt-transport-https \
+    software-properties-common \
+    gnupg \
     && rm -rf /var/lib/apt/lists/*
 
 # 安裝 Node.js
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
     && apt-get install -y nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安裝 PowerShell
+RUN apt-get update \
+    && wget -q https://packages.microsoft.com/config/debian/11/packages-microsoft-prod.deb \
+    && dpkg -i packages-microsoft-prod.deb \
+    && apt-get update \
+    && apt-get install -y powershell \
+    && rm -f packages-microsoft-prod.deb \
     && rm -rf /var/lib/apt/lists/*
 
 # 新增使用者
