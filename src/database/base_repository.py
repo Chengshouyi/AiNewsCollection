@@ -91,13 +91,13 @@ class BaseRepository(Generic[T], ABC):
     @abstractmethod
     def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
         """子類必須實現此方法提供用於驗證的schema類"""
-        pass
+        raise NotImplementedError("子類必須實現此方法提供用於驗證的schema類")
         
     def _create_internal(self, entity_data: Dict[str, Any], schema_class: Type[BaseModel]) -> Optional[T]:
         """內部方法：創建實體（需要提供schema）"""
         try:
             # 使用 Pydantic schema 進行驗證
-            validated_data = schema_class(**entity_data).model_dump()
+            validated_data = self.validate_entity_data(entity_data)
             entity = self.model_class(**validated_data)
             
             self.execute_query(
@@ -142,7 +142,18 @@ class BaseRepository(Generic[T], ABC):
         Returns:
             創建的實體或 None
         """
-        pass
+        raise NotImplementedError("子類必須實現此方法提供用於驗證的schema類")
+    
+    def validate_entity_data(self, entity_data: Dict[str, Any], existing_entity: Optional[T] = None) -> Dict[str, Any]:
+        """驗證實體數據"""
+        if existing_entity:
+            schema_class = self.get_schema_class(SchemaType.UPDATE)
+            validated_data = schema_class(**entity_data).model_dump(exclude_unset=True)
+        else:
+            schema_class = self.get_schema_class(SchemaType.CREATE)
+            validated_data = schema_class(**entity_data).model_dump()
+
+        return validated_data
     
     def _update_internal(self, entity_id: Any, entity_data: Dict[str, Any], schema_class: Type[BaseModel]) -> Optional[T]:
         """內部方法：更新實體（需要提供schema）"""
@@ -152,7 +163,7 @@ class BaseRepository(Generic[T], ABC):
         
         try:
             # 使用 Pydantic schema 進行驗證
-            validated_data = schema_class(**entity_data).model_dump(exclude_unset=True)
+            validated_data = self.validate_entity_data(entity_data, entity)
             
             # 更新實體
             for key, value in validated_data.items():
@@ -198,7 +209,7 @@ class BaseRepository(Generic[T], ABC):
         Returns:
             更新的實體或 None
         """
-        pass
+        raise NotImplementedError("子類必須實現此方法提供用於驗證的schema類")
     
     def get_by_id(self, entity_id: Any) -> Optional[T]:
         """根據ID獲取實體"""

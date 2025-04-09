@@ -403,18 +403,20 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'message': error_msg
             }
 
-    def test_crawler_task(self, data: Dict[str, Any]) -> Dict[str, Any]:
+    def test_crawler_task(self, crawler_data: Dict[str, Any], task_data: Dict[str, Any]) -> Dict[str, Any]:
         """測試爬蟲任務
         
         Args:
-            data: 任務資料
+            crawler_data: 爬蟲資料
+            task_data: 任務資料
             
         Returns:
             Dict[str, Any]: 測試結果
         """
         try:
             # 驗證爬蟲配置
-            crawler_errors = validate_crawler_data(data)
+            tasks_repo, crawlers_repo, _ = self._get_repositories()
+            crawler_errors = validate_crawler_data(crawler_data, crawlers_repo)
             if crawler_errors:
                 return {
                     'success': False,
@@ -423,7 +425,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 }
             
             # 驗證任務資料
-            task_errors = validate_task_data(data)
+            task_errors = validate_task_data(task_data, tasks_repo)
             if task_errors:
                 return {
                     'success': False,

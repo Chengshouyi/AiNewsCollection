@@ -44,7 +44,8 @@ def get_scheduled_tasks():
 def create_scheduled_task():
     try:
         data = request.get_json()
-        validate_task_data(data)
+        tasks_repo = get_task_service()._get_repositories()[0]
+        validate_task_data(data, tasks_repo)
         service = get_task_service()
         scheduler = get_scheduler_service()
         result = service.create_task(data)
@@ -71,7 +72,8 @@ def get_scheduled_task(task_id):
 def update_scheduled_task(task_id):
     try:
         data = request.get_json()
-        validate_task_data(data)
+        tasks_repo = get_task_service()._get_repositories()[0]
+        validate_task_data(data, tasks_repo)
         service = get_task_service()
         scheduler = get_scheduler_service()
         result = service.update_task(task_id, data)
@@ -100,7 +102,8 @@ def delete_scheduled_task(task_id):
 def start_manual_task():
     try:
         data = request.get_json()
-        validate_task_data(data)
+        tasks_repo = get_task_service()._get_repositories()[0]
+        validate_task_data(data, tasks_repo)
         task_service = get_task_service()
         result = task_service.create_task(data)
         if not result['success']:
@@ -169,9 +172,10 @@ def get_manual_task_results(task_id):
 def test_crawler():
     try:
         data = request.get_json()
-        validate_task_data(data)
+        task_data = data.get('task_data')
+        crawler_data = data.get('crawler_data')
         service = get_task_service()
-        result = service.test_crawler_task(data)
+        result = service.test_crawler_task(crawler_data, task_data)
         return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
