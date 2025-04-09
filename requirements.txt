@@ -9,3 +9,5 @@ fake-useragent
 pandas
 APScheduler
 croniter
+Flask-SocketIO 
+eventlet
