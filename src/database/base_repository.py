@@ -144,6 +144,7 @@ class BaseRepository(Generic[T], ABC):
         """
         raise NotImplementedError("子類必須實現此方法提供用於驗證的schema類")
     
+
     def validate_entity_data(self, entity_data: Dict[str, Any], existing_entity: Optional[T] = None) -> Dict[str, Any]:
         """驗證實體數據"""
         if existing_entity:
