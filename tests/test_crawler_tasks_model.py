@@ -1,10 +1,36 @@
 from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase
 from datetime import datetime, timezone
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from src.models.base_model import Base
+
+# 改用記憶體資料庫
+TEST_DATABASE_URL = "sqlite:///:memory:"
+
+@pytest.fixture(scope="session")
+def engine():
+    """創建測試用記憶體資料庫引擎"""
+    engine = create_engine(TEST_DATABASE_URL)
+    Base.metadata.create_all(engine)
+    yield engine
+    Base.metadata.drop_all(engine)
+
+@pytest.fixture
+def session(engine):
+    """創建測試資料庫會話"""
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    try:
+        yield session
+    finally:
+        session.rollback()
+        session.close()
 
 class TestCrawlerTasksModel:
     """CrawlerTasks 模型的測試類"""
     
-    def test_crawler_tasks_creation_with_required_fields(self):
+    def test_crawler_tasks_creation_with_required_fields(self, session):
         """測試使用必填欄位創建 CrawlerTasks"""
         task = CrawlerTasks(
             task_name="測試任務",
@@ -30,6 +56,8 @@ class TestCrawlerTasksModel:
             },
             notes="測試任務"
         )
+        session.add(task)
+        session.commit()
         
         # 測試必填欄位
         assert task.task_name == "測試任務"
@@ -70,9 +98,14 @@ class TestCrawlerTasksModel:
         assert task.max_retries == 3
         assert task.retry_count == 0
     
-    def test_default_values(self):
+    def test_default_values(self, session):
         """測試默認值設置"""
-        task = CrawlerTasks(crawler_id=1)
+        task = CrawlerTasks(
+            crawler_id=1,
+            task_name="測試預設值任務"
+        )
+        session.add(task)
+        session.commit()
         
         # 測試布林欄位預設值
         assert task.is_auto is True

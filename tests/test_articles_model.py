@@ -6,12 +6,12 @@ from src.models.articles_model import Articles, ArticleScrapeStatus
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.base_model import Base
 
-# 測試資料庫 URL
-TEST_DATABASE_URL = "sqlite:///./test.db"
+# 改用記憶體資料庫
+TEST_DATABASE_URL = "sqlite:///:memory:"
 
 @pytest.fixture(scope="session")
 def engine():
-    """創建測試資料庫引擎"""
+    """創建測試用記憶體資料庫引擎"""
     engine = create_engine(TEST_DATABASE_URL)
     Base.metadata.create_all(engine)
     yield engine
