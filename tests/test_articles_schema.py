@@ -1,6 +1,7 @@
 import pytest
 from datetime import datetime, timezone
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
+from src.models.articles_model import ArticleScrapeStatus
 from src.error.errors import ValidationError
 
 class TestArticleCreateSchema:
@@ -21,7 +22,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         schema = ArticleCreateSchema.model_validate(data)
         assert schema.title == "測試文章"
@@ -36,6 +41,10 @@ class TestArticleCreateSchema:
         assert schema.tags == "tag1,tag2,tag3"
         assert schema.is_ai_related is True
         assert schema.is_scraped is True
+        assert schema.scrape_status == ArticleScrapeStatus.PENDING
+        assert schema.scrape_error is None
+        assert schema.last_scrape_attempt is None
+        assert schema.task_id is None
 
     def test_missing_required_fields(self):
         """測試缺少必要欄位"""
@@ -53,7 +62,11 @@ class TestArticleCreateSchema:
                 "article_type": "news",
                 "tags": "tag1,tag2,tag3",
                 "is_ai_related": True,
-                "is_scraped": True
+                "is_scraped": True,
+                "scrape_status": ArticleScrapeStatus.PENDING,
+                "scrape_error": None,
+                "last_scrape_attempt": None,
+                "task_id": None
             },
             # 缺少 link
             {
@@ -68,7 +81,11 @@ class TestArticleCreateSchema:
                 "article_type": "news",
                 "tags": "tag1,tag2,tag3",
                 "is_ai_related": True,
-                "is_scraped": True
+                "is_scraped": True,
+                "scrape_status": ArticleScrapeStatus.PENDING,
+                "scrape_error": None,
+                "last_scrape_attempt": None,
+                "task_id": None
             },
             # 缺少 source
             {
@@ -83,7 +100,11 @@ class TestArticleCreateSchema:
                 "article_type": "news",
                 "tags": "tag1,tag2,tag3",
                 "is_ai_related": True,
-                "is_scraped": True
+                "is_scraped": True,
+                "scrape_status": ArticleScrapeStatus.PENDING,
+                "scrape_error": None,
+                "last_scrape_attempt": None,
+                "task_id": None
             },
             # 缺少 source_url
             {
@@ -98,7 +119,11 @@ class TestArticleCreateSchema:
                 "article_type": "news",
                 "tags": "tag1,tag2,tag3",
                 "is_ai_related": True,
-                "is_scraped": True
+                "is_scraped": True,
+                "scrape_status": ArticleScrapeStatus.PENDING,
+                "scrape_error": None,
+                "last_scrape_attempt": None,
+                "task_id": None
             },
             # 缺少 is_ai_related
             {
@@ -113,7 +138,11 @@ class TestArticleCreateSchema:
                 "author": "測試作者",
                 "article_type": "news",
                 "tags": "tag1,tag2,tag3",
-                "is_scraped": True
+                "is_scraped": True,
+                "scrape_status": ArticleScrapeStatus.PENDING,
+                "scrape_error": None,
+                "last_scrape_attempt": None,
+                "task_id": None
             },
             # 缺少 is_scraped
             {
@@ -128,7 +157,11 @@ class TestArticleCreateSchema:
                 "author": "測試作者",
                 "article_type": "news",
                 "tags": "tag1,tag2,tag3",
-                "is_ai_related": True
+                "is_ai_related": True,
+                "scrape_status": ArticleScrapeStatus.PENDING,
+                "scrape_error": None,
+                "last_scrape_attempt": None,
+                "task_id": None
             }
         ]
         
@@ -155,7 +188,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         schema = ArticleCreateSchema.model_validate(data)
         assert schema.title == "測試文章"
@@ -170,7 +207,10 @@ class TestArticleCreateSchema:
         assert schema.tags == "tag1,tag2,tag3"
         assert schema.is_ai_related is True
         assert schema.is_scraped is True
-    
+        assert schema.scrape_status == ArticleScrapeStatus.PENDING
+        assert schema.scrape_error is None
+        assert schema.last_scrape_attempt is None
+        assert schema.task_id is None
     # 標題欄位測試
     def test_article_title_empty_validation(self):
         """測試標題為空的驗證"""
@@ -187,7 +227,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -208,7 +252,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -230,7 +278,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         schema_min = ArticleCreateSchema.model_validate(data_min)
         assert schema_min.title == "a"
@@ -249,7 +301,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         schema_max = ArticleCreateSchema.model_validate(data_max)
         assert len(schema_max.title) == 500
@@ -270,7 +326,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING, 
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -291,7 +351,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -313,7 +377,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data_min)
@@ -333,7 +401,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data_max)
@@ -355,7 +427,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -378,7 +454,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         schema_max = ArticleCreateSchema.model_validate(data_max)
         assert schema_max.summary is not None
@@ -400,7 +480,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -422,7 +506,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         schema_max = ArticleCreateSchema.model_validate(data_max)
         assert schema_max.content is not None
@@ -444,7 +532,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -465,7 +557,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -487,7 +583,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         schema_min = ArticleCreateSchema.model_validate(data_min)
         assert schema_min.source == "a"
@@ -506,7 +606,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         schema_max = ArticleCreateSchema.model_validate(data_max)
         assert len(schema_max.source) == 50
@@ -527,7 +631,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -549,7 +657,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -571,7 +683,11 @@ class TestArticleCreateSchema:
             "article_type": "a" * 21,
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -593,7 +709,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "a" * 501,
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data)
@@ -614,7 +734,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         schema = ArticleCreateSchema.model_validate(data)
         assert schema.is_ai_related is True
@@ -635,7 +759,11 @@ class TestArticleCreateSchema:
             "article_type": "news",
             "tags": "tag1,tag2,tag3",
             "is_ai_related": "not_a_boolean", # 無效的布林值
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.PENDING,
+            "scrape_error": None,
+            "last_scrape_attempt": None,
+            "task_id": None
         }
         with pytest.raises(Exception):  # Pydantic 會自動驗證型別
             ArticleCreateSchema.model_validate(data)
@@ -764,3 +892,48 @@ class TestArticleUpdateSchema:
         assert schema.title == "更新的文章標題"
         assert schema.summary == "更新的文章摘要"
         assert schema.is_ai_related is True
+
+    def test_update_new_fields(self):
+        """測試更新新增的欄位 (scrape_error, last_scrape_attempt, task_id)"""
+        now = datetime.now(timezone.utc)
+        data = {
+            "scrape_error": "測試錯誤訊息",
+            "last_scrape_attempt": now,
+            "task_id": 123
+        }
+        schema = ArticleUpdateSchema.model_validate(data)
+        assert schema.scrape_error == "測試錯誤訊息"
+        assert schema.last_scrape_attempt == now
+        assert schema.task_id == 123
+
+    def test_update_scrape_error_too_long_validation(self):
+        """測試更新 scrape_error 過長的驗證"""
+        data = {
+            "scrape_error": "a" * 1001
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            ArticleUpdateSchema.model_validate(data)
+        assert "scrape_error: 長度不能超過 1000 字元" in str(exc_info.value)
+
+    def test_update_task_id_with_invalid_value(self):
+        """測試更新 task_id 欄位的無效值"""
+        data = {
+            "task_id": "not_an_integer"  # 無效的整數值
+        }
+        with pytest.raises(Exception):  # Pydantic 會自動驗證型別
+            ArticleUpdateSchema.model_validate(data)
+
+    def test_get_updated_fields(self):
+        """測試 get_updated_fields 方法包含所有需要的欄位"""
+        updated_fields = ArticleUpdateSchema.get_updated_fields()
+        
+        # 檢查所有必須包含的欄位
+        required_fields = [
+            'title', 'summary', 'content', 'source', 'source_url', 
+            'published_at', 'category', 'author', 'article_type', 
+            'tags', 'is_ai_related', 'is_scraped', 'scrape_status', 
+            'scrape_error', 'last_scrape_attempt', 'task_id', 'updated_at'
+        ]
+        
+        for field in required_fields:
+            assert field in updated_fields, f"欄位 {field} 應該存在於 updated_fields 列表中"

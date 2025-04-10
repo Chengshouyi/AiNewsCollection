@@ -7,8 +7,8 @@ from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
 
 
 # 通用字段定義
-TaskId = Annotated[int, BeforeValidator(validate_positive_int("task_id", required=True))]
-ArticlesCount = Annotated[Optional[int], BeforeValidator(validate_positive_int("articles_count"))]
+TaskId = Annotated[int, BeforeValidator(validate_positive_int("task_id", is_zero_allowed=False, required=True))]
+ArticlesCount = Annotated[Optional[int], BeforeValidator(validate_positive_int("articles_count", is_zero_allowed=True, required=False))]
 Message = Annotated[Optional[str], BeforeValidator(validate_str("message", max_length=65536, required=False))]
 StartTime = Annotated[Optional[datetime], BeforeValidator(validate_datetime("start_time", required=True))]
 EndTime = Annotated[Optional[datetime], BeforeValidator(validate_datetime("end_time", required=False))]
@@ -28,8 +28,13 @@ class CrawlerTaskHistoryCreateSchema(BaseCreateSchema):
     def validate_required_fields(cls, data):
         """驗證必填欄位"""
         if isinstance(data, dict):
-            required_fields = ['task_id']
+            required_fields = CrawlerTaskHistoryCreateSchema.get_required_fields()
             return validate_required_fields_schema(required_fields, data)
+        
+    @classmethod
+    def get_required_fields(cls):
+        return ['task_id']
+
 
 class CrawlerTaskHistoryUpdateSchema(BaseUpdateSchema):
     """爬蟲任務歷史更新模型"""

@@ -8,7 +8,7 @@ import logging
 from src.error.errors import ValidationError
 from src.utils.datetime_utils import enforce_utc_datetime_transform
 from croniter import croniter
-
+from src.utils.model_utils import convert_to_dict
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -26,29 +26,25 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
     def _validate_required_fields(self, entity_data: Any, existing_entity: Optional[CrawlerTasks] = None) -> Dict[str, Any]:
         """驗證並補充必填欄位"""
+        # 深度複製避免修改原始資料
+        copied_data = entity_data.copy()
         # 轉換為字典
-        if isinstance(entity_data, dict):
-            processed_data = entity_data.copy()
-        elif hasattr(entity_data, 'dict') and callable(entity_data.dict):
-            # 處理 Pydantic 模型
-            processed_data = entity_data.dict(exclude_unset=True)
-        elif hasattr(entity_data, '__dict__'):
-            # 處理普通物件
-            processed_data = {k: v for k, v in entity_data.__dict__.items() 
-                             if not k.startswith('_')}
-        else:
-            raise ValidationError("無效的資料格式，需要字典或支援轉換的物件")
+        processed_data = convert_to_dict(copied_data)
         
-        # 檢查必填欄位
-        if not existing_entity:  # 只在創建時檢查
-            if 'crawler_id' not in processed_data or not processed_data.get('crawler_id'):
-                raise ValidationError("crawler_id: 不能為空")
-            
-        # 檢查 cron_expression
-        if processed_data.get('is_auto') is True:
-            if 'cron_expression' not in processed_data or not processed_data.get('cron_expression'):
-                raise ValidationError("當設定為自動執行時，cron_expression 不能為空")
-            
+        required_fields = CrawlerTasksCreateSchema.get_required_fields()
+        # 因為CrawlerTasks的crawler_id是不可以更新，所以需要移除
+        required_fields.remove('crawler_id')
+        # 如果是更新操作，從現有實體中補充必填欄位
+        if existing_entity:
+            for field in required_fields:
+                if field not in processed_data and hasattr(existing_entity, field):
+                    processed_data[field] = getattr(existing_entity, field)
+        
+        # 檢查是否仍然缺少必填欄位
+        missing_fields = [field for field in required_fields if field not in processed_data or processed_data[field] is None]
+        if missing_fields:
+            raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
+
         return processed_data
 
     def create(self, entity_data: Dict[str, Any]) -> Optional[CrawlerTasks]:

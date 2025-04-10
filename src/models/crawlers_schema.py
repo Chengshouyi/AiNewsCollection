@@ -25,8 +25,12 @@ class CrawlersCreateSchema(BaseCreateSchema):
     def validate_required_fields(cls, data):
         """驗證必填欄位"""
         if isinstance(data, dict):
-            required_fields = ['crawler_name', 'base_url', 'crawler_type', 'config_file_name']
+            required_fields = CrawlersCreateSchema.get_required_fields()
             return validate_required_fields_schema(required_fields, data)
+
+    @classmethod
+    def get_required_fields(cls):
+        return ['crawler_name', 'base_url', 'crawler_type', 'config_file_name']
 
 class CrawlersUpdateSchema(BaseUpdateSchema):
     """爬蟲更新模型"""

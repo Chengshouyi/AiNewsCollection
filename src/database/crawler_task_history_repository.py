@@ -6,7 +6,7 @@ from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import logging
 from src.error.errors import ValidationError, DatabaseOperationError
-
+from src.utils.model_utils import convert_to_dict
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -34,10 +34,14 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
             處理後的實體資料
         """
         # 深度複製避免修改原始資料
-        processed_data = entity_data.copy()
+        copied_data = entity_data.copy()
+        # 轉換為字典
+        processed_data = convert_to_dict(copied_data)
         
         # 檢查必填欄位
-        required_fields = []
+        required_fields = CrawlerTaskHistoryCreateSchema.get_required_fields()
+        # 因為CrawlerTaskHistory的task_id是不可以更新，所以需要移除
+        required_fields.remove('task_id')
         
         # 如果是更新操作，從現有實體中補充必填欄位
         if existing_entity:

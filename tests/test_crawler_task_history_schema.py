@@ -47,8 +47,8 @@ class TestCrawlerTaskHistoryCreateSchema:
     def test_task_id_validation(self):
         """測試 task_id 驗證"""
         invalid_cases = [
-            ({"task_id": 0}, "task_id: 必須大於0"),
-            ({"task_id": -1}, "task_id: 必須大於0"),
+            ({"task_id": 0}, "task_id: 必須是正整數且大於0"),
+            ({"task_id": -1}, "task_id: 必須是正整數且大於0"),
             ({"task_id": "abc"}, "task_id: 必須是整數"),
             ({}, "task_id: 不能為空")
         ]
@@ -61,7 +61,7 @@ class TestCrawlerTaskHistoryCreateSchema:
     def test_articles_count_validation(self):
         """測試 articles_count 驗證"""
         invalid_cases = [
-            ({"task_id": 1, "articles_count": -1}, "articles_count: 必須大於0"),
+            ({"task_id": 1, "articles_count": -1}, "articles_count: 必須是正整數且大於等於0"),
             ({"task_id": 1, "articles_count": "abc"}, "articles_count: 必須是整數"),
             ({"task_id": 1, "articles_count": 1.5}, "articles_count: 必須是整數")
         ]
@@ -139,7 +139,7 @@ class TestCrawlerTaskHistoryUpdateSchema:
     def test_update_field_validations(self):
         """測試更新欄位驗證"""
         invalid_cases = [
-            ({"articles_count": -1}, "articles_count: 必須大於0"),
+            ({"articles_count": -1}, "articles_count: 必須是正整數且大於等於0"),
             ({"articles_count": "abc"}, "articles_count: 必須是整數"),
             ({"end_time": "invalid-date"}, "end_time: 無效的日期時間格式"),
             ({"message": "a" * 65537}, "message: 長度不能超過 65536 字元")

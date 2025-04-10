@@ -6,8 +6,7 @@ from sqlalchemy import func, or_, case
 from sqlalchemy.orm import Query
 from src.error.errors import ValidationError
 import logging
-from pydantic import BaseModel
-
+from src.models.articles_model import ArticleScrapeStatus
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -225,10 +224,11 @@ class ArticlesRepository(BaseRepository[Articles]):
         """
         # 深度複製避免修改原始資料
         processed_data = entity_data.copy()
-        
-        # 檢查必填欄位，排除不可修改欄位link
-        required_fields = ['summary', 'source', 'source_url','category', 'is_ai_related', 'title','is_scraped']
-        
+
+        required_fields = ArticleCreateSchema.get_required_fields()
+        # 因為ArticleCreateSchema的link是unique，所以不可以更新
+        required_fields.remove('link')
+
         # 如果是更新操作，從現有實體中補充必填欄位
         if existing_entity:
             for field in required_fields:
@@ -259,7 +259,7 @@ class ArticlesRepository(BaseRepository[Articles]):
             if existing_article:
                 # 如果存在，則更新現有文章
                 return self.update(existing_article.id, entity_data)
-        
+
         # 驗證並補充必填欄位
         validated_data = self._validate_required_fields(entity_data)
         
@@ -394,6 +394,7 @@ class ArticlesRepository(BaseRepository[Articles]):
             if not link_entity:
                 return False
             link_entity.is_scraped = is_scraped
+            link_entity.scrape_status = ArticleScrapeStatus.CONTENT_SCRAPED if is_scraped else ArticleScrapeStatus.FAILED
             self.session.flush()
             return True
         

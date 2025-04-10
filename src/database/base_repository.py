@@ -84,9 +84,9 @@ class BaseRepository(Generic[T], ABC):
             f"詳細訊息: {str(e)}, "
             f"模型: {self.model_class.__name__}"
         )
-        
         # 拋出異常
         raise IntegrityValidationError(error_msg)
+    
     
     @abstractmethod
     def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:

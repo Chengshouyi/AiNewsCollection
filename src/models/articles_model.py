@@ -2,7 +2,7 @@ from sqlalchemy import UniqueConstraint, Integer, String, DateTime, Text, Boolea
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from typing import Optional
-from datetime import datetime, timezone
+from datetime import datetime
 from .base_entity import BaseEntity
 import logging
 import enum
@@ -34,6 +34,10 @@ class Articles(Base, BaseEntity):
     - tags: 文章標籤
     - is_ai_related: 是否與ai相關
     - is_scraped: 是否已爬取
+    - scrape_status: 爬取狀態
+    - scrape_error: 爬取錯誤訊息
+    - last_scrape_attempt: 最後爬取嘗試時間
+    - task_id: 爬取任務ID
     """
     __tablename__ = 'articles'
     __table_args__ = (

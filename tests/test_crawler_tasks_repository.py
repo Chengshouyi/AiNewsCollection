@@ -1,9 +1,9 @@
 import pytest
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
-from src.models.crawler_tasks_model import CrawlerTasks
+from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
 from debug.model_info import get_model_info
@@ -330,20 +330,26 @@ class TestCrawlerTasksRepository:
         # 測試缺少必填欄位
         with pytest.raises(ValidationError) as excinfo:
             crawler_tasks_repo.create(CrawlerTasks(
-                is_auto=True
+                task_name="測試任務",
+                is_auto=True,
+                cron_expression="0 * * * *"
             ))
         assert "crawler_id: 不能為空" in str(excinfo.value)
         
         # 測試自動執行時缺少 cron_expression
         with pytest.raises(ValidationError) as excinfo:
             crawler_tasks_repo.create({
+                "task_name": "測試任務",
                 "crawler_id": sample_crawler.id,
                 "is_auto": True,
                 "cron_expression": None,
                 "ai_only": False,
-                "task_args": {}
+                "task_args": {},
+                "current_phase": TaskPhase.INIT,
+                "max_retries": 3,
+                "retry_count": 0
             })
-        assert "當設定為自動執行時，cron_expression 不能為空" in str(excinfo.value)
+        assert "cron_expression: 當設定為自動執行時,此欄位不能為空" in str(excinfo.value)
         
         # 測試成功創建
         task = crawler_tasks_repo.create({
@@ -352,7 +358,10 @@ class TestCrawlerTasksRepository:
             "task_args": {},
             "is_auto": True,
             "cron_expression": "0 * * * *",
-            "ai_only": False
+            "ai_only": False,
+            "current_phase": TaskPhase.INIT,
+            "max_retries": 3,
+            "retry_count": 0
         })
         assert task.crawler_id == sample_crawler.id
         assert task.is_auto is True
@@ -389,7 +398,7 @@ class TestCrawlerTasksRepository:
                 "is_auto": True,
                 "cron_expression": None
             })
-        assert "當設定為自動執行時，cron_expression 不能為空" in str(excinfo.value)
+        assert "cron_expression: 當設定為自動執行時,此欄位不能為空" in str(excinfo.value)
         
         # 測試成功更新
         session.expire_all()  # 確保重新從數據庫加載
@@ -408,11 +417,18 @@ class TestCrawlerTasksRepository:
             "crawler_id": sample_crawler.id,
             "is_auto": False,  # 手動執行不需要 cron_expression
             "ai_only": False,
-            "task_args": {}
+            "task_args": {},
+            "current_phase": TaskPhase.INIT,
+            "max_retries": 3,
+            "retry_count": 0
         })
         assert task.is_auto is False
         assert task.ai_only is False
         assert task.task_args == {}
+        assert task.current_phase == TaskPhase.INIT
+        assert task.max_retries == 3
+        assert task.retry_count == 0
+
 
 class TestCrawlerTasksConstraints:
     """測試CrawlerTasks的模型約束"""

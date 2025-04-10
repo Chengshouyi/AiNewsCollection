@@ -33,7 +33,10 @@ class TestCrawlerTasksCreateSchema:
             "task_args": task_args,
             "notes": "測試任務",
             "cron_expression": "*/10 * * * *",
-            "last_run_message": "測試訊息"
+            "last_run_message": "測試訊息",
+            "current_phase": "準備階段",
+            "max_retries": 3,
+            "retry_count": 0
         }
         
         schema = CrawlerTasksCreateSchema.model_validate(data)
@@ -46,6 +49,9 @@ class TestCrawlerTasksCreateSchema:
         assert schema.notes == "測試任務"
         assert schema.cron_expression == "*/10 * * * *"
         assert schema.last_run_message == "測試訊息"
+        assert schema.current_phase == "準備階段"
+        assert schema.max_retries == 3
+        assert schema.retry_count == 0
         
         # task_args 測試
         assert schema.task_args is not None
@@ -87,6 +93,18 @@ class TestCrawlerTasksCreateSchema:
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data)
         assert any(["task_args: 不能為空" in str(exc_info.value), "task_args: 不能為 None" in str(exc_info.value), "ai_only: 不能為 None" in str(exc_info.value)])
+        
+        # 測試缺少current_phase, max_retries, retry_count
+        data = {
+            "task_name": "測試任務",
+            "crawler_id": 1,
+            "is_auto": False,
+            "ai_only": False,
+            "task_args": {}
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlerTasksCreateSchema.model_validate(data)
+        assert any(["current_phase: 不能為空" in str(exc_info.value), "current_phase: 不能為 None" in str(exc_info.value)])
 
     def test_crawler_tasks_with_all_fields(self):
         """測試包含所有欄位的爬蟲任務資料"""
@@ -105,7 +123,10 @@ class TestCrawlerTasksCreateSchema:
             "notes": "測試任務",
             "created_at": datetime.now(timezone.utc),
             "updated_at": None,
-            "cron_expression": "* * * * *"
+            "cron_expression": "* * * * *",
+            "current_phase": "準備階段",
+            "max_retries": 3,
+            "retry_count": 0
         }
         
         schema = CrawlerTasksCreateSchema.model_validate(data)
@@ -116,6 +137,9 @@ class TestCrawlerTasksCreateSchema:
         assert schema.is_auto is True
         assert schema.ai_only is False
         assert schema.notes == "測試任務"
+        assert schema.current_phase == "準備階段"
+        assert schema.max_retries == 3
+        assert schema.retry_count == 0
         
         # task_args 測試
         assert schema.task_args is not None
@@ -131,11 +155,50 @@ class TestCrawlerTasksCreateSchema:
             "is_auto": True,
             "ai_only": False,
             "task_args": {},
-            "cron_expression": "* * * * *"
+            "cron_expression": "* * * * *",
+            "current_phase": "準備階段",
+            "max_retries": 3,
+            "retry_count": 0
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_zero)
-        assert "crawler_id: 必須大於0" in str(exc_info.value)
+        assert "crawler_id: 必須是正整數且大於0" in str(exc_info.value)
+        
+    def test_max_retries_validation(self):
+        """測試 max_retries 的驗證"""
+        # 測試 max_retries 為 0
+        data_zero = {
+            "task_name": "測試任務",
+            "crawler_id": 1,
+            "is_auto": True,
+            "ai_only": False,
+            "task_args": {},
+            "cron_expression": "* * * * *",
+            "current_phase": "準備階段",
+            "max_retries": 0,
+            "retry_count": 0
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlerTasksCreateSchema.model_validate(data_zero)
+        assert "max_retries: 必須是正整數且大於0" in str(exc_info.value)
+
+    def test_retry_count_validation(self):
+        """測試 retry_count 的驗證"""
+        # 測試 retry_count 為負數
+        data_negative = {
+            "task_name": "測試任務",
+            "crawler_id": 1,
+            "is_auto": True,
+            "ai_only": False,
+            "task_args": {},
+            "cron_expression": "* * * * *",
+            "current_phase": "準備階段",
+            "max_retries": 3,
+            "retry_count": -1
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlerTasksCreateSchema.model_validate(data_negative)
+        assert "retry_count: 必須是正整數且大於等於0" in str(exc_info.value)
 
     def test_boolean_fields_validation(self):
         """測試布林欄位的驗證"""
@@ -146,7 +209,10 @@ class TestCrawlerTasksCreateSchema:
             "is_auto": "tru",
             "ai_only": False,
             "task_args": {},
-            "cron_expression": "* * * * *"
+            "cron_expression": "* * * * *",
+            "current_phase": "準備階段",
+            "max_retries": 3,
+            "retry_count": 0
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_invalid_is_auto)
@@ -158,7 +224,10 @@ class TestCrawlerTasksCreateSchema:
             "task_name": "測試任務",
             "crawler_id": 1,
             "task_args": {},
-            "ai_only": False
+            "ai_only": False,
+            "current_phase": "準備階段",
+            "max_retries": 3,
+            "retry_count": 0
         }
         schema = CrawlerTasksCreateSchema.model_validate(data)
         assert schema.is_auto is True
@@ -173,42 +242,90 @@ class TestCrawlerTasksCreateSchema:
         """測試欄位驗證"""
         # 測試 crawler_id 為 None
         try:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": None, "ai_only": False})
+            CrawlerTasksCreateSchema.model_validate({
+                "task_name": "測試任務", 
+                "task_args": {}, 
+                "crawler_id": None, 
+                "ai_only": False,
+                "current_phase": "準備階段",
+                "max_retries": 3,
+                "retry_count": 0
+            })
             pytest.fail("預期 ValidationError for crawler_id=None")
         except ValidationError as e:
             assert any(["crawler_id: 不能為空" in str(e), "crawler_id: 不能為 None" in str(e)])
             
         # 測試 crawler_id 為空字串
         try:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": "", "ai_only": False})
+            CrawlerTasksCreateSchema.model_validate({
+                "task_name": "測試任務", 
+                "task_args": {}, 
+                "crawler_id": "", 
+                "ai_only": False,
+                "current_phase": "準備階段",
+                "max_retries": 3,
+                "retry_count": 0
+            })
             pytest.fail("預期 ValidationError for crawler_id=''")
         except ValidationError as e:
             assert any(["crawler_id: 必須是整數" in str(e), "crawler_id: 不能為空" in str(e)])
             
         # 測試 crawler_id 為 0
         try:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": 0, "ai_only": False})
+            CrawlerTasksCreateSchema.model_validate({
+                "task_name": "測試任務", 
+                "task_args": {}, 
+                "crawler_id": 0, 
+                "ai_only": False,
+                "current_phase": "準備階段",
+                "max_retries": 3,
+                "retry_count": 0
+            })
             pytest.fail("預期 ValidationError for crawler_id=0")
         except ValidationError as e:
-            assert "crawler_id: 必須大於0" in str(e)
+            assert "crawler_id: 必須是正整數且大於0" in str(e)
             
         # 測試 crawler_id 為負數
         try:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": -1, "ai_only": False})
+            CrawlerTasksCreateSchema.model_validate({
+                "task_name": "測試任務", 
+                "task_args": {}, 
+                "crawler_id": -1, 
+                "ai_only": False,
+                "current_phase": "準備階段",
+                "max_retries": 3,
+                "retry_count": 0
+            })
             pytest.fail("預期 ValidationError for crawler_id=-1")
         except ValidationError as e:
-            assert "crawler_id: 必須大於0" in str(e)
+            assert "crawler_id: 必須是正整數且大於0" in str(e)
             
         # 測試 crawler_id 為非數字
         try:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "task_args": {}, "crawler_id": "abc", "ai_only": False})
+            CrawlerTasksCreateSchema.model_validate({
+                "task_name": "測試任務", 
+                "task_args": {}, 
+                "crawler_id": "abc", 
+                "ai_only": False,
+                "current_phase": "準備階段",
+                "max_retries": 3,
+                "retry_count": 0
+            })
             pytest.fail("預期 ValidationError for crawler_id='abc'")
         except ValidationError as e:
             assert "crawler_id: 必須是整數" in str(e)
 
         # 測試 task_args 驗證
         with pytest.raises(ValidationError) as exc_info:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "測試任務", "crawler_id": 1, "task_args": "not_a_dict", "ai_only": False})
+            CrawlerTasksCreateSchema.model_validate({
+                "task_name": "測試任務", 
+                "crawler_id": 1, 
+                "task_args": "not_a_dict", 
+                "ai_only": False,
+                "current_phase": "準備階段",
+                "max_retries": 3,
+                "retry_count": 0
+            })
         assert "task_args: 必須是字典格式" in str(exc_info.value)
 
         # 測試文字欄位驗證
@@ -217,14 +334,44 @@ class TestCrawlerTasksCreateSchema:
             "last_run_message": "a" * 65537
         }
         for field, value in text_fields.items():
-            data = {"task_name": "測試任務", "crawler_id": 1, "task_args": {}, "ai_only": False, field: value}
+            data = {
+                "task_name": "測試任務", 
+                "crawler_id": 1, 
+                "task_args": {}, 
+                "ai_only": False, 
+                "current_phase": "準備階段",
+                "max_retries": 3,
+                "retry_count": 0,
+                field: value
+            }
             with pytest.raises(ValidationError) as exc_info:
                 CrawlerTasksCreateSchema.model_validate(data)
             assert f"{field}: 長度不能超過 65536 字元" in str(exc_info.value)
         # 測試 task_name 驗證
         with pytest.raises(ValidationError) as exc_info:
-            CrawlerTasksCreateSchema.model_validate({"task_name": "a" * 256, "crawler_id": 1, "task_args": {}, "ai_only": False})
+            CrawlerTasksCreateSchema.model_validate({
+                "task_name": "a" * 256, 
+                "crawler_id": 1, 
+                "task_args": {}, 
+                "ai_only": False,
+                "current_phase": "準備階段",
+                "max_retries": 3,
+                "retry_count": 0
+            })
         assert "task_name: 長度不能超過 255 字元" in str(exc_info.value)
+        
+        # 測試 current_phase 驗證
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlerTasksCreateSchema.model_validate({
+                "task_name": "測試任務", 
+                "crawler_id": 1, 
+                "task_args": {}, 
+                "ai_only": False,
+                "current_phase": "a" * 256,
+                "max_retries": 3,
+                "retry_count": 0
+            })
+        assert "current_phase: 長度不能超過 255 字元" in str(exc_info.value)
 
 class TestCrawlerTasksUpdateSchema:
     """CrawlerTasksUpdateSchema 的測試類"""
@@ -248,7 +395,10 @@ class TestCrawlerTasksUpdateSchema:
             "task_args": task_args,
             "notes": "更新的備註",
             "cron_expression": "* */2 * * *",
-            "last_run_message": "更新測試"
+            "last_run_message": "更新測試",
+            "current_phase": "更新階段",
+            "max_retries": 5,
+            "retry_count": 2
         }
         
         schema = CrawlerTasksUpdateSchema.model_validate(data)
@@ -260,6 +410,9 @@ class TestCrawlerTasksUpdateSchema:
         assert schema.notes == "更新的備註"
         assert schema.cron_expression == "* */2 * * *"
         assert schema.last_run_message == "更新測試"
+        assert schema.current_phase == "更新階段"
+        assert schema.max_retries == 5
+        assert schema.retry_count == 2
         
         # task_args 測試
         assert schema.task_args is not None
@@ -356,7 +509,10 @@ class TestCrawlerTasksUpdateSchema:
             {"field": "notes", "value": "新備註"},
             {"field": "task_args", "value": {"article_settings": {"max_pages": 5}}},
             {"field": "cron_expression", "value": "30 18 * * 0"},
-            {"field": "last_run_message", "value": "部分更新測試"}
+            {"field": "last_run_message", "value": "部分更新測試"},
+            {"field": "current_phase", "value": "新階段"},
+            {"field": "max_retries", "value": 10},
+            {"field": "retry_count", "value": 3}
         ]
         
         for case in test_cases:

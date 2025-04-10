@@ -4,6 +4,23 @@ from src.error.errors import ValidationError
 from croniter import croniter
 import re
 
+
+def convert_to_dict(data: Any) -> Dict[str, Any]:
+    """將任意類型轉換為字典"""
+    # 轉換為字典
+    if isinstance(data, dict):
+        processed_data = data.copy()
+    elif hasattr(data, 'dict') and callable(data.dict):
+        # 處理 Pydantic 模型
+        processed_data = data.dict(exclude_unset=True)
+    elif hasattr(data, '__dict__'):
+        # 處理普通物件
+        processed_data = {k: v for k, v in data.__dict__.items() 
+                            if not k.startswith('_')}
+    else:
+        raise ValidationError("無效的資料格式，需要字典或支援轉換的物件")
+    return processed_data
+
 def is_str_dict(data: Dict[Hashable, Any]) -> bool:
     """檢查字典的所有鍵是否都是字符串類型"""
     return all(isinstance(k, str) for k in data.keys())
@@ -22,6 +39,18 @@ def convert_hashable_dict_to_str_dict(data: Dict[Any, Any]) -> Dict[str, Any]:
         raise ValueError("字典的所有鍵必須是字符串類型")
     
     return {str(k): v for k, v in data.items()}
+
+def validate_int(field_name: str, required: bool = False):
+    """整數驗證"""
+    def validator(value: Any) -> Optional[int]:
+        if value is None:
+            if required:
+                raise ValidationError(f"{field_name}: 不能為 None") 
+            return None
+        if not isinstance(value, int):
+            raise ValidationError(f"{field_name}: 必須是整數")
+        return value
+    return validator
 
 
 def validate_list(
@@ -271,7 +300,7 @@ def validate_boolean(field_name: str, required: bool = False):
         return value
     return validator
 
-def validate_positive_int(field_name: str, required: bool = False):
+def validate_positive_int(field_name: str, is_zero_allowed: bool = False, required: bool = False):
     """正整數驗證"""
     def validator(value: Any) -> Optional[int]:
         if value is None:
@@ -299,8 +328,14 @@ def validate_positive_int(field_name: str, required: bool = False):
         except (ValueError, TypeError):
             raise ValidationError(f"{field_name}: 必須是整數")
         
-        if value <= 0:
-            raise ValidationError(f"{field_name}: 必須大於0")
+        #如果不允許0，則檢查是否大於0
+        if not is_zero_allowed:
+            if value <= 0:
+                raise ValidationError(f"{field_name}: 必須是正整數且大於0")
+        #如果允許0，則檢查是否大於等於0
+        else:
+            if value < 0:
+                raise ValidationError(f"{field_name}: 必須是正整數且大於等於0")
         
         return value
     return validator

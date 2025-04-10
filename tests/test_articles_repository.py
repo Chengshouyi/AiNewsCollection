@@ -8,6 +8,7 @@ from src.models.base_model import Base
 from src.database.base_repository import SchemaType
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from src.error.errors import ValidationError, DatabaseOperationError
+from src.models.articles_model import ArticleScrapeStatus
 
 # 設置測試資料庫，使用 session scope
 @pytest.fixture(scope="session")
@@ -59,7 +60,8 @@ def sample_articles(session, clean_db):
             category="科技",
             published_at=datetime(2023, 1, 1, tzinfo=timezone.utc),
             is_ai_related=True,
-            is_scraped=True
+            is_scraped=True,
+            scrape_status=ArticleScrapeStatus.PENDING
         ),
         Articles(
             title="財經報導：股市走勢分析", 
@@ -71,7 +73,8 @@ def sample_articles(session, clean_db):
             category="財經",
             published_at=datetime(2023, 1, 3, tzinfo=timezone.utc),
             is_ai_related=False,
-            is_scraped=True
+            is_scraped=True,
+            scrape_status=ArticleScrapeStatus.PENDING
         ),
         Articles(
             title="Python編程技巧分享",
@@ -83,7 +86,8 @@ def sample_articles(session, clean_db):
             category="科技",
             published_at=datetime(2023, 1, 5, tzinfo=timezone.utc),
             is_ai_related=False,
-            is_scraped=True
+            is_scraped=True,
+            scrape_status=ArticleScrapeStatus.PENDING
         )
     ]
     session.add_all(articles)
@@ -220,16 +224,17 @@ class TestArticleRepository:
             "is_scraped": True,
             "source": "測試來源",
             "source_url": "https://test.com/source",
-            "published_at": datetime.now(timezone.utc)
+            "published_at": datetime.now(timezone.utc),
+            "scrape_status": ArticleScrapeStatus.PENDING
         }
-        
         article = article_repo.create(article_data)
         session.expire_all()
         
         assert article is not None
         assert article.title == article_data["title"]
         assert article.link == article_data["link"]
-        
+        assert article.scrape_status == ArticleScrapeStatus.PENDING
+
         # 測試更新已存在的文章
         update_data = {
             "title": "更新後的標題",
@@ -241,7 +246,8 @@ class TestArticleRepository:
             "is_scraped": True,
             "source": "測試來源",
             "source_url": "https://test.com/source",
-            "published_at": datetime.now(timezone.utc)
+            "published_at": datetime.now(timezone.utc),
+            "scrape_status": ArticleScrapeStatus.PENDING.value
         }
         
         updated_article = article_repo.create(update_data)
@@ -336,7 +342,8 @@ class TestArticleRepository:
                 "is_scraped": True,
                 "source": "測試來源",
                 "source_url": "https://test.com/source1",
-                "published_at": datetime.now(timezone.utc)
+                "published_at": datetime.now(timezone.utc),
+                "scrape_status": ArticleScrapeStatus.PENDING
             }
         ]
         
@@ -385,7 +392,8 @@ class TestArticleRepository:
                 "is_scraped": True,
                 "source": "測試來源",
                 "source_url": "https://example.com/source2",
-                "published_at": datetime.now(timezone.utc)
+                "published_at": datetime.now(timezone.utc),
+                "scrape_status": ArticleScrapeStatus.PENDING
             }
         ]
         
@@ -423,7 +431,8 @@ class TestArticleRepository:
                 "is_scraped": True,
                 "source": "測試來源",
                 "source_url": "https://test.com/source3",
-                "published_at": datetime.now(timezone.utc)
+                "published_at": datetime.now(timezone.utc),
+                "scrape_status": ArticleScrapeStatus.PENDING
             }
         ]
     
@@ -451,7 +460,8 @@ class TestArticleRepository:
                 "is_scraped": True,
                 "source": "測試來源",
                 "source_url": "https://example.com/source_new",
-                "published_at": datetime.now(timezone.utc)
+                "published_at": datetime.now(timezone.utc),
+                "scrape_status": ArticleScrapeStatus.PENDING
             },
             {
                 # 更新已存在的文章
@@ -464,7 +474,8 @@ class TestArticleRepository:
                 "is_scraped": True,
                 "source": "測試來源",
                 "source_url": "https://example.com/source_update",
-                "published_at": datetime.now(timezone.utc)
+                "published_at": datetime.now(timezone.utc),
+                "scrape_status": ArticleScrapeStatus.PENDING
             }
         ]
         
@@ -505,7 +516,8 @@ class TestArticleRepository:
                 "is_scraped": True,
                 "source": "測試來源",
                 "source_url": f"https://test.com/source{i}",
-                "published_at": datetime.now(timezone.utc)
+                "published_at": datetime.now(timezone.utc),
+                "scrape_status": ArticleScrapeStatus.PENDING
             }
             for i in range(1000)
         ]
@@ -533,7 +545,8 @@ class TestArticleRepository:
                 "is_scraped": True,
                 "source": "測試來源",
                 "source_url": f"https://test.com/source{i}",
-                "published_at": datetime.now(timezone.utc)
+                "published_at": datetime.now(timezone.utc),
+                "scrape_status": ArticleScrapeStatus.PENDING
             }   
             for i in range(1000)
         ]
@@ -569,6 +582,36 @@ class TestArticleRepository:
         assert page_data["has_next"] is False
         assert page_data["has_prev"] is True
     
+    def test_batch_mark_as_scraped(self, article_repo, sample_articles, session, clean_db):
+        """測試批量將文章連結標記為已爬取"""
+        # 先將文章標記為未爬取
+        for article in sample_articles:
+            article.is_scraped = False
+            article.scrape_status = ArticleScrapeStatus.PENDING
+        session.commit()
+        session.expire_all()
+        
+        # 準備要標記的連結
+        links = [article.link for article in sample_articles[:2]]  # 只標記前兩篇文章
+        
+        # 執行批量標記
+        result = article_repo.batch_mark_as_scraped(links)
+        session.expire_all()
+        
+        # 驗證結果
+        assert result["success_count"] == 2
+        assert result["fail_count"] == 0
+        assert result["failed_links"] == []
+        
+        # 驗證文章是否已被標記為已爬取
+        for i, article in enumerate(sample_articles):
+            updated_article = article_repo.find_by_link(article.link)
+            if i < 2:  # 前兩篇應該是已爬取
+                assert updated_article.is_scraped is True
+                assert updated_article.scrape_status == ArticleScrapeStatus.CONTENT_SCRAPED
+            else:  # 第三篇應該仍然是未爬取
+                assert updated_article.is_scraped is False
+                assert updated_article.scrape_status == ArticleScrapeStatus.PENDING
 
 
 # 新增測試類專門測試分頁過濾功能
@@ -590,7 +633,8 @@ class TestArticlePaginationAndFiltering:
                 published_at=datetime(2023, 1, 1, tzinfo=timezone.utc),
                 is_ai_related=True,
                 is_scraped=True,
-                tags="AI,研究,深度學習"
+                tags="AI,研究,深度學習",
+                scrape_status=ArticleScrapeStatus.PENDING
             ),
             Articles(
                 title="AI研究報告2",
@@ -602,7 +646,8 @@ class TestArticlePaginationAndFiltering:
                 published_at=datetime(2023, 1, 15, tzinfo=timezone.utc),
                 is_ai_related=True,
                 is_scraped=True,
-                tags="AI,研究,大語言模型"
+                tags="AI,研究,大語言模型",
+                scrape_status=ArticleScrapeStatus.PENDING
             ),
             Articles(
                 title="一般科技新聞1",
@@ -614,7 +659,8 @@ class TestArticlePaginationAndFiltering:
                 published_at=datetime(2023, 1, 10, tzinfo=timezone.utc),
                 is_ai_related=False,
                 is_scraped=True,
-                tags="科技,創新"
+                tags="科技,創新",
+                scrape_status=ArticleScrapeStatus.PENDING
             ),
             Articles(
                 title="一般科技新聞2",
@@ -626,7 +672,8 @@ class TestArticlePaginationAndFiltering:
                 published_at=datetime(2023, 1, 20, tzinfo=timezone.utc),
                 is_ai_related=False,
                 is_scraped=True,
-                tags="科技,產業"
+                tags="科技,產業",
+                scrape_status=ArticleScrapeStatus.PENDING
             ),
             Articles(
                 title="財經報導",
@@ -638,7 +685,8 @@ class TestArticlePaginationAndFiltering:
                 published_at=datetime(2023, 1, 5, tzinfo=timezone.utc),
                 is_ai_related=False,
                 is_scraped=True,
-                tags="財經,市場"
+                tags="財經,市場",
+                scrape_status=ArticleScrapeStatus.PENDING
             )
         ]
         session.add_all(articles)
