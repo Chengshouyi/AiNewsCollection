@@ -259,7 +259,10 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
 
     def run_task(self, task_id: int, task_args: Dict[str, Any]) -> Dict[str, Any]:
         """執行任務
-        
+            使用情境：
+                1. 手動任務：當使用者手動選擇要執行的任務時，會使用此方法
+                2. 自動任務：當任務執行時，會使用此方法
+
         Args:
             task_id: 任務ID
             task_args: 任務參數
@@ -331,8 +334,11 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             }
 
     def fetch_article_content(self, task_id: int, link_ids: List[int]) -> Dict[str, Any]:
-        """抓取文章內容
-        
+        """ 抓取文章內容，並更新文章內容
+            使用情境：
+                1. 手動任務：當使用者手動選擇要抓取的文章連結時，會使用此方法
+                2. 自動任務：當任務執行時，會使用此方法
+
         Args:
             task_id: 任務ID
             link_ids: 文章連結ID列表

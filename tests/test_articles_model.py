@@ -1,11 +1,37 @@
 import pytest
 from datetime import datetime, timezone
-from src.models.articles_model import Articles
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from src.models.articles_model import Articles, ArticleScrapeStatus
+from src.models.crawler_tasks_model import CrawlerTasks
+from src.models.base_model import Base
+
+# 測試資料庫 URL
+TEST_DATABASE_URL = "sqlite:///./test.db"
+
+@pytest.fixture(scope="session")
+def engine():
+    """創建測試資料庫引擎"""
+    engine = create_engine(TEST_DATABASE_URL)
+    Base.metadata.create_all(engine)
+    yield engine
+    Base.metadata.drop_all(engine)
+
+@pytest.fixture
+def session(engine):
+    """創建測試資料庫會話"""
+    Session = sessionmaker(bind=engine)
+    session = Session()
+    try:
+        yield session
+    finally:
+        session.rollback()
+        session.close()
 
 class TestArticleModel:
     """Article 模型的基本測試類"""
     
-    def test_article_creation_with_required_fields_only(self):
+    def test_article_creation_with_required_fields_only(self, session):
         """測試只使用必填欄位創建 Article"""
         article = Articles(
             title="測試文章",
@@ -15,8 +41,11 @@ class TestArticleModel:
             summary="這是一篇測試文章的摘要",
             category="科技",
             is_ai_related=False,
-            is_scraped=True
+            is_scraped=True,
+            scrape_status=ArticleScrapeStatus.PENDING
         )
+        session.add(article)
+        session.commit()
         
         assert article.title == "測試文章"
         assert article.link == "https://test.com/article"
@@ -27,9 +56,19 @@ class TestArticleModel:
         assert article.is_ai_related is False
         assert article.is_scraped is True
         assert article.created_at is not None
+        assert article.task_id is None
+        assert article.scrape_status == ArticleScrapeStatus.PENDING
 
     def test_article_creation_with_all_fields(self):
         """測試使用所有欄位創建 Article"""
+        # 創建一個測試任務
+        task = CrawlerTasks(
+            task_name="測試任務",
+            crawler_id=1,
+            is_auto=True,
+            ai_only=False
+        )
+        
         article = Articles(
             title="完整測試文章",
             link="https://test.com/full-article",
@@ -43,7 +82,9 @@ class TestArticleModel:
             article_type="新聞",
             tags="AI,科技,測試",
             is_ai_related=True,
-            is_scraped=True
+            is_scraped=True,
+            task_id=task.id,
+            scrape_status=ArticleScrapeStatus.PENDING
         )
         
         assert article.title == "完整測試文章"
@@ -59,6 +100,8 @@ class TestArticleModel:
         assert article.tags == "AI,科技,測試"
         assert article.is_ai_related is True
         assert article.is_scraped is True
+        assert article.task_id == task.id
+        assert article.scrape_status == ArticleScrapeStatus.PENDING
 
     def test_article_is_ai_related_update(self):
         """測試 Article 的 is_ai_related 欄位更新"""
@@ -162,7 +205,8 @@ class TestArticleModel:
             is_ai_related=True,
             is_scraped=True,
             created_at=test_time,
-            updated_at=test_time
+            updated_at=test_time,
+            scrape_status=ArticleScrapeStatus.PENDING
         )
         
         article_dict = article.to_dict()
@@ -182,7 +226,11 @@ class TestArticleModel:
             'is_ai_related': True,
             'is_scraped': True,
             'created_at': test_time,
-            'updated_at': test_time
+            'updated_at': test_time,
+            'scrape_status': ArticleScrapeStatus.PENDING.value,
+            'scrape_error': None,
+            'last_scrape_attempt': None,
+            'task_id': None
         }
 
     def test_article_default_timestamps(self):
@@ -243,5 +291,74 @@ class TestArticleModel:
         # 測試 4: 確認非監聽欄位（如 title）不觸發轉換邏輯
         article.title = "新標題"
         assert article.published_at == utc_time  # published_at 不受影響
+
+    def test_article_task_relationship(self, session):
+        """測試 Article 與 CrawlerTasks 的關聯"""
+        # 創建一個測試任務並保存到資料庫
+        task = CrawlerTasks(
+            task_name="測試任務",
+            crawler_id=1,
+            is_auto=True,
+            ai_only=False
+        )
+        session.add(task)
+        session.commit()
+
+        # 使用唯一的 link
+        unique_link = f"https://test.com/article/{datetime.now().timestamp()}"
+        
+        # 創建一個關聯到任務的文章
+        article = Articles(
+            title="測試文章",
+            link=unique_link,  # 使用唯一的 link
+            source="Bnext",
+            source_url=unique_link,  # 保持一致
+            task_id=task.id,
+            scrape_status=ArticleScrapeStatus.PENDING
+        )
+        session.add(article)
+        session.commit()
+        
+        # 重新載入文章以確保關聯被正確設置
+        article = session.get(Articles, article.id)
+        
+        # 測試關聯
+        assert article.task_id == task.id
+        assert article.task == task  # 測試 relationship 是否正確設置
+        
+        # 測試反向關聯
+        assert article in task.articles  # 測試 task.articles 是否包含該文章
+
+    def test_article_to_dict_with_task(self, session):
+        """測試 Article 的 to_dict 方法包含 task_id"""
+        test_time = datetime.now(timezone.utc)
+        task = CrawlerTasks(
+            task_name="測試任務",
+            crawler_id=1,
+            is_auto=True,
+            ai_only=False
+        )
+        session.add(task)
+        session.commit()
+
+        # 使用唯一的 link
+        unique_link = f"https://test.com/article/{datetime.now().timestamp()}"
+        
+        article = Articles(
+            title="測試文章",
+            link=unique_link,  # 使用唯一的 link
+            source="Bnext",
+            source_url=unique_link,  # 保持一致
+            task_id=task.id,
+            created_at=test_time,
+            updated_at=test_time,
+            scrape_status=ArticleScrapeStatus.PENDING
+        )
+        session.add(article)
+        session.commit()
+        
+        article_dict = article.to_dict()
+        assert article_dict['task_id'] == task.id
+        assert article_dict['scrape_status'] == ArticleScrapeStatus.PENDING.value
 
 

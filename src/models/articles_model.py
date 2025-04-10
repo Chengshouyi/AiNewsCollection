@@ -1,14 +1,21 @@
-from sqlalchemy import UniqueConstraint, Integer, String, DateTime, Text, Boolean
+from sqlalchemy import UniqueConstraint, Integer, String, DateTime, Text, Boolean, Enum, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from typing import Optional
 from datetime import datetime, timezone
 from .base_entity import BaseEntity
 import logging
+import enum
 
 # 設定 logger
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+class ArticleScrapeStatus(enum.Enum):
+    PENDING = "pending"  # 等待爬取
+    LINK_SAVED = "link_saved"  # 連結已保存
+    CONTENT_SCRAPED = "content_scraped"  # 內容已爬取
+    FAILED = "failed"  # 爬取失敗
 
 class Articles(Base, BaseEntity):
     """文章模型
@@ -70,8 +77,30 @@ class Articles(Base, BaseEntity):
         nullable=False
     )
     
+    scrape_status: Mapped[ArticleScrapeStatus] = mapped_column(
+        Enum(ArticleScrapeStatus),
+        default=ArticleScrapeStatus.PENDING,
+        nullable=False
+    )
+    
+    scrape_error: Mapped[Optional[str]] = mapped_column(Text)
+    
+    last_scrape_attempt: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True)
+    )
+    
+    # 新增與 CrawlerTasks 的關聯
+    task_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey('crawler_tasks.id'),
+        nullable=True
+    )
+    
+    # 新增關聯關係
+    task = relationship("CrawlerTasks", back_populates="articles")
+    
     # 定義需要監聽的 datetime 欄位
-    _datetime_fields_to_watch = {'published_at'}
+    _datetime_fields_to_watch = {'published_at', 'last_scrape_attempt'}
 
     def __init__(self, **kwargs):
         # 設置默認值
@@ -104,7 +133,11 @@ class Articles(Base, BaseEntity):
             'article_type': self.article_type,
             'tags': self.tags,
             'is_ai_related': self.is_ai_related,
-            'is_scraped': self.is_scraped
+            'is_scraped': self.is_scraped,
+            'scrape_status': self.scrape_status.value if self.scrape_status else None,
+            'scrape_error': self.scrape_error,
+            'last_scrape_attempt': self.last_scrape_attempt,
+            'task_id': self.task_id
         })
 
         return article_dict

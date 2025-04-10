@@ -1,10 +1,18 @@
-from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text, VARCHAR, String
+from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text, VARCHAR, String, Enum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from typing import Optional
 from datetime import datetime
 from .base_entity import BaseEntity
 from sqlalchemy.dialects.mysql import JSON
+import enum
+
+class TaskPhase(enum.Enum):
+    """任務階段枚舉"""
+    INIT = "init"  # 初始化
+    LINK_COLLECTION = "link_collection"  # 連結收集階段
+    CONTENT_SCRAPING = "content_scraping"  # 內容爬取階段
+    COMPLETED = "completed"  # 完成
 
 class CrawlerTasks(Base, BaseEntity):
     """爬蟲任務模型
@@ -20,6 +28,9 @@ class CrawlerTasks(Base, BaseEntity):
     - last_run_success: 上次執行成功與否
     - last_run_message: 上次執行訊息
     - cron_expression: 排程-cron表達式
+    - current_phase: 當前任務階段
+    - max_retries: 最大重試次數
+    - retry_count: 當前重試次數
     """
     __tablename__ = 'crawler_tasks'
 
@@ -48,7 +59,27 @@ class CrawlerTasks(Base, BaseEntity):
     last_run_success: Mapped[Optional[bool]] = mapped_column(Boolean)
     last_run_message: Mapped[Optional[str]] = mapped_column(Text)
     cron_expression: Mapped[Optional[str]] = mapped_column(VARCHAR(255))
+    
+    current_phase: Mapped[TaskPhase] = mapped_column(
+        Enum(TaskPhase),
+        default=TaskPhase.INIT,
+        nullable=False
+    )
+    
+    max_retries: Mapped[int] = mapped_column(
+        Integer,
+        default=3,
+        nullable=False
+    )
+    
+    retry_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
+        nullable=False
+    )
 
+    # 新增與 Articles 的反向關聯
+    articles = relationship("Articles", back_populates="task")
 
     crawler = relationship("Crawlers", back_populates="crawler_tasks", lazy="joined")
 
@@ -59,12 +90,19 @@ class CrawlerTasks(Base, BaseEntity):
     _datetime_fields_to_watch = {'last_run_at'}
 
     def __init__(self, **kwargs):
+        # 設置預設值
         if 'is_auto' not in kwargs:
             kwargs['is_auto'] = True
         if 'ai_only' not in kwargs:
             kwargs['ai_only'] = False
         if 'task_args' not in kwargs:
             kwargs['task_args'] = {}
+        if 'current_phase' not in kwargs:
+            kwargs['current_phase'] = TaskPhase.INIT
+        if 'max_retries' not in kwargs:
+            kwargs['max_retries'] = 3
+        if 'retry_count' not in kwargs:
+            kwargs['retry_count'] = 0
 
         # 告知父類需要監聽的 datetime 欄位
         super().__init__(datetime_fields_to_watch=
@@ -85,5 +123,8 @@ class CrawlerTasks(Base, BaseEntity):
             'last_run_at': self.last_run_at,
             'last_run_success': self.last_run_success,
             'last_run_message': self.last_run_message,
-            'cron_expression': self.cron_expression
+            'cron_expression': self.cron_expression,
+            'current_phase': self.current_phase.value,
+            'max_retries': self.max_retries,
+            'retry_count': self.retry_count
         }

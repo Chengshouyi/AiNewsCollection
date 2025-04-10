@@ -1,4 +1,4 @@
-from src.models.crawler_tasks_model import CrawlerTasks
+from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase
 from datetime import datetime, timezone
 
 class TestCrawlerTasksModel:
@@ -64,6 +64,11 @@ class TestCrawlerTasksModel:
         assert task.last_run_success is None
         assert task.last_run_message is None
         assert task.cron_expression is None
+        
+        # 測試新增欄位的預設值
+        assert task.current_phase == TaskPhase.INIT
+        assert task.max_retries == 3
+        assert task.retry_count == 0
     
     def test_default_values(self):
         """測試默認值設置"""
@@ -71,6 +76,7 @@ class TestCrawlerTasksModel:
         
         # 測試布林欄位預設值
         assert task.is_auto is True
+        assert task.ai_only is False
         
         # 測試默認的 task_args
         assert task.task_args == {}
@@ -81,6 +87,11 @@ class TestCrawlerTasksModel:
         assert task.last_run_at is None
         assert task.last_run_success is None
         assert task.last_run_message is None
+        
+        # 測試新增欄位的預設值
+        assert task.current_phase == TaskPhase.INIT
+        assert task.max_retries == 3
+        assert task.retry_count == 0
     
     def test_crawler_tasks_repr(self):
         """測試 CrawlerTasks 的 __repr__ 方法"""
@@ -101,6 +112,9 @@ class TestCrawlerTasksModel:
         task.is_auto = False
         assert task.is_auto is False
         
+        task.ai_only = True
+        assert task.ai_only is True
+        
         # 測試 task_args 更新
         task.task_args = {
             "article_settings": {
@@ -120,6 +134,16 @@ class TestCrawlerTasksModel:
         assert task.notes == "更新的備註"
         assert task.last_run_message == "執行成功"
         
+        # 測試新增欄位更新
+        task.current_phase = TaskPhase.CONTENT_SCRAPING
+        assert task.current_phase == TaskPhase.CONTENT_SCRAPING
+        
+        task.max_retries = 5
+        assert task.max_retries == 5
+        
+        task.retry_count = 2
+        assert task.retry_count == 2
+        
         task.cron_expression = "*/5 * * * *"
         assert task.cron_expression == "*/5 * * * *"
 
@@ -136,13 +160,49 @@ class TestCrawlerTasksModel:
         
         # 驗證所有欄位都在字典中
         expected_keys = {
-            'id', 'task_name', 'crawler_id', 'is_auto', 'ai_only','task_args', 'notes',
-            'created_at', 'updated_at', 'last_run_at', 'last_run_success',
-            'last_run_message', 'cron_expression'
+            'id', 'task_name', 'crawler_id', 'is_auto', 'ai_only', 'task_args', 
+            'notes', 'created_at', 'updated_at', 'last_run_at', 
+            'last_run_success', 'last_run_message', 'cron_expression',
+            'current_phase', 'max_retries', 'retry_count'  # 新增的欄位
         }
         
-        assert set(task_dict.keys()) == expected_keys 
+        assert set(task_dict.keys()) == expected_keys
+        
+        # 測試枚舉值的序列化
+        assert task_dict['current_phase'] == TaskPhase.INIT.value
     
+    def test_task_phase_transitions(self):
+        """測試任務階段轉換"""
+        task = CrawlerTasks(crawler_id=1)
+        
+        # 測試初始階段
+        assert task.current_phase == TaskPhase.INIT
+        
+        # 測試階段轉換
+        task.current_phase = TaskPhase.LINK_COLLECTION
+        assert task.current_phase == TaskPhase.LINK_COLLECTION
+        
+        task.current_phase = TaskPhase.CONTENT_SCRAPING
+        assert task.current_phase == TaskPhase.CONTENT_SCRAPING
+        
+        task.current_phase = TaskPhase.COMPLETED
+        assert task.current_phase == TaskPhase.COMPLETED
+    
+    def test_retry_mechanism(self):
+        """測試重試機制相關欄位"""
+        task = CrawlerTasks(crawler_id=1, max_retries=5)
+        
+        # 測試初始值
+        assert task.max_retries == 5
+        assert task.retry_count == 0
+        
+        # 測試重試計數更新
+        task.retry_count += 1
+        assert task.retry_count == 1
+        
+        # 測試重置重試計數
+        task.retry_count = 0
+        assert task.retry_count == 0
 
     def test_crawler_tasks_utc_datetime_conversion(self):
         """測試 CrawlerTasks 的 last_run_at 欄位 UTC 時間轉換"""
