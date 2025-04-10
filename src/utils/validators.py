@@ -1,9 +1,6 @@
 from typing import Dict, Any, List
-from src.error.errors import ValidationError
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
 from src.database.crawlers_repository import CrawlersRepository
-from src.utils.schema_utils import validate_required_fields_schema
-from src.utils.model_utils import validate_cron_expression, validate_dict, validate_boolean, validate_str, validate_url
 
 
 def validate_task_data(data: Dict[str, Any], tasks_repo: CrawlerTasksRepository) -> Dict[str, Any]:

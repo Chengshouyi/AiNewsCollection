@@ -203,4 +203,3 @@ def test_validate_crawler_data_missing_required_fields(crawlers_repo):
     }
     with pytest.raises(ValidationError):
         validate_crawler_data(data, crawlers_repo)
-

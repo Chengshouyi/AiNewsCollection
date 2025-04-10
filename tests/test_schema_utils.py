@@ -1,5 +1,5 @@
 import pytest
-from src.utils.schema_utils import validate_update_schema, validate_required_fields_schema, validate_crawler_config
+from src.utils.schema_utils import validate_update_schema, validate_required_fields_schema
 from src.error.errors import ValidationError
 
 def test_update_success_valid_field():
@@ -92,76 +92,5 @@ def test_required_fail_data_empty():
     with pytest.raises(ValidationError, match="name: 不能為空"):
         validate_required_fields_schema(required, data)
 
-# 測試爬蟲配置驗證
 
-def test_validate_crawler_config_success():
-    """測試：爬蟲配置驗證成功"""
-    data = {
-        "crawler_name": "TestCrawler",
-        "base_url": "https://example.com",
-        "crawler_type": "web", 
-        "config_file_name": "test_config.json",
-        "is_active": True
-    }
-    errors = validate_crawler_config(data)
-    assert len(errors) == 0, "有效的爬蟲配置應該沒有錯誤"
-
-def test_validate_crawler_config_missing_fields():
-    """測試：爬蟲配置缺少必填欄位"""
-    data = {
-        "crawler_name": "TestCrawler",
-        "base_url": "https://example.com"
-        # 缺少 crawler_type 和 config_file_name
-    }
-    errors = validate_crawler_config(data)
-    assert len(errors) == 2, "應該有兩個錯誤"
-    assert any("crawler_type 是必填欄位" in error for error in errors)
-    assert any("config_file_name 是必填欄位" in error for error in errors)
-
-def test_validate_crawler_config_invalid_url():
-    """測試：爬蟲配置含有無效的 URL"""
-    data = {
-        "crawler_name": "TestCrawler",
-        "base_url": "invalid-url",
-        "crawler_type": "web",
-        "config_file_name": "test_config.json"
-    }
-    errors = validate_crawler_config(data)
-    assert len(errors) == 1, "應該有一個錯誤"
-    assert "base_url 必須是有效的 URL" in errors[0]
-
-def test_validate_crawler_config_field_too_long():
-    """測試：爬蟲配置欄位超過長度限制"""
-    data = {
-        "crawler_name": "T" * 101,  # 超過 100 字元
-        "base_url": "https://example.com",
-        "crawler_type": "web",
-        "config_file_name": "test_config.json"
-    }
-    errors = validate_crawler_config(data)
-    assert len(errors) == 1, "應該有一個錯誤"
-    assert "crawler_name 長度不能超過 100 字元" in errors[0]
-
-def test_validate_crawler_config_invalid_is_active():
-    """測試：爬蟲配置的 is_active 不是布爾值"""
-    data = {
-        "crawler_name": "TestCrawler",
-        "base_url": "https://example.com",
-        "crawler_type": "web",
-        "config_file_name": "test_config.json",
-        "is_active": "true"  # 應該是布爾值，不是字串
-    }
-    errors = validate_crawler_config(data)
-    assert len(errors) == 1, "應該有一個錯誤"
-    assert "is_active 必須是布爾值" in errors[0]
-
-def test_validate_crawler_config_update_mode():
-    """測試：更新模式下的爬蟲配置驗證"""
-    # 在更新模式下，不需要提供所有必填欄位
-    data = {
-        "crawler_name": "UpdatedCrawler"
-        # 不需要提供其他必填欄位
-    }
-    errors = validate_crawler_config(data, is_update=True)
-    assert len(errors) == 0, "更新模式下應該沒有錯誤"
 
