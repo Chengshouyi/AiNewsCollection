@@ -329,11 +329,16 @@ class TestCrawlerTasksRepository:
         """測試創建任務時的驗證規則"""
         # 測試缺少必填欄位
         with pytest.raises(ValidationError) as excinfo:
-            crawler_tasks_repo.create(CrawlerTasks(
-                task_name="測試任務",
-                is_auto=True,
-                cron_expression="0 * * * *"
-            ))
+            crawler_tasks_repo.create({
+                "task_name": "測試任務",
+                "is_auto": True,
+                "cron_expression": "0 * * * *",
+                "ai_only": False,
+                "task_args": {},
+                "current_phase": TaskPhase.INIT,
+                "max_retries": 3,
+                "retry_count": 0
+            })
         assert "crawler_id: 不能為空" in str(excinfo.value)
         
         # 測試自動執行時缺少 cron_expression

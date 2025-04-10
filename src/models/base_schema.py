@@ -1,8 +1,9 @@
 from pydantic import BaseModel, model_validator, Field
 from datetime import datetime, timezone
-from typing import Optional, Annotated
+from typing import Optional, Annotated, List, Dict, Any, Protocol
 from pydantic import BeforeValidator
 from src.utils.model_utils import validate_positive_int, validate_datetime
+
 
 # 通用字段定義
 Id = Annotated[Optional[int], BeforeValidator(validate_positive_int("id", is_zero_allowed=False, required=False))]
@@ -25,6 +26,10 @@ class BaseCreateSchema(BaseModel):
     def get_required_fields(cls):
         return []
 
+    @classmethod
+    def get_immutable_fields(cls):
+        return []
+
 class BaseUpdateSchema(BaseModel):
     updated_at: UpdatedAt = Field(default_factory=lambda: datetime.now(timezone.utc))
 
@@ -35,6 +40,10 @@ class BaseUpdateSchema(BaseModel):
         if isinstance(data, dict) and 'updated_at' not in data:
             data['updated_at'] = datetime.now(timezone.utc)
         return data
+
+    @classmethod
+    def get_required_fields(cls):
+        return []
 
     @classmethod
     def get_immutable_fields(cls):

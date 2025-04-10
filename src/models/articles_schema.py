@@ -88,8 +88,8 @@ class ArticleCreateSchema(BaseCreateSchema):
             required_fields = ArticleCreateSchema.get_required_fields()
             return validate_required_fields_schema(required_fields, data)
         
-    @classmethod
-    def get_required_fields(cls):
+    @staticmethod
+    def get_required_fields():
         return ['title', 'link', 'source', 'source_url', 'is_ai_related', 'is_scraped', 'scrape_status']
 
 class ArticleUpdateSchema(BaseUpdateSchema):
@@ -111,6 +111,12 @@ class ArticleUpdateSchema(BaseUpdateSchema):
     last_scrape_attempt: Optional[LastScrapeAttempt] = None
     task_id: Optional[TaskId] = None
 
+    @model_validator(mode='before')
+    @classmethod
+    def validate_update(cls, data):
+        """驗證更新操作"""
+        if isinstance(data, dict):
+            return validate_update_schema(cls.get_immutable_fields(), cls.get_updated_fields(), data)
 
     @classmethod
     def get_immutable_fields(cls):
@@ -120,10 +126,5 @@ class ArticleUpdateSchema(BaseUpdateSchema):
     def get_updated_fields(cls):
         return ['title', 'summary', 'content', 'source', 'source_url', 'published_at', 'category', 'author', 'article_type', 'tags', 'is_ai_related', 'is_scraped', 'scrape_status', 'scrape_error', 'last_scrape_attempt', 'task_id'] + BaseUpdateSchema.get_updated_fields()
     
-    @model_validator(mode='before')
-    @classmethod
-    def validate_update(cls, data):
-        """驗證更新操作"""
-        if isinstance(data, dict):
-            return validate_update_schema(cls.get_immutable_fields(), cls.get_updated_fields(), data)
+
 

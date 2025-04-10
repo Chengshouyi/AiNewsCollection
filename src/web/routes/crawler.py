@@ -1,9 +1,10 @@
 from flask import Blueprint, jsonify, request, Response
 from src.services.crawlers_service import CrawlersService
-from src.utils.schema_utils import validate_crawler_config
+from src.utils.validators import validate_crawler_data
 from src.error.handle_api_error import handle_api_error
 import logging
-
+from src.database.crawlers_repository import CrawlersRepository
+from src.models.crawlers_model import Crawlers
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -37,9 +38,10 @@ def create_crawler():
         if not data:
             return jsonify({"error": "Invalid JSON"}), 400
         
-        errors = validate_crawler_config(data)
-        if errors:
-            return jsonify({"errors": errors}), 400
+        #TODO
+        #errors = validate_crawler_data(data)
+        #if errors:
+        #    return jsonify({"errors": errors}), 400
         
         service = get_crawlers_service()
         result = service.create_crawler(data)
@@ -81,9 +83,10 @@ def update_crawler(crawler_id):
         if not data:
             return jsonify({"error": "Invalid JSON"}), 400
         
-        errors = validate_crawler_config(data, is_update=True)
-        if errors:
-            return jsonify({"errors": errors}), 400
+        #TODO: 驗證爬蟲資料
+        # errors = validate_crawler_data(data, crawlers_repo)
+        # if errors:
+        #     return jsonify({"errors": errors}), 400
         
         service = get_crawlers_service()
         result = service.update_crawler(crawler_id, data)

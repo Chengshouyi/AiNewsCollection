@@ -36,8 +36,7 @@ class CrawlersRepository(BaseRepository['Crawlers']):
         """
         # 深度複製避免修改原始資料
         copied_data = entity_data.copy()
-        # 轉換為字典
-        processed_data = convert_to_dict(copied_data)
+
         # 檢查必填欄位
         required_fields = CrawlersCreateSchema.get_required_fields()
         # 因為Crawlers的crawler_type是不可以更新，所以需要移除
@@ -46,15 +45,15 @@ class CrawlersRepository(BaseRepository['Crawlers']):
         # 如果是更新操作，從現有實體中補充必填欄位
         if existing_entity:
             for field in required_fields:
-                if field not in processed_data and hasattr(existing_entity, field):
-                    processed_data[field] = getattr(existing_entity, field)
+                if field not in copied_data and hasattr(existing_entity, field):
+                    copied_data[field] = getattr(existing_entity, field)
         
         # 檢查是否仍然缺少必填欄位
-        missing_fields = [field for field in required_fields if field not in processed_data or processed_data[field] is None]
+        missing_fields = [field for field in required_fields if field not in copied_data or copied_data[field] is None]
         if missing_fields:
             raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
             
-        return processed_data
+        return copied_data
     
     def create(self, entity_data: Dict[str, Any]) -> Optional[Crawlers]:
         """創建爬蟲設定

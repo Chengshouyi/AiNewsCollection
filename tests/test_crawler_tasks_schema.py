@@ -1,6 +1,7 @@
 import pytest
 from datetime import datetime, timezone
 from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
+from src.models.crawler_tasks_model import TaskPhase
 from src.error.errors import ValidationError
 
 class TestCrawlerTasksCreateSchema:
@@ -34,7 +35,7 @@ class TestCrawlerTasksCreateSchema:
             "notes": "測試任務",
             "cron_expression": "*/10 * * * *",
             "last_run_message": "測試訊息",
-            "current_phase": "準備階段",
+            "current_phase": TaskPhase.INIT,
             "max_retries": 3,
             "retry_count": 0
         }
@@ -49,7 +50,7 @@ class TestCrawlerTasksCreateSchema:
         assert schema.notes == "測試任務"
         assert schema.cron_expression == "*/10 * * * *"
         assert schema.last_run_message == "測試訊息"
-        assert schema.current_phase == "準備階段"
+        assert schema.current_phase == TaskPhase.INIT
         assert schema.max_retries == 3
         assert schema.retry_count == 0
         
@@ -124,7 +125,7 @@ class TestCrawlerTasksCreateSchema:
             "created_at": datetime.now(timezone.utc),
             "updated_at": None,
             "cron_expression": "* * * * *",
-            "current_phase": "準備階段",
+            "current_phase": TaskPhase.INIT,
             "max_retries": 3,
             "retry_count": 0
         }
@@ -137,7 +138,7 @@ class TestCrawlerTasksCreateSchema:
         assert schema.is_auto is True
         assert schema.ai_only is False
         assert schema.notes == "測試任務"
-        assert schema.current_phase == "準備階段"
+        assert schema.current_phase == TaskPhase.INIT
         assert schema.max_retries == 3
         assert schema.retry_count == 0
         
@@ -156,7 +157,7 @@ class TestCrawlerTasksCreateSchema:
             "ai_only": False,
             "task_args": {},
             "cron_expression": "* * * * *",
-            "current_phase": "準備階段",
+            "current_phase": TaskPhase.INIT,
             "max_retries": 3,
             "retry_count": 0
         }
@@ -174,7 +175,7 @@ class TestCrawlerTasksCreateSchema:
             "ai_only": False,
             "task_args": {},
             "cron_expression": "* * * * *",
-            "current_phase": "準備階段",
+            "current_phase": TaskPhase.INIT,
             "max_retries": 0,
             "retry_count": 0
         }
@@ -192,7 +193,7 @@ class TestCrawlerTasksCreateSchema:
             "ai_only": False,
             "task_args": {},
             "cron_expression": "* * * * *",
-            "current_phase": "準備階段",
+            "current_phase": TaskPhase.INIT,
             "max_retries": 3,
             "retry_count": -1
         }
@@ -210,7 +211,7 @@ class TestCrawlerTasksCreateSchema:
             "ai_only": False,
             "task_args": {},
             "cron_expression": "* * * * *",
-            "current_phase": "準備階段",
+            "current_phase": TaskPhase.INIT,
             "max_retries": 3,
             "retry_count": 0
         }
@@ -225,7 +226,7 @@ class TestCrawlerTasksCreateSchema:
             "crawler_id": 1,
             "task_args": {},
             "ai_only": False,
-            "current_phase": "準備階段",
+            "current_phase": TaskPhase.INIT,
             "max_retries": 3,
             "retry_count": 0
         }
@@ -247,7 +248,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_args": {}, 
                 "crawler_id": None, 
                 "ai_only": False,
-                "current_phase": "準備階段",
+                "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
                 "retry_count": 0
             })
@@ -262,7 +263,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_args": {}, 
                 "crawler_id": "", 
                 "ai_only": False,
-                "current_phase": "準備階段",
+                "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
                 "retry_count": 0
             })
@@ -277,7 +278,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_args": {}, 
                 "crawler_id": 0, 
                 "ai_only": False,
-                "current_phase": "準備階段",
+                "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
                 "retry_count": 0
             })
@@ -292,7 +293,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_args": {}, 
                 "crawler_id": -1, 
                 "ai_only": False,
-                "current_phase": "準備階段",
+                "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
                 "retry_count": 0
             })
@@ -307,7 +308,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_args": {}, 
                 "crawler_id": "abc", 
                 "ai_only": False,
-                "current_phase": "準備階段",
+                "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
                 "retry_count": 0
             })
@@ -322,7 +323,7 @@ class TestCrawlerTasksCreateSchema:
                 "crawler_id": 1, 
                 "task_args": "not_a_dict", 
                 "ai_only": False,
-                "current_phase": "準備階段",
+                "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
                 "retry_count": 0
             })
@@ -339,7 +340,7 @@ class TestCrawlerTasksCreateSchema:
                 "crawler_id": 1, 
                 "task_args": {}, 
                 "ai_only": False, 
-                "current_phase": "準備階段",
+                "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
                 "retry_count": 0,
                 field: value
@@ -354,7 +355,7 @@ class TestCrawlerTasksCreateSchema:
                 "crawler_id": 1, 
                 "task_args": {}, 
                 "ai_only": False,
-                "current_phase": "準備階段",
+                "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
                 "retry_count": 0
             })
@@ -371,7 +372,7 @@ class TestCrawlerTasksCreateSchema:
                 "max_retries": 3,
                 "retry_count": 0
             })
-        assert "current_phase: 長度不能超過 255 字元" in str(exc_info.value)
+        assert "current_phase: 無效的任務階段值" in str(exc_info.value)
 
 class TestCrawlerTasksUpdateSchema:
     """CrawlerTasksUpdateSchema 的測試類"""
@@ -396,7 +397,7 @@ class TestCrawlerTasksUpdateSchema:
             "notes": "更新的備註",
             "cron_expression": "* */2 * * *",
             "last_run_message": "更新測試",
-            "current_phase": "更新階段",
+            "current_phase": TaskPhase.INIT,
             "max_retries": 5,
             "retry_count": 2
         }
@@ -410,7 +411,7 @@ class TestCrawlerTasksUpdateSchema:
         assert schema.notes == "更新的備註"
         assert schema.cron_expression == "* */2 * * *"
         assert schema.last_run_message == "更新測試"
-        assert schema.current_phase == "更新階段"
+        assert schema.current_phase == TaskPhase.INIT
         assert schema.max_retries == 5
         assert schema.retry_count == 2
         
@@ -510,7 +511,7 @@ class TestCrawlerTasksUpdateSchema:
             {"field": "task_args", "value": {"article_settings": {"max_pages": 5}}},
             {"field": "cron_expression", "value": "30 18 * * 0"},
             {"field": "last_run_message", "value": "部分更新測試"},
-            {"field": "current_phase", "value": "新階段"},
+            {"field": "current_phase", "value": TaskPhase.INIT},
             {"field": "max_retries", "value": 10},
             {"field": "retry_count", "value": 3}
         ]

@@ -24,12 +24,10 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             return CrawlerTasksUpdateSchema
         raise ValueError(f"未支援的 schema 類型: {schema_type}")
 
-    def _validate_required_fields(self, entity_data: Any, existing_entity: Optional[CrawlerTasks] = None) -> Dict[str, Any]:
+    def _validate_required_fields(self, entity_data: Dict[str, Any], existing_entity: Optional[CrawlerTasks] = None) -> Dict[str, Any]:
         """驗證並補充必填欄位"""
         # 深度複製避免修改原始資料
         copied_data = entity_data.copy()
-        # 轉換為字典
-        processed_data = convert_to_dict(copied_data)
         
         required_fields = CrawlerTasksCreateSchema.get_required_fields()
         # 因為CrawlerTasks的crawler_id是不可以更新，所以需要移除
@@ -37,15 +35,15 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
         # 如果是更新操作，從現有實體中補充必填欄位
         if existing_entity:
             for field in required_fields:
-                if field not in processed_data and hasattr(existing_entity, field):
-                    processed_data[field] = getattr(existing_entity, field)
+                if field not in copied_data and hasattr(existing_entity, field):
+                    copied_data[field] = getattr(existing_entity, field)
         
         # 檢查是否仍然缺少必填欄位
-        missing_fields = [field for field in required_fields if field not in processed_data or processed_data[field] is None]
+        missing_fields = [field for field in required_fields if field not in copied_data or copied_data[field] is None]
         if missing_fields:
             raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
 
-        return processed_data
+        return copied_data
 
     def create(self, entity_data: Dict[str, Any]) -> Optional[CrawlerTasks]:
         """

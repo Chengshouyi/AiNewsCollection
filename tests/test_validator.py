@@ -8,6 +8,7 @@ from src.database.crawler_tasks_repository import CrawlerTasksRepository
 from src.database.crawlers_repository import CrawlersRepository
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawlers_model import Crawlers
+from src.models.crawler_tasks_model import TaskPhase
 
 # 設置測試資料庫
 @pytest.fixture(scope="session")
@@ -51,7 +52,10 @@ def test_validate_task_data_with_valid_minimal_data(tasks_repo):
         'crawler_id': 1,
         'task_name': 'test_task',
         'task_args': {},
-        'ai_only': False
+        'ai_only': False,
+        'current_phase': TaskPhase.INIT,
+        'max_retries': 3,
+        'retry_count': 0
     }
     validated_data = validate_task_data(data, tasks_repo)
     assert validated_data['crawler_id'] == data['crawler_id']
@@ -69,7 +73,10 @@ def test_validate_task_data_with_complete_valid_data(tasks_repo):
         'ai_only': True,
         'cron_expression': '0 0 * * *',
         'notes': 'test notes',
-        'last_run_message': 'success'
+        'last_run_message': 'success',
+        'current_phase': TaskPhase.INIT,
+        'max_retries': 3,
+        'retry_count': 0
     }
     validated_data = validate_task_data(data, tasks_repo)
     assert validated_data['crawler_id'] == data['crawler_id']

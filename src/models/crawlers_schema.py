@@ -1,6 +1,5 @@
-from typing import Annotated, Optional, Any
-from pydantic import Field, BeforeValidator, model_validator
-from datetime import datetime, timezone
+from typing import Annotated, Optional
+from pydantic import  BeforeValidator, model_validator
 from src.utils.model_utils import validate_url, validate_str, validate_boolean
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
 from src.utils.schema_utils import validate_update_schema, validate_required_fields_schema
@@ -39,6 +38,13 @@ class CrawlersUpdateSchema(BaseUpdateSchema):
     is_active: Optional[IsActive] = None
     config_file_name: Optional[ConfigFileName] = None
 
+    @model_validator(mode='before')
+    @classmethod
+    def validate_update(cls, data):
+        """驗證更新操作"""
+        if isinstance(data, dict):
+            return validate_update_schema(cls.get_immutable_fields(), cls.get_updated_fields(), data)
+        
     @classmethod
     def get_immutable_fields(cls):
         return ['crawler_type'] + BaseUpdateSchema.get_immutable_fields()
@@ -47,12 +53,7 @@ class CrawlersUpdateSchema(BaseUpdateSchema):
     def get_updated_fields(cls):
         return ['crawler_name', 'base_url', 'is_active', 'config_file_name'] + BaseUpdateSchema.get_updated_fields()
     
-    @model_validator(mode='before')
-    @classmethod
-    def validate_update(cls, data):
-        """驗證更新操作"""
-        if isinstance(data, dict):
-            return validate_update_schema(cls.get_immutable_fields(), cls.get_updated_fields(), data)
+
 
 
 
