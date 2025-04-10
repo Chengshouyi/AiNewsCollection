@@ -5,7 +5,6 @@ from src.services.article_service import ArticleService
 from src.error.handle_api_error import handle_api_error
 from src.utils.validators import validate_task_data
 import threading
-from functools import wraps
 
 tasks_bp = Blueprint('tasks_api', __name__, url_prefix='/api/tasks')
 
@@ -18,11 +17,13 @@ def get_scheduler_service():
 def get_article_service():
     return ArticleService()
 
+#TODO: 實作手動任務的背景執行緒
 def run_manual_task_thread(task_id, task_args):
     """執行手動任務的背景執行緒"""
     service = get_task_service()
     service.run_task(task_id, task_args)
 
+#TODO: 實作抓取內容的背景執行緒
 def run_fetch_content_thread(task_id, link_ids):
     """執行抓取內容的背景執行緒"""
     service = get_task_service()
