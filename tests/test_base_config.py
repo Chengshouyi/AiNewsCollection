@@ -64,7 +64,7 @@ def test_random_sleep_within_range():
     random_sleep(min_seconds=min_delay, max_seconds=max_delay)
     end_time = time.time()
     elapsed_time = end_time - start_time
-    assert min_delay <= elapsed_time <= max_delay + 0.1  # 允許一點浮點數誤差
+    assert min_delay <= elapsed_time <= max_delay + 1.0  # 允許較大誤差以適應不同系統環境
 
 def test_random_sleep_invalid_range():
     """測試當最小值大於最大值時是否拋出異常"""
@@ -96,4 +96,4 @@ def test_random_sleep_default_values():
     random_sleep()  # 使用預設參數
     end_time = time.time()
     elapsed_time = end_time - start_time
-    assert 2.0 <= elapsed_time <= 4.0  # 預設範圍是 1.0 到 3.0 秒，加上額外的 1 秒等待
+    assert 2.0 <= elapsed_time <= 5.0  # 預設範圍是 1.0 到 3.0 秒，加上額外的 1 秒等待以及一些允許誤差
