@@ -221,7 +221,7 @@ class TestCrawlerTaskService:
         assert result["success"] is False
         assert result["message"] == "任務不存在"
 
-    def test_test_crawler_task(self, crawler_task_service):
+    def test_test_crawler_task(self, crawler_task_service, monkeypatch):
         """測試爬蟲任務的測試功能"""
         # 爬蟲配置數據
         crawler_data = {
@@ -243,6 +243,21 @@ class TestCrawlerTaskService:
             "ai_only": False,
             "scrape_mode": "full_scrape"
         }
+        
+        # 模擬 CrawlerFactory.get_crawler 方法拋出 ValueError
+        def mock_get_crawler(crawler_name):
+            raise ValueError(f"未知的爬蟲類型: {crawler_name}")
+            
+        # 補丁替換 CrawlerFactory.get_crawler 方法
+        import sys
+        from unittest.mock import MagicMock
+        
+        # 確保模塊已經加載
+        if 'src.crawlers.crawler_factory' not in sys.modules:
+            sys.modules['src.crawlers.crawler_factory'] = MagicMock()
+            
+        # 設置 CrawlerFactory.get_crawler 方法
+        sys.modules['src.crawlers.crawler_factory'].CrawlerFactory.get_crawler = mock_get_crawler
         
         # 調用測試方法，傳入兩個必要參數
         result = crawler_task_service.test_crawler_task(crawler_data, task_data)

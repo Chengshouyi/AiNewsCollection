@@ -723,7 +723,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     return {
                         'success': True,
                         'message': '爬蟲配置驗證成功，但爬蟲尚未註冊，無法執行完整測試',
-                        'task_phase': TaskPhase.INIT.value
+                        'task_phase': TaskPhase.INIT.value,
+                        'test_results': {
+                            'links_found': 0,
+                            'sample_links': [],
+                            'execution_time': 0
+                        }
                     }
                 
                 # 準備測試參數 (只收集連結，不抓取內容)
