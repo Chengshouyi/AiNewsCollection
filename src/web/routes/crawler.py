@@ -4,6 +4,8 @@ from src.utils.validators import validate_crawler_data_api
 from src.error.handle_api_error import handle_api_error
 import logging
 from src.error.errors import ValidationError
+
+
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
