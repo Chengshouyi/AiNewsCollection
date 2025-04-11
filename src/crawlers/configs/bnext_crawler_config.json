@@ -25,22 +25,6 @@
         "semiconductor",
         "manufacture"
     ],
-    "article_settings": {
-        "max_pages": 3,
-        "ai_only": true,
-        "num_articles": 10,
-        "min_keywords": 3,
-        "from_db_link": false
-    },
-    "extraction_settings": {
-        "num_articles": 3,
-        "min_keywords": 3
-    },
-    "storage_settings": {
-        "save_to_csv": true,
-        "csv_file_name": "articles_bnext.csv",
-        "save_to_database": false
-    },
     "valid_domains": [
         "https://www.bnext.com.tw"
     ],

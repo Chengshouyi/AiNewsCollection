@@ -564,6 +564,7 @@ class ArticleService(BaseService[Articles]):
 
     def advanced_search_articles(
         self,
+        task_id: Optional[str] = None,
         keywords: Optional[str] = None,
         category: Optional[str] = None,
         date_range: Optional[Tuple[datetime, datetime]] = None,
@@ -591,6 +592,9 @@ class ArticleService(BaseService[Articles]):
                         Articles.title.like(f"%{keywords}%"),
                         Articles.content.like(f"%{keywords}%")
                     ))
+                    
+                if task_id:
+                    query = query.filter(Articles.task_id == task_id)
                     
                 if category:
                     query = query.filter(Articles.category == category)

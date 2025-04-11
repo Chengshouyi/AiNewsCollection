@@ -16,9 +16,6 @@ class SiteConfig:
     list_url_template: str
     categories: List[str]
     full_categories: List[str]
-    article_settings: Dict[str, Any]
-    extraction_settings: Dict[str, Any]
-    storage_settings: Dict[str, Any]
     selectors: Dict[str, Any]
     headers: Dict[str, str] = field(default_factory=lambda: DEFAULT_HEADERS)
     valid_domains: List[str] = field(default_factory=list)

@@ -4,7 +4,6 @@ from src.crawlers.base_crawler import BaseCrawler
 from src.crawlers.bnext_scraper import BnextScraper
 from src.crawlers.bnext_content_extractor import BnextContentExtractor
 from typing import Optional, List, Dict, Any
-from src.crawlers.bnext_utils import BnextUtils
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -59,10 +58,12 @@ class BnextCrawler(BaseCrawler):
         if not self.site_config:
             raise ValueError("網站設定(site_config)未初始化")
 
-        max_pages = self.site_config.article_settings.get("max_pages", 3)
-        categories = self.site_config.categories
-        ai_only = self.site_config.article_settings.get("ai_only", True)
-        min_keywords = self.site_config.article_settings.get("min_keywords", 3)
+        # 從 global_params 獲取參數，如果沒有則使用預設值
+        max_pages = self.global_params.get("max_pages", 3)
+        categories = self.site_config.categories  # 類別仍然從 site_config 獲取，因為這是網站結構相關
+        ai_only = self.global_params.get("ai_only", True)
+        min_keywords = self.global_params.get("min_keywords", 3)
+        
         logger.debug(f"抓取文章列表參數設定：最大頁數: {max_pages}, 文章類別: {categories}, AI 相關文章: {ai_only}")
         logger.debug(f"抓取文章列表中...")
         article_links_df = self.retry_operation(
@@ -75,43 +76,7 @@ class BnextCrawler(BaseCrawler):
             logger.debug(f"成功抓取文章列表")
             return article_links_df
 
-    def _fetch_article_links_from_db(self) -> Optional[pd.DataFrame]:
-        """從資料庫連結獲取文章列表"""
-        try:
-            # 從資料庫連結獲取文章列表
-            articles_response = self.article_service.advanced_search_articles(is_scraped=False)
-            if articles_response["success"] and articles_response["articles"]:
-                # 將文章列表轉換為 DataFrame
-                articles_data = []
-                for article in articles_response["articles"]:
-                    articles_data.append(BnextUtils.get_article_columns_dict(
-                        title=article.title,
-                        summary=article.summary,
-                        content=article.content,
-                        link=article.link,
-                        category=article.category,
-                        published_at=article.published_at,
-                        author=article.author,
-                        source=article.source,
-                        source_url=article.source_url,
-                        article_type=article.article_type,
-                        tags=article.tags,
-                        is_ai_related=article.is_ai_related,
-                        is_scraped=article.is_scraped,
-                        scrape_status=article.scrape_status.value if hasattr(article, 'scrape_status') and article.scrape_status else 'pending',
-                        scrape_error=article.scrape_error if hasattr(article, 'scrape_error') else None,
-                        last_scrape_attempt=article.last_scrape_attempt if hasattr(article, 'last_scrape_attempt') else None,
-                        task_id=article.task_id if hasattr(article, 'task_id') else None
-                    ))
-                    
-                logger.debug(f"從資料庫連結獲取文章列表成功: {articles_data}")
-                return pd.DataFrame(articles_data)
-            else:
-                logger.error(f"從資料庫連結獲取文章列表失敗: {articles_response['message']}")
-                return None
-        except Exception as e:
-            logger.error(f"從資料庫連結獲取文章列表失敗: {str(e)}", exc_info=True)
-            return None
+
 
     def _fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
         """
@@ -134,9 +99,10 @@ class BnextCrawler(BaseCrawler):
         if not self.site_config:
             self._create_site_config()
 
-        num_articles = self.site_config.article_settings.get("num_articles", 10)
-        ai_only = self.site_config.article_settings.get("ai_only", True)
-        min_keywords = self.site_config.article_settings.get("min_keywords", 3)
+        # 從 global_params 獲取參數，如果沒有則使用預設值
+        num_articles = self.global_params.get("num_articles", 10)
+        ai_only = self.global_params.get("ai_only", True)
+        min_keywords = self.global_params.get("min_keywords", 3)
             
         article_contents = self.retry_operation(
             lambda: self.extractor.batch_get_articles_content(self.articles_df, num_articles, ai_only, min_keywords)
