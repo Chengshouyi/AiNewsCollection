@@ -97,7 +97,11 @@ class BnextCrawler(BaseCrawler):
                         article_type=article.article_type,
                         tags=article.tags,
                         is_ai_related=article.is_ai_related,
-                        is_scraped=article.is_scraped
+                        is_scraped=article.is_scraped,
+                        scrape_status=article.scrape_status.value if hasattr(article, 'scrape_status') and article.scrape_status else 'pending',
+                        scrape_error=article.scrape_error if hasattr(article, 'scrape_error') else None,
+                        last_scrape_attempt=article.last_scrape_attempt if hasattr(article, 'last_scrape_attempt') else None,
+                        task_id=article.task_id if hasattr(article, 'task_id') else None
                     ))
                     
                 logger.debug(f"從資料庫連結獲取文章列表成功: {articles_data}")
@@ -142,10 +146,25 @@ class BnextCrawler(BaseCrawler):
             logger.warning("沒有文章內容可供處理")
             return None
         
-        # 以Link為key，更新articles_df
+        # 以Link為key，根據 scrape_status 更新 articles_df
         for article_content in article_contents:
             if article_content:
-                self.articles_df.loc[self.articles_df['link'] == article_content['link'], 'is_scraped'] = True
+                link = article_content.get('link')
+                scrape_status = article_content.get('scrape_status')
+                is_scraped = article_content.get('is_scraped', False)
+                
+                if link and link in self.articles_df['link'].values:
+                    # 更新爬取狀態
+                    self.articles_df.loc[self.articles_df['link'] == link, 'scrape_status'] = scrape_status
+                    self.articles_df.loc[self.articles_df['link'] == link, 'is_scraped'] = is_scraped
+                    
+                    # 如果有錯誤信息，也更新
+                    if 'scrape_error' in article_content and article_content['scrape_error'] is not None:
+                        self.articles_df.loc[self.articles_df['link'] == link, 'scrape_error'] = article_content['scrape_error']
+                    
+                    # 更新最後抓取嘗試時間
+                    if 'last_scrape_attempt' in article_content and article_content['last_scrape_attempt'] is not None:
+                        self.articles_df.loc[self.articles_df['link'] == link, 'last_scrape_attempt'] = article_content['last_scrape_attempt']
         
         return article_contents
 

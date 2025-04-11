@@ -109,7 +109,8 @@ class TestCrawlerTaskService:
             "current_phase": "init",
             "max_retries": 3,
             "retry_count": 0,
-            "cron_expression": "0 0 * * *"
+            "cron_expression": "0 0 * * *",
+            "scrape_mode": "full_scrape"
         }
         
         result = crawler_task_service.create_task(task_data)
@@ -239,7 +240,8 @@ class TestCrawlerTaskService:
             "max_retries": 3,
             "retry_count": 0,
             "cron_expression": "0 0 * * *",
-            "ai_only": False
+            "ai_only": False,
+            "scrape_mode": "full_scrape"
         }
         
         # 調用測試方法，傳入兩個必要參數

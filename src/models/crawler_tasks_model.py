@@ -14,6 +14,12 @@ class TaskPhase(enum.Enum):
     CONTENT_SCRAPING = "content_scraping"  # 內容爬取階段
     COMPLETED = "completed"  # 完成
 
+class ScrapeMode(enum.Enum):
+    """抓取模式枚舉"""
+    LINKS_ONLY = "links_only"  # 僅抓取連結
+    CONTENT_ONLY = "content_only"  # 僅抓取內容(從已有連結)
+    FULL_SCRAPE = "full_scrape"  # 連結與內容一起抓取
+
 class CrawlerTasks(Base, BaseEntity):
     """爬蟲任務模型
     
@@ -31,6 +37,7 @@ class CrawlerTasks(Base, BaseEntity):
     - current_phase: 當前任務階段
     - max_retries: 最大重試次數
     - retry_count: 當前重試次數
+    - scrape_mode: 抓取模式
     """
     __tablename__ = 'crawler_tasks'
 
@@ -77,6 +84,12 @@ class CrawlerTasks(Base, BaseEntity):
         default=0,
         nullable=False
     )
+    
+    scrape_mode: Mapped[ScrapeMode] = mapped_column(
+        Enum(ScrapeMode),
+        default=ScrapeMode.FULL_SCRAPE,
+        nullable=False
+    )
 
     # 新增與 Articles 的反向關聯
     articles = relationship("Articles", back_populates="task")
@@ -103,6 +116,8 @@ class CrawlerTasks(Base, BaseEntity):
             kwargs['max_retries'] = 3
         if 'retry_count' not in kwargs:
             kwargs['retry_count'] = 0
+        if 'scrape_mode' not in kwargs:
+            kwargs['scrape_mode'] = ScrapeMode.FULL_SCRAPE
 
         # 告知父類需要監聽的 datetime 欄位
         super().__init__(datetime_fields_to_watch=
@@ -126,5 +141,6 @@ class CrawlerTasks(Base, BaseEntity):
             'cron_expression': self.cron_expression,
             'current_phase': self.current_phase.value,
             'max_retries': self.max_retries,
-            'retry_count': self.retry_count
+            'retry_count': self.retry_count,
+            'scrape_mode': self.scrape_mode.value
         }

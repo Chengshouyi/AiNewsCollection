@@ -9,6 +9,7 @@ from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
+from datetime import datetime, timezone
 
 # 設置日誌記錄器(校正用)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -216,7 +217,11 @@ class BnextScraper:
                 article_type='',
                 tags='',
                 is_ai_related=self.site_config.article_settings.get("ai_only"),
-                is_scraped=False
+                is_scraped=False,
+                scrape_status='link_saved',
+                scrape_error=None,
+                last_scrape_attempt=datetime.now(timezone.utc),
+                task_id=None
             )
 
             # AI 相關性檢查
@@ -277,7 +282,11 @@ class BnextScraper:
                             article_type='',
                             tags='',
                             is_ai_related=self.site_config.article_settings.get("ai_only"),
-                            is_scraped=False
+                            is_scraped=False,
+                            scrape_status='link_saved',
+                            scrape_error=None,
+                            last_scrape_attempt=datetime.now(timezone.utc),
+                            task_id=None
                         )
 
                         # AI 相關性檢查

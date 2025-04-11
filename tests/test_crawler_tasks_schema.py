@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timezone
 from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
-from src.models.crawler_tasks_model import TaskPhase
+from src.models.crawler_tasks_model import TaskPhase, ScrapeMode
 from src.error.errors import ValidationError
 
 class TestCrawlerTasksCreateSchema:
@@ -37,7 +37,8 @@ class TestCrawlerTasksCreateSchema:
             "last_run_message": "測試訊息",
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         }
         
         schema = CrawlerTasksCreateSchema.model_validate(data)
@@ -127,7 +128,8 @@ class TestCrawlerTasksCreateSchema:
             "cron_expression": "* * * * *",
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         }
         
         schema = CrawlerTasksCreateSchema.model_validate(data)
@@ -159,7 +161,8 @@ class TestCrawlerTasksCreateSchema:
             "cron_expression": "* * * * *",
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_zero)
@@ -177,7 +180,8 @@ class TestCrawlerTasksCreateSchema:
             "cron_expression": "* * * * *",
             "current_phase": TaskPhase.INIT,
             "max_retries": 0,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_zero)
@@ -195,7 +199,8 @@ class TestCrawlerTasksCreateSchema:
             "cron_expression": "* * * * *",
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
-            "retry_count": -1
+            "retry_count": -1,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_negative)
@@ -213,7 +218,8 @@ class TestCrawlerTasksCreateSchema:
             "cron_expression": "* * * * *",
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data_invalid_is_auto)
@@ -228,7 +234,8 @@ class TestCrawlerTasksCreateSchema:
             "ai_only": False,
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         }
         schema = CrawlerTasksCreateSchema.model_validate(data)
         assert schema.is_auto is True
@@ -250,7 +257,8 @@ class TestCrawlerTasksCreateSchema:
                 "ai_only": False,
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
             pytest.fail("預期 ValidationError for crawler_id=None")
         except ValidationError as e:
@@ -265,7 +273,8 @@ class TestCrawlerTasksCreateSchema:
                 "ai_only": False,
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
             pytest.fail("預期 ValidationError for crawler_id=''")
         except ValidationError as e:
@@ -280,7 +289,8 @@ class TestCrawlerTasksCreateSchema:
                 "ai_only": False,
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
             pytest.fail("預期 ValidationError for crawler_id=0")
         except ValidationError as e:
@@ -295,7 +305,8 @@ class TestCrawlerTasksCreateSchema:
                 "ai_only": False,
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
             pytest.fail("預期 ValidationError for crawler_id=-1")
         except ValidationError as e:
@@ -310,7 +321,8 @@ class TestCrawlerTasksCreateSchema:
                 "ai_only": False,
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
             pytest.fail("預期 ValidationError for crawler_id='abc'")
         except ValidationError as e:
@@ -325,7 +337,8 @@ class TestCrawlerTasksCreateSchema:
                 "ai_only": False,
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
         assert "task_args: 必須是字典格式" in str(exc_info.value)
 
@@ -343,7 +356,8 @@ class TestCrawlerTasksCreateSchema:
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
                 "retry_count": 0,
-                field: value
+                field: value,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             }
             with pytest.raises(ValidationError) as exc_info:
                 CrawlerTasksCreateSchema.model_validate(data)
@@ -357,7 +371,8 @@ class TestCrawlerTasksCreateSchema:
                 "ai_only": False,
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
         assert "task_name: 長度不能超過 255 字元" in str(exc_info.value)
         
@@ -370,9 +385,99 @@ class TestCrawlerTasksCreateSchema:
                 "ai_only": False,
                 "current_phase": "a" * 256,
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
         assert "current_phase: 無效的任務階段值" in str(exc_info.value)
+
+    def test_task_phase_validation(self):
+        """測試任務階段的驗證"""
+        # 測試所有有效值
+        valid_phases = [
+            TaskPhase.INIT,
+            TaskPhase.LINK_COLLECTION,
+            TaskPhase.CONTENT_SCRAPING,
+            TaskPhase.COMPLETED,
+            "init",
+            "link_collection",
+            "content_scraping",
+            "completed",
+            "INIT",  # 測試大寫
+            "Link_Collection"  # 測試混合大小寫
+        ]
+        
+        for phase in valid_phases:
+            data = {
+                "task_name": "測試任務",
+                "crawler_id": 1,
+                "task_args": {},
+                "ai_only": False,
+                "current_phase": phase,
+                "max_retries": 3,
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
+            }
+            schema = CrawlerTasksCreateSchema.model_validate(data)
+            if isinstance(phase, str):
+                try:
+                    expected_phase = TaskPhase(phase)
+                except ValueError:
+                    expected_phase = TaskPhase(phase.lower())
+            else:
+                expected_phase = phase
+            assert schema.current_phase == expected_phase
+
+    def test_scrape_mode_validation(self):
+        """測試抓取模式的驗證"""
+        # 測試所有有效值
+        valid_modes = [
+            ScrapeMode.LINKS_ONLY,
+            ScrapeMode.CONTENT_ONLY,
+            ScrapeMode.FULL_SCRAPE,
+            "links_only",
+            "content_only",
+            "full_scrape",
+            "LINKS_ONLY",  # 測試大寫
+            "Content_Only"  # 測試混合大小寫
+        ]
+        
+        for mode in valid_modes:
+            data = {
+                "task_name": "測試任務",
+                "crawler_id": 1,
+                "task_args": {},
+                "ai_only": False,
+                "current_phase": TaskPhase.INIT,
+                "max_retries": 3,
+                "retry_count": 0,
+                "scrape_mode": mode
+            }
+            schema = CrawlerTasksCreateSchema.model_validate(data)
+            if isinstance(mode, str):
+                try:
+                    expected_mode = ScrapeMode(mode)
+                except ValueError:
+                    try:
+                        expected_mode = ScrapeMode(mode.upper())
+                    except ValueError:
+                        expected_mode = ScrapeMode(mode.lower())
+            else:
+                expected_mode = mode
+            assert schema.scrape_mode == expected_mode
+        
+        # 測試無效值
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlerTasksCreateSchema.model_validate({
+                "task_name": "測試任務",
+                "crawler_id": 1,
+                "task_args": {},
+                "ai_only": False,
+                "current_phase": TaskPhase.INIT,
+                "max_retries": 3,
+                "retry_count": 0,
+                "scrape_mode": "invalid_mode"
+            })
+        assert "scrape_mode: 無效的抓取模式值" in str(exc_info.value)
 
 class TestCrawlerTasksUpdateSchema:
     """CrawlerTasksUpdateSchema 的測試類"""

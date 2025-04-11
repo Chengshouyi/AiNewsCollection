@@ -616,3 +616,80 @@ class ArticlesRepository(BaseRepository[Articles]):
             query_func,
             err_msg="查詢未爬取的連結時發生錯誤"
         )
+
+    def count_scraped_articles(self, source: Optional[str] = None) -> Dict[str, Any]:
+        """計算已爬取的連結數量"""
+        def query_func():
+            query = self.session.query(func.count(self.model_class.id)).filter(self.model_class.is_scraped == True)
+            if source:
+                query = query.filter_by(source=source)
+            return query.scalar()
+            
+        return self.execute_query(
+            query_func,
+            err_msg="計算已爬取的連結數量時發生錯誤"
+        )
+        
+    def find_articles_by_task_id(self, task_id: int, is_scraped: Optional[bool] = None, limit: Optional[int] = None) -> List[Articles]:
+        """根據任務ID查詢相關的文章
+        
+        Args:
+            task_id: 任務ID
+            is_scraped: 可選過濾條件，是否已爬取內容
+            limit: 可選限制返回數量
+            
+        Returns:
+            符合條件的文章列表
+        """
+        def query_func():
+            query = self.session.query(self.model_class).filter(self.model_class.task_id == task_id)
+            
+            # 如果指定了是否已爬取內容
+            if is_scraped is not None:
+                query = query.filter(self.model_class.is_scraped == is_scraped)
+                
+            # 根據抓取狀態排序，優先返回PENDING狀態的文章
+            query = query.order_by(
+                case(
+                    (self.model_class.scrape_status == ArticleScrapeStatus.PENDING, 0),
+                    (self.model_class.scrape_status == ArticleScrapeStatus.LINK_SAVED, 1),
+                    (self.model_class.scrape_status == ArticleScrapeStatus.FAILED, 2),
+                    (self.model_class.scrape_status == ArticleScrapeStatus.CONTENT_SCRAPED, 3),
+                    else_=4
+                ).asc()
+            )
+            
+            # 如果指定了限制數量
+            if limit is not None:
+                query = query.limit(limit)
+                
+            return query.all()
+            
+        return self.execute_query(
+            query_func,
+            err_msg=f"根據任務ID={task_id}查詢文章時發生錯誤"
+        )
+    
+    def count_articles_by_task_id(self, task_id: int, is_scraped: Optional[bool] = None) -> int:
+        """計算特定任務的文章數量
+        
+        Args:
+            task_id: 任務ID
+            is_scraped: 可選過濾條件，是否已爬取內容
+            
+        Returns:
+            符合條件的文章數量
+        """
+        def query_func():
+            query = self.session.query(func.count(self.model_class.id)).filter(self.model_class.task_id == task_id)
+            
+            # 如果指定了是否已爬取內容
+            if is_scraped is not None:
+                query = query.filter(self.model_class.is_scraped == is_scraped)
+                
+            return query.scalar()
+            
+        return self.execute_query(
+            query_func,
+            err_msg=f"計算任務ID={task_id}的文章數量時發生錯誤"
+        )

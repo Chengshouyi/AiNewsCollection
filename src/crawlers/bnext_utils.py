@@ -85,7 +85,11 @@ class BnextUtils:
         article_type: Optional[str] = '', 
         tags: Optional[str] = '', 
         is_ai_related: Optional[bool] = False, 
-        is_scraped: Optional[bool] = False) -> Dict:
+        is_scraped: Optional[bool] = False,
+        scrape_status: Optional[str] = 'pending',
+        scrape_error: Optional[str] = None,
+        last_scrape_attempt: Optional[datetime] = None,
+        task_id: Optional[int] = None) -> Dict:
         """獲取文章欄位字典（用於資料庫操作）
         
         Returns:
@@ -104,7 +108,11 @@ class BnextUtils:
             'article_type': article_type,
             'tags': tags,
             'is_ai_related': is_ai_related,
-            'is_scraped': is_scraped
+            'is_scraped': is_scraped,
+            'scrape_status': scrape_status,
+            'scrape_error': scrape_error,
+            'last_scrape_attempt': last_scrape_attempt,
+            'task_id': task_id
         }
 
     @staticmethod
@@ -121,7 +129,11 @@ class BnextUtils:
         article_type: Optional[str] = '', 
         tags: Optional[str] = '', 
         is_ai_related: Optional[bool] = False, 
-        is_scraped: Optional[bool] = False) -> Dict:
+        is_scraped: Optional[bool] = False,
+        scrape_status: Optional[str] = 'pending',
+        scrape_error: Optional[str] = None,
+        last_scrape_attempt: Optional[datetime] = None,
+        task_id: Optional[int] = None) -> Dict:
         """獲取文章欄位字典（用於 DataFrame 創建）
         
         Returns:
@@ -140,7 +152,11 @@ class BnextUtils:
             'article_type': [article_type],
             'tags': [tags],
             'is_ai_related': [is_ai_related],
-            'is_scraped': [is_scraped]
+            'is_scraped': [is_scraped],
+            'scrape_status': [scrape_status],
+            'scrape_error': [scrape_error],
+            'last_scrape_attempt': [last_scrape_attempt],
+            'task_id': [task_id]
         }
 
     @staticmethod
@@ -153,8 +169,27 @@ class BnextUtils:
         # 將每個文章字典轉換為 DataFrame 格式
         df_articles = []
         for article in articles_list:
-            #df_article = BnextUtils.get_article_columns_dict_for_df(**article)
-            df_articles.append(pd.DataFrame([article], columns=list(article.keys())))
+            # 確保所有需要的欄位都存在
+            article_data = {
+                'title': article.get('title', ''),
+                'summary': article.get('summary', ''),
+                'content': article.get('content', ''),
+                'link': article.get('link', ''),
+                'category': article.get('category', ''),
+                'published_at': article.get('published_at', None),
+                'author': article.get('author', ''),
+                'source': article.get('source', ''),
+                'source_url': article.get('source_url', ''),
+                'article_type': article.get('article_type', ''),
+                'tags': article.get('tags', ''),
+                'is_ai_related': article.get('is_ai_related', False),
+                'is_scraped': article.get('is_scraped', False),
+                'scrape_status': article.get('scrape_status', 'pending'),
+                'scrape_error': article.get('scrape_error', None),
+                'last_scrape_attempt': article.get('last_scrape_attempt', None),
+                'task_id': article.get('task_id', None)
+            }
+            df_articles.append(pd.DataFrame([article_data]))
         
         # 合併所有 DataFrame
         if df_articles:

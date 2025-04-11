@@ -1,4 +1,4 @@
-from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase
+from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase, ScrapeMode
 from datetime import datetime, timezone
 import pytest
 from sqlalchemy import create_engine
@@ -125,6 +125,7 @@ class TestCrawlerTasksModel:
         assert task.current_phase == TaskPhase.INIT
         assert task.max_retries == 3
         assert task.retry_count == 0
+        assert task.scrape_mode == ScrapeMode.FULL_SCRAPE  # 測試 scrape_mode 預設值
     
     def test_crawler_tasks_repr(self):
         """測試 CrawlerTasks 的 __repr__ 方法"""
@@ -186,7 +187,8 @@ class TestCrawlerTasksModel:
             id=1,
             task_name="測試任務",
             crawler_id=1,
-            notes="測試任務"
+            notes="測試任務",
+            scrape_mode=ScrapeMode.LINKS_ONLY  # 設置非預設的 scrape_mode
         )
         
         task_dict = task.to_dict()
@@ -196,13 +198,14 @@ class TestCrawlerTasksModel:
             'id', 'task_name', 'crawler_id', 'is_auto', 'ai_only', 'task_args', 
             'notes', 'created_at', 'updated_at', 'last_run_at', 
             'last_run_success', 'last_run_message', 'cron_expression',
-            'current_phase', 'max_retries', 'retry_count'  # 新增的欄位
+            'current_phase', 'max_retries', 'retry_count', 'scrape_mode'  # 添加 scrape_mode
         }
         
         assert set(task_dict.keys()) == expected_keys
         
         # 測試枚舉值的序列化
         assert task_dict['current_phase'] == TaskPhase.INIT.value
+        assert task_dict['scrape_mode'] == ScrapeMode.LINKS_ONLY.value  # 測試 scrape_mode 序列化
     
     def test_task_phase_transitions(self):
         """測試任務階段轉換"""
@@ -266,3 +269,59 @@ class TestCrawlerTasksModel:
         # 測試 4: 確認非監聽欄位（如 notes）不觸發轉換邏輯
         task.notes = "新備註"
         assert task.last_run_at == utc_time  # last_run_at 不受影響
+
+    def test_scrape_mode_enum(self):
+        """測試 ScrapeMode 枚舉值及相關功能"""
+        # 測試所有可能的枚舉值
+        assert ScrapeMode.LINKS_ONLY.value == "links_only"
+        assert ScrapeMode.CONTENT_ONLY.value == "content_only"
+        assert ScrapeMode.FULL_SCRAPE.value == "full_scrape"
+        
+        # 測試在 CrawlerTasks 中設置和獲取 scrape_mode
+        task = CrawlerTasks(crawler_id=1)
+        assert task.scrape_mode == ScrapeMode.FULL_SCRAPE  # 預設值
+        
+        # 測試更改 scrape_mode
+        task.scrape_mode = ScrapeMode.LINKS_ONLY
+        assert task.scrape_mode == ScrapeMode.LINKS_ONLY
+        
+        task.scrape_mode = ScrapeMode.CONTENT_ONLY
+        assert task.scrape_mode == ScrapeMode.CONTENT_ONLY
+        
+        # 測試在初始化時指定 scrape_mode
+        task2 = CrawlerTasks(
+            crawler_id=1, 
+            scrape_mode=ScrapeMode.LINKS_ONLY
+        )
+        assert task2.scrape_mode == ScrapeMode.LINKS_ONLY
+    
+    def test_relationship_fields(self, session):
+        """測試關聯關係欄位是否存在"""
+        task = CrawlerTasks(
+            task_name="測試關係",
+            crawler_id=1
+        )
+        
+        # 驗證關聯欄位的存在性
+        assert hasattr(task, 'articles')
+        assert hasattr(task, 'crawler')
+        assert hasattr(task, 'history')
+        
+        # 驗證關聯欄位的初始值
+        assert task.articles == []
+        assert task.crawler is None
+        assert task.history == []
+    
+    def test_field_updates_with_scrape_mode(self):
+        """測試欄位更新，包括 scrape_mode"""
+        task = CrawlerTasks(crawler_id=1)
+        
+        # 測試 scrape_mode 更新
+        task.scrape_mode = ScrapeMode.LINKS_ONLY
+        assert task.scrape_mode == ScrapeMode.LINKS_ONLY
+        
+        task.scrape_mode = ScrapeMode.CONTENT_ONLY
+        assert task.scrape_mode == ScrapeMode.CONTENT_ONLY
+        
+        task.scrape_mode = ScrapeMode.FULL_SCRAPE
+        assert task.scrape_mode == ScrapeMode.FULL_SCRAPE

@@ -151,6 +151,22 @@ class BaseCrawler(ABC):
             # 新增文章
             articles_data = self.articles_df.to_dict('records')
             if articles_data:
+                # 將task_id添加到每個文章數據中，如果global_params中存在
+                if 'task_id' in self.global_params:
+                    for article in articles_data:
+                        # 確保task_id不會被覆蓋，只有沒有設置時才添加
+                        if 'task_id' not in article or article['task_id'] is None:
+                            article['task_id'] = self.global_params['task_id']
+                
+                # 處理 datetime 和 枚舉類型
+                for article in articles_data:
+                    # 處理 scrape_status，確保使用字串值而非枚舉對象
+                    if 'scrape_status' in article and not isinstance(article['scrape_status'], str):
+                        if hasattr(article['scrape_status'], 'value'):
+                            article['scrape_status'] = article['scrape_status'].value
+                        else:
+                            article['scrape_status'] = str(article['scrape_status'])
+                            
                 str_articles_data = [convert_hashable_dict_to_str_dict(article) for article in articles_data]
 
                 if self.site_config.article_settings.get('from_db_link', False):
@@ -227,12 +243,33 @@ class BaseCrawler(ABC):
                 if col != 'link' and f'{col}_new' in merged_df.columns:
                     # 優先使用新值，如果是 NaN 則保留原值
                     mask = merged_df[f'{col}_new'].notna()
-                    merged_df.loc[mask, col] = merged_df.loc[mask, f'{col}_new']
+                    
+                    # 針對布爾型欄位進行特殊處理
+                    if col == 'is_scraped' or col == 'is_ai_related':
+                        # 確保是布爾型
+                        merged_df.loc[mask, col] = merged_df.loc[mask, f'{col}_new'].astype(bool)
+                    else:
+                        merged_df.loc[mask, col] = merged_df.loc[mask, f'{col}_new']
+                    
                     # 刪除臨時列
                     merged_df = merged_df.drop(f'{col}_new', axis=1)
                     
-            # 更新 is_scraped 標記
-            merged_df.loc[merged_df['link'].isin(content_df['link']), 'is_scraped'] = True
+            # 更新抓取相關標記
+            successful_links = [article['link'] for article in articles_content 
+                               if article.get('scrape_status') == 'content_scraped']
+            failed_links = [article['link'] for article in articles_content 
+                           if article.get('scrape_status') == 'failed']
+            
+            # 更新成功抓取的文章
+            if successful_links:
+                merged_df.loc[merged_df['link'].isin(successful_links), 'is_scraped'] = True
+                merged_df.loc[merged_df['link'].isin(successful_links), 'scrape_status'] = 'content_scraped'
+            
+            # 更新失敗的文章
+            if failed_links:
+                merged_df.loc[merged_df['link'].isin(failed_links), 'is_scraped'] = False
+                merged_df.loc[merged_df['link'].isin(failed_links), 'scrape_status'] = 'failed'
+                # 對於失敗的文章，保留錯誤信息和最後嘗試時間，這些已經在原始內容中設置
             
             return merged_df
             
@@ -255,6 +292,9 @@ class BaseCrawler(ABC):
             return True
             
         try:
+            # 保存任務ID到全局參數
+            self.global_params['task_id'] = task_id
+            
             # 驗證參數
             for key, value in task_args.items():
                 # 檢查參數是否存在於配置或全局參數中
@@ -266,6 +306,14 @@ class BaseCrawler(ABC):
                     setting_container = self.site_config.storage_settings
                 elif key in self.global_params:
                     setting_container = self.global_params
+                # 特殊處理task_id，直接添加到global_params
+                elif key == 'task_id':
+                    self.global_params['task_id'] = value
+                    continue
+                # 處理特殊參數，這些參數不需要存在於設定中
+                elif key in ['links_only', 'content_only', 'article_ids', 'article_links']:
+                    self.global_params[key] = value
+                    continue
                 else:
                     logger.error(f"未知的任務參數: {key}")
                     raise ValueError(f"未知的任務參數: {key}")
@@ -346,6 +394,10 @@ class BaseCrawler(ABC):
                 - timeout: 超時時間
                 - save_to_csv: 是否保存到CSV文件
                 - save_to_database: 是否保存到資料庫
+                - links_only: 是否只抓取連結
+                - content_only: 是否只抓取內容
+                - article_ids: 要抓取內容的文章ID列表 (content_only=True時有效)
+                - article_links: 要抓取內容的文章連結列表 (content_only=True時有效)
                 
         Returns:
             Dict[str, Any]: 任務狀態
@@ -376,77 +428,199 @@ class BaseCrawler(ABC):
             max_retries = self.global_params.get('max_retries', 3)
             retry_delay = self.global_params.get('retry_delay', 2.0)
             
-            # 步驟1：抓取文章列表
-            fetched_articles_df = self._fetch_article_list(task_id, max_retries, retry_delay)
-            
-            # 檢查是否成功獲取文章列表
-            if fetched_articles_df is None or fetched_articles_df.empty:
-                logger.warning("沒有獲取到任何文章連結")
-                self._update_task_status(task_id, 100, '沒有獲取到任何文章連結', 'completed')
+            # 檢查是否僅抓取內容
+            if task_args.get('content_only', False):
+                # 獲取要抓取的文章ID或連結
+                article_ids = task_args.get('article_ids', [])
+                article_links = task_args.get('article_links', [])
+                
+                if not article_ids and not article_links:
+                    logger.warning("沒有提供要抓取內容的文章ID或連結")
+                    self._update_task_status(task_id, 100, '沒有提供要抓取內容的文章ID或連結', 'completed')
+                    return {
+                        'success': False,
+                        'message': '沒有提供要抓取內容的文章ID或連結',
+                        'articles_count': 0,
+                        'task_status': self.get_task_status(task_id)
+                    }
+                
+                # 根據提供的連結直接抓取內容
+                # 這裡假設已經有文章資料，只是要抓取內容
+                # 實際可能需要根據ID或連結從資料庫中獲取文章，再抓取內容
+                
+                # 建立一個包含要抓取文章的DataFrame
+                if article_links:
+                    # 如果有提供連結，將連結轉為DataFrame
+                    import pandas as pd
+                    self.articles_df = pd.DataFrame({'link': article_links})
+                    # 添加其他必要欄位，根據爬蟲的需要
+                    # 這裡只是示例，實際可能需要更多欄位
+                    self.articles_df['is_scraped'] = False
+                    
+                # 步驟1：抓取文章詳細內容
+                progress_msg = f'抓取文章詳細內容中 (0/{len(article_links or article_ids)})...'
+                progress = self._calculate_progress('fetch_contents', 0)
+                self._update_task_status(task_id, progress, progress_msg)
+                
+                # 使用重試機制抓取文章內容
+                fetched_articles = self.retry_operation(
+                    lambda: self._fetch_articles(),
+                    max_retries=max_retries,
+                    retry_delay=retry_delay
+                )
+                
+                # 檢查是否成功獲取文章內容
+                if fetched_articles is None or len(fetched_articles) == 0:
+                    logger.warning("沒有獲取到任何文章內容")
+                    self._update_task_status(task_id, 100, '沒有獲取到任何文章內容', 'completed')
+                    return {
+                        'success': False,
+                        'message': '沒有獲取到任何文章內容',
+                        'articles_count': 0,
+                        'task_status': self.get_task_status(task_id)
+                    }
+                
+                # 記錄成功獲取的文章內容數量
+                content_count = len(fetched_articles)
+                logger.info(f"成功獲取 {content_count} 篇文章內容")
+                
+                # 步驟2：更新文章內容
+                progress = self._calculate_progress('update_dataframe', 0)
+                self._update_task_status(task_id, progress, '更新文章數據中...')
+                
+                # 使用優化的批量更新方法
+                if hasattr(self, 'articles_df') and not self.articles_df.empty:
+                    self.articles_df = self._update_articles_with_content(self.articles_df, fetched_articles)
+                
+                progress = self._calculate_progress('update_dataframe', 1)
+                self._update_task_status(task_id, progress, '更新文章數據完成')
+                
+                # 步驟3：保存結果
+                self._save_results(task_id)
+                
+                # 任務完成
+                self._update_task_status(task_id, 100, '抓取文章內容完成', 'completed')
+                
+                # 返回成功結果
                 return {
-                    'success': False,
-                    'message': '沒有獲取到任何文章連結',
-                    'articles_count': 0,
+                    'success': True,
+                    'message': '抓取文章內容完成',
+                    'articles_count': content_count,
                     'task_status': self.get_task_status(task_id)
                 }
-            
-            # 記錄找到的文章數量
-            articles_count = len(fetched_articles_df)
-            logger.info(f"找到 {articles_count} 篇文章連結")
-            
-            # 將获取的文章列表赋值给 self.articles_df
-            self.articles_df = fetched_articles_df
-            
-            # 步驟2：抓取文章詳細內容
-            progress_msg = f'抓取文章詳細內容中 (0/{articles_count})...'
-            progress = self._calculate_progress('fetch_contents', 0)
-            self._update_task_status(task_id, progress, progress_msg)
-            
-            # 使用重試機制抓取文章內容
-            fetched_articles = self.retry_operation(
-                lambda: self._fetch_articles(),
-                max_retries=max_retries,
-                retry_delay=retry_delay
-            )
-            
-            # 檢查是否成功獲取文章內容
-            if fetched_articles is None or len(fetched_articles) == 0:
-                logger.warning("沒有獲取到任何文章內容")
-                self._update_task_status(task_id, 100, '沒有獲取到任何文章內容', 'completed')
+            # 檢查是否僅抓取連結
+            elif task_args.get('links_only', False):
+                # 步驟1：抓取文章列表
+                fetched_articles_df = self._fetch_article_list(task_id, max_retries, retry_delay)
+                
+                # 檢查是否成功獲取文章列表
+                if fetched_articles_df is None or fetched_articles_df.empty:
+                    logger.warning("沒有獲取到任何文章連結")
+                    self._update_task_status(task_id, 100, '沒有獲取到任何文章連結', 'completed')
+                    return {
+                        'success': False,
+                        'message': '沒有獲取到任何文章連結',
+                        'articles_count': 0,
+                        'task_status': self.get_task_status(task_id)
+                    }
+                
+                # 記錄找到的文章數量
+                articles_count = len(fetched_articles_df)
+                logger.info(f"找到 {articles_count} 篇文章連結")
+                
+                # 將获取的文章列表赋值给 self.articles_df
+                self.articles_df = fetched_articles_df
+                
+                # 步驟2：保存結果
+                self._save_results(task_id)
+                
+                # 任務完成
+                self._update_task_status(task_id, 100, '文章連結收集完成', 'completed')
+                
+                # 返回成功結果
                 return {
-                    'success': False,
-                    'message': '沒有獲取到任何文章內容',
-                    'articles_count': 0,
+                    'success': True,
+                    'message': '文章連結收集完成',
+                    'articles_count': articles_count,
                     'task_status': self.get_task_status(task_id)
                 }
-            
-            # 記錄成功獲取的文章內容數量
-            content_count = len(fetched_articles)
-            logger.info(f"成功獲取 {content_count}/{articles_count} 篇文章內容")
-            
-            # 步驟3：更新 articles_df 添加文章內容
-            progress = self._calculate_progress('update_dataframe', 0)
-            self._update_task_status(task_id, progress, '更新文章數據中...')
-            
-            # 使用優化的批量更新方法
-            self.articles_df = self._update_articles_with_content(self.articles_df, fetched_articles)
-            
-            progress = self._calculate_progress('update_dataframe', 1)
-            self._update_task_status(task_id, progress, '更新文章數據完成')
-            
-            # 步驟4：保存結果
-            self._save_results(task_id)
-            
-            # 任務完成
-            self._update_task_status(task_id, 100, '任務完成', 'completed')
-            
-            # 返回成功結果
-            return {
-                'success': True,
-                'message': '任務完成',
-                'articles_count': len(self.articles_df) if hasattr(self, 'articles_df') and not self.articles_df.empty else 0,
-                'task_status': self.get_task_status(task_id)
-            }
+            else:
+                # 完整流程：抓取連結和內容
+                # 步驟1：抓取文章列表
+                fetched_articles_df = self._fetch_article_list(task_id, max_retries, retry_delay)
+                
+                # 檢查是否成功獲取文章列表
+                if fetched_articles_df is None or fetched_articles_df.empty:
+                    logger.warning("沒有獲取到任何文章連結")
+                    self._update_task_status(task_id, 100, '沒有獲取到任何文章連結', 'completed')
+                    return {
+                        'success': False,
+                        'message': '沒有獲取到任何文章連結',
+                        'articles_count': 0,
+                        'task_status': self.get_task_status(task_id)
+                    }
+                
+                # 記錄找到的文章數量
+                articles_count = len(fetched_articles_df)
+                logger.info(f"找到 {articles_count} 篇文章連結")
+                
+                # 將获取的文章列表赋值给 self.articles_df
+                self.articles_df = fetched_articles_df
+                
+                # 步驟2：抓取文章詳細內容
+                progress_msg = f'抓取文章詳細內容中 (0/{articles_count})...'
+                progress = self._calculate_progress('fetch_contents', 0)
+                self._update_task_status(task_id, progress, progress_msg)
+                
+                # 使用重試機制抓取文章內容
+                fetched_articles = self.retry_operation(
+                    lambda: self._fetch_articles(),
+                    max_retries=max_retries,
+                    retry_delay=retry_delay
+                )
+                
+                # 檢查是否成功獲取文章內容
+                if fetched_articles is None or len(fetched_articles) == 0:
+                    logger.warning("沒有獲取到任何文章內容")
+                    
+                    # 即使沒有獲取到內容，仍然保存連結
+                    self._save_results(task_id)
+                    
+                    self._update_task_status(task_id, 100, '沒有獲取到任何文章內容，但已保存連結', 'completed')
+                    return {
+                        'success': True,  # 這裡改為true，因為連結已保存成功
+                        'message': '沒有獲取到任何文章內容，但已保存連結',
+                        'articles_count': articles_count,
+                        'task_status': self.get_task_status(task_id)
+                    }
+                
+                # 記錄成功獲取的文章內容數量
+                content_count = len(fetched_articles)
+                logger.info(f"成功獲取 {content_count}/{articles_count} 篇文章內容")
+                
+                # 步驟3：更新 articles_df 添加文章內容
+                progress = self._calculate_progress('update_dataframe', 0)
+                self._update_task_status(task_id, progress, '更新文章數據中...')
+                
+                # 使用優化的批量更新方法
+                self.articles_df = self._update_articles_with_content(self.articles_df, fetched_articles)
+                
+                progress = self._calculate_progress('update_dataframe', 1)
+                self._update_task_status(task_id, progress, '更新文章數據完成')
+                
+                # 步驟4：保存結果
+                self._save_results(task_id)
+                
+                # 任務完成
+                self._update_task_status(task_id, 100, '任務完成', 'completed')
+                
+                # 返回成功結果
+                return {
+                    'success': True,
+                    'message': '任務完成',
+                    'articles_count': len(self.articles_df) if hasattr(self, 'articles_df') and not self.articles_df.empty else 0,
+                    'task_status': self.get_task_status(task_id)
+                }
             
         except Exception as e:
             self._update_task_status(task_id, 0, f'任務失敗: {str(e)}', 'failed')

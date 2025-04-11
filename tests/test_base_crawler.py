@@ -13,7 +13,7 @@ from src.crawlers.base_crawler import BaseCrawler
 from src.crawlers.configs.site_config import SiteConfig
 from src.services.article_service import ArticleService
 from src.models.base_model import Base
-from src.models.articles_model import Articles
+from src.models.articles_model import Articles, ArticleScrapeStatus
 from src.crawlers.bnext_scraper import BnextUtils
 from src.database.database_manager import DatabaseManager
 
@@ -58,6 +58,7 @@ class MockCrawlerForTest(BaseCrawler):
         """測試用的實現"""
         self.fetch_article_links_called = True
         data = []
+        current_time = datetime.now(timezone.utc)
         data.append(
             BnextUtils.get_article_columns_dict(
             title='Test Article 1',
@@ -65,14 +66,18 @@ class MockCrawlerForTest(BaseCrawler):
             content='',
             link='https://example.com/1',
             category='Test Category',
-            published_at=datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+            published_at=current_time.strftime('%Y-%m-%d %H:%M:%S'),
             author='',
             source='test_crawler',
             source_url='https://www.example.com',
             article_type='',
             tags='',
             is_ai_related=False,
-            is_scraped=False
+            is_scraped=False,
+            scrape_status='link_saved',
+            scrape_error=None,
+            last_scrape_attempt=current_time,
+            task_id=123
             )
         )
         data.append(
@@ -82,14 +87,18 @@ class MockCrawlerForTest(BaseCrawler):
                 content='',
                 link='https://example.com/2',
                 category='Test Category',
-                published_at=datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S'),
+                published_at=current_time.strftime('%Y-%m-%d %H:%M:%S'),
                 author='',
                 source='test_crawler',
                 source_url='https://www.example.com',
                 article_type='',
                 tags='',
                 is_ai_related=False,
-                is_scraped=False
+                is_scraped=False,
+                scrape_status='link_saved',
+                scrape_error=None,
+                last_scrape_attempt=current_time,
+                task_id=123
             )
         )
         df = pd.DataFrame(data)
@@ -99,6 +108,7 @@ class MockCrawlerForTest(BaseCrawler):
     def _fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
         """測試用的實現"""
         self.fetch_articles_called = True
+        current_time = datetime.now(timezone.utc)
         return [
             {
                 'title': 'Test Article 1',
@@ -106,14 +116,18 @@ class MockCrawlerForTest(BaseCrawler):
                 'content': 'Content of article 1',
                 'link': 'https://example.com/1',
                 'category': 'Test Category',
-                'published_at': datetime.now(timezone.utc),
+                'published_at': current_time,
                 'author': 'Test Author',
                 'source': 'Test Source',
                 'source_url': 'https://example.com/1',
                 'article_type': 'Test Article Type',
                 'tags': 'Test Tags',
                 'is_ai_related': False,
-                'is_scraped': False
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'scrape_error': None,
+                'last_scrape_attempt': current_time,
+                'task_id': 123
             },
             {
                 'title': 'Test Article 2',
@@ -121,14 +135,18 @@ class MockCrawlerForTest(BaseCrawler):
                 'content': 'Content of article 2',
                 'link': 'https://example.com/2',
                 'category': 'Test Category',
-                'published_at': datetime.now(timezone.utc),
+                'published_at': current_time,
                 'author': 'Test Author',
                 'source': 'Test Source',
                 'source_url': 'https://example.com/2',
                 'article_type': 'Test Article Type',
                 'tags': 'Test Tags',
                 'is_ai_related': False,
-                'is_scraped': False
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'scrape_error': None,
+                'last_scrape_attempt': current_time,
+                'task_id': 123
             }
         ]
         
@@ -164,7 +182,11 @@ class MockCrawlerForTest(BaseCrawler):
                     "article_type": article.article_type,
                     "tags": article.tags,
                     "is_ai_related": article.is_ai_related,
-                    "is_scraped": article.is_scraped
+                    "is_scraped": article.is_scraped,
+                    "scrape_status": article.scrape_status.value if hasattr(article, 'scrape_status') and article.scrape_status else 'pending',
+                    "scrape_error": article.scrape_error if hasattr(article, 'scrape_error') else None,
+                    "last_scrape_attempt": article.last_scrape_attempt if hasattr(article, 'last_scrape_attempt') else None,
+                    "task_id": article.task_id if hasattr(article, 'task_id') else None
                 })
                 
             return pd.DataFrame(articles_data)
@@ -653,7 +675,8 @@ class TestBaseCrawler:
             'summary': ['Summary 1', 'Summary 2', 'Summary 3'],
             'content': ['', '', ''],
             'link': ['https://example.com/1', 'https://example.com/2', 'https://example.com/3'],
-            'is_scraped': [False, False, False]
+            'is_scraped': [False, False, False],
+            'scrape_status': ['link_saved', 'link_saved', 'link_saved']
         })
         
         # 準備新的文章內容
@@ -662,13 +685,17 @@ class TestBaseCrawler:
                 'title': 'Updated Title 1',
                 'summary': 'Updated Summary 1',
                 'content': 'New Content 1',
-                'link': 'https://example.com/1'
+                'link': 'https://example.com/1',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped'
             },
             {
                 'title': 'Updated Title 3',
                 'summary': 'Updated Summary 3',
                 'content': 'New Content 3',
-                'link': 'https://example.com/3'
+                'link': 'https://example.com/3',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped'
             }
         ]
         
@@ -934,6 +961,114 @@ class TestBaseCrawler:
         result = crawler.cancel_task(task_id)
         assert result is False
         assert crawler.task_status[task_id]['status'] == 'completed'
+
+    def test_update_articles_with_content_with_new_fields(self, mock_config_file, article_service):
+        """測試更新文章內容時包含新欄位"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 創建測試用的 DataFrame
+        current_time = datetime.now(timezone.utc)
+        df = pd.DataFrame({
+            'title': ['Test Article 1', 'Test Article 2', 'Test Article 3'],
+            'link': ['https://example.com/1', 'https://example.com/2', 'https://example.com/3'],
+            'is_scraped': [False, False, False],
+            'scrape_status': ['link_saved', 'link_saved', 'link_saved'],
+            'scrape_error': [None, None, None],
+            'last_scrape_attempt': [None, None, None],
+            'task_id': [None, None, None]
+        })
+        
+        # 創建測試用的文章內容
+        articles_content = [
+            {
+                'title': 'Test Article 1 (Updated)',
+                'link': 'https://example.com/1',
+                'content': 'Updated content 1',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'scrape_error': None,
+                'last_scrape_attempt': current_time,
+                'task_id': 123
+            },
+            {
+                'title': 'Test Article 2 (Failed)',
+                'link': 'https://example.com/2',
+                'content': None,
+                'is_scraped': False,
+                'scrape_status': 'failed',
+                'scrape_error': '連接錯誤',
+                'last_scrape_attempt': current_time,
+                'task_id': 123
+            }
+        ]
+        
+        # 更新 DataFrame
+        result_df = crawler._update_articles_with_content(df, articles_content)
+        
+        # 驗證結果
+        assert len(result_df) == 3
+        assert result_df.loc[0, 'title'] == 'Test Article 1 (Updated)'
+        assert result_df.loc[0, 'content'] == 'Updated content 1'
+        assert result_df.loc[0, 'is_scraped'] == True
+        assert result_df.loc[0, 'scrape_status'] == 'content_scraped'
+        assert result_df.loc[0, 'scrape_error'] is None
+        assert pd.notna(result_df.loc[0, 'last_scrape_attempt'])
+        assert result_df.loc[0, 'task_id'] == 123
+        
+        assert result_df.loc[1, 'title'] == 'Test Article 2 (Failed)'
+        assert result_df.loc[1, 'is_scraped'] == False
+        assert result_df.loc[1, 'scrape_status'] == 'failed'
+        assert result_df.loc[1, 'scrape_error'] == '連接錯誤'
+        assert pd.notna(result_df.loc[1, 'last_scrape_attempt'])
+        assert result_df.loc[1, 'task_id'] == 123
+        
+        # 第三篇文章應該保持不變
+        assert result_df.loc[2, 'title'] == 'Test Article 3'
+        assert result_df.loc[2, 'is_scraped'] == False
+        assert result_df.loc[2, 'scrape_status'] == 'link_saved'
+
+    def test_save_to_database_with_new_fields(self, mock_config_file, article_service, session):
+        """測試保存到數據庫包含新欄位"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 建立測試用的 DataFrame
+        current_time = datetime.now(timezone.utc)
+        test_data = [
+            {
+                'title': 'Test Article For DB',
+                'summary': 'Test summary',
+                'content': 'Test content',
+                'link': 'https://example.com/db_test',
+                'category': 'Test Category',
+                'published_at': current_time,
+                'author': 'Test Author',
+                'source': 'test_source',
+                'source_url': 'https://example.com',
+                'article_type': 'news',
+                'tags': 'tag1,tag2',
+                'is_ai_related': True,
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'scrape_error': None,
+                'last_scrape_attempt': current_time,
+                'task_id': 456
+            }
+        ]
+        crawler.articles_df = pd.DataFrame(test_data)
+        
+        # 執行保存到數據庫的方法
+        crawler._save_to_database()
+        
+        # 查詢數據庫以驗證保存的結果
+        saved_article = session.query(Articles).filter_by(link='https://example.com/db_test').first()
+        
+        assert saved_article is not None
+        assert saved_article.title == 'Test Article For DB'
+        assert saved_article.is_scraped == True
+        assert saved_article.scrape_status == ArticleScrapeStatus.CONTENT_SCRAPED
+        assert saved_article.scrape_error is None
+        assert saved_article.last_scrape_attempt is not None
+        assert saved_article.task_id == 456
 
 if __name__ == "__main__":
     pytest.main()

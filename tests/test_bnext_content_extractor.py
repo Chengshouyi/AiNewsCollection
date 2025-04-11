@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 import pandas as pd
 from bs4 import BeautifulSoup
+from datetime import datetime, timezone
 
 from src.crawlers.bnext_content_extractor import BnextContentExtractor
 from src.crawlers.configs.site_config import SiteConfig
@@ -178,7 +179,11 @@ def test_get_article_content_success(mock_is_ai_related, mock_get_article_column
         'article_type': None,
         'tags': 'Google,人工智慧,AI',
         'is_ai_related': True,
-        'is_scraped': True
+        'is_scraped': True,
+        'scrape_status': 'content_scraped',
+        'scrape_error': None,
+        'last_scrape_attempt': datetime.now(timezone.utc),
+        'task_id': None
     }
     mock_get_article_columns.return_value = expected_result
     
@@ -195,6 +200,9 @@ def test_get_article_content_success(mock_is_ai_related, mock_get_article_column
     assert result['category'] == 'AI與大數據'
     assert result['tags'] == 'Google,人工智慧,AI'
     assert result['is_ai_related'] == True
+    assert result['scrape_status'] == 'content_scraped'
+    assert result['scrape_error'] is None
+    assert result['last_scrape_attempt'] is not None
 
 @patch('requests.get')
 def test_get_article_content_request_failed(mock_get, extractor):
@@ -232,8 +240,8 @@ def test_get_article_content_not_ai_related(mock_is_ai_related, mock_get_article
     # 設置 is_ai_related 返回值
     mock_is_ai_related.return_value = False
     
-    # 設置 get_article_columns_dict 返回值
-    mock_get_article_columns.return_value = {
+    # 設置初始 get_article_columns_dict 返回值
+    mock_article_data = {
         'title': '非AI相關文章標題',
         'summary': '這是一篇非AI相關的文章摘要',
         'content': '這是一篇非AI相關的文章內容',
@@ -246,91 +254,77 @@ def test_get_article_content_not_ai_related(mock_is_ai_related, mock_get_article
         'article_type': None,
         'tags': '金融,區塊鏈',
         'is_ai_related': False,
-        'is_scraped': True
+        'is_scraped': True,
+        'scrape_status': 'content_scraped',
+        'scrape_error': "文章不符合 AI 相關條件",
+        'last_scrape_attempt': datetime.now(timezone.utc),
+        'task_id': None
     }
     
-    # 測試 _get_article_content 方法，設置 ai_filter=True
+    mock_get_article_columns.return_value = mock_article_data
+    
+    # 測試 _get_article_content 方法
     result = extractor._get_article_content(
         'https://www.bnext.com.tw/article/12345/non-ai',
         ai_only=True,
         min_keywords=3
     )
     
-    # 驗證結果應該為 None，因為不是 AI 相關
-    assert result is None
+    # 驗證結果
+    assert result is not None
+    assert result['scrape_status'] == 'content_scraped'
+    assert result['scrape_error'] == "文章不符合 AI 相關條件"
+    assert result['is_ai_related'] == False
+    assert result['last_scrape_attempt'] is not None
 
 @patch('src.crawlers.bnext_content_extractor.BnextContentExtractor._get_article_content')
-def test_batch_get_articles_content(mock_get_content, extractor):
-    """測試批量獲取文章內容"""
-    # 創建測試數據框
-    test_df = pd.DataFrame([
-        {
-            'title': '文章標題1',
-            'summary': '摘要1',
-            'link': 'https://www.bnext.com.tw/article/1',
-            'category': 'AI與大數據'
-        },
-        {
-            'title': '文章標題2',
-            'summary': '摘要2',
-            'link': 'https://www.bnext.com.tw/article/2',
-            'category': 'AI與大數據'
-        },
-        {
-            'title': '文章標題3',
-            'summary': '摘要3',
-            'link': 'https://www.bnext.com.tw/article/3',
-            'category': '金融科技'
-        }
-    ])
+def test_batch_get_articles_content_with_new_fields(mock_get_content, extractor):
+    """測試批量獲取文章內容同時處理新欄位"""
+    # 創建測試用的 DataFrame
+    test_df = pd.DataFrame({
+        'title': ['文章1', '文章2', '文章3'],
+        'link': ['http://example.com/1', 'http://example.com/2', 'http://example.com/3'],
+        'is_ai_related': [False, False, False],
+        'is_scraped': [False, False, False],
+        'scrape_status': ['pending', 'pending', 'pending'],
+        'scrape_error': [None, None, None],
+        'last_scrape_attempt': [None, None, None],
+        'task_id': [None, None, None]
+    })
     
-    # 設置模擬的 _get_article_content 返回值
-    mock_get_content.side_effect = [
-        {
-            'title': '文章標題1',
-            'summary': '摘要1',
-            'content': '文章內容1',
-            'link': 'https://www.bnext.com.tw/article/1',
-            'category': 'AI與大數據',
-            'published_at': '2025.04.04',
-            'author': '作者1',
-            'source': 'bnext',
-            'source_url': 'https://www.bnext.com.tw',
-            'article_type': None,
-            'tags': 'AI',
-            'is_ai_related': True,
-            'is_scraped': True
-        },
-        {
-            'title': '文章標題2',
-            'summary': '摘要2',
-            'content': '文章內容2',
-            'link': 'https://www.bnext.com.tw/article/2',
-            'category': 'AI與大數據',
-            'published_at': '2025.04.04',
-            'author': '作者2',
-            'source': 'bnext',
-            'source_url': 'https://www.bnext.com.tw',
-            'article_type': None,
-            'tags': 'AI',
-            'is_ai_related': True,
-            'is_scraped': True
-        },
-        None  # 第三篇文章不是AI相關，返回None
-    ]
+    # 設置模擬的返回值
+    article1 = {
+        'title': '文章1',
+        'link': 'http://example.com/1',
+        'is_ai_related': True,
+        'is_scraped': True,
+        'scrape_status': 'content_scraped',
+        'scrape_error': None,
+        'last_scrape_attempt': datetime.now(timezone.utc),
+        'task_id': 123
+    }
+    article2 = {
+        'title': '文章2',
+        'link': 'http://example.com/2',
+        'is_ai_related': False,
+        'is_scraped': True,
+        'scrape_status': 'content_scraped',
+        'scrape_error': '文章不符合 AI 相關條件',
+        'last_scrape_attempt': datetime.now(timezone.utc),
+        'task_id': 123
+    }
+    article3 = None  # 模擬失敗
     
-    # 執行測試
-    result = extractor.batch_get_articles_content(
-        articles_df=test_df,
-        num_articles=3,
-        ai_only=True,
-        min_keywords=3
-    )
+    mock_get_content.side_effect = [article1, article2, article3]
+    
+    # 調用測試方法
+    result = extractor.batch_get_articles_content(test_df, num_articles=3, ai_only=True, min_keywords=3)
     
     # 驗證結果
-    assert len(result) == 2  # 應該只返回兩篇AI相關的文章
-    assert result[0]['title'] == '文章標題1'
-    assert result[1]['title'] == '文章標題2'
+    assert len(result) == 3  # 包含失敗的文章
+    assert result[0]['scrape_status'] == 'content_scraped'
+    assert result[1]['scrape_status'] == 'content_scraped'
+    assert result[2]['scrape_status'] == 'failed'  # 失敗的文章應該有 failed 狀態
 
 @patch('src.crawlers.bnext_utils.BnextUtils.get_article_columns_dict')
 def test_extract_article_parts(mock_get_article_columns, extractor, example_html):

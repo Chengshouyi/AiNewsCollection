@@ -4,6 +4,7 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from src.crawlers.bnext_scraper import BnextScraper
 from src.crawlers.configs.site_config import SiteConfig
+from datetime import datetime, timezone
 
 @pytest.fixture
 def mock_config():
@@ -620,3 +621,31 @@ def test_extract_article_links(scraper):
         assert result[1]['category'] == 'AI與大數據'
         assert result[0]['link'] == '/article/82839/zeabur-ai-2025-vibe-coding'
         assert result[1]['link'] == '/article/82812/deepl-ai100'
+
+def test_extract_article_links_with_new_fields():
+    """測試提取文章連結時包含新增欄位"""
+    from src.crawlers.bnext_utils import BnextUtils
+    from datetime import datetime, timezone
+    
+    # 直接檢查原始方法的參數
+    # 建立一個字典模擬文章資料
+    article_data = BnextUtils.get_article_columns_dict(
+        title='測試標題',
+        summary='測試摘要',
+        link='https://example.com/test',
+        category='測試分類',
+        is_ai_related=True,
+        is_scraped=False,
+        scrape_status='link_saved',
+        scrape_error=None,
+        last_scrape_attempt=datetime.now(timezone.utc),
+        task_id=None
+    )
+    
+    # 確認返回的字典包含了新增欄位
+    assert 'scrape_status' in article_data
+    assert article_data['scrape_status'] == 'link_saved'
+    assert 'scrape_error' in article_data
+    assert 'last_scrape_attempt' in article_data
+    assert article_data['last_scrape_attempt'] is not None
+    assert 'task_id' in article_data

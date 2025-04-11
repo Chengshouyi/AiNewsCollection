@@ -321,7 +321,8 @@ class TestArticleRepository:
         update_data = {
             "title": "更新後的標題",
             "summary": "更新後的摘要",
-            "category": "更新後分類"
+            "category": "更新後分類",
+            "link": sample_articles[0].link  # 添加 link 字段，測試 link 的處理邏輯
         }
         
         updated_article = article_repo.update(article_id, update_data)
@@ -333,16 +334,41 @@ class TestArticleRepository:
         assert updated_article.title == "更新後的標題"
         assert updated_article.summary == "更新後的摘要"
         assert updated_article.category == "更新後分類"
-        # 未更新的欄位應保持原樣
+        # 連結應該保持不變
         assert updated_article.link == sample_articles[0].link
         assert updated_article.source == sample_articles[0].source
+
+    # 添加測試 update 方法對 link 字段的特殊處理
+    def test_update_article_with_link(self, article_repo, sample_articles, session, clean_db):
+        """測試更新文章時 link 字段的特殊處理邏輯"""
+        article_id = sample_articles[0].id
+        original_link = sample_articles[0].link
+        
+        # 嘗試更新包含 link 字段的數據
+        update_data = {
+            "title": "更新後的標題 - 連結測試",
+            "link": "https://example.com/new-link"  # 嘗試更新連結 (應該被忽略)
+        }
+        
+        updated_article = article_repo.update(article_id, update_data)
+        session.commit()
+        session.expire_all()
+        
+        assert updated_article is not None
+        assert updated_article.id == article_id
+        assert updated_article.title == "更新後的標題 - 連結測試"
+        # 驗證連結保持不變 (因為 update 方法在 validate_data 階段會移除 link 字段)
+        assert updated_article.link == original_link
+        # 確認連結沒有被更新為新值
+        assert updated_article.link != "https://example.com/new-link"
 
     def test_batch_update_by_link(self, article_repo, sample_articles, session, clean_db):
         """測試批量更新文章"""
         update_data = []
         for article in sample_articles[:2]:  # 只更新前兩篇文章
             update_data.append({
-                "link": article.link,
+                "link": article.link,  # link 欄位用來識別要更新的文章
+                "title": f"批量更新標題-{article.id}",
                 "category": "批量更新"
             })  
 
@@ -354,13 +380,24 @@ class TestArticleRepository:
         assert result["missing_links"] == []
         assert result["error_links"] == []
         assert all(entity.category == "批量更新" for entity in result["updated_articles"])
-
+        
+        # 檢查更新後的標題是否已更新
+        for i, article in enumerate(sample_articles[:2]):
+            updated = article_repo.find_by_link(article.link)
+            assert updated.title == f"批量更新標題-{article.id}"
+            # 檢查連結是否保持不變
+            assert updated.link == article.link
 
     def test_batch_update_by_ids(self, article_repo, sample_articles, session, clean_db):
         """測試批量更新文章"""
         article_ids = [sample_articles[0].id, sample_articles[1].id]
+        original_links = [sample_articles[0].link, sample_articles[1].link]
+        
+        # 測試更新時包含 link 字段
         update_data = {
-            "category": "批量更新"
+            "category": "批量更新",
+            "title": "批量ID更新標題",
+            "link": "https://example.com/new-batch-link"  # 嘗試更新 link (應該被忽略)
         }
         
         result = article_repo.batch_update_by_ids(article_ids, update_data)
@@ -368,7 +405,15 @@ class TestArticleRepository:
         
         assert result["success_count"] == 2
         assert result["fail_count"] == 0
-        assert all(entity.category == "批量更新" for entity in result["updated_articles"])
+        
+        # 驗證更新結果
+        for i, updated_article in enumerate(result["updated_articles"]):
+            assert updated_article.category == "批量更新"
+            assert updated_article.title == "批量ID更新標題"
+            # 驗證連結保持不變 (沒有被更新)
+            assert updated_article.link == original_links[i]
+            # 確認連結沒有被更新為新值
+            assert updated_article.link != "https://example.com/new-batch-link"
 
     def test_get_paginated_by_filter(self, article_repo, sample_articles, session, clean_db):
         """測試分頁查詢"""

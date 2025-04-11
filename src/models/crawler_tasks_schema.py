@@ -5,7 +5,7 @@ from src.error.errors import ValidationError
 from src.utils.model_utils import validate_str, validate_boolean, validate_positive_int, validate_cron_expression, validate_dict
 from src.utils.schema_utils import validate_required_fields_schema, validate_update_schema
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
-from src.models.crawler_tasks_model import TaskPhase
+from src.models.crawler_tasks_model import TaskPhase, ScrapeMode
 
 def validate_task_phase(v, field_name="current_phase", required=False):
     """驗證任務階段"""
@@ -37,6 +37,35 @@ def validate_task_phase(v, field_name="current_phase", required=False):
     
     raise ValidationError(f"{field_name}: 必須是TaskPhase枚舉或其字串值")
 
+def validate_scrape_mode(v, field_name="scrape_mode", required=False):
+    """驗證抓取模式"""
+    if v is None:
+        if required:
+            raise ValidationError(f"{field_name}: 不能為空")
+        return None
+    
+    # 如果已經是枚舉類型，直接返回
+    if isinstance(v, ScrapeMode):
+        return v
+    
+    # 如果是字串，嘗試轉換為枚舉
+    try:
+        # 處理不同大小寫的情況
+        if isinstance(v, str):
+            # 嘗試直接轉換
+            try:
+                return ScrapeMode(v)
+            except ValueError:
+                # 嘗試大寫轉換
+                try:
+                    return ScrapeMode(v.upper())
+                except ValueError:
+                    # 嘗試小寫轉換
+                    return ScrapeMode(v.lower())
+    except ValueError:
+        raise ValidationError(f"{field_name}: 無效的抓取模式值，可用值: {', '.join([e.value for e in ScrapeMode])}")
+    
+    raise ValidationError(f"{field_name}: 必須是ScrapeMode枚舉或其字串值")
 
 
 # 通用字段定義
@@ -49,6 +78,7 @@ Notes = Annotated[Optional[str], BeforeValidator(validate_str("notes", max_lengt
 CronExpression = Annotated[Optional[str], BeforeValidator(validate_cron_expression("cron_expression", max_length=255, min_length=5, required=False))]
 LastRunMessage = Annotated[Optional[str], BeforeValidator(validate_str("last_run_message", max_length=65536, required=False))]
 TaskPhaseDef = Annotated[Optional[TaskPhase], BeforeValidator(validate_task_phase)]
+ScrapeModeEnum = Annotated[Optional[ScrapeMode], BeforeValidator(validate_scrape_mode)]
 MaxRetries = Annotated[Optional[int], BeforeValidator(validate_positive_int("max_retries", is_zero_allowed=False, required=True))]
 RetryCount = Annotated[Optional[int], BeforeValidator(validate_positive_int("retry_count", is_zero_allowed=True, required=True))]
 
@@ -67,6 +97,7 @@ class CrawlerTasksCreateSchema(BaseCreateSchema):
     current_phase: TaskPhaseDef
     max_retries: MaxRetries
     retry_count: RetryCount
+    scrape_mode: ScrapeModeEnum = ScrapeMode.FULL_SCRAPE
 
     @model_validator(mode='before')
     @classmethod
@@ -81,7 +112,7 @@ class CrawlerTasksCreateSchema(BaseCreateSchema):
 
     @classmethod
     def get_required_fields(cls):
-        return ['task_name', 'crawler_id', 'task_args', 'ai_only', 'current_phase', 'max_retries', 'retry_count']
+        return ['task_name', 'crawler_id', 'task_args', 'ai_only', 'current_phase', 'max_retries', 'retry_count', 'scrape_mode']
 
 class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     """爬蟲任務更新模型"""
@@ -97,6 +128,7 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     current_phase: Optional[TaskPhaseDef] = None
     max_retries: Optional[MaxRetries] = None
     retry_count: Optional[RetryCount] = None
+    scrape_mode: Optional[ScrapeModeEnum] = None
 
 
     @classmethod
@@ -105,7 +137,8 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     
     @classmethod
     def get_updated_fields(cls):
-        return ['task_name', 'is_auto', 'ai_only', 'task_args', 'notes', 'last_run_at', 'last_run_success', 'last_run_message', 'cron_expression', 'current_phase', 'max_retries', 'retry_count'] + BaseUpdateSchema.get_updated_fields()
+        return ['task_name', 'is_auto', 'ai_only', 'task_args', 'notes', 'last_run_at', 'last_run_success', 
+                'last_run_message', 'cron_expression', 'current_phase', 'max_retries', 'retry_count', 'scrape_mode'] + BaseUpdateSchema.get_updated_fields()
     
 
     @model_validator(mode='before')

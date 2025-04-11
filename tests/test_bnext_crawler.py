@@ -6,7 +6,7 @@ from src.crawlers.bnext_crawler import BnextCrawler
 from src.crawlers.bnext_scraper import BnextScraper
 from src.crawlers.bnext_content_extractor import BnextContentExtractor
 from src.services.article_service import ArticleService
-from src.models.articles_model import Articles
+from src.models.articles_model import Articles, ArticleScrapeStatus
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.models.base_model import Base
@@ -77,7 +77,11 @@ def mock_scraper():
         "article_type": ["", ""],
         "tags": ["", ""],
         "is_ai_related": [True, False],
-        "is_scraped": [False, False]
+        "is_scraped": [False, False],
+        "scrape_status": ["link_saved", "link_saved"],
+        "scrape_error": [None, None],
+        "last_scrape_attempt": [datetime.now(timezone.utc), datetime.now(timezone.utc)],
+        "task_id": [None, None]
     })
     
     scraper.scrape_article_list.return_value = test_articles_df
@@ -88,6 +92,8 @@ def mock_extractor():
     """模擬 BnextContentExtractor"""
     extractor = MagicMock(spec=BnextContentExtractor)
     
+    current_time = datetime.now(timezone.utc)
+    
     # 模擬文章內容資料
     test_articles = [
         {
@@ -96,14 +102,18 @@ def mock_extractor():
             "content": "文章內容1",
             "link": "https://www.bnext.com.tw/article/1",
             "category": "AI",
-            "published_at": datetime.now(timezone.utc),
+            "published_at": current_time,
             "author": "作者1",
             "source": "bnext",
             "source_url": "https://www.bnext.com.tw",
             "article_type": "新聞",
             "tags": "AI",
             "is_ai_related": True,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": "content_scraped",
+            "scrape_error": None,
+            "last_scrape_attempt": current_time,
+            "task_id": 123
         },
         {
             "title": "測試文章2",
@@ -111,14 +121,18 @@ def mock_extractor():
             "content": "文章內容2",
             "link": "https://www.bnext.com.tw/article/2",
             "category": "technology",
-            "published_at": datetime.now(timezone.utc),
+            "published_at": current_time,
             "author": "作者2",
             "source": "bnext",
             "source_url": "https://www.bnext.com.tw",
             "article_type": "新聞",
             "tags": "科技",
             "is_ai_related": False,
-            "is_scraped": True
+            "is_scraped": True,
+            "scrape_status": "content_scraped",
+            "scrape_error": None,
+            "last_scrape_attempt": current_time,
+            "task_id": 123
         }
     ]
     
@@ -195,6 +209,10 @@ class TestBnextCrawler:
         assert len(articles_df) == 2
         assert list(articles_df['title']) == ["測試文章1", "測試文章2"]
         assert list(articles_df['is_ai_related']) == [True, False]
+        assert list(articles_df['scrape_status']) == ["link_saved", "link_saved"]
+        assert all(pd.isna(articles_df['scrape_error']))
+        assert all(pd.notna(articles_df['last_scrape_attempt']))
+        assert all(pd.isna(articles_df['task_id']))
         mock_scraper.scrape_article_list.assert_called_once()
         
     def test_fetch_articles(self, mock_config_file, article_service, mock_scraper, mock_extractor):
@@ -206,66 +224,66 @@ class TestBnextCrawler:
             extractor=mock_extractor
         )
         
-        # 先抓取文章列表
-        articles_df = crawler._fetch_article_links()
-        assert articles_df is not None
-        assert not articles_df.empty
-        crawler.articles_df = articles_df # 模擬articles_df
-        # 模擬文章內容資料
-        test_articles = [
-            {
-                "title": "測試文章1",
-                "summary": "摘要1",
-                "content": "文章內容1",
-                "link": "https://www.bnext.com.tw/article/1",
-                "category": "AI",
-                "published_at": datetime.now(timezone.utc),
-                "author": "作者1",
-                "source": "bnext",
-                "source_url": "https://www.bnext.com.tw",
-                "article_type": "新聞",
-                "tags": "AI",
-                "is_ai_related": True,
-                "is_scraped": True
-            },
-            {
-                "title": "測試文章2",
-                "summary": "摘要2",
-                "content": "文章內容2",
-                "link": "https://www.bnext.com.tw/article/2",
-                "category": "technology",
-                "published_at": datetime.now(timezone.utc),
-                "author": "作者2",
-                "source": "bnext",
-                "source_url": "https://www.bnext.com.tw",
-                "article_type": "新聞",
-                "tags": "科技",
-                "is_ai_related": False,
-                "is_scraped": True
-            }
-        ]
-        
-        # 設置 mock_extractor 的回傳值和預期參數
-        mock_extractor.batch_get_articles_content.return_value = test_articles
+        # 設置文章列表資料
+        crawler.articles_df = mock_scraper.scrape_article_list()
         
         # 測試抓取文章內容
-        articles = crawler._fetch_articles()
+        articles_content = crawler._fetch_articles()
         
-        # 驗證 mock_extractor 被正確調用
-        mock_extractor.batch_get_articles_content.assert_called_once_with(
-            articles_df,  # 確保傳入的 DataFrame 正確
-            crawler.site_config.article_settings["num_articles"],  # 從配置中獲取
-            crawler.site_config.article_settings["ai_only"],  # 從配置中獲取
-            crawler.site_config.article_settings["min_keywords"]  # 從配置中獲取
+        assert articles_content is not None
+        assert len(articles_content) == 2
+        assert articles_content[0]['title'] == "測試文章1"
+        assert articles_content[0]['is_ai_related'] == True
+        assert articles_content[0]['is_scraped'] == True
+        assert articles_content[0]['scrape_status'] == "content_scraped"
+        assert articles_content[0]['scrape_error'] is None
+        assert articles_content[0]['last_scrape_attempt'] is not None
+        assert articles_content[0]['task_id'] == 123
+        
+        mock_extractor.batch_get_articles_content.assert_called_once()
+        
+        # 檢查 articles_df 是否更新了爬取狀態
+        assert crawler.articles_df.loc[0, 'scrape_status'] == "content_scraped"
+        assert crawler.articles_df.loc[0, 'is_scraped'] == True
+
+    def test_fetch_article_links_from_db_with_new_fields(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+        """測試從資料庫獲取文章連結，包含新欄位"""
+        crawler = BnextCrawler(
+            config_file_name=mock_config_file,
+            article_service=article_service,
+            scraper=mock_scraper,
+            extractor=mock_extractor
         )
         
-        # 驗證結果
-        assert articles is not None
-        assert len(articles) == 2
-        assert articles[0]['title'] == "測試文章1"
-        assert articles[0]['content'] == "文章內容1"
-        assert articles[1]['title'] == "測試文章2"
-        assert articles[1]['content'] == "文章內容2"
+        # 模擬 article_service.advanced_search_articles 返回包含新欄位的文章
+        mock_article = MagicMock()
+        mock_article.title = "DB文章標題"
+        mock_article.link = "https://www.bnext.com.tw/article/db1"
+        mock_article.is_scraped = False
+        mock_article.scrape_status = ArticleScrapeStatus.LINK_SAVED
+        mock_article.scrape_error = None
+        mock_article.last_scrape_attempt = datetime.now(timezone.utc)
+        mock_article.task_id = 456
+        
+        article_service.advanced_search_articles = MagicMock(return_value={
+            "success": True,
+            "articles": [mock_article],
+            "message": "成功獲取文章"
+        })
+        
+        # 測試從資料庫獲取文章連結
+        articles_df = crawler._fetch_article_links_from_db()
+        
+        assert articles_df is not None
+        assert not articles_df.empty
+        assert len(articles_df) == 1
+        assert articles_df.iloc[0]['title'] == "DB文章標題"
+        assert articles_df.iloc[0]['link'] == "https://www.bnext.com.tw/article/db1"
+        assert articles_df.iloc[0]['is_scraped'] == False
+        assert articles_df.iloc[0]['scrape_status'] == "link_saved"
+        assert articles_df.iloc[0]['scrape_error'] is None
+        assert articles_df.iloc[0]['last_scrape_attempt'] is not None
+        assert articles_df.iloc[0]['task_id'] == 456
         
     @patch('builtins.open', new_callable=mock_open)
     def test_execute_task(self, mock_file, mock_config_file, article_service, mock_scraper, mock_extractor):
