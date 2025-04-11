@@ -4,7 +4,7 @@ from pydantic import ValidationError
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.crawler_task_history_schema import CrawlerTaskHistoryUpdateSchema, CrawlerTaskHistoryCreateSchema
 from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
-from src.database.base_repository import BaseRepository
+from src.database.base_repository import BaseRepository, SchemaType
 from src.models.base_model import Base
 from src.error.errors import DatabaseOperationError
 from src.services.base_service import BaseService
@@ -33,6 +33,19 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
     def _get_repository(self) -> CrawlerTaskHistoryRepository:
         """獲取爬蟲任務歷史記錄資料庫訪問對象"""
         return cast(CrawlerTaskHistoryRepository, super()._get_repository('CrawlerTaskHistory'))
+
+    def validate_history_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
+        """驗證歷史記錄資料
+        
+        Args:
+            data: 要驗證的資料
+            is_update: 是否為更新操作
+            
+        Returns:
+            Dict[str, Any]: 驗證後的資料
+        """
+        schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
+        return self.validate_data('CrawlerTaskHistory', data, schema_type)
 
     def get_all_histories(self, limit: Optional[int] = None, offset: Optional[int] = None, 
                           sort_by: Optional[str] = None, sort_desc: bool = True) -> Dict[str, Any]:

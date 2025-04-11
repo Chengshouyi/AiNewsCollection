@@ -7,7 +7,7 @@ from src.database.articles_repository import ArticlesRepository
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from src.services.base_service import BaseService
-from src.database.base_repository import BaseRepository
+from src.database.base_repository import BaseRepository, SchemaType
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -32,6 +32,19 @@ class ArticleService(BaseService[Articles]):
     def _get_repository(self) -> ArticlesRepository:
         """獲取文章資料庫訪問對象"""
         return cast(ArticlesRepository, super()._get_repository('Article'))
+    
+    def validate_article_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
+        """驗證文章資料
+        
+        Args:
+            data: 要驗證的資料
+            is_update: 是否為更新操作
+            
+        Returns:
+            Dict[str, Any]: 驗證後的資料
+        """
+        schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
+        return self.validate_data('Article', data, schema_type)
     
     def insert_article(self, article_data: Dict[str, Any]) -> Dict[str, Any]:
         """創建新文章"""

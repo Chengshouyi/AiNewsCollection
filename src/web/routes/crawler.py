@@ -40,10 +40,7 @@ def create_crawler():
 
         # --- API 層驗證 ---
         try:
-            # 透過 Service 獲取 Repository 實例 (需要 Service 提供方法或調整可訪問性)
-            # 假設 service._get_repository() 可以獲取
-            crawlers_repo = service._get_repository() # 注意: 訪問保護成員可能不是最佳實踐，考慮 Service 提供 Repo 或 Validation 方法
-            validated_data = validate_crawler_data_api(data, crawlers_repo, is_update=False)
+            validated_data = validate_crawler_data_api(data, service, is_update=False)
         except ValidationError as e:
             # 捕獲驗證錯誤，返回 400
             return jsonify({"error": "輸入資料驗證失敗", "details": str(e)}), 400
@@ -96,8 +93,7 @@ def update_crawler(crawler_id):
 
         # --- API 層驗證 ---
         try:
-            crawlers_repo = service._get_repository() # 同上，獲取 Repo 實例
-            validated_payload = validate_crawler_data_api(data, crawlers_repo, is_update=True)
+            validated_payload = validate_crawler_data_api(data, service, is_update=True)
         except ValidationError as e:
             return jsonify({"error": "輸入資料驗證失敗", "details": str(e)}), 400
         # --- 驗證結束 ---

@@ -1,6 +1,6 @@
 from typing import Dict, Any, List
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
-from src.database.crawlers_repository import CrawlersRepository
+from src.services.crawlers_service import CrawlersService
 from src.database.base_repository import SchemaType
 from pydantic import ValidationError
 import logging
@@ -10,30 +10,25 @@ logger = logging.getLogger(__name__)
 
 def validate_crawler_data_api(
     data: Dict[str, Any],
-    crawlers_repo: CrawlersRepository, # 接收 Repo 實例
+    service: CrawlersService,  # 改為接收Service而非Repository
     is_update: bool = False
 ) -> Dict[str, Any]:
-    """使用 CrawlersRepository 的 validate_data 驗證 API 的爬蟲資料。"""
-    schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
+    """使用CrawlersService驗證API的爬蟲資料"""
     try:
-        # 調用 Repository 的公開驗證方法
-        return crawlers_repo.validate_data(data, schema_type)
+        return service.validate_crawler_data(data, is_update)
     except ValidationError as e:
-        # 可以選擇在這裡記錄更詳細的 API 層級日誌
-        logger.warning(f"API 請求的爬蟲資料驗證失敗 ({schema_type.name}): {e}")
-        raise e # 重新拋出，由 Flask 錯誤處理器接管
+        logger.warning(f"API請求的爬蟲資料驗證失敗: {e}")
+        raise e
 
 def validate_task_data_api(
     data: Dict[str, Any],
-    tasks_repo: CrawlerTasksRepository, # 接收 Repo 實例
+    service,  # 改為接收Service而非Repository
     is_update: bool = False
 ) -> Dict[str, Any]:
-    """使用 CrawlerTasksRepository 的 validate_data 驗證 API 的任務資料。"""
-    schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
+    """使用CrawlerTaskService驗證API的任務資料"""
     try:
-        # 調用 Repository 的公開驗證方法
-        return tasks_repo.validate_data(data, schema_type)
+        return service.validate_task_data(data, is_update)
     except ValidationError as e:
-        logger.warning(f"API 請求的任務資料驗證失敗 ({schema_type.name}): {e}")
-        raise e # 重新拋出
+        logger.warning(f"API請求的任務資料驗證失敗: {e}")
+        raise e
     

@@ -3,10 +3,10 @@ from typing import Optional, Dict, Any, List, TypeVar, Tuple, Type, cast
 from src.models.crawlers_model import Base, Crawlers
 from datetime import datetime, timezone
 from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
-from src.error.errors import DatabaseOperationError, ValidationError
 from src.database.crawlers_repository import CrawlersRepository
 from src.services.base_service import BaseService
 from src.database.base_repository import BaseRepository
+from src.database.base_repository import SchemaType
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -636,3 +636,16 @@ class CrawlersService(BaseService[Crawlers]):
         except Exception as e:
             logger.error(f"獲取過濾後的爬蟲設定列表失敗: {str(e)}")
             raise e
+
+    def validate_crawler_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
+        """驗證爬蟲資料
+        
+        Args:
+            data: 要驗證的資料
+            is_update: 是否為更新操作
+            
+        Returns:
+            Dict[str, Any]: 驗證後的資料
+        """
+        schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
+        return self.validate_data('Crawler', data, schema_type)

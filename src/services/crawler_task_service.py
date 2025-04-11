@@ -48,6 +48,19 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         """獲取文章資料庫訪問對象"""
         return cast(ArticlesRepository, super()._get_repository('Articles'))
         
+    def validate_task_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
+        """驗證任務資料
+        
+        Args:
+            data: 要驗證的資料
+            is_update: 是否為更新操作
+            
+        Returns:
+            Dict[str, Any]: 驗證後的資料
+        """
+        schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
+        return self.validate_data('CrawlerTask', data, schema_type)
+        
     def create_task(self, task_data: Dict) -> Dict:
         """創建新任務"""
         try:
@@ -682,27 +695,120 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             # 設定階段為初始階段
             task_data['current_phase'] = TaskPhase.INIT
             
-            # 實際測試爬蟲，收集連結
+            # 實際測試爬蟲功能
             try:
-                # TODO: 實作實際的爬蟲測試邏輯
-                # 這裡僅為示例
-                sample_links = [
-                    'https://example.com/article1',
-                    'https://example.com/article2',
-                    'https://example.com/article3'
-                ]
-                links_found = len(sample_links)
+                # 從爬蟲資料中獲取爬蟲名稱
+                crawler_name = crawler_data.get('crawler_name')
+                if not crawler_name:
+                    return {
+                        'success': False,
+                        'message': '未提供爬蟲名稱',
+                        'task_phase': TaskPhase.INIT.value
+                    }
                 
-                # 測試成功
-                return {
-                    'success': True,
-                    'message': '爬蟲測試成功',
-                    'test_results': {
-                        'links_found': links_found,
-                        'sample_links': sample_links
-                    },
-                    'task_phase': TaskPhase.LINK_COLLECTION.value
-                }
+                # 創建爬蟲實例進行實際測試
+                from src.crawlers.crawler_factory import CrawlerFactory
+                from src.services.article_service import ArticleService
+                
+                # 獲取文章服務實例
+                article_service = ArticleService(self.db_manager)
+                
+                # 測試爬蟲是否能成功初始化
+                try:
+                    crawler_instance = CrawlerFactory.get_crawler(crawler_name)
+                except ValueError:
+                    # 如果爬蟲不存在，則臨時註冊一個測試用的爬蟲
+                    logger.info(f"爬蟲 {crawler_name} 尚未註冊，將以模擬方式進行測試")
+                    # 這裡可以選擇僅進行參數驗證而不實際測試爬蟲
+                    return {
+                        'success': True,
+                        'message': '爬蟲配置驗證成功，但爬蟲尚未註冊，無法執行完整測試',
+                        'task_phase': TaskPhase.INIT.value
+                    }
+                
+                # 準備測試參數 (只收集連結，不抓取內容)
+                test_args = task_data.get('task_args', {}).copy()
+                test_args['links_only'] = True
+                test_args['ai_only'] = task_data.get('ai_only', False)
+                
+                # 修改參數，限制測試範圍
+                if 'max_pages' in test_args:
+                    # 限制測試時只抓取1頁
+                    test_args['max_pages'] = min(1, test_args['max_pages'])
+                    
+                if 'num_articles' in test_args:
+                    # 限制測試時只抓取最多5篇文章
+                    test_args['num_articles'] = min(5, test_args['num_articles'])
+                
+                # 加入測試標記，允許爬蟲識別這是測試模式
+                test_args['is_test'] = True
+                
+                # 執行爬蟲測試，收集連結
+                start_time = datetime.now(timezone.utc)
+                try:
+                    # 設定超時時間為30秒
+                    import signal
+                    
+                    class TimeoutException(Exception):
+                        pass
+                    
+                    def timeout_handler(signum, frame):
+                        raise TimeoutException("爬蟲測試超時")
+                    
+                    # 為了安全，設置測試超時
+                    signal.signal(signal.SIGALRM, timeout_handler)
+                    signal.alarm(30)  # 30秒超時
+                    
+                    result = crawler_instance.execute_task(0, test_args)  # 使用0作為測試任務ID
+                    
+                    # 關閉超時
+                    signal.alarm(0)
+                    
+                    # 處理結果
+                    end_time = datetime.now(timezone.utc)
+                    execution_time = (end_time - start_time).total_seconds()
+                    
+                    if result.get('success', False):
+                        links_found = result.get('articles_count', 0)
+                        
+                        # 獲取樣本連結
+                        sample_links = []
+                        if hasattr(crawler_instance, 'articles_df') and not crawler_instance.articles_df.empty:
+                            # 從爬蟲的文章DataFrame中獲取樣本連結
+                            sample_df = crawler_instance.articles_df.head(3)
+                            if 'link' in sample_df.columns:
+                                sample_links = sample_df['link'].tolist()
+                        
+                        return {
+                            'success': True,
+                            'message': f'爬蟲測試成功，執行時間: {execution_time:.2f}秒',
+                            'test_results': {
+                                'links_found': links_found,
+                                'sample_links': sample_links,
+                                'execution_time': execution_time
+                            },
+                            'task_phase': TaskPhase.LINK_COLLECTION.value
+                        }
+                    else:
+                        # 爬蟲執行失敗
+                        return {
+                            'success': False,
+                            'message': f'爬蟲測試失敗: {result.get("message", "未知錯誤")}',
+                            'task_phase': TaskPhase.INIT.value
+                        }
+                except TimeoutException:
+                    return {
+                        'success': False,
+                        'message': '爬蟲測試超時，請檢查爬蟲配置或網站狀態',
+                        'task_phase': TaskPhase.INIT.value
+                    }
+                except Exception as e:
+                    # 爬蟲執行出錯
+                    return {
+                        'success': False,
+                        'message': f'爬蟲測試執行異常: {str(e)}',
+                        'task_phase': TaskPhase.INIT.value
+                    }
             except Exception as e:
                 # 測試爬蟲連結收集失敗
                 return {

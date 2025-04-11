@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
-from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase
+from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase, ScrapeMode
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
 from src.database.base_repository import SchemaType
@@ -387,7 +387,8 @@ class TestCrawlerTasksRepository:
                 "task_args": {},
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
         assert "crawler_id: 不能為空" in str(excinfo.value)
         
@@ -402,7 +403,8 @@ class TestCrawlerTasksRepository:
                 "task_args": {},
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
         assert "cron_expression: 當設定為自動執行時,此欄位不能為空" in str(excinfo.value)
         
@@ -416,7 +418,8 @@ class TestCrawlerTasksRepository:
             "ai_only": False,
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         })
         assert task.crawler_id == sample_crawler.id
         assert task.is_auto is True
@@ -475,7 +478,8 @@ class TestCrawlerTasksRepository:
             "task_args": {},
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         })
         assert task.is_auto is False
         assert task.ai_only is False
@@ -483,7 +487,7 @@ class TestCrawlerTasksRepository:
         assert task.current_phase == TaskPhase.INIT
         assert task.max_retries == 3
         assert task.retry_count == 0
-
+        assert task.scrape_mode == ScrapeMode.FULL_SCRAPE
 
 class TestCrawlerTasksConstraints:
     """測試CrawlerTasks的模型約束"""
@@ -496,14 +500,15 @@ class TestCrawlerTasksConstraints:
             task_args={},
             current_phase=TaskPhase.INIT,
             max_retries=3,
-            retry_count=0
+            retry_count=0,
+            scrape_mode=ScrapeMode.FULL_SCRAPE
         )
         session.add(task)
         session.flush()
         
         assert task.is_auto is True  # 默認為True
         assert task.ai_only is False  # 默認為False
-
+        assert task.scrape_mode == ScrapeMode.FULL_SCRAPE
 class TestModelStructure:
     """測試模型結構"""
     
@@ -605,7 +610,8 @@ class TestCrawlerTasksRepositoryValidation:
             "task_args": {},
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         }
         
         # 執行驗證
@@ -618,7 +624,7 @@ class TestCrawlerTasksRepositoryValidation:
         assert validated_data["cron_expression"] == "0 * * * *"
         assert "task_args" in validated_data
         assert validated_data["current_phase"] == TaskPhase.INIT
-        
+        assert validated_data["scrape_mode"] == ScrapeMode.FULL_SCRAPE
         # 測試無效數據
         invalid_data = {
             "task_name": "測試驗證任務",
@@ -671,7 +677,8 @@ class TestCrawlerTasksRepositoryValidation:
             "task_args": {},
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         }
         
         # 模擬 _create_internal 拋出 DatabaseOperationError
@@ -751,7 +758,8 @@ class TestComplexValidationScenarios:
             "task_args": {},
             "current_phase": "init",  # 使用字符串
             "max_retries": 3,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         })
         
         # 驗證是否正確轉換為枚舉
@@ -766,7 +774,8 @@ class TestComplexValidationScenarios:
             "task_args": {},
             "current_phase": "INIT",  # 大寫
             "max_retries": 3,
-            "retry_count": 0
+            "retry_count": 0,
+            "scrape_mode": ScrapeMode.FULL_SCRAPE
         })
         
         assert task.current_phase == TaskPhase.INIT
@@ -781,7 +790,8 @@ class TestComplexValidationScenarios:
                 "task_args": {},
                 "current_phase": "invalid_phase",  # 無效值
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
         assert "無效的任務階段值" in str(excinfo.value)
 
@@ -797,7 +807,8 @@ class TestComplexValidationScenarios:
                 "task_args": {},
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
-                "retry_count": 0
+                "retry_count": 0,
+                "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
             
             # 應該返回 None 而不是異常

@@ -17,13 +17,13 @@ def get_scheduler_service():
 def get_article_service():
     return ArticleService()
 
-#TODO: 實作手動任務的背景執行緒
+
 def run_manual_task_thread(task_id, task_args):
     """執行手動任務的背景執行緒"""
     service = get_task_service()
     service.run_task(task_id, task_args)
 
-#TODO: 實作抓取內容的背景執行緒
+
 def run_fetch_content_thread(task_id, link_ids):
     """執行抓取內容的背景執行緒"""
     service = get_task_service()
@@ -45,9 +45,8 @@ def get_scheduled_tasks():
 def create_scheduled_task():
     try:
         data = request.get_json()
-        tasks_repo = get_task_service()._get_repositories()[0]
-        validate_task_data_api(data, tasks_repo)
         service = get_task_service()
+        validate_task_data_api(data, service)
         scheduler = get_scheduler_service()
         result = service.create_task(data)
         if not result['success']:
@@ -73,9 +72,8 @@ def get_scheduled_task(task_id):
 def update_scheduled_task(task_id):
     try:
         data = request.get_json()
-        tasks_repo = get_task_service()._get_repositories()[0]
-        validate_task_data_api(data, tasks_repo)
         service = get_task_service()
+        validate_task_data_api(data, service, is_update=True)
         scheduler = get_scheduler_service()
         result = service.update_task(task_id, data)
         if not result['success']:
@@ -103,9 +101,8 @@ def delete_scheduled_task(task_id):
 def start_manual_task():
     try:
         data = request.get_json()
-        tasks_repo = get_task_service()._get_repositories()[0]
-        validate_task_data_api(data, tasks_repo)
         task_service = get_task_service()
+        validate_task_data_api(data, task_service)
         result = task_service.create_task(data)
         if not result['success']:
             return jsonify({"error": result['message']}), 500
