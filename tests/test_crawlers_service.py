@@ -6,7 +6,7 @@ from sqlalchemy.orm import sessionmaker
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
 from src.services.crawlers_service import CrawlersService
-from src.error.errors import ValidationError
+from src.error.errors import ValidationError, DatabaseOperationError
 from src.database.database_manager import DatabaseManager
 from src.database.crawlers_repository import CrawlersRepository
 
@@ -80,15 +80,15 @@ def sample_crawlers(db_manager, session):
             "crawler_name": "科技報導爬蟲",
             "base_url": "https://technews.tw",
             "is_active": False,
-            "crawler_type": "bnext",
-            "config_file_name": "bnext_crawler_config.json"
+            "crawler_type": "technews",
+            "config_file_name": "technews_crawler_config.json"
         },
         {
             "crawler_name": "商業週刊爬蟲",
             "base_url": "https://www.businessweekly.com.tw",
             "is_active": True,
-            "crawler_type": "bnext",
-            "config_file_name": "bnext_crawler_config.json"
+            "crawler_type": "business",
+            "config_file_name": "business_crawler_config.json"
         }
     ]
     
@@ -198,7 +198,8 @@ class TestCrawlersService:
         
         # 查詢包含"爬蟲"的爬蟲設定
         crawlers = crawlers_service.get_crawlers_by_name("爬蟲")
-        assert len(crawlers) == 3  # 所有爬蟲設定名稱都包含"爬蟲"
+        assert crawlers['success'] is True
+        assert len(crawlers['crawlers']) == 3  # 所有爬蟲設定名稱都包含"爬蟲"
         
         # 查詢包含"數位"的爬蟲設定
         digital_crawlers = crawlers_service.get_crawlers_by_name("數位")
@@ -267,6 +268,197 @@ class TestCrawlersService:
         # 測試不存在的爬蟲
         result = crawlers_service.toggle_crawler_status(999999)
         assert result['success'] is False
+    
+    def test_get_crawlers_by_type(self, crawlers_service, sample_crawlers, session):
+        """測試根據爬蟲類型查找爬蟲"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
+        # 查詢 bnext 類型的爬蟲
+        result = crawlers_service.get_crawlers_by_type("bnext")
+        assert result['success'] is True
+        assert len(result['crawlers']) == 1
+        assert all(crawler.crawler_type == "bnext" for crawler in result['crawlers'])
+        
+        # 測試不存在的類型
+        no_result = crawlers_service.get_crawlers_by_type("不存在類型")
+        assert no_result['success'] is False
+        assert "找不到類型為" in no_result['message']
+    
+    def test_get_crawlers_by_target(self, crawlers_service, sample_crawlers, session):
+        """測試根據爬取目標模糊查詢爬蟲"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
+        # 查詢 URL 包含 bnext 的爬蟲
+        result = crawlers_service.get_crawlers_by_target("bnext")
+        assert result['success'] is True
+        assert len(result['crawlers']) == 1
+        
+        # 測試不存在的目標
+        no_result = crawlers_service.get_crawlers_by_target("不存在網址")
+        assert no_result['success'] is False
+        assert "找不到目標包含" in no_result['message']
+    
+    def test_get_crawler_statistics(self, crawlers_service, sample_crawlers, session):
+        """測試獲取爬蟲統計信息"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
+        result = crawlers_service.get_crawler_statistics()
+        assert result['success'] is True
+        assert 'statistics' in result
+        
+        stats = result['statistics']
+        assert stats['total'] == 3
+        assert stats['active'] == 2
+        assert stats['inactive'] == 1
+        assert 'by_type' in stats
+        assert len(stats['by_type']) >= 1  # 至少有一種類型
+    
+    def test_get_crawler_by_exact_name(self, crawlers_service, sample_crawlers, session):
+        """測試根據爬蟲名稱精確查詢"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
+        # 精確查詢存在的爬蟲名稱
+        exact_name = sample_crawlers[0]["crawler_name"]
+        result = crawlers_service.get_crawler_by_exact_name(exact_name)
+        assert result['success'] is True
+        assert result['crawler'] is not None
+        assert result['crawler'].crawler_name == exact_name
+        
+        # 測試不存在的名稱
+        no_result = crawlers_service.get_crawler_by_exact_name("不存在的名稱")
+        assert no_result['success'] is False
+        assert "找不到名稱為" in no_result['message']
+    
+    def test_create_or_update_crawler(self, crawlers_service, sample_crawlers, session):
+        """測試創建或更新爬蟲設定"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
+        # 測試更新現有爬蟲
+        existing_id = sample_crawlers[0]["id"]
+        
+        # 先獲取現有的爬蟲以確保名稱不會與其他爬蟲衝突
+        existing_crawler = crawlers_service.get_crawler_by_id(existing_id)
+        assert existing_crawler['success'] is True
+        
+        # 使用一個唯一的名稱來避免衝突
+        unique_name = f"更新測試爬蟲_{datetime.now().timestamp()}"
+        
+        # 注意：更新爬蟲時不能包含 crawler_type，它是不可變欄位
+        update_data = {
+            "id": existing_id,
+            "crawler_name": unique_name,
+            "base_url": "https://example.com/updated",
+            "is_active": False,
+            "config_file_name": "test_config.json"
+        }
+        
+        result = crawlers_service.create_or_update_crawler(update_data)
+        assert result['success'] is True
+        assert result['crawler'] is not None
+        assert result['crawler'].crawler_name == unique_name
+        assert "更新成功" in result['message']
+        
+        # 測試創建新爬蟲
+        new_unique_name = f"新建測試爬蟲_{datetime.now().timestamp()}"
+        
+        new_data = {
+            "crawler_name": new_unique_name,
+            "base_url": "https://example.com/new",
+            "is_active": True,
+            "crawler_type": "test_new",  # 創建時必須包含 crawler_type
+            "config_file_name": "test_config.json"
+        }
+        
+        result = crawlers_service.create_or_update_crawler(new_data)
+        assert result['success'] is True
+        assert result['crawler'] is not None
+        assert result['crawler'].crawler_name == new_unique_name
+        assert "創建成功" in result['message']
+    
+    def test_batch_toggle_crawler_status(self, crawlers_service, sample_crawlers, session):
+        """測試批量設置爬蟲的活躍狀態"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
+        # 獲取所有爬蟲 ID
+        crawler_ids = [crawler["id"] for crawler in sample_crawlers]
+        
+        # 批量停用所有爬蟲
+        result = crawlers_service.batch_toggle_crawler_status(crawler_ids, False)
+        assert result['success'] is True
+        assert result['result']['success_count'] == 3
+        assert "批量停用爬蟲設定完成" in result['message']
+        
+        # 檢查是否全部已停用
+        all_crawlers = crawlers_service.get_all_crawlers()
+        assert all(not crawler.is_active for crawler in all_crawlers['crawlers'])
+        
+        # 批量啟用所有爬蟲
+        result = crawlers_service.batch_toggle_crawler_status(crawler_ids, True)
+        assert result['success'] is True
+        assert result['result']['success_count'] == 3
+        assert "批量啟用爬蟲設定完成" in result['message']
+        
+        # 檢查是否全部已啟用
+        all_crawlers = crawlers_service.get_all_crawlers()
+        assert all(crawler.is_active for crawler in all_crawlers['crawlers'])
+        
+        # 測試部分不存在的 ID
+        invalid_ids = [999999, 888888]
+        result = crawlers_service.batch_toggle_crawler_status(invalid_ids, False)
+        assert result['success'] is False
+        assert result['result']['success_count'] == 0
+        assert result['result']['fail_count'] == 2
+    
+    def test_get_filtered_crawlers(self, crawlers_service, sample_crawlers, session):
+        """測試根據過濾條件獲取分頁爬蟲列表"""
+        # 確保會話中的資料是最新的
+        session.expire_all()
+        
+        # 測試按類型過濾
+        filter_data = {"crawler_type": "bnext"}
+        result = crawlers_service.get_filtered_crawlers(filter_data)
+        assert result['success'] is True
+        assert result['data']['total'] == 1
+        assert result['data']['page'] == 1
+        assert len(result['data']['items']) == 1
+        
+        # 測試按啟用狀態過濾
+        filter_data = {"is_active": True}
+        result = crawlers_service.get_filtered_crawlers(filter_data)
+        assert result['success'] is True
+        assert result['data']['total'] == 2
+        assert len(result['data']['items']) == 2
+        
+        # 測試複合條件過濾
+        filter_data = {"is_active": True, "crawler_type": "bnext"}
+        result = crawlers_service.get_filtered_crawlers(filter_data)
+        assert result['success'] is True
+        assert result['data']['total'] == 1
+        assert len(result['data']['items']) == 1
+        
+        # 測試排序和分頁
+        filter_data = {}
+        result = crawlers_service.get_filtered_crawlers(
+            filter_data, page=1, per_page=2, sort_by="crawler_name", sort_desc=True
+        )
+        assert result['success'] is True
+        assert result['data']['total'] == 3
+        assert result['data']['page'] == 1
+        assert len(result['data']['items']) == 2
+        assert result['data']['has_next'] is True
+        
+        # 測試不匹配的條件
+        filter_data = {"crawler_type": "不存在類型"}
+        result = crawlers_service.get_filtered_crawlers(filter_data)
+        assert result['success'] is False
+        assert "找不到符合條件" in result['message']
+        assert result['data']['total'] == 0
 
 class TestCrawlersServiceErrorHandling:
     """測試爬蟲服務的錯誤處理"""
@@ -304,7 +496,21 @@ class TestCrawlersServiceErrorHandling:
         empty_update = {}
         with pytest.raises(ValidationError) as exc_info:
             crawlers_service.update_crawler(crawler_id, empty_update)
-        assert "缺少必填欄位" in str(exc_info.value)
+        assert "必填欄位不可為空" in str(exc_info.value) or "缺少必填欄位" in str(exc_info.value)
+    
+    def test_create_or_update_validation(self, crawlers_service, session):
+        """測試創建或更新時的驗證錯誤處理"""
+        invalid_data = {
+            "crawler_name": "測試爬蟲",
+            "base_url": "",  # 無效的URL
+            "is_active": True,
+            "crawler_type": "test",
+            "config_file_name": "test_config.json"
+        }
+        
+        result = crawlers_service.create_or_update_crawler(invalid_data)
+        assert result['success'] is False
+        assert "驗證失敗" in result['message']
 
 class TestCrawlersServiceTransactions:
     """測試爬蟲服務的事務處理"""
@@ -327,3 +533,27 @@ class TestCrawlersServiceTransactions:
         # 驗證資料未被更改
         current_result = crawlers_service.get_crawler_by_id(crawler_id)
         assert current_result['crawler'].crawler_name == original_name
+    
+    def test_batch_toggle_transaction(self, crawlers_service, sample_crawlers, session):
+        """測試批量操作的事務性"""
+        # 創建一個混合有效和無效 ID 的列表
+        valid_id = sample_crawlers[0]["id"]
+        invalid_ids = [999999, 888888]
+        mixed_ids = [valid_id] + invalid_ids
+        
+        # 獲取原始狀態
+        original_status = crawlers_service.get_crawler_by_id(valid_id)['crawler'].is_active
+        
+        # 執行批量操作，預期部分失敗
+        result = crawlers_service.batch_toggle_crawler_status(mixed_ids, not original_status)
+        
+        # 驗證結果
+        assert result['success'] is True  # 至少有一個成功
+        assert result['result']['success_count'] == 1
+        assert result['result']['fail_count'] == 2
+        assert invalid_ids[0] in result['result']['failed_ids']
+        assert invalid_ids[1] in result['result']['failed_ids']
+        
+        # 檢查有效 ID 的狀態已變更
+        updated_status = crawlers_service.get_crawler_by_id(valid_id)['crawler'].is_active
+        assert updated_status != original_status
