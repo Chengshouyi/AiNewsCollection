@@ -1,5 +1,5 @@
 import pytest
-from src.utils.validators import validate_task_data, validate_crawler_data
+from src.utils.validators import validate_task_data_api, validate_crawler_data_api
 from src.error.errors import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -46,7 +46,7 @@ def crawlers_repo(session):
     """創建CrawlersRepository的實例"""
     return CrawlersRepository(session, Crawlers)
 
-def test_validate_task_data_with_valid_minimal_data(tasks_repo):
+def test_validate_task_data_api_with_valid_minimal_data(tasks_repo):
     """測試最小化的有效任務資料"""
     data = {
         'crawler_id': 1,
@@ -57,13 +57,13 @@ def test_validate_task_data_with_valid_minimal_data(tasks_repo):
         'max_retries': 3,
         'retry_count': 0
     }
-    validated_data = validate_task_data(data, tasks_repo)
+    validated_data = validate_task_data_api(data, tasks_repo)
     assert validated_data['crawler_id'] == data['crawler_id']
     assert validated_data['task_name'] == data['task_name']
     assert validated_data['task_args'] == data['task_args']
     assert validated_data['ai_only'] == data['ai_only']
 
-def test_validate_task_data_with_complete_valid_data(tasks_repo):
+def test_validate_task_data_api_with_complete_valid_data(tasks_repo):
     """測試完整的有效任務資料"""
     data = {
         'crawler_id': 1,
@@ -78,7 +78,7 @@ def test_validate_task_data_with_complete_valid_data(tasks_repo):
         'max_retries': 3,
         'retry_count': 0
     }
-    validated_data = validate_task_data(data, tasks_repo)
+    validated_data = validate_task_data_api(data, tasks_repo)
     assert validated_data['crawler_id'] == data['crawler_id']
     assert validated_data['task_name'] == data['task_name']
     assert validated_data['task_args'] == data['task_args']
@@ -88,7 +88,7 @@ def test_validate_task_data_with_complete_valid_data(tasks_repo):
     assert validated_data['notes'] == data['notes']
     assert validated_data['last_run_message'] == data['last_run_message']
 
-def test_validate_task_data_auto_without_cron(tasks_repo):
+def test_validate_task_data_api_auto_without_cron(tasks_repo):
     """測試自動執行但未提供 cron 表達式"""
     data = {
         'crawler_id': 1,
@@ -98,9 +98,9 @@ def test_validate_task_data_auto_without_cron(tasks_repo):
         'ai_only': False
     }
     with pytest.raises(ValidationError, match="cron_expression: 當設定為自動執行時,此欄位不能為空"):
-        validate_task_data(data, tasks_repo)
+        validate_task_data_api(data, tasks_repo)
 
-def test_validate_task_data_with_invalid_task_name_length(tasks_repo):
+def test_validate_task_data_api_with_invalid_task_name_length(tasks_repo):
     """測試任務名稱超過長度限制"""
     data = {
         'crawler_id': 1,
@@ -109,9 +109,9 @@ def test_validate_task_data_with_invalid_task_name_length(tasks_repo):
         'ai_only': False
     }
     with pytest.raises(ValidationError):
-        validate_task_data(data, tasks_repo)
+        validate_task_data_api(data, tasks_repo)
 
-def test_validate_task_data_with_invalid_notes_length(tasks_repo):
+def test_validate_task_data_api_with_invalid_notes_length(tasks_repo):
     """測試備註超過長度限制"""
     data = {
         'crawler_id': 1,
@@ -121,26 +121,26 @@ def test_validate_task_data_with_invalid_notes_length(tasks_repo):
         'notes': 'x' * 65537  # 超過65536字元
     }
     with pytest.raises(ValidationError):
-        validate_task_data(data, tasks_repo)
+        validate_task_data_api(data, tasks_repo)
 
-def test_validate_task_data_missing_required_fields(tasks_repo):
+def test_validate_task_data_api_missing_required_fields(tasks_repo):
     """測試缺少必填欄位"""
     data = {
         'task_name': 'test_task'
     }
     with pytest.raises(ValidationError):
-        validate_task_data(data, tasks_repo)
+        validate_task_data_api(data, tasks_repo)
 
-def test_validate_task_data_invalid_task_name_length(tasks_repo):
+def test_validate_task_data_api_invalid_task_name_length(tasks_repo):
     """測試任務名稱超過長度限制"""
     data = {
         'crawler_id': 1,
         'task_name': 'x' * 101  # 超過100字元
     }
     with pytest.raises(ValidationError):
-        validate_task_data(data, tasks_repo)
+        validate_task_data_api(data, tasks_repo)
 
-def test_validate_task_data_invalid_cron_expression(tasks_repo):
+def test_validate_task_data_api_invalid_cron_expression(tasks_repo):
     """測試無效的 cron 表達式"""
     data = {
         'crawler_id': 1,
@@ -149,9 +149,9 @@ def test_validate_task_data_invalid_cron_expression(tasks_repo):
         'is_auto': True
     }
     with pytest.raises(ValidationError):
-        validate_task_data(data, tasks_repo)
+        validate_task_data_api(data, tasks_repo)
 
-def test_validate_task_data_scheduled_without_cron(tasks_repo):
+def test_validate_task_data_api_scheduled_without_cron(tasks_repo):
     """測試排程任務但未提供 cron 表達式"""
     data = {
         'crawler_id': 1,
@@ -159,9 +159,9 @@ def test_validate_task_data_scheduled_without_cron(tasks_repo):
         'is_auto': True
     }
     with pytest.raises(ValidationError):
-        validate_task_data(data, tasks_repo)
+        validate_task_data_api(data, tasks_repo)
 
-def test_validate_task_data_invalid_task_args(tasks_repo):
+def test_validate_task_data_api_invalid_task_args(tasks_repo):
     """測試無效的任務參數"""
     data = {
         'crawler_id': 1,
@@ -169,9 +169,9 @@ def test_validate_task_data_invalid_task_args(tasks_repo):
         'task_args': 'not_a_dict'  # 應該是字典類型
     }
     with pytest.raises(ValidationError):
-        validate_task_data(data, tasks_repo)
+        validate_task_data_api(data, tasks_repo)
 
-def test_validate_crawler_data_with_valid_minimal_data(crawlers_repo):
+def test_validate_crawler_data_api_with_valid_minimal_data(crawlers_repo):
     """測試最小化的有效爬蟲資料"""
     data = {
         'crawler_name': 'test_crawler',
@@ -180,14 +180,14 @@ def test_validate_crawler_data_with_valid_minimal_data(crawlers_repo):
         'is_active': True,
         'config_file_name': 'test_config.json'
     }
-    validated_data = validate_crawler_data(data, crawlers_repo)
+    validated_data = validate_crawler_data_api(data, crawlers_repo)
     assert validated_data['crawler_name'] == data['crawler_name']
     assert validated_data['base_url'] == data['base_url']
     assert validated_data['crawler_type'] == data['crawler_type']
     assert validated_data['is_active'] == data['is_active']
     assert validated_data['config_file_name'] == data['config_file_name']
 
-def test_validate_crawler_data_with_complete_valid_data(crawlers_repo):
+def test_validate_crawler_data_api_with_complete_valid_data(crawlers_repo):
     """測試完整的有效爬蟲資料"""
     data = {
         'crawler_name': 'test_crawler',
@@ -196,17 +196,29 @@ def test_validate_crawler_data_with_complete_valid_data(crawlers_repo):
         'is_active': True,
         'config_file_name': 'test_config.json'
     }
-    validated_data = validate_crawler_data(data, crawlers_repo)
+    validated_data = validate_crawler_data_api(data, crawlers_repo)
     assert validated_data['crawler_name'] == data['crawler_name']
     assert validated_data['base_url'] == data['base_url']
     assert validated_data['crawler_type'] == data['crawler_type']
     assert validated_data['is_active'] == data['is_active']
     assert validated_data['config_file_name'] == data['config_file_name']
 
-def test_validate_crawler_data_missing_required_fields(crawlers_repo):
+def test_validate_crawler_data_api_missing_required_fields(crawlers_repo):
     """測試缺少必填欄位"""
     data = {
         'crawler_name': 'test_crawler'
     }
     with pytest.raises(ValidationError):
-        validate_crawler_data(data, crawlers_repo)
+        validate_crawler_data_api(data, crawlers_repo)
+
+def test_validate_crawler_data_api_with_update_mode(crawlers_repo):
+    """測試爬蟲資料更新模式"""
+    data = {
+        'crawler_name': 'updated_crawler',
+        'is_active': False
+    }
+    validated_data = validate_crawler_data_api(data, crawlers_repo, is_update=True)
+    assert validated_data['crawler_name'] == data['crawler_name']
+    assert validated_data['is_active'] == data['is_active']
+    assert 'base_url' not in validated_data  # 更新模式中未提供的欄位不應出現
+    assert 'crawler_type' not in validated_data

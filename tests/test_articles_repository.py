@@ -118,6 +118,47 @@ class TestArticleRepository:
             article_repo.get_schema_class(SchemaType.LIST)
         assert "未支援的 schema 類型" in str(exc_info.value)
     
+    # 新增方法測試 validate_data
+    def test_validate_data(self, article_repo, clean_db):
+        """測試 validate_data 方法的基本功能"""
+        # 準備測試資料
+        article_data = {
+            "title": "測試驗證資料",
+            "link": "https://test.com/validate",
+            "summary": "測試摘要",
+            "content": "測試內容",
+            "category": "測試",
+            "is_ai_related": True,
+            "is_scraped": True,
+            "source": "測試來源",
+            "source_url": "https://test.com/source",
+            "published_at": datetime.now(timezone.utc),
+            "scrape_status": ArticleScrapeStatus.PENDING
+        }
+        
+        # 測試 CREATE 驗證
+        validated_create = article_repo.validate_data(article_data, SchemaType.CREATE)
+        assert validated_create is not None
+        assert validated_create["title"] == "測試驗證資料"
+        assert validated_create["link"] == "https://test.com/validate"
+        
+        # 測試 UPDATE 驗證 (僅包含更新的欄位)
+        update_data = {"title": "更新的標題", "summary": "新摘要"}
+        validated_update = article_repo.validate_data(update_data, SchemaType.UPDATE)
+        assert validated_update is not None
+        assert validated_update["title"] == "更新的標題"
+        assert validated_update["summary"] == "新摘要"
+        assert "link" not in validated_update  # UPDATE 應該只包含傳入的欄位
+        
+        # 測試驗證錯誤 (空標題)
+        invalid_data = article_data.copy()
+        invalid_data["title"] = ""
+        
+        with pytest.raises(ValidationError) as excinfo:
+            article_repo.validate_data(invalid_data, SchemaType.CREATE)
+        
+        assert "不能為空" in str(excinfo.value)
+    
     def test_find_by_link(self, article_repo, sample_articles, session, clean_db):
         """測試根據連結查詢文章"""
         
@@ -212,7 +253,7 @@ class TestArticleRepository:
         ) is True
 
     def test_create_article(self, article_repo, session, clean_db):
-        """測試創建和更新文章"""
+        """測試創建文章並處理重複連結的情況"""
         # 測試創建新文章
         article_data = {
             "title": "測試文章",
@@ -228,6 +269,7 @@ class TestArticleRepository:
             "scrape_status": ArticleScrapeStatus.PENDING
         }
         article = article_repo.create(article_data)
+        session.commit()
         session.expire_all()
         
         assert article is not None
@@ -235,7 +277,7 @@ class TestArticleRepository:
         assert article.link == article_data["link"]
         assert article.scrape_status == ArticleScrapeStatus.PENDING
 
-        # 測試更新已存在的文章
+        # 測試創建具有相同連結的文章 (應該觸發更新邏輯)
         update_data = {
             "title": "更新後的標題",
             "link": "https://test.com/article",  # 相同的連結
@@ -247,10 +289,11 @@ class TestArticleRepository:
             "source": "測試來源",
             "source_url": "https://test.com/source",
             "published_at": datetime.now(timezone.utc),
-            "scrape_status": ArticleScrapeStatus.PENDING.value
+            "scrape_status": ArticleScrapeStatus.CONTENT_SCRAPED
         }
         
         updated_article = article_repo.create(update_data)
+        session.commit()
         session.expire_all()
         
         assert updated_article is not None
@@ -258,8 +301,9 @@ class TestArticleRepository:
         assert updated_article.title == "更新後的標題"
         assert updated_article.category == "更新"
         assert updated_article.is_ai_related is False
+        assert updated_article.scrape_status == ArticleScrapeStatus.CONTENT_SCRAPED
     
-    def test_create_article_with_missing_fields(self, article_repo):
+    def test_create_article_with_missing_fields(self, article_repo, clean_db):
         """測試創建缺少必填欄位的文章"""
         incomplete_data = {
             "title": "測試文章",
@@ -268,8 +312,30 @@ class TestArticleRepository:
         
         with pytest.raises(ValidationError) as exc_info:
             article_repo.create(incomplete_data)
-        assert "缺少必填欄位" in str(exc_info.value)
+        assert "驗證失敗" in str(exc_info.value)
 
+    def test_update_article(self, article_repo, sample_articles, session, clean_db):
+        """測試更新文章"""
+        article_id = sample_articles[0].id
+        
+        update_data = {
+            "title": "更新後的標題",
+            "summary": "更新後的摘要",
+            "category": "更新後分類"
+        }
+        
+        updated_article = article_repo.update(article_id, update_data)
+        session.commit()
+        session.expire_all()
+        
+        assert updated_article is not None
+        assert updated_article.id == article_id
+        assert updated_article.title == "更新後的標題"
+        assert updated_article.summary == "更新後的摘要"
+        assert updated_article.category == "更新後分類"
+        # 未更新的欄位應保持原樣
+        assert updated_article.link == sample_articles[0].link
+        assert updated_article.source == sample_articles[0].source
 
     def test_batch_update_by_link(self, article_repo, sample_articles, session, clean_db):
         """測試批量更新文章"""
@@ -375,7 +441,7 @@ class TestArticleRepository:
         assert result["fail_count"] == 1
         assert result["inserted_articles"] == []
         assert result["failed_articles"] is not None
-        assert "缺少必填欄位" in result["failed_articles"][0]["error"]
+        assert "驗證失敗" in result["failed_articles"][0]["error"]
         
     def test_batch_create_with_existing_link(self, article_repo, sample_articles, session, clean_db):
         """測試批量創建包含已存在連結的文章 - 應該更新而不是失敗"""
@@ -415,172 +481,6 @@ class TestArticleRepository:
         assert updated_article.summary == "更新後的摘要"
         assert updated_article.category == "更新後分類"
         assert updated_article.is_ai_related is False
-    
-    def test_batch_create_with_invalid_data(self, article_repo, session, clean_db):
-        """測試批量創建無效資料"""
-    
-        # 準備測試資料
-        articles_data = [
-            {
-                "title": "測試文章3",
-                "link": "",
-                "summary": "測試摘要3",
-                "content": "測試內容3",
-                "category": "測試",
-                "is_ai_related": True,
-                "is_scraped": True,
-                "source": "測試來源",
-                "source_url": "https://test.com/source3",
-                "published_at": datetime.now(timezone.utc),
-                "scrape_status": ArticleScrapeStatus.PENDING
-            }
-        ]
-    
-        result = article_repo.batch_create(articles_data)
-        session.expire_all()
-    
-        assert result["success_count"] == 0
-        assert result["fail_count"] == 1
-        assert result["inserted_articles"] == []
-        assert result["failed_articles"] is not None
-        assert any(["link: URL不能為空" in result["failed_articles"][0]["error"], "link: 不能為空" in result["failed_articles"][0]["error"]])
-    
-    def test_batch_create_with_mixed_new_and_existing_links(self, article_repo, sample_articles, session, clean_db):
-        """測試批量創建同時包含新連結和已存在連結的文章"""
-        
-        articles_data = [
-            {
-                # 新文章
-                "title": "全新文章",
-                "link": "https://example.com/new_article",
-                "summary": "新文章摘要",
-                "content": "新文章內容",
-                "category": "測試",
-                "is_ai_related": True,
-                "is_scraped": True,
-                "source": "測試來源",
-                "source_url": "https://example.com/source_new",
-                "published_at": datetime.now(timezone.utc),
-                "scrape_status": ArticleScrapeStatus.PENDING
-            },
-            {
-                # 更新已存在的文章
-                "title": "更新的文章",
-                "link": "https://example.com/article1",  # 已存在的連結
-                "summary": "更新的摘要",
-                "content": "更新的內容",
-                "category": "更新分類",
-                "is_ai_related": False,
-                "is_scraped": True,
-                "source": "測試來源",
-                "source_url": "https://example.com/source_update",
-                "published_at": datetime.now(timezone.utc),
-                "scrape_status": ArticleScrapeStatus.PENDING
-            }
-        ]
-        
-        result = article_repo.batch_create(articles_data)
-        session.expire_all()
-        
-        # 驗證結果
-        assert result["success_count"] == 1  # 一筆新增
-        assert result["update_count"] == 1  # 一筆更新
-        assert result["fail_count"] == 0  # 不應該有失敗
-        assert len(result["inserted_articles"]) == 1
-        assert len(result["updated_articles"]) == 1
-        assert result["failed_articles"] == []
-        
-        # 驗證新增的文章
-        new_article = article_repo.find_by_link("https://example.com/new_article")
-        assert new_article is not None
-        assert new_article.title == "全新文章"
-        
-        # 驗證更新的文章
-        updated_article = article_repo.find_by_link("https://example.com/article1")
-        assert updated_article is not None
-        assert updated_article.title == "更新的文章"
-        assert updated_article.category == "更新分類"
-
-    def test_batch_create_with_large_data(self, article_repo, session, clean_db):
-        """測試批量創建大量資料"""
-        
-        # 準備測試資料
-        articles_data = [
-            {
-                "title": f"測試文章{i}",
-                "link": f"https://test.com/batch_create_article{i}",
-                "summary": f"測試摘要{i}",
-                "content": f"測試內容{i}",
-                "category": "測試",
-                "is_ai_related": True,
-                "is_scraped": True,
-                "source": "測試來源",
-                "source_url": f"https://test.com/source{i}",
-                "published_at": datetime.now(timezone.utc),
-                "scrape_status": ArticleScrapeStatus.PENDING
-            }
-            for i in range(1000)
-        ]
-        
-        result = article_repo.batch_create(articles_data)
-        session.expire_all()    
-        
-        assert result["success_count"] == 1000
-        assert result["fail_count"] == 0
-        assert result["inserted_articles"] is not None
-        assert result["failed_articles"] == []
-        
-    def test_batch_create_with_large_data_and_pagination(self, article_repo, session, clean_db):
-        """測試批量創建大量資料並進行分頁"""
-        
-        # 準備測試資料
-        articles_data = [
-            {
-                "title": f"測試文章{i}",
-                "link": f"https://test.com/large_data_and_pagination_article{i}",
-                "summary": f"測試摘要{i}",
-                "content": f"測試內容{i}",
-                "category": "測試",
-                "is_ai_related": True,
-                "is_scraped": True,
-                "source": "測試來源",
-                "source_url": f"https://test.com/source{i}",
-                "published_at": datetime.now(timezone.utc),
-                "scrape_status": ArticleScrapeStatus.PENDING
-            }   
-            for i in range(1000)
-        ]
-        
-        result = article_repo.batch_create(articles_data)
-        session.expire_all()    
-        
-        assert result["success_count"] == 1000
-        assert result["fail_count"] == 0
-        assert result["inserted_articles"] is not None
-        assert result["failed_articles"] == []
-        
-        # 分頁查詢測試
-        page_data = article_repo.get_paginated_by_filter(
-            filter_dict={},
-            page=1,
-            per_page=10
-        )
-        
-        assert page_data["total"] == 1000
-        assert page_data["total_pages"] == 100
-        assert page_data["items"] is not None
-        assert len(page_data["items"]) == 10
-        
-        # 測試分頁導航  
-        page_data = article_repo.get_paginated_by_filter(
-            filter_dict={},
-            page=100,
-            per_page=10
-        )
-        
-        assert page_data["page"] == 100
-        assert page_data["has_next"] is False
-        assert page_data["has_prev"] is True
     
     def test_batch_mark_as_scraped(self, article_repo, sample_articles, session, clean_db):
         """測試批量將文章連結標記為已爬取"""

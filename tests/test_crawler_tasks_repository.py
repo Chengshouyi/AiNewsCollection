@@ -6,8 +6,10 @@ from src.database.crawler_tasks_repository import CrawlerTasksRepository
 from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
+from src.database.base_repository import SchemaType
 from debug.model_info import get_model_info
-from src.error.errors import ValidationError
+from src.error.errors import ValidationError, DatabaseOperationError
+from unittest.mock import patch
 
 # 設置測試資料庫
 @pytest.fixture(scope="session")
@@ -72,7 +74,11 @@ def sample_tasks(session, clean_db, sample_crawler):
             is_auto=True,
             ai_only=True,
             notes="AI任務1",
-            cron_expression="* * * * *"
+            cron_expression="* * * * *",
+            task_args={},
+            current_phase=TaskPhase.INIT,
+            max_retries=3,
+            retry_count=0
         ),
         CrawlerTasks(
             task_name="一般任務",
@@ -80,7 +86,11 @@ def sample_tasks(session, clean_db, sample_crawler):
             is_auto=True,
             ai_only=False,
             notes="一般任務",
-            cron_expression="* * * * *"
+            cron_expression="* * * * *",
+            task_args={},
+            current_phase=TaskPhase.INIT,
+            max_retries=3,
+            retry_count=0
         ),
         CrawlerTasks(
             task_name="手動AI任務",
@@ -88,7 +98,11 @@ def sample_tasks(session, clean_db, sample_crawler):
             is_auto=False,
             ai_only=True,
             notes="手動AI任務",
-            cron_expression="* * * * *"
+            cron_expression="* * * * *",
+            task_args={},
+            current_phase=TaskPhase.INIT,
+            max_retries=3,
+            retry_count=0
         )
     ]
     session.add_all(tasks)
@@ -205,19 +219,31 @@ class TestCrawlerTasksRepository:
                 task_name="每小時執行任務",
                 crawler_id=sample_crawler.id,
                 is_auto=True,
-                cron_expression="0 * * * *"  # 每小時執行
+                cron_expression="0 * * * *",  # 每小時執行
+                task_args={},
+                current_phase=TaskPhase.INIT,
+                max_retries=3,
+                retry_count=0
             ),
             CrawlerTasks(
                 task_name="每天執行任務",
                 crawler_id=sample_crawler.id,
                 is_auto=True,
-                cron_expression="0 0 * * *"  # 每天執行
+                cron_expression="0 0 * * *",  # 每天執行
+                task_args={},
+                current_phase=TaskPhase.INIT,
+                max_retries=3,
+                retry_count=0
             ),
             CrawlerTasks(
                 task_name="每週執行任務",
                 crawler_id=sample_crawler.id,
                 is_auto=True,
-                cron_expression="0 0 * * 1"  # 每週一執行
+                cron_expression="0 0 * * 1",  # 每週一執行
+                task_args={},
+                current_phase=TaskPhase.INIT,
+                max_retries=3,
+                retry_count=0
             )
         ]
         session.add_all(tasks)
@@ -248,7 +274,11 @@ class TestCrawlerTasksRepository:
             crawler_id=sample_crawler.id,
             is_auto=True,
             cron_expression="0 * * * *",  # 每小時執行（整點）
-            last_run_at=now - timedelta(hours=2)
+            last_run_at=now - timedelta(hours=2),
+            task_args={},
+            current_phase=TaskPhase.INIT,
+            max_retries=3,
+            retry_count=0
         )
         
         # 2. 上次執行不到1小時（不應該被找到）
@@ -257,7 +287,11 @@ class TestCrawlerTasksRepository:
             crawler_id=sample_crawler.id,
             is_auto=True,
             cron_expression="0 * * * *",
-            last_run_at=now - timedelta(minutes=30)
+            last_run_at=now - timedelta(minutes=30),
+            task_args={},
+            current_phase=TaskPhase.INIT,
+            max_retries=3,
+            retry_count=0
         )
         
         # 3. 從未執行過（應該被找到）
@@ -266,7 +300,11 @@ class TestCrawlerTasksRepository:
             crawler_id=sample_crawler.id,
             is_auto=True,
             cron_expression="0 * * * *",
-            last_run_at=None
+            last_run_at=None,
+            task_args={},
+            current_phase=TaskPhase.INIT,
+            max_retries=3,
+            retry_count=0
         )
         
         session.add_all([task1, task2, task3])
@@ -301,19 +339,31 @@ class TestCrawlerTasksRepository:
                 task_name="失敗任務1",
                 crawler_id=sample_crawler.id,
                 last_run_success=False,
-                last_run_at=base_time - timedelta(days=2)  # 超過1天，不應該被查到
+                last_run_at=base_time - timedelta(days=2),  # 超過1天，不應該被查到
+                task_args={},
+                current_phase=TaskPhase.INIT,
+                max_retries=3,
+                retry_count=0
             ),
             CrawlerTasks(
                 task_name="失敗任務2",
                 crawler_id=sample_crawler.id,
                 last_run_success=False,
-                last_run_at=base_time - timedelta(hours=12)  # 應該被查到
+                last_run_at=base_time - timedelta(hours=12),  # 應該被查到
+                task_args={},
+                current_phase=TaskPhase.INIT,
+                max_retries=3,
+                retry_count=0
             ),
             CrawlerTasks(
                 task_name="成功任務",
                 crawler_id=sample_crawler.id,
                 last_run_success=True,
-                last_run_at=base_time - timedelta(hours=1)  # 成功的任務，不應該被查到
+                last_run_at=base_time - timedelta(hours=1),  # 成功的任務，不應該被查到
+                task_args={},
+                current_phase=TaskPhase.INIT,
+                max_retries=3,
+                retry_count=0
             )
         ]
         session.add_all(tasks)
@@ -442,7 +492,11 @@ class TestCrawlerTasksConstraints:
         """測試布林欄位的默認值"""
         task = CrawlerTasks(
             task_name="測試任務",
-            crawler_id=sample_crawler.id
+            crawler_id=sample_crawler.id,
+            task_args={},
+            current_phase=TaskPhase.INIT,
+            max_retries=3,
+            retry_count=0
         )
         session.add(task)
         session.flush()
@@ -535,3 +589,216 @@ class TestSpecialCases:
 
         assert len(crawler_tasks_repo.find_tasks_by_cron_expression("0 * * * *")) == 0
         assert len(crawler_tasks_repo.find_pending_tasks("0 * * * *")) == 0
+
+class TestCrawlerTasksRepositoryValidation:
+    """CrawlerTasksRepository 驗證相關的測試類"""
+    
+    def test_validate_data_create(self, crawler_tasks_repo, sample_crawler):
+        """測試 validate_data 方法用於創建操作時的行為"""
+        # 準備有效的數據
+        valid_data = {
+            "task_name": "測試驗證任務",
+            "crawler_id": sample_crawler.id,
+            "is_auto": True,
+            "cron_expression": "0 * * * *",
+            "ai_only": False,
+            "task_args": {},
+            "current_phase": TaskPhase.INIT,
+            "max_retries": 3,
+            "retry_count": 0
+        }
+        
+        # 執行驗證
+        validated_data = crawler_tasks_repo.validate_data(valid_data, SchemaType.CREATE)
+        
+        # 檢查驗證後的數據是否完整
+        assert validated_data["task_name"] == "測試驗證任務"
+        assert validated_data["crawler_id"] == sample_crawler.id
+        assert validated_data["is_auto"] is True
+        assert validated_data["cron_expression"] == "0 * * * *"
+        assert "task_args" in validated_data
+        assert validated_data["current_phase"] == TaskPhase.INIT
+        
+        # 測試無效數據
+        invalid_data = {
+            "task_name": "測試驗證任務",
+            # 缺少 crawler_id
+            "is_auto": True,
+            "cron_expression": "0 * * * *"
+        }
+        
+        # 執行驗證應拋出異常
+        with pytest.raises(ValidationError) as excinfo:
+            crawler_tasks_repo.validate_data(invalid_data, SchemaType.CREATE)
+        assert "不能為空" in str(excinfo.value)
+        
+    def test_validate_data_update(self, crawler_tasks_repo, sample_crawler):
+        """測試 validate_data 方法用於更新操作時的行為"""
+        # 準備有效的更新數據
+        valid_update = {
+            "task_name": "更新的任務名稱",
+            "is_auto": False,
+            # 不需要 cron_expression，因為 is_auto=False
+        }
+        
+        # 執行驗證
+        validated_data = crawler_tasks_repo.validate_data(valid_update, SchemaType.UPDATE)
+        
+        # 檢查驗證後的數據
+        assert validated_data["task_name"] == "更新的任務名稱"
+        assert validated_data["is_auto"] is False
+        assert "crawler_id" not in validated_data  # 不可變欄位不應包含在更新中
+        
+        # 測試無效更新 - 嘗試更新不可變欄位
+        invalid_update = {
+            "crawler_id": 999  # 不允許更新
+        }
+        
+        # 執行驗證應拋出異常
+        with pytest.raises(ValidationError) as excinfo:
+            crawler_tasks_repo.validate_data(invalid_update, SchemaType.UPDATE)
+        assert "不允許更新 crawler_id 欄位" in str(excinfo.value)
+        
+    def test_exception_handling_create(self, crawler_tasks_repo, sample_crawler):
+        """測試創建時的異常處理"""
+        # 準備測試數據
+        test_data = {
+            "task_name": "測試異常處理",
+            "crawler_id": sample_crawler.id,
+            "is_auto": True,
+            "cron_expression": "0 * * * *",
+            "ai_only": False,
+            "task_args": {},
+            "current_phase": TaskPhase.INIT,
+            "max_retries": 3,
+            "retry_count": 0
+        }
+        
+        # 模擬 _create_internal 拋出 DatabaseOperationError
+        with patch.object(crawler_tasks_repo, '_create_internal', side_effect=DatabaseOperationError("測試異常")):
+            with pytest.raises(DatabaseOperationError):
+                crawler_tasks_repo.create(test_data)
+        
+        # 模擬 validate_data 拋出 ValidationError
+        with patch.object(crawler_tasks_repo, 'validate_data', side_effect=ValidationError("測試驗證錯誤")):
+            with pytest.raises(ValidationError) as excinfo:
+                crawler_tasks_repo.create(test_data)
+            assert "測試驗證錯誤" in str(excinfo.value)
+            
+        # 模擬意外異常
+        with patch.object(crawler_tasks_repo, 'validate_data', side_effect=Exception("意外錯誤")):
+            with pytest.raises(DatabaseOperationError) as excinfo:
+                crawler_tasks_repo.create(test_data)
+            assert "未預期錯誤" in str(excinfo.value)
+            assert "意外錯誤" in str(excinfo.value)
+    
+    def test_exception_handling_update(self, crawler_tasks_repo, sample_tasks):
+        """測試更新時的異常處理"""
+        # 準備測試數據
+        task_id = sample_tasks[0].id
+        test_data = {
+            "task_name": "更新的任務名稱",
+            "is_auto": False
+        }
+        
+        # 模擬 _update_internal 拋出 DatabaseOperationError
+        with patch.object(crawler_tasks_repo, '_update_internal', side_effect=DatabaseOperationError("測試異常")):
+            with pytest.raises(DatabaseOperationError):
+                crawler_tasks_repo.update(task_id, test_data)
+        
+        # 模擬 validate_data 拋出 ValidationError
+        with patch.object(crawler_tasks_repo, 'validate_data', side_effect=ValidationError("測試驗證錯誤")):
+            with pytest.raises(ValidationError) as excinfo:
+                crawler_tasks_repo.update(task_id, test_data)
+            assert "測試驗證錯誤" in str(excinfo.value)
+            
+        # 模擬意外異常
+        with patch.object(crawler_tasks_repo, 'validate_data', side_effect=Exception("意外錯誤")):
+            with pytest.raises(DatabaseOperationError) as excinfo:
+                crawler_tasks_repo.update(task_id, test_data)
+            assert "未預期錯誤" in str(excinfo.value)
+            assert "意外錯誤" in str(excinfo.value)
+            
+    def test_update_nonexistent_task(self, crawler_tasks_repo):
+        """測試更新不存在的任務"""
+        result = crawler_tasks_repo.update(999, {"task_name": "新名稱"})
+        assert result is None
+        
+    def test_update_empty_data(self, crawler_tasks_repo, sample_tasks):
+        """測試使用空數據更新任務"""
+        task_id = sample_tasks[0].id
+        original_name = sample_tasks[0].task_name
+        
+        # 使用空數據更新
+        result = crawler_tasks_repo.update(task_id, {})
+        
+        # 應該返回原始任務而不進行任何更改
+        assert result is not None
+        assert result.id == task_id
+        assert result.task_name == original_name
+
+class TestComplexValidationScenarios:
+    """測試複雜驗證場景"""
+    
+    def test_create_with_string_task_phase(self, crawler_tasks_repo, sample_crawler):
+        """測試使用字符串表示的任務階段創建任務"""
+        # 使用字符串而不是枚舉
+        task = crawler_tasks_repo.create({
+            "task_name": "字符串階段測試",
+            "crawler_id": sample_crawler.id,
+            "is_auto": False,
+            "ai_only": False,
+            "task_args": {},
+            "current_phase": "init",  # 使用字符串
+            "max_retries": 3,
+            "retry_count": 0
+        })
+        
+        # 驗證是否正確轉換為枚舉
+        assert task.current_phase == TaskPhase.INIT
+        
+        # 測試不同大小寫
+        task = crawler_tasks_repo.create({
+            "task_name": "字符串階段測試2",
+            "crawler_id": sample_crawler.id,
+            "is_auto": False,
+            "ai_only": False,
+            "task_args": {},
+            "current_phase": "INIT",  # 大寫
+            "max_retries": 3,
+            "retry_count": 0
+        })
+        
+        assert task.current_phase == TaskPhase.INIT
+        
+        # 測試無效階段值
+        with pytest.raises(ValidationError) as excinfo:
+            crawler_tasks_repo.create({
+                "task_name": "無效階段測試",
+                "crawler_id": sample_crawler.id,
+                "is_auto": False,
+                "ai_only": False,
+                "task_args": {},
+                "current_phase": "invalid_phase",  # 無效值
+                "max_retries": 3,
+                "retry_count": 0
+            })
+        assert "無效的任務階段值" in str(excinfo.value)
+
+    def test_create_with_empty_result(self, crawler_tasks_repo, session):
+        """測試當資料庫操作未能返回實體時的情況"""
+        # 使用 patch 讓 _create_internal 返回 None (模擬失敗但未拋出異常)
+        with patch.object(crawler_tasks_repo, '_create_internal', return_value=None):
+            result = crawler_tasks_repo.create({
+                "task_name": "測試無結果",
+                "crawler_id": 1,
+                "is_auto": False,
+                "ai_only": False,
+                "task_args": {},
+                "current_phase": TaskPhase.INIT,
+                "max_retries": 3,
+                "retry_count": 0
+            })
+            
+            # 應該返回 None 而不是異常
+            assert result is None

@@ -5,7 +5,7 @@ from typing import List, Optional, Type, Any, Dict
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import logging
-from src.error.errors import ValidationError
+from src.error.errors import ValidationError, DatabaseOperationError
 from src.utils.datetime_utils import enforce_utc_datetime_transform
 from croniter import croniter
 from src.utils.model_utils import convert_to_dict
@@ -24,30 +24,9 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             return CrawlerTasksUpdateSchema
         raise ValueError(f"未支援的 schema 類型: {schema_type}")
 
-    def _validate_required_fields(self, entity_data: Dict[str, Any], existing_entity: Optional[CrawlerTasks] = None) -> Dict[str, Any]:
-        """驗證並補充必填欄位"""
-        # 深度複製避免修改原始資料
-        copied_data = entity_data.copy()
-        
-        required_fields = CrawlerTasksCreateSchema.get_required_fields()
-        # 因為CrawlerTasks的crawler_id是不可以更新，所以需要移除
-        required_fields.remove('crawler_id')
-        # 如果是更新操作，從現有實體中補充必填欄位
-        if existing_entity:
-            for field in required_fields:
-                if field not in copied_data and hasattr(existing_entity, field):
-                    copied_data[field] = getattr(existing_entity, field)
-        
-        # 檢查是否仍然缺少必填欄位
-        missing_fields = [field for field in required_fields if field not in copied_data or copied_data[field] is None]
-        if missing_fields:
-            raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
-
-        return copied_data
-
     def create(self, entity_data: Dict[str, Any]) -> Optional[CrawlerTasks]:
         """
-        創建爬蟲任務，添加針對 CrawlerTasks 的特殊驗證
+        創建爬蟲任務，先進行 Pydantic 驗證，然後調用內部創建。
         
         Args:
             entity_data: 實體資料
@@ -55,16 +34,27 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
         Returns:
             創建的爬蟲任務實體
         """
-        # 驗證並補充必填欄位
-        validated_data = self._validate_required_fields(entity_data)
-        
-        # 獲取並使用適當的schema進行驗證和創建
-        schema_class = self.get_schema_class(SchemaType.CREATE)
-        return self._create_internal(validated_data, schema_class)
+        try:
+            # 1. 設定特定預設值（如果需要）
+            # 例如: entity_data.setdefault('is_auto', False)
+            
+            # 2. 執行 Pydantic 驗證
+            validated_data = self.validate_data(entity_data, SchemaType.CREATE)
+            
+            # 3. 將已驗證的資料傳給內部方法
+            return self._create_internal(validated_data)
+        except ValidationError as e:
+            logger.error(f"創建 CrawlerTask 驗證失敗: {e}")
+            raise # 重新拋出讓 Service 層處理
+        except DatabaseOperationError: # 捕捉來自 _create_internal 的錯誤
+            raise # 重新拋出
+        except Exception as e: # 捕捉其他意外錯誤
+            logger.error(f"創建 CrawlerTask 時發生未預期錯誤: {e}", exc_info=True)
+            raise DatabaseOperationError(f"創建 CrawlerTask 時發生未預期錯誤: {e}") from e
 
     def update(self, entity_id: int, entity_data: Dict[str, Any]) -> Optional[CrawlerTasks]:
         """
-        更新爬蟲任務，添加針對 CrawlerTasks 的特殊驗證
+        更新爬蟲任務，先進行 Pydantic 驗證，然後調用內部更新。
         
         Args:
             entity_id: 實體ID
@@ -73,22 +63,30 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
         Returns:
             更新後的爬蟲任務實體，如果實體不存在則返回None
         """
-        # 檢查實體是否存在
-        existing_entity = self.get_by_id(entity_id)
-        if not existing_entity:
-            logger.warning(f"更新爬蟲任務失敗，ID不存在: {entity_id}")
-            return None
-        
-        # 如果更新資料為空，直接返回已存在的實體
-        if not entity_data:
-            return existing_entity
+        try:
+            # 1. 檢查實體是否存在
+            existing_entity = self.get_by_id(entity_id)
+            if not existing_entity:
+                logger.warning(f"更新爬蟲任務失敗，ID不存在: {entity_id}")
+                return None
+                
+            # 如果更新資料為空，直接返回已存在的實體
+            if not entity_data:
+                return existing_entity
             
-        # 驗證並補充必填欄位
-        validated_data = self._validate_required_fields(entity_data, existing_entity)
-        
-        # 獲取並使用適當的schema進行驗證和更新
-        schema_class = self.get_schema_class(SchemaType.UPDATE)
-        return self._update_internal(entity_id, validated_data, schema_class)
+            # 2. 執行 Pydantic 驗證 (獲取 update payload)
+            update_payload = self.validate_data(entity_data, SchemaType.UPDATE)
+            
+            # 3. 將已驗證的 payload 傳給內部方法
+            return self._update_internal(entity_id, update_payload)
+        except ValidationError as e:
+            logger.error(f"更新 CrawlerTask (ID={entity_id}) 驗證失敗: {e}")
+            raise # 重新拋出
+        except DatabaseOperationError: # 捕捉來自 _update_internal 的錯誤
+            raise # 重新拋出
+        except Exception as e: # 捕捉其他意外錯誤
+            logger.error(f"更新 CrawlerTask (ID={entity_id}) 時發生未預期錯誤: {e}", exc_info=True)
+            raise DatabaseOperationError(f"更新 CrawlerTask (ID={entity_id}) 時發生未預期錯誤: {e}") from e
 
     def find_by_crawler_id(self, crawler_id: int) -> List[CrawlerTasks]:
         """根據爬蟲ID查詢相關的任務"""

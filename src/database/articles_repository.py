@@ -4,9 +4,10 @@ from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from typing import Optional, List, Dict, Any, Type, Union, overload, Literal
 from sqlalchemy import func, or_, case
 from sqlalchemy.orm import Query
-from src.error.errors import ValidationError
+from src.error.errors import ValidationError, DatabaseOperationError
 import logging
 from src.models.articles_model import ArticleScrapeStatus
+
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -210,62 +211,41 @@ class ArticlesRepository(BaseRepository[Articles]):
             return False
         
         return True
-
-    def _validate_required_fields(self, entity_data: Dict[str, Any], existing_entity: Optional[Articles] = None) -> Dict[str, Any]:
-        """
-        驗證並補充必填欄位
-        
-        Args:
-            entity_data: 實體資料
-            existing_entity: 現有實體 (用於更新時)
-            
-        Returns:
-            處理後的實體資料
-        """
-        # 深度複製避免修改原始資料
-        copied_data = entity_data.copy()
-
-        required_fields = ArticleCreateSchema.get_required_fields()
-        # 因為ArticleCreateSchema的link是unique，所以不可以更新
-        required_fields.remove('link')
-
-        # 如果是更新操作，從現有實體中補充必填欄位
-        if existing_entity:
-            for field in required_fields:
-                if field not in copied_data and hasattr(existing_entity, field):
-                    copied_data[field] = getattr(existing_entity, field)
-        
-        # 檢查是否仍然缺少必填欄位
-        missing_fields = [field for field in required_fields if field not in copied_data or copied_data[field] is None]
-        if missing_fields:
-            raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
-            
-        return copied_data
     
     def create(self, entity_data: Dict[str, Any]) -> Optional[Articles]:
         """
-        創建文章，如果存在相同 link 則更新
-        
-        Args:
-            entity_data: 實體資料
-            
-        Returns:
-            創建的文章實體
+        創建文章。如果連結已存在，則觸發更新邏輯。
+        先進行 Pydantic 驗證，然後調用內部創建。
         """
-        # 檢查是否有 link
-        if 'link' in entity_data and entity_data['link']:
-            # 查找是否存在相同 link 的文章
-            existing_article = self.find_by_link(entity_data['link'])
+        link = entity_data.get('link')
+        if link:
+            existing_article = self.find_by_link(link)
             if existing_article:
-                # 如果存在，則更新現有文章
+                logger.info(f"文章連結 '{link}' 已存在，將執行更新操作。")
+                # 更新操作也會先調用 validate_data
                 return self.update(existing_article.id, entity_data)
 
-        # 驗證並補充必填欄位
-        validated_data = self._validate_required_fields(entity_data)
-        
-        # 獲取並使用適當的schema進行驗證和創建
-        schema_class = self.get_schema_class(SchemaType.CREATE)
-        return self._create_internal(validated_data, schema_class)
+        try:
+            # 1. 設定特定預設值 (如果 Pydantic Schema 沒處理)
+            if 'scrape_status' not in entity_data:
+                 entity_data['scrape_status'] = ArticleScrapeStatus.LINK_SAVED
+            if 'is_scraped' not in entity_data:
+                entity_data['is_scraped'] = False
+            # created_at/updated_at 由 BaseEntity/Schema 處理
+
+            # 2. 執行 Pydantic 驗證 (使用基類方法)
+            validated_data = self.validate_data(entity_data, SchemaType.CREATE)
+
+            # 3. 將已驗證的資料傳給內部方法
+            return self._create_internal(validated_data)
+        except ValidationError as e:
+            logger.error(f"創建 Article 驗證失敗: {e}")
+            raise # 重新拋出讓 Service 層處理
+        except DatabaseOperationError: # 捕捉來自 _create_internal 的錯誤
+             raise # 重新拋出
+        except Exception as e: # 捕捉其他意外錯誤
+            logger.error(f"創建 Article 時發生未預期錯誤: {e}", exc_info=True)
+            raise DatabaseOperationError(f"創建 Article 時發生未預期錯誤: {e}") from e
     
     def batch_create(self, entities_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """
@@ -313,29 +293,13 @@ class ArticlesRepository(BaseRepository[Articles]):
                         "error": "創建實體返回空值"
                     })
             except Exception as e:
-                logger.error(f"批量創建實體失敗: {str(e)}")
+                logger.error(f"批量創建實體失敗: {str(e)} - 資料: {entity_data.get('link', 'N/A')}")
                 fail_count += 1
                 failed_articles.append({
                     "data": entity_data,
                     "error": str(e)
                 })
                 continue
-        
-        try:
-            self.session.commit()
-        except Exception as e:
-            logger.error(f"提交批量創建時發生錯誤: {str(e)}")
-            self.session.rollback()
-            # 如果提交失敗，更新統計數據
-            fail_count = len(entities_data)
-            success_count = 0
-            update_count = 0
-            inserted_articles = []
-            updated_articles = []
-            failed_articles = [{
-                "data": entity_data,
-                "error": f"提交事務失敗: {str(e)}"
-            } for entity_data in entities_data]
         
         return {
             "success_count": success_count,
@@ -348,44 +312,31 @@ class ArticlesRepository(BaseRepository[Articles]):
 
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[Articles]:
         """
-        更新文章，因為網文的特性，更新資料會有Link，但是底層不允許更新，
-        因此添加針對Link的特殊處理(先pop->更新->恢復)，避免影響後續物件操作
-        
-        Args:
-            entity_id: 實體ID
-            entity_data: 要更新的實體資料
-            
-        Returns:
-            更新後的文章實體，如果實體不存在則返回None
+        更新文章。
+        先進行 Pydantic 驗證，然後調用內部更新。
         """
-        # 檢查實體是否存在
-        existing_entity = self.get_by_id(entity_id)
-        if not existing_entity:
-            logger.warning(f"更新文章失敗，ID不存在: {entity_id}")
-            return None
-        
-        # 如果更新資料為空，直接返回已存在的實體
-        if not entity_data:
-            return existing_entity
+        try:
+             # 1. 執行 Pydantic 驗證 (獲取 update payload)
+             # 因為ArticleCreateSchema的link是unique，所以不可以更新
+             original_link = None
+             if 'link' in entity_data:
+                original_link = entity_data['link']
+                entity_data.pop('link', None)
+             update_payload = self.validate_data(entity_data, SchemaType.UPDATE)
+             # 恢復原始連結
+             if original_link:
+                update_payload['link'] = original_link
 
-        original_link = None
-        # 如果連結存在更新資料中，則移除
-        if 'link' in entity_data:
-            original_link = entity_data['link']
-            entity_data.pop('link')
-            
-        # 驗證並補充必填欄位
-        validated_data = self._validate_required_fields(entity_data, existing_entity)
-        
-        # 獲取並使用適當的schema進行驗證和更新
-        schema_class = self.get_schema_class(SchemaType.UPDATE)
-        result = self._update_internal(entity_id, validated_data, schema_class)
-
-        # 如果原本有連結，則恢復連結，避免影響後續物件操作
-        if original_link:
-            entity_data['link'] = original_link
-
-        return result
+             # 2. 將已驗證的 payload 傳給內部方法
+             return self._update_internal(entity_id, update_payload)
+        except ValidationError as e:
+             logger.error(f"更新 Article (ID={entity_id}) 驗證失敗: {e}")
+             raise # 重新拋出
+        except DatabaseOperationError: # 捕捉來自 _update_internal 的錯誤
+             raise # 重新拋出
+        except Exception as e: # 捕捉其他意外錯誤
+            logger.error(f"更新 Article (ID={entity_id}) 時發生未預期錯誤: {e}", exc_info=True)
+            raise DatabaseOperationError(f"更新 Article (ID={entity_id}) 時發生未預期錯誤: {e}") from e
 
     def update_scrape_status(self, link: str, is_scraped: bool = True) -> bool:
         """更新文章連結的爬取狀態"""
@@ -500,15 +451,6 @@ class ArticlesRepository(BaseRepository[Articles]):
                 logger.error(f"更新實體 ID={entity_id} 時發生錯誤: {str(e)}")
                 error_ids.append(entity_id)
                 continue
-        
-        try:
-            self.session.commit()  # 提交所有成功的更新
-        except Exception as e:
-            logger.error(f"提交批量更新時發生錯誤: {str(e)}")
-            self.session.rollback()
-            # 如果提交失敗，將所有更新標記為失敗
-            error_ids.extend([article.id for article in updated_articles])
-            updated_articles = []
         
         return {
             "success_count": len(updated_articles),

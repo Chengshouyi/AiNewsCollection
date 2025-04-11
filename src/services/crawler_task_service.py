@@ -1,20 +1,18 @@
-from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional, Tuple, Type, cast
+from datetime import datetime, timezone
+from typing import List, Dict, Any, Tuple, Type, cast
 import threading
 import time
 import logging
 
 from src.services.base_service import BaseService
-from src.database.database_manager import DatabaseManager
-from src.database.base_repository import BaseRepository
+from src.database.base_repository import BaseRepository, SchemaType
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
 from src.database.crawlers_repository import CrawlersRepository
 from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
 from src.models.base_model import Base
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawlers_model import Crawlers
-from src.models.crawler_task_history_model import CrawlerTaskHistory        
-from src.utils.validators import validate_crawler_data, validate_task_data
+from src.models.crawler_task_history_model import CrawlerTaskHistory
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -52,12 +50,15 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'success': False,
                         'message': '無法取得資料庫存取器'
                     }
-                    
-                task_id = tasks_repo.create(task_data)
+                
+                # 先驗證資料
+                validated_data = self.validate_data('CrawlerTask', task_data, SchemaType.CREATE)
+                # 創建任務
+                task = tasks_repo.create(validated_data)
                 return {
                     'success': True,
                     'message': '任務創建成功',
-                    'task_id': task_id
+                    'task_id': task.id if task else None
                 }
         except Exception as e:
             error_msg = f"創建任務失敗: {str(e)}"
@@ -78,8 +79,11 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'message': '無法取得資料庫存取器',
                         'task': None
                     }
-                    
-                result = tasks_repo.update(task_id, task_data)
+                
+                # 先驗證資料
+                validated_data = self.validate_data('CrawlerTask', task_data, SchemaType.UPDATE)
+                # 更新任務
+                result = tasks_repo.update(task_id, validated_data)
                 if result is None:
                     return {
                         'success': False,
@@ -294,19 +298,28 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     'status': 'running',
                     'message': '任務開始執行'
                 }
-                history_id = history_repo.create(history_data)
+                
+                # 先驗證歷史記錄資料
+                validated_history_data = self.validate_data('TaskHistory', history_data, SchemaType.CREATE)
+                # 創建歷史記錄
+                history = history_repo.create(validated_history_data)
+                history_id = history.id if history else None
                 
                 try:
                     # 執行任務邏輯
                     # TODO: 實作實際的任務執行邏輯
                     
                     # 更新任務歷史記錄
-                    history_data.update({
+                    history_update_data = {
                         'end_time': datetime.now(timezone.utc),
                         'status': 'completed',
                         'message': '任務執行完成'
-                    })
-                    history_repo.update(history_id, history_data)
+                    }
+                    
+                    # 驗證歷史記錄更新資料
+                    validated_history_update = self.validate_data('TaskHistory', history_update_data, SchemaType.UPDATE)
+                    # 更新歷史記錄
+                    history_repo.update(history_id, validated_history_update)
                     
                     return {
                         'success': True,
@@ -314,12 +327,16 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     }
                 except Exception as e:
                     # 更新任務歷史記錄
-                    history_data.update({
+                    history_update_data = {
                         'end_time': datetime.now(timezone.utc),
                         'status': 'failed',
                         'message': f'任務執行失敗: {str(e)}'
-                    })
-                    history_repo.update(history_id, history_data)
+                    }
+                    
+                    # 驗證歷史記錄更新資料
+                    validated_history_update = self.validate_data('TaskHistory', history_update_data, SchemaType.UPDATE)
+                    # 更新歷史記錄
+                    history_repo.update(history_id, validated_history_update)
                     
                     return {
                         'success': False,
@@ -370,19 +387,28 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     'status': 'running',
                     'message': '開始抓取文章內容'
                 }
-                history_id = history_repo.create(history_data)
+                
+                # 先驗證歷史記錄資料
+                validated_history_data = self.validate_data('TaskHistory', history_data, SchemaType.CREATE)
+                # 創建歷史記錄
+                history = history_repo.create(validated_history_data)
+                history_id = history.id if history else None
                 
                 try:
                     # 執行抓取內容邏輯
                     # TODO: 實作實際的抓取內容邏輯
                     
                     # 更新任務歷史記錄
-                    history_data.update({
+                    history_update_data = {
                         'end_time': datetime.now(timezone.utc),
                         'status': 'completed',
                         'message': '文章內容抓取完成'
-                    })
-                    history_repo.update(history_id, history_data)
+                    }
+                    
+                    # 驗證歷史記錄更新資料
+                    validated_history_update = self.validate_data('TaskHistory', history_update_data, SchemaType.UPDATE)
+                    # 更新歷史記錄
+                    history_repo.update(history_id, validated_history_update)
                     
                     return {
                         'success': True,
@@ -390,12 +416,16 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     }
                 except Exception as e:
                     # 更新任務歷史記錄
-                    history_data.update({
+                    history_update_data = {
                         'end_time': datetime.now(timezone.utc),
                         'status': 'failed',
                         'message': f'文章內容抓取失敗: {str(e)}'
-                    })
-                    history_repo.update(history_id, history_data)
+                    }
+                    
+                    # 驗證歷史記錄更新資料
+                    validated_history_update = self.validate_data('TaskHistory', history_update_data, SchemaType.UPDATE)
+                    # 更新歷史記錄
+                    history_repo.update(history_id, validated_history_update)
                     
                     return {
                         'success': False,
@@ -420,23 +450,26 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             Dict[str, Any]: 測試結果
         """
         try:
-            # 驗證爬蟲配置
+            # 驗證爬蟲配置和任務資料
             tasks_repo, crawlers_repo, _ = self._get_repositories()
-            crawler_errors = validate_crawler_data(crawler_data, crawlers_repo)
-            if crawler_errors:
+            
+            # 使用新的 validate_data 方法進行驗證
+            try:
+                self.validate_data('Crawler', crawler_data, SchemaType.CREATE)
+            except Exception as e:
                 return {
                     'success': False,
                     'message': '爬蟲配置驗證失敗',
-                    'errors': crawler_errors
+                    'errors': str(e)
                 }
             
-            # 驗證任務資料
-            task_errors = validate_task_data(task_data, tasks_repo)
-            if task_errors:
+            try:
+                self.validate_data('CrawlerTask', task_data, SchemaType.CREATE)
+            except Exception as e:
                 return {
                     'success': False,
                     'message': '任務資料驗證失敗',
-                    'errors': task_errors
+                    'errors': str(e)
                 }
             
             # TODO: 實作實際的爬蟲測試邏輯
@@ -501,7 +534,11 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     'status': 'cancelled',
                     'message': '任務已取消'
                 }
-                history_repo.update(latest_history.id, history_data)
+                
+                # 驗證歷史記錄更新資料
+                validated_history_data = self.validate_data('TaskHistory', history_data, SchemaType.UPDATE)
+                # 更新歷史記錄
+                history_repo.update(latest_history.id, validated_history_data)
                 
                 return {
                     'success': True,

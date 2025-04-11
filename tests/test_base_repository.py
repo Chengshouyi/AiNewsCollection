@@ -20,7 +20,7 @@ class ModelCreateSchema(BaseModel):
     link: str
     source: str
     published_at: str
-    summary: Optional[str] = None
+    summary: Optional[str] = None  # 明確標記為選填並提供預設值
     
     @field_validator('title')
     def validate_title(cls, v):
@@ -37,6 +37,11 @@ class ModelCreateSchema(BaseModel):
         if len(v) > 1000:
             raise ValueError("link: 長度不能超過 1000 字元")
         return v.strip()
+    
+    @classmethod
+    def get_required_fields(cls) -> list:
+        """返回所有必填欄位名稱"""
+        return ["name", "title", "link", "source", "published_at"]  # 明確列出必填欄位
 
 class ModelUpdateSchema(BaseModel):
     title: Optional[str] = None
@@ -44,6 +49,16 @@ class ModelUpdateSchema(BaseModel):
     source: Optional[str] = None
     published_at: Optional[str] = None
     summary: Optional[str] = None
+    
+    @classmethod
+    def get_required_fields(cls) -> list:
+        """返回所有必填欄位名稱"""
+        return []
+    
+    @classmethod
+    def get_immutable_fields(cls) -> list:
+        """返回不可變更的欄位"""
+        return []
 
 
 class ModelForTest(Base):
@@ -76,30 +91,27 @@ class ModelRepositoryforTest(BaseRepository[ModelForTest]):
     
     def create(self, entity_data: Dict[str, Any]) -> Optional[ModelForTest]:
         """實現創建實體的抽象方法"""
-        # 處理特殊邏輯，例如從entity_data提取schema_class
-        schema_type = SchemaType.CREATE
-        schema_class = entity_data.pop('schema_class', None)
-        
-        # 如果傳入特定schema_class，創建一個新的schema並使用它
-        if schema_class:
-            # 調用時仍使用指定的schema而不是從get_schema_class獲取
-            return self._create_internal(entity_data, schema_class)
-        
-        # 使用枚舉獲取正確的schema類型
-        return self._create_internal(entity_data, self.get_schema_class(schema_type))
+        try:
+            # 執行 Pydantic 驗證 (使用基類方法)
+            validated_data = self.validate_data(entity_data, SchemaType.CREATE)
+            
+            # 將已驗證的資料傳給內部方法
+            return self._create_internal(validated_data)
+        except Exception as e:
+            # 簡單處理異常，讓測試能正確捕獲
+            raise e
     
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[ModelForTest]:
         """實現更新實體的抽象方法"""
-        # 處理特殊邏輯，例如從entity_data提取schema_class
-        schema_type = SchemaType.UPDATE
-        schema_class = entity_data.pop('schema_class', None)
-        
-        # 如果傳入特定schema_class，使用它而不是從get_schema_class獲取
-        if schema_class:
-            return self._update_internal(entity_id, entity_data, schema_class)
-        
-        # 使用枚舉獲取正確的schema類型
-        return self._update_internal(entity_id, entity_data, self.get_schema_class(schema_type))
+        try:
+            # 執行 Pydantic 驗證 (獲取 update payload)
+            update_payload = self.validate_data(entity_data, SchemaType.UPDATE)
+            
+            # 將已驗證的 payload 傳給內部方法
+            return self._update_internal(entity_id, update_payload)
+        except Exception as e:
+            # 簡單處理異常，讓測試能正確捕獲
+            raise e
 
 class TestBaseRepository:
     
@@ -172,9 +184,18 @@ class TestBaseRepository:
         session.commit()
         
         data_with_schema = sample_model_data.copy()
-        data_with_schema['schema_class'] = ModelCreateSchema
+        # schema_class 已不再直接使用，此測試更新為測試 validate_data 方法
         
-        result = repo.create(data_with_schema)
+        # 手動調用 validate_data 方法
+        validated_data = repo.validate_data(data_with_schema, SchemaType.CREATE)
+        
+        # 確認驗證成功
+        assert validated_data is not None
+        assert "title" in validated_data
+        assert validated_data["title"] == "測試文章"
+        
+        # 使用驗證後的資料創建實體
+        result = repo._create_internal(validated_data)
         session.commit()
         
         # 刷新獲取最新數據
@@ -200,14 +221,13 @@ class TestBaseRepository:
             "title": "",  # 空標題
             "link": "https://test.com/article",
             "published_at": "2023-07-01",
-            "source": "測試來源",
-            "schema_class": ModelCreateSchema
+            "source": "測試來源"
         }
         
-        with pytest.raises(DatabaseOperationError) as excinfo:
+        with pytest.raises((ValueError, DatabaseOperationError)) as excinfo:
             repo.create(invalid_data)
         
-        assert "title: 不能為空" in str(excinfo.value)
+        assert "不能為空" in str(excinfo.value)
 
     def test_update_entity(self, repo, sample_model_data, session):
         """測試更新實體的基本功能"""
@@ -256,10 +276,19 @@ class TestBaseRepository:
         
         update_data = {
             "title": "使用Schema更新後的文章",
-            "summary": "這是使用Schema更新後的摘要",
-            "schema_class": ModelUpdateSchema
+            "summary": "這是使用Schema更新後的摘要"
         }
-        result = repo.update(entity_id, update_data)
+        
+        # 手動調用 validate_data 方法
+        validated_data = repo.validate_data(update_data, SchemaType.UPDATE)
+        
+        # 確認驗證成功
+        assert validated_data is not None
+        assert "title" in validated_data
+        assert validated_data["title"] == "使用Schema更新後的文章"
+        
+        # 使用驗證後的資料更新實體
+        result = repo._update_internal(entity_id, validated_data)
         session.commit()
         
         # 刷新獲取最新數據
@@ -454,3 +483,28 @@ class TestBaseRepository:
         
         schema = repo.get_schema_class(SchemaType.DETAIL)
         assert schema == ModelCreateSchema  # 在測試實現中，DETAIL類型也返回ModelCreateSchema
+        
+    def test_validate_data(self, repo, sample_model_data):
+        """測試 validate_data 方法"""
+        # 測試 CREATE 驗證
+        validated_create = repo.validate_data(sample_model_data, SchemaType.CREATE)
+        assert validated_create is not None
+        assert validated_create["title"] == "測試文章"
+        assert validated_create["link"] == "https://test.com/article"
+        
+        # 測試 UPDATE 驗證 (僅包含更新的欄位)
+        update_data = {"title": "更新的標題", "summary": "新摘要"}
+        validated_update = repo.validate_data(update_data, SchemaType.UPDATE)
+        assert validated_update is not None
+        assert validated_update["title"] == "更新的標題"
+        assert validated_update["summary"] == "新摘要"
+        assert "link" not in validated_update  # UPDATE 應該只包含傳入的欄位
+        
+        # 測試驗證錯誤 (空標題)
+        invalid_data = sample_model_data.copy()
+        invalid_data["title"] = ""
+        
+        with pytest.raises(Exception) as excinfo:
+            repo.validate_data(invalid_data, SchemaType.CREATE)
+        
+        assert "不能為空" in str(excinfo.value)

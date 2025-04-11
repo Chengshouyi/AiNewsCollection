@@ -103,6 +103,43 @@ class TestCrawlersRepository:
             crawlers_repo.get_schema_class(SchemaType.LIST)
         assert "未支援的 schema 類型" in str(exc_info.value)
     
+    # 新增測試 validate_data 方法
+    def test_validate_data(self, crawlers_repo, clean_db):
+        """測試 validate_data 方法"""
+        # 準備測試資料
+        crawler_data = {
+            "crawler_name": "測試驗證爬蟲",
+            "base_url": "https://example.com/validate",
+            "is_active": True,
+            "crawler_type": "web",
+            "config_file_name": "test_crawler.json"
+        }
+        
+        # 測試 CREATE 驗證
+        validated_create = crawlers_repo.validate_data(crawler_data, SchemaType.CREATE)
+        assert validated_create is not None
+        assert validated_create["crawler_name"] == "測試驗證爬蟲"
+        assert validated_create["base_url"] == "https://example.com/validate"
+        
+        # 測試 UPDATE 驗證 (僅包含更新的欄位)
+        update_data = {"crawler_name": "更新的爬蟲名稱", "is_active": False}
+        validated_update = crawlers_repo.validate_data(update_data, SchemaType.UPDATE)
+        assert validated_update is not None
+        assert validated_update["crawler_name"] == "更新的爬蟲名稱"
+        assert validated_update["is_active"] is False
+        assert "base_url" not in validated_update  # UPDATE 應該只包含傳入的欄位
+        
+        # 測試驗證錯誤 (缺少必填欄位)
+        invalid_data = {
+            "crawler_name": "缺失欄位爬蟲"
+            # 缺少 base_url
+        }
+        
+        with pytest.raises(ValidationError) as excinfo:
+            crawlers_repo.validate_data(invalid_data, SchemaType.CREATE)
+        
+        assert "驗證失敗" in str(excinfo.value)
+    
     def test_get_all(self, crawlers_repo, sample_crawlers, session, clean_db):
         """測試獲取所有爬蟲設定"""
         settings = crawlers_repo.get_all()

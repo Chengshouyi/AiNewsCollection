@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 from sqlalchemy import create_engine, String
 from sqlalchemy.orm import sessionmaker, Mapped, mapped_column, Session
 from datetime import datetime, timezone
+import pydantic
 
 from src.models.base_model import Base
 from src.database.base_repository import BaseRepository, SchemaType
@@ -22,10 +23,20 @@ class ModelCreateSchemaForTest(BaseModel):
         if not v or not v.strip():
             raise ValueError("title不能為空")
         return v.strip()
+    
+    @classmethod
+    def get_required_fields(cls) -> List[str]:
+        """返回必填欄位列表"""
+        return ["name", "title"]
 
 class ModelUpdateSchemaForTest(BaseModel):
     name: Optional[str] = None
     title: Optional[str] = None
+    
+    @classmethod
+    def get_immutable_fields(cls) -> List[str]:
+        """返回不可變更的欄位"""
+        return []
 
 # 測試用模型類
 class ModelForTest(Base):
@@ -45,11 +56,34 @@ class RepositoryForTest(BaseRepository[ModelForTest]):
             return ModelUpdateSchemaForTest
         return ModelCreateSchemaForTest
     
+    def validate_data(self, entity_data: Dict[str, Any], schema_type: SchemaType) -> Dict[str, Any]:
+        """重寫 validate_data 方法，確保正確處理 Pydantic 驗證錯誤"""
+        schema_class = self.get_schema_class(schema_type)
+        try:
+            # 執行 Pydantic 驗證
+            instance = schema_class.model_validate(entity_data)
+            
+            # 根據類型返回不同的字典表示
+            if schema_type == SchemaType.UPDATE:
+                return instance.model_dump(exclude_unset=True)
+            else:
+                return instance.model_dump()
+        except pydantic.ValidationError as e:
+            # 將 Pydantic 驗證錯誤轉換為我們自己的 ValidationError
+            error_msg = f"{schema_type.name} 資料驗證失敗: {str(e)}"
+            raise ValidationError(error_msg) from e
+    
     def create(self, entity_data: Dict[str, Any]) -> Optional[ModelForTest]:
-        return self._create_internal(entity_data, self.get_schema_class(SchemaType.CREATE))
+        # 首先驗證數據
+        validated_data = self.validate_data(entity_data, SchemaType.CREATE)
+        # 然後使用內部創建方法
+        return self._create_internal(validated_data)
     
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[ModelForTest]:
-        return self._update_internal(entity_id, entity_data, self.get_schema_class(SchemaType.UPDATE))
+        # 首先驗證數據
+        validated_data = self.validate_data(entity_data, SchemaType.UPDATE)
+        # 然後使用內部更新方法
+        return self._update_internal(entity_id, validated_data)
 
 # 測試用 Service 類
 class ServiceForTest(BaseService[ModelForTest]):
@@ -93,6 +127,10 @@ class ServiceForTest(BaseService[ModelForTest]):
                 return repo.delete(entity_id)
         except Exception as e:
             raise DatabaseOperationError(f"刪除測試實體失敗: {str(e)}") from e
+    
+    def validate_test_data(self, data: Dict[str, Any], schema_type: SchemaType = SchemaType.CREATE) -> Dict[str, Any]:
+        """驗證測試數據"""
+        return self.validate_data("test_repo", data, schema_type)
 
 class TestBaseService:
     @pytest.fixture(scope="session")
@@ -155,6 +193,19 @@ class TestBaseService:
         with pytest.raises(DatabaseOperationError) as excinfo:
             test_service._get_repository("unknown_repo")
         assert "未知的儲存庫名稱" in str(excinfo.value)
+        
+    def test_validate_data(self, test_service, sample_entity_data):
+        """測試數據驗證功能"""
+        # 測試有效數據
+        validated_data = test_service.validate_test_data(sample_entity_data)
+        assert validated_data["name"] == sample_entity_data["name"]
+        assert validated_data["title"] == sample_entity_data["title"]
+        
+        # 測試無效數據
+        invalid_data = {"name": "test", "title": ""}
+        with pytest.raises(ValidationError) as excinfo:
+            test_service.validate_test_data(invalid_data)
+        assert "title不能為空" in str(excinfo.value)
     
     def test_create_entity(self, test_service, sample_entity_data):
         """測試創建實體"""

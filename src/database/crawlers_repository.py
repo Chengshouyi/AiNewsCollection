@@ -5,9 +5,10 @@ from datetime import datetime, timezone
 from sqlalchemy import func
 from pydantic import BaseModel
 from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
-from src.error.errors import ValidationError
+from src.error.errors import ValidationError, DatabaseOperationError
 from src.utils.model_utils import convert_to_dict
 import logging
+
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -23,107 +24,72 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             return CrawlersUpdateSchema
         raise ValueError(f"未支援的 schema 類型: {schema_type}")
         
-    def _validate_required_fields(self, entity_data: Dict[str, Any], existing_entity: Optional[Crawlers] = None) -> Dict[str, Any]:
-        """
-        驗證並補充必填欄位
-        
-        Args:
-            entity_data: 爬蟲設定數據
-            existing_entity: 現有爬蟲實體 (用於更新時)
-            
-        Returns:
-            處理後的爬蟲設定數據
-        """
-        # 深度複製避免修改原始資料
-        copied_data = entity_data.copy()
-
-        # 檢查必填欄位
-        required_fields = CrawlersCreateSchema.get_required_fields()
-        # 因為Crawlers的crawler_type是不可以更新，所以需要移除
-        required_fields.remove('crawler_type')
-        
-        # 如果是更新操作，從現有實體中補充必填欄位
-        if existing_entity:
-            for field in required_fields:
-                if field not in copied_data and hasattr(existing_entity, field):
-                    copied_data[field] = getattr(existing_entity, field)
-        
-        # 檢查是否仍然缺少必填欄位
-        missing_fields = [field for field in required_fields if field not in copied_data or copied_data[field] is None]
-        if missing_fields:
-            raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
-            
-        return copied_data
     
     def create(self, entity_data: Dict[str, Any]) -> Optional[Crawlers]:
-        """創建爬蟲設定
-        
-        Args:
-            entity_data: 爬蟲設定數據
-            
-        Returns:
-            創建的爬蟲設定或 None
-        """
-        # 設置默認值
-        if 'created_at' not in entity_data:
-            entity_data['created_at'] = datetime.now(timezone.utc)
-        if 'is_active' not in entity_data:
-            entity_data['is_active'] = True
-            
-        # 驗證爬蟲名稱是否重複
-        if 'crawler_name' in entity_data and entity_data['crawler_name']:
-            existing = self.find_by_crawler_name_exact(entity_data['crawler_name'])
-            if existing:
-                raise ValidationError(f"爬蟲名稱 '{entity_data['crawler_name']}' 已存在")
-        
-        # 驗證並補充必填欄位
-        validated_data = self._validate_required_fields(entity_data)
-        
-        # 獲取並使用適當的schema進行驗證和創建
-        schema_class = self.get_schema_class(SchemaType.CREATE)
-        return self._create_internal(validated_data, schema_class)
+        """創建爬蟲設定，包含名稱唯一性檢查。"""
+        try:
+            # 1. 特定前置檢查：名稱唯一性
+            crawler_name = entity_data.get('crawler_name')
+            if crawler_name:
+                existing = self.find_by_crawler_name_exact(crawler_name)
+                if existing:
+                    raise ValidationError(f"爬蟲名稱 '{crawler_name}' 已存在")
+
+            # 2. 設定特定預設值 (如果 Schema 沒處理)
+            if 'is_active' not in entity_data:
+                entity_data['is_active'] = True
+            if 'created_at' not in entity_data: # BaseSchema 會處理，但這裡保留以防萬一
+                entity_data['created_at'] = datetime.now(timezone.utc)
+
+            # 3. 執行 Pydantic 驗證
+            validated_data = self.validate_data(entity_data, SchemaType.CREATE)
+
+            # 4. 將已驗證的資料傳給內部方法
+            return self._create_internal(validated_data)
+        except ValidationError as e:
+             logger.error(f"創建 Crawler 驗證失敗: {e}")
+             raise
+        except DatabaseOperationError:
+             raise
+        except Exception as e:
+             logger.error(f"創建 Crawler 時發生未預期錯誤: {e}", exc_info=True)
+             raise DatabaseOperationError(f"創建 Crawler 時發生未預期錯誤: {e}") from e
     
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[Crawlers]:
-        """更新爬蟲設定
-        
-        Args:
-            entity_id: 爬蟲ID
-            entity_data: 要更新的數據
-            
-        Returns:
-            更新後的爬蟲設定或 None
-        """
-        # 檢查爬蟲是否存在
-        existing_entity = self.get_by_id(entity_id)
-        if not existing_entity:
-            return None
-        
-        # 如果更新資料為空，直接返回已存在的實體
-        if not entity_data:
-            return existing_entity
-        
-        # 驗證不可更新的欄位
-        immutable_fields = ['created_at', 'id', 'crawler_type']
-        for field in immutable_fields:
-            if field in entity_data:
-                raise ValidationError(f"不允許更新欄位: {field}")
-            
-        # 檢查爬蟲名稱是否重複
-        if 'crawler_name' in entity_data and entity_data['crawler_name'] != existing_entity.crawler_name:
-            existing = self.find_by_crawler_name_exact(entity_data['crawler_name'])
-            if existing:
-                raise ValidationError(f"爬蟲名稱 '{entity_data['crawler_name']}' 已存在")
-        
-        # 設置更新時間
-        if 'updated_at' not in entity_data:
-            entity_data['updated_at'] = datetime.now(timezone.utc)
-        
-        # 驗證並補充必填欄位
-        validated_data = self._validate_required_fields(entity_data, existing_entity)
-        
-        # 獲取並使用適當的schema進行驗證和更新
-        schema_class = self.get_schema_class(SchemaType.UPDATE)
-        return self._update_internal(entity_id, validated_data, schema_class)
+        """更新爬蟲設定，包含名稱唯一性檢查（如果名稱變更）。"""
+        try:
+            # 1. 獲取現有實體以供比較 (或者讓 _update_internal 處理)
+            existing_entity = self.get_by_id(entity_id)
+            if not existing_entity:
+                 logger.warning(f"找不到 ID={entity_id} 的爬蟲設定，無法更新。")
+                 # 可以直接返回 None，或讓 validate_data/ _update_internal 處理
+                 return None
+
+
+            # 2. 特定前置檢查：如果 crawler_name 被更新，檢查唯一性
+            new_crawler_name = entity_data.get('crawler_name')
+            if new_crawler_name and new_crawler_name != existing_entity.crawler_name:
+                existing_check = self.find_by_crawler_name_exact(new_crawler_name)
+                if existing_check:
+                    raise ValidationError(f"爬蟲名稱 '{new_crawler_name}' 已存在")
+
+            # 3. updated_at 由 Schema 處理
+            if 'updated_at' not in entity_data: # BaseUpdateSchema 會處理
+                 entity_data['updated_at'] = datetime.now(timezone.utc)
+
+            # 4. 執行 Pydantic 驗證 (獲取 update payload)
+            update_payload = self.validate_data(entity_data, SchemaType.UPDATE)
+
+            # 5. 將已驗證的 payload 傳給內部方法
+            return self._update_internal(entity_id, update_payload)
+        except ValidationError as e:
+             logger.error(f"更新 Crawler (ID={entity_id}) 驗證失敗: {e}")
+             raise
+        except DatabaseOperationError:
+             raise
+        except Exception as e:
+             logger.error(f"更新 Crawler (ID={entity_id}) 時發生未預期錯誤: {e}", exc_info=True)
+             raise DatabaseOperationError(f"更新 Crawler (ID={entity_id}) 時發生未預期錯誤: {e}") from e
     
     def find_active_crawlers(self) -> Optional[List['Crawlers']]:
         """查詢活動中的爬蟲"""

@@ -22,42 +22,9 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
             return CrawlerTaskHistoryCreateSchema
         raise ValueError(f"未支援的 schema 類型: {schema_type}")
     
-    def _validate_required_fields(self, entity_data: Dict[str, Any], existing_entity: Optional[CrawlerTaskHistory] = None) -> Dict[str, Any]:
-        """
-        驗證並補充必填欄位
-        
-        Args:
-            entity_data: 實體資料
-            existing_entity: 現有實體 (用於更新時)
-            
-        Returns:
-            處理後的實體資料
-        """
-        # 深度複製避免修改原始資料
-        copied_data = entity_data.copy()
-
-        
-        # 檢查必填欄位
-        required_fields = CrawlerTaskHistoryCreateSchema.get_required_fields()
-        # 因為CrawlerTaskHistory的task_id是不可以更新，所以需要移除
-        required_fields.remove('task_id')
-        
-        # 如果是更新操作，從現有實體中補充必填欄位
-        if existing_entity:
-            for field in required_fields:
-                if field not in copied_data and hasattr(existing_entity, field):
-                    copied_data[field] = getattr(existing_entity, field)
-        
-        # 檢查是否仍然缺少必填欄位
-        missing_fields = [field for field in required_fields if field not in copied_data or copied_data[field] is None]
-        if missing_fields:
-            raise ValidationError(f"缺少必填欄位: {', '.join(missing_fields)}")
-            
-        return copied_data
-    
     def create(self, entity_data: Dict[str, Any]) -> Optional[CrawlerTaskHistory]:
         """
-        創建爬蟲任務歷史記錄，添加針對 CrawlerTaskHistory 的特殊驗證
+        創建爬蟲任務歷史記錄，先進行 Pydantic 驗證，然後調用內部創建。
         
         Args:
             entity_data: 實體資料
@@ -65,24 +32,33 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         Returns:
             創建的爬蟲任務歷史實體
         """
-        # 驗證並補充必填欄位
-        validated_data = self._validate_required_fields(entity_data)
-        
-        # 設定默認值
-        if 'start_time' not in validated_data:
-            validated_data['start_time'] = datetime.now()
-        if 'success' not in validated_data:
-            validated_data['success'] = False
-        if 'articles_count' not in validated_data:
-            validated_data['articles_count'] = 0
-        
-        # 獲取並使用適當的schema進行驗證和創建
-        schema_class = self.get_schema_class(SchemaType.CREATE)
-        return self._create_internal(validated_data, schema_class)
+        try:
+            # 1. 設定特定預設值
+            copied_data = entity_data.copy()
+            if 'start_time' not in copied_data:
+                copied_data['start_time'] = datetime.now(timezone.utc)
+            if 'success' not in copied_data:
+                copied_data['success'] = False
+            if 'articles_count' not in copied_data:
+                copied_data['articles_count'] = 0
+            
+            # 2. 執行 Pydantic 驗證
+            validated_data = self.validate_data(copied_data, SchemaType.CREATE)
+            
+            # 3. 將已驗證的資料傳給內部方法
+            return self._create_internal(validated_data)
+        except ValidationError as e:
+            logger.error(f"創建 CrawlerTaskHistory 驗證失敗: {e}")
+            raise # 重新拋出讓 Service 層處理
+        except DatabaseOperationError: # 捕捉來自 _create_internal 的錯誤
+            raise # 重新拋出
+        except Exception as e: # 捕捉其他意外錯誤
+            logger.error(f"創建 CrawlerTaskHistory 時發生未預期錯誤: {e}", exc_info=True)
+            raise DatabaseOperationError(f"創建 CrawlerTaskHistory 時發生未預期錯誤: {e}") from e
     
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[CrawlerTaskHistory]:
         """
-        更新爬蟲任務歷史記錄，添加針對 CrawlerTaskHistory 的特殊驗證
+        更新爬蟲任務歷史記錄，先進行 Pydantic 驗證，然後調用內部更新。
         
         Args:
             entity_id: 實體ID
@@ -91,33 +67,42 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         Returns:
             更新後的爬蟲任務歷史實體，如果實體不存在則返回None
         """
-        # 檢查實體是否存在
-        existing_entity = self.get_by_id(entity_id)
-        if not existing_entity:
-            logger.warning(f"更新爬蟲任務歷史記錄失敗，ID不存在: {entity_id}")
-            return None
-        
-        # 如果更新資料為空，直接返回已存在的實體
-        if not entity_data:
-            return existing_entity
+        try:
+            # 1. 檢查實體是否存在
+            existing_entity = self.get_by_id(entity_id)
+            if not existing_entity:
+                logger.warning(f"更新爬蟲任務歷史記錄失敗，ID不存在: {entity_id}")
+                return None
             
-        # 檢查不可更新的欄位
-        immutable_fields = ['id', 'task_id', 'start_time', 'created_at']
-        for field in immutable_fields:
-            if field in entity_data:
-                logger.warning(f"嘗試更新不可修改的欄位: {field}，該欄位將被忽略")
-                entity_data.pop(field)
-        
-        # 如果剩餘更新資料為空，直接返回已存在的實體
-        if not entity_data:
-            return existing_entity
+            # 如果更新資料為空，直接返回已存在的實體
+            if not entity_data:
+                return existing_entity
+                
+            # 2. 檢查不可更新的欄位
+            copied_data = entity_data.copy()
+            immutable_fields = ['id', 'task_id', 'start_time', 'created_at']
+            for field in immutable_fields:
+                if field in copied_data:
+                    logger.warning(f"嘗試更新不可修改的欄位: {field}，該欄位將被忽略")
+                    copied_data.pop(field)
             
-        # 驗證並補充必填欄位
-        validated_data = self._validate_required_fields(entity_data, existing_entity)
-        
-        # 獲取並使用適當的schema進行驗證和更新
-        schema_class = self.get_schema_class(SchemaType.UPDATE)
-        return self._update_internal(entity_id, validated_data, schema_class)
+            # 如果剩餘更新資料為空，直接返回已存在的實體
+            if not copied_data:
+                return existing_entity
+                
+            # 3. 執行 Pydantic 驗證 (獲取 update payload)
+            update_payload = self.validate_data(copied_data, SchemaType.UPDATE)
+            
+            # 4. 將已驗證的 payload 傳給內部方法
+            return self._update_internal(entity_id, update_payload)
+        except ValidationError as e:
+            logger.error(f"更新 CrawlerTaskHistory (ID={entity_id}) 驗證失敗: {e}")
+            raise # 重新拋出
+        except DatabaseOperationError: # 捕捉來自 _update_internal 的錯誤
+            raise # 重新拋出
+        except Exception as e: # 捕捉其他意外錯誤
+            logger.error(f"更新 CrawlerTaskHistory (ID={entity_id}) 時發生未預期錯誤: {e}", exc_info=True)
+            raise DatabaseOperationError(f"更新 CrawlerTaskHistory (ID={entity_id}) 時發生未預期錯誤: {e}") from e
 
     def find_by_task_id(self, task_id: int) -> List['CrawlerTaskHistory']:
         """根據任務ID查詢相關的歷史記錄"""

@@ -1,9 +1,9 @@
 import logging
-from typing import Dict, Any, Optional, Type, TypeVar, Generic, List
+from typing import Dict, Any, Optional, TypeVar, Generic, List
 from contextlib import contextmanager
 
 from src.database.database_manager import DatabaseManager
-from src.database.base_repository import BaseRepository
+from src.database.base_repository import BaseRepository, SchemaType
 from src.models.base_model import Base
 from src.error.errors import DatabaseOperationError, ValidationError
 
@@ -78,6 +78,34 @@ class BaseService(Generic[T]):
             return repository
         except Exception as e:
             error_msg = f"獲取儲存庫失敗: {str(e)}"
+            logger.error(error_msg)
+            raise DatabaseOperationError(error_msg) from e
+    
+    def validate_data(self, repository_name: str, entity_data: Dict[str, Any], 
+                     schema_type: SchemaType = SchemaType.CREATE) -> Dict[str, Any]:
+        """
+        公開方法：透過指定的儲存庫驗證資料
+        
+        Args:
+            repository_name: 儲存庫名稱
+            entity_data: 實體資料
+            schema_type: Schema類型 (預設為CREATE)
+            
+        Returns:
+            驗證後的資料
+            
+        Raises:
+            ValidationError: 資料驗證失敗
+            DatabaseOperationError: 其他資料庫相關錯誤
+        """
+        try:
+            repo = self._get_repository(repository_name)
+            return repo.validate_data(entity_data, schema_type)
+        except ValidationError:
+            # 直接重新抛出 ValidationError
+            raise
+        except Exception as e:
+            error_msg = f"資料驗證失敗: {str(e)}"
             logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e
     

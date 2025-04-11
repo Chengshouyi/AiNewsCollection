@@ -3,7 +3,7 @@ from src.services.crawler_task_service import CrawlerTaskService
 from src.services.scheduler_service import SchedulerService
 from src.services.article_service import ArticleService
 from src.error.handle_api_error import handle_api_error
-from src.utils.validators import validate_task_data
+from src.utils.validators import validate_task_data_api
 import threading
 
 tasks_bp = Blueprint('tasks_api', __name__, url_prefix='/api/tasks')
@@ -46,7 +46,7 @@ def create_scheduled_task():
     try:
         data = request.get_json()
         tasks_repo = get_task_service()._get_repositories()[0]
-        validate_task_data(data, tasks_repo)
+        validate_task_data_api(data, tasks_repo)
         service = get_task_service()
         scheduler = get_scheduler_service()
         result = service.create_task(data)
@@ -74,7 +74,7 @@ def update_scheduled_task(task_id):
     try:
         data = request.get_json()
         tasks_repo = get_task_service()._get_repositories()[0]
-        validate_task_data(data, tasks_repo)
+        validate_task_data_api(data, tasks_repo)
         service = get_task_service()
         scheduler = get_scheduler_service()
         result = service.update_task(task_id, data)
@@ -104,7 +104,7 @@ def start_manual_task():
     try:
         data = request.get_json()
         tasks_repo = get_task_service()._get_repositories()[0]
-        validate_task_data(data, tasks_repo)
+        validate_task_data_api(data, tasks_repo)
         task_service = get_task_service()
         result = task_service.create_task(data)
         if not result['success']:

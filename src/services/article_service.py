@@ -1,6 +1,6 @@
 import logging
 from typing import Optional, Dict, Any, List, TypeVar, Tuple, Hashable, Type, cast
-from src.models.articles_model import Base, Articles
+from src.models.articles_model import Base, Articles, ArticleScrapeStatus
 from datetime import datetime, timedelta
 from src.error.errors import DatabaseOperationError
 from src.database.articles_repository import ArticlesRepository
@@ -686,4 +686,249 @@ class ArticleService(BaseService[Articles]):
                 'success': False,
                 'message': error_msg,
                 'articles': []
+            }
+
+    def search_articles_by_title(self, keyword: str, exact_match: bool = False) -> Dict[str, Any]:
+        """根據標題搜索文章"""
+        try:
+            with self._transaction():
+                article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'articles': []
+                    }
+                
+                articles = article_repo.search_by_title(keyword, exact_match)
+                return {
+                    'success': True,
+                    'message': '搜索文章成功',
+                    'articles': articles
+                }
+        except Exception as e:
+            error_msg = f"根據標題搜索文章失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'articles': []
+            }
+            
+    def search_articles_by_keywords(self, keywords: str) -> Dict[str, Any]:
+        """根據關鍵字搜索文章"""
+        try:
+            with self._transaction():
+                article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'articles': []
+                    }
+                
+                articles = article_repo.search_by_keywords(keywords)
+                return {
+                    'success': True,
+                    'message': '搜索文章成功',
+                    'articles': articles
+                }
+        except Exception as e:
+            error_msg = f"根據關鍵字搜索文章失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'articles': []
+            }
+
+    def get_source_statistics(self) -> Dict[str, Any]:
+        """獲取各來源的爬取統計"""
+        try:
+            with self._transaction():
+                article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'stats': {}
+                    }
+                
+                stats = article_repo.get_source_statistics()
+                return {
+                    'success': True,
+                    'message': '獲取來源統計成功',
+                    'stats': stats
+                }
+        except Exception as e:
+            error_msg = f"獲取來源統計失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'stats': {}
+            }
+
+    def update_article_scrape_status(self, link: str, is_scraped: bool = True) -> Dict[str, Any]:
+        """更新文章爬取狀態"""
+        try:
+            with self._transaction():
+                article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器'
+                    }
+                
+                result = article_repo.update_scrape_status(link, is_scraped)
+                if result:
+                    return {
+                        'success': True,
+                        'message': '更新文章爬取狀態成功'
+                    }
+                return {
+                    'success': False,
+                    'message': '更新文章爬取狀態失敗，文章可能不存在'
+                }
+        except Exception as e:
+            error_msg = f"更新文章爬取狀態失敗, link={link}: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg
+            }
+            
+    def batch_mark_articles_as_scraped(self, links: List[str]) -> Dict[str, Any]:
+        """批量將文章標記為已爬取"""
+        try:
+            with self._transaction():
+                article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'resultMsg': None
+                    }
+                
+                result = article_repo.batch_mark_as_scraped(links)
+                return {
+                    'success': True,
+                    'message': f"批量標記文章為已爬取成功: {result['success_count']} 筆成功，{result['fail_count']} 筆失敗",
+                    'resultMsg': result
+                }
+        except Exception as e:
+            error_msg = f"批量標記文章為已爬取失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'resultMsg': None
+            }
+            
+    def get_unscraped_articles(self, limit: Optional[int] = 100, source: Optional[str] = None) -> Dict[str, Any]:
+        """獲取未爬取的文章"""
+        try:
+            with self._transaction():
+                article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'articles': []
+                    }
+                
+                articles = article_repo.find_unscraped_links(limit, source)
+                return {
+                    'success': True,
+                    'message': '獲取未爬取文章成功',
+                    'articles': articles
+                }
+        except Exception as e:
+            error_msg = f"獲取未爬取文章失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'articles': []
+            }
+            
+    def get_scraped_articles(self, limit: Optional[int] = 100, source: Optional[str] = None) -> Dict[str, Any]:
+        """獲取已爬取的文章"""
+        try:
+            with self._transaction():
+                article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'articles': []
+                    }
+                
+                articles = article_repo.find_scraped_links(limit, source)
+                return {
+                    'success': True,
+                    'message': '獲取已爬取文章成功',
+                    'articles': articles
+                }
+        except Exception as e:
+            error_msg = f"獲取已爬取文章失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'articles': []
+            }
+
+    def count_unscraped_articles(self, source: Optional[str] = None) -> Dict[str, Any]:
+        """計算未爬取的文章數量"""
+        try:
+            with self._transaction():
+                article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'count': 0
+                    }
+                
+                count = article_repo.count_unscraped_links(source)
+                return {
+                    'success': True,
+                    'message': '計算未爬取文章數量成功',
+                    'count': count
+                }
+        except Exception as e:
+            error_msg = f"計算未爬取文章數量失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'count': 0
+            }
+            
+    def count_scraped_articles(self, source: Optional[str] = None) -> Dict[str, Any]:
+        """計算已爬取的文章數量"""
+        try:
+            with self._transaction():
+                article_repo = self._get_repository()
+                if not article_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'count': 0
+                    }
+                
+                count = article_repo.count_scraped_links(source)
+                return {
+                    'success': True,
+                    'message': '計算已爬取文章數量成功',
+                    'count': count
+                }
+        except Exception as e:
+            error_msg = f"計算已爬取文章數量失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'count': 0
             }
