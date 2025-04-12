@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request, Response
 from src.services.crawlers_service import CrawlersService
-from src.utils.validators import validate_crawler_data_api
+from src.utils.api_validators import validate_crawler_data_api
 from src.error.handle_api_error import handle_api_error
 import logging
 from src.error.errors import ValidationError

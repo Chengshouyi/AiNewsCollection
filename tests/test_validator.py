@@ -1,5 +1,5 @@
 import pytest
-from src.utils.validators import validate_task_data_api, validate_crawler_data_api
+from src.utils.api_validators import validate_task_data_api, validate_crawler_data_api
 from src.error.errors import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -343,7 +343,7 @@ def test_validate_task_data_api_with_valid_scrape_mode_as_enum(task_service):
 
 def test_validate_task_data_api_with_invalid_scrape_mode_string(task_service):
     """測試使用無效的 scrape_mode 字符串值"""
-    with patch('src.utils.validators.ValidationError', MockValidationError):
+    with patch('src.utils.api_validators.ValidationError', MockValidationError):
         data = {
             'crawler_id': 1,
             'task_name': 'test_task',
@@ -362,7 +362,7 @@ def test_validate_task_data_api_with_invalid_scrape_mode_string(task_service):
 
 def test_validate_task_data_api_with_invalid_scrape_mode_type(task_service):
     """測試使用非字符串非枚舉的 scrape_mode 值"""
-    with patch('src.utils.validators.ValidationError', MockValidationError):
+    with patch('src.utils.api_validators.ValidationError', MockValidationError):
         data = {
             'crawler_id': 1,
             'task_name': 'test_task',
@@ -381,7 +381,7 @@ def test_validate_task_data_api_with_invalid_scrape_mode_type(task_service):
 
 def test_validate_task_data_api_with_invalid_scrape_mode_type_none(task_service):
     """測試使用None作為scrape_mode值"""
-    with patch('src.utils.validators.ValidationError', MockValidationError):
+    with patch('src.utils.api_validators.ValidationError', MockValidationError):
         data = {
             'crawler_id': 1,
             'task_name': 'test_task',
@@ -400,7 +400,7 @@ def test_validate_task_data_api_with_invalid_scrape_mode_type_none(task_service)
 
 def test_validate_task_data_api_with_invalid_scrape_mode_value(task_service):
     """測試使用無效的字符串作為scrape_mode值"""
-    with patch('src.utils.validators.ValidationError', MockValidationError):
+    with patch('src.utils.api_validators.ValidationError', MockValidationError):
         data = {
             'crawler_id': 1,
             'task_name': 'test_task',
@@ -419,7 +419,7 @@ def test_validate_task_data_api_with_invalid_scrape_mode_value(task_service):
 
 def test_validate_task_data_api_with_integer_scrape_mode(task_service):
     """測試使用整數作為scrape_mode值"""
-    with patch('src.utils.validators.ValidationError', MockValidationError):
+    with patch('src.utils.api_validators.ValidationError', MockValidationError):
         data = {
             'crawler_id': 1,
             'task_name': 'test_task',
