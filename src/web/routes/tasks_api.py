@@ -54,6 +54,65 @@ def create_scheduled_task():
     try:
         data = request.get_json()
         service = get_task_service()
+        
+        # 確保必要的排程任務參數存在
+        if 'task_args' not in data:
+            data['task_args'] = {}
+        task_args = data.get('task_args', {})
+        
+        # 確保 is_scheduled 為 True (相當於 is_auto)
+        data['is_auto'] = True
+        
+        # 確保 cron_expression 存在
+        if 'cron_expression' not in data:
+            return jsonify({"error": "排程任務必須提供 cron_expression"}), 400
+        
+        # 處理抓取模式
+        if 'scrape_mode' in task_args:
+            # 確保scrape_mode是字符串形式
+            if isinstance(task_args['scrape_mode'], str):
+                # 驗證scrape_mode是否為有效的枚舉值
+                try:
+                    ScrapeMode(task_args['scrape_mode'])
+                except ValueError:
+                    return jsonify({"error": f"無效的抓取模式: {task_args['scrape_mode']}"}), 400
+            else:
+                return jsonify({"error": "抓取模式必須為字符串"}), 400
+        else:
+            # 默認設置為完整抓取模式
+            task_args['scrape_mode'] = ScrapeMode.FULL_SCRAPE.value
+        
+        # 設置其他必要參數
+        if 'ai_only' not in data:
+            data['ai_only'] = task_args.get('ai_only', False)
+        
+        if 'max_retries' not in data:
+            data['max_retries'] = task_args.get('max_retries', 3)
+        
+        # 處理爬蟲執行的必要參數
+        if 'max_pages' not in task_args:
+            task_args['max_pages'] = 10  # 默認值
+            
+        if 'num_articles' not in task_args:
+            task_args['num_articles'] = 100  # 默認值
+            
+        if 'min_keywords' not in task_args:
+            task_args['min_keywords'] = 1  # 默認值
+            
+        if 'retry_delay' not in task_args:
+            task_args['retry_delay'] = 2.0  # 默認值
+            
+        if 'timeout' not in task_args:
+            task_args['timeout'] = 30  # 默認值，單位秒
+            
+        if 'save_to_csv' not in task_args:
+            task_args['save_to_csv'] = True  # 默認值
+            
+        if 'save_to_database' not in task_args:
+            task_args['save_to_database'] = True  # 默認值
+            
+        data['task_args'] = task_args
+        
         validate_task_data_api(data, service)
         scheduler = get_scheduler_service()
         result = service.create_task(data)
@@ -81,6 +140,54 @@ def update_scheduled_task(task_id):
     try:
         data = request.get_json()
         service = get_task_service()
+        
+        # 獲取當前任務資料，以保留未更新的參數
+        current_task = service.get_task_by_id(task_id)
+        if not current_task['success']:
+            return jsonify({"error": "找不到任務"}), 404
+        
+        current_task_data = current_task['task']
+        current_task_args = current_task_data.get('task_args', {})
+        
+        # 確保 task_args 存在
+        if 'task_args' not in data:
+            data['task_args'] = {}
+        task_args = data.get('task_args', {})
+        
+        # 將現有的 task_args 與新的合併
+        for key, value in current_task_args.items():
+            if key not in task_args:
+                task_args[key] = value
+        
+        # 確保 is_scheduled 為 True (相當於 is_auto)
+        data['is_auto'] = True
+        
+        # 檢查 cron_expression 是否存在，如果不存在則使用當前值
+        if 'cron_expression' not in data:
+            data['cron_expression'] = current_task_data.get('cron_expression')
+        
+        # 處理抓取模式
+        if 'scrape_mode' in task_args:
+            # 確保scrape_mode是字符串形式
+            if isinstance(task_args['scrape_mode'], str):
+                # 驗證scrape_mode是否為有效的枚舉值
+                try:
+                    ScrapeMode(task_args['scrape_mode'])
+                except ValueError:
+                    return jsonify({"error": f"無效的抓取模式: {task_args['scrape_mode']}"}), 400
+            else:
+                return jsonify({"error": "抓取模式必須為字符串"}), 400
+        
+        # 確保其他參數存在或使用當前值
+        if 'ai_only' not in data:
+            data['ai_only'] = current_task_data.get('ai_only', False)
+        
+        if 'max_retries' not in data:
+            data['max_retries'] = current_task_data.get('max_retries', 3)
+        
+        # 更新 task_args
+        data['task_args'] = task_args
+        
         validate_task_data_api(data, service, is_update=True)
         scheduler = get_scheduler_service()
         result = service.update_task(task_id, data)
@@ -111,8 +218,12 @@ def start_manual_task():
         data = request.get_json()
         task_service = get_task_service()
         
-        # 處理任務參數中的抓取模式
+        # 確保 task_args 存在
+        if 'task_args' not in data:
+            data['task_args'] = {}
         task_args = data.get('task_args', {})
+        
+        # 處理任務參數中的抓取模式
         if 'scrape_mode' in task_args:
             # 確保scrape_mode是字符串形式
             if isinstance(task_args['scrape_mode'], str):
@@ -126,7 +237,46 @@ def start_manual_task():
         else:
             # 默認設置為完整抓取模式
             task_args['scrape_mode'] = ScrapeMode.FULL_SCRAPE.value
-            data['task_args'] = task_args
+            
+        # 確保其他重要的爬蟲執行參數也被處理
+        if 'ai_only' not in data:
+            data['ai_only'] = task_args.get('ai_only', False)
+        
+        if 'max_retries' not in data:
+            data['max_retries'] = task_args.get('max_retries', 3)
+        
+        # 處理爬蟲執行的必要參數
+        if 'max_pages' not in task_args:
+            task_args['max_pages'] = 10  # 默認值
+            
+        if 'num_articles' not in task_args:
+            task_args['num_articles'] = 100  # 默認值
+            
+        if 'min_keywords' not in task_args:
+            task_args['min_keywords'] = 1  # 默認值
+            
+        if 'retry_delay' not in task_args:
+            task_args['retry_delay'] = 2.0  # 默認值
+            
+        if 'timeout' not in task_args:
+            task_args['timeout'] = 30  # 默認值，單位秒
+            
+        if 'save_to_csv' not in task_args:
+            task_args['save_to_csv'] = True  # 默認值
+            
+        if 'save_to_database' not in task_args:
+            task_args['save_to_database'] = True  # 默認值
+            
+        # 根據抓取模式處理相關參數
+        if task_args.get('scrape_mode') == ScrapeMode.CONTENT_ONLY.value:
+            if 'get_links_by_task_id' not in task_args:
+                task_args['get_links_by_task_id'] = True
+                
+            if not task_args.get('get_links_by_task_id'):
+                if 'article_ids' not in task_args and 'article_links' not in task_args:
+                    return jsonify({"error": "內容抓取模式需要提供 article_ids 或 article_links"}), 400
+        
+        data['task_args'] = task_args
             
         validate_task_data_api(data, task_service)
         result = task_service.create_task(data)
@@ -177,14 +327,36 @@ def collect_manual_task_links(task_id):
         if not task_check['success']:
             return jsonify({"error": task_check['message']}), 404
         
-        # 更新任務以使用LINKS_ONLY模式
-        service.update_task(task_id, {'scrape_mode': ScrapeMode.LINKS_ONLY.value})
+        # 獲取請求數據，可能包含額外參數
+        data = request.get_json() or {}
+        task_args = data.get('task_args', {})
+        
+        # 獲取現有任務資料
+        current_task = task_check['task']
+        current_task_args = current_task.get('task_args', {})
+        
+        # 合併現有參數和新參數
+        for key, value in task_args.items():
+            current_task_args[key] = value
+        
+        # 設置任務模式為僅抓取連結
+        update_data = {
+            'scrape_mode': ScrapeMode.LINKS_ONLY.value,
+            'task_args': current_task_args
+        }
+        
+        # 更新任務
+        service.update_task(task_id, update_data)
             
         thread = threading.Thread(target=run_collect_links_thread, args=(task_id,))
         thread.daemon = True
         thread.start()
         
-        return jsonify({"message": "Link collection initiated", "scrape_mode": ScrapeMode.LINKS_ONLY.value}), 202
+        return jsonify({
+            "message": "Link collection initiated", 
+            "scrape_mode": ScrapeMode.LINKS_ONLY.value,
+            "task_args": current_task_args
+        }), 202
     except Exception as e:
         return handle_api_error(e)
     
@@ -196,9 +368,35 @@ def fetch_manual_task_content(task_id):
         if not link_ids:
             return jsonify({"error": "Missing link_ids"}), 400
         
-        # 更新任務以使用CONTENT_ONLY模式
+        # 獲取其他任務參數
+        task_args = data.get('task_args', {})
+        
         service = get_task_service()
-        service.update_task(task_id, {'scrape_mode': ScrapeMode.CONTENT_ONLY.value})
+        # 檢查任務是否存在
+        task_check = service.get_task_by_id(task_id)
+        if not task_check['success']:
+            return jsonify({"error": task_check['message']}), 404
+        
+        # 獲取現有任務資料
+        current_task = task_check['task']
+        current_task_args = current_task.get('task_args', {})
+        
+        # 合併現有參數和新參數
+        for key, value in task_args.items():
+            current_task_args[key] = value
+        
+        # 設置必要的參數
+        current_task_args['article_ids'] = link_ids
+        current_task_args['get_links_by_task_id'] = False
+        
+        # 設置任務模式為僅抓取內容
+        update_data = {
+            'scrape_mode': ScrapeMode.CONTENT_ONLY.value,
+            'task_args': current_task_args
+        }
+        
+        # 更新任務
+        service.update_task(task_id, update_data)
             
         thread = threading.Thread(target=run_fetch_content_thread, args=(task_id, link_ids))
         thread.daemon = True
@@ -207,7 +405,8 @@ def fetch_manual_task_content(task_id):
         return jsonify({
             "message": "Content fetching initiated", 
             "scrape_mode": ScrapeMode.CONTENT_ONLY.value,
-            "link_count": len(link_ids)
+            "link_count": len(link_ids),
+            "task_args": current_task_args
         }), 202
     except Exception as e:
         return handle_api_error(e)
@@ -227,26 +426,59 @@ def get_manual_task_results(task_id):
 def test_crawler():
     try:
         data = request.get_json()
-        task_data = data.get('task_data')
-        crawler_data = data.get('crawler_data')
+        task_data = data.get('task_data', {})
+        crawler_data = data.get('crawler_data', {})
+        
+        # 確保 task_args 存在
+        if 'task_args' not in task_data:
+            task_data['task_args'] = {}
+        task_args = task_data.get('task_args', {})
         
         # 處理任務參數中的抓取模式
-        if task_data and 'task_args' in task_data:
-            task_args = task_data.get('task_args', {})
-            if 'scrape_mode' in task_args:
-                # 確保scrape_mode是字符串形式
-                if isinstance(task_args['scrape_mode'], str):
-                    # 驗證scrape_mode是否為有效的枚舉值
-                    try:
-                        ScrapeMode(task_args['scrape_mode'])
-                    except ValueError:
-                        return jsonify({"error": f"無效的抓取模式: {task_args['scrape_mode']}"}), 400
-                else:
-                    return jsonify({"error": "抓取模式必須為字符串"}), 400
+        if 'scrape_mode' in task_args:
+            # 確保scrape_mode是字符串形式
+            if isinstance(task_args['scrape_mode'], str):
+                # 驗證scrape_mode是否為有效的枚舉值
+                try:
+                    ScrapeMode(task_args['scrape_mode'])
+                except ValueError:
+                    return jsonify({"error": f"無效的抓取模式: {task_args['scrape_mode']}"}), 400
             else:
-                # 默認設置為完整抓取模式
-                task_args['scrape_mode'] = ScrapeMode.LINKS_ONLY.value  # 測試時通常只抓取連結
-                task_data['task_args'] = task_args
+                return jsonify({"error": "抓取模式必須為字符串"}), 400
+        else:
+            # 測試時默認設置為僅抓取連結模式
+            task_args['scrape_mode'] = ScrapeMode.LINKS_ONLY.value
+            
+        # 設置其他必要參數
+        if 'ai_only' not in task_data:
+            task_data['ai_only'] = task_args.get('ai_only', False)
+        
+        if 'max_retries' not in task_data:
+            task_data['max_retries'] = task_args.get('max_retries', 3)
+        
+        # 處理爬蟲執行的必要參數，測試時可以使用較小的數值
+        if 'max_pages' not in task_args:
+            task_args['max_pages'] = 2  # 測試用較小值
+            
+        if 'num_articles' not in task_args:
+            task_args['num_articles'] = 10  # 測試用較小值
+            
+        if 'min_keywords' not in task_args:
+            task_args['min_keywords'] = 1
+            
+        if 'retry_delay' not in task_args:
+            task_args['retry_delay'] = 1.0  # 測試用較小值
+            
+        if 'timeout' not in task_args:
+            task_args['timeout'] = 15  # 測試用較小值
+            
+        if 'save_to_csv' not in task_args:
+            task_args['save_to_csv'] = False  # 測試時不需要保存到CSV
+            
+        if 'save_to_database' not in task_args:
+            task_args['save_to_database'] = False  # 測試時不需要保存到資料庫
+        
+        task_data['task_args'] = task_args
         
         service = get_task_service()
         result = service.test_crawler_task(crawler_data, task_data)

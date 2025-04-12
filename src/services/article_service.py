@@ -673,8 +673,6 @@ class ArticleService(BaseService[Articles]):
                 query_filters = {'task_id': task_id}
                 if 'is_scraped' in filters:
                     query_filters['is_scraped'] = filters['is_scraped']
-                # elif 'scraped' in filters:  # 增加對 'scraped' 參數的支持
-                #     query_filters['is_scraped'] = filters['scraped']
                 
                 # 打印查詢條件和返回結果，用於調試
                 logger.debug(f"查詢條件: {query_filters}")

@@ -1,5 +1,5 @@
 import pytest
-from src.utils.api_validators import validate_task_data_api, validate_crawler_data_api
+from src.utils.api_validators import validate_task_data_api, validate_crawler_data_api, is_valid_cron_expression
 from src.error.errors import ValidationError
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -57,47 +57,6 @@ def crawlers_repo(session):
     """創建CrawlersRepository的實例"""
     return CrawlersRepository(session, Crawlers)
 
-# 修改TaskService的_get_repository方法，使其能夠直接返回Repository
-class CrawlerTaskServiceForTest(CrawlerTaskService):
-    def __init__(self, db_manager=None, repos=None):
-        super().__init__(db_manager)
-        self._test_repos = repos or {}
-        
-    def _get_repositories(self):
-        """獲取相關資料庫訪問對象"""
-        tasks_repo = self._test_repos.get('CrawlerTask')
-        crawlers_repo = self._test_repos.get('Crawler') 
-        history_repo = self._test_repos.get('TaskHistory')
-        return (tasks_repo, crawlers_repo, history_repo)
-    
-    def validate_task_data(self, data, is_update=False):
-        """覆寫驗證方法，直接使用儲存庫而不通過Service.validate_data"""
-        schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
-        tasks_repo = self._test_repos.get('CrawlerTask')
-        if tasks_repo:
-            return tasks_repo.validate_data(data, schema_type)
-        return super().validate_task_data(data, is_update)
-
-# 修改CrawlerService的_get_repository方法
-class CrawlersServiceForTest(CrawlersService):
-    def __init__(self, db_manager=None, repos=None):
-        super().__init__(db_manager)
-        self._test_repos = repos or {}
-        
-    def _get_repository(self):
-        """覆寫獲取儲存庫方法，直接返回測試儲存庫"""
-        if 'Crawler' in self._test_repos:
-            return self._test_repos['Crawler']
-        return super()._get_repository()
-    
-    def validate_crawler_data(self, data, is_update=False):
-        """覆寫驗證方法，直接使用儲存庫而不通過Service.validate_data"""
-        schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
-        crawler_repo = self._test_repos.get('Crawler')
-        if crawler_repo:
-            return crawler_repo.validate_data(data, schema_type)
-        return super().validate_crawler_data(data, is_update)
-
 @pytest.fixture
 def db_manager(engine, session_factory):
     """建立測試用 DatabaseManager"""
@@ -107,15 +66,17 @@ def db_manager(engine, session_factory):
     return mock_db_manager
 
 @pytest.fixture
-def task_service(db_manager, tasks_repo):
-    """創建CrawlerTaskService的實例"""
-    service = CrawlerTaskServiceForTest(db_manager, {'CrawlerTask': tasks_repo})
+def task_service(db_manager):
+    """創建真實的 CrawlerTaskService 實例，使用 mocked db_manager"""
+    # Use the real service with the mocked db_manager
+    service = CrawlerTaskService(db_manager)
     return service
 
 @pytest.fixture
-def crawler_service(db_manager, crawlers_repo):
-    """創建CrawlersService的實例"""
-    service = CrawlersServiceForTest(db_manager, {'Crawler': crawlers_repo})
+def crawler_service(db_manager):
+    """創建真實的 CrawlersService 實例，使用 mocked db_manager"""
+    # Use the real service with the mocked db_manager
+    service = CrawlersService(db_manager)
     return service
 
 def test_validate_task_data_api_with_valid_minimal_data(task_service):
@@ -256,6 +217,7 @@ def test_validate_crawler_data_api_with_valid_minimal_data(crawler_service):
     """測試最小化的有效爬蟲資料"""
     data = {
         'crawler_name': 'test_crawler',
+        'source_name': 'Test Source',
         'base_url': 'https://example.com',
         'crawler_type': 'rss',
         'is_active': True,
@@ -272,6 +234,7 @@ def test_validate_crawler_data_api_with_complete_valid_data(crawler_service):
     """測試完整的有效爬蟲資料"""
     data = {
         'crawler_name': 'test_crawler',
+        'source_name': 'Test Source',
         'base_url': 'https://example.com',
         'crawler_type': 'rss',
         'is_active': True,
@@ -457,3 +420,167 @@ def test_validate_task_data_api_with_valid_scrape_mode_string(task_service):
     }
     validated_data = validate_task_data_api(data, task_service)
     assert validated_data['task_args']['scrape_mode'] == ScrapeMode.FULL_SCRAPE.value
+
+# --- Tests for is_valid_cron_expression ---
+
+def test_is_valid_cron_expression_valid():
+    """測試有效的 cron 表達式"""
+    assert is_valid_cron_expression("0 0 * * *") is True
+    assert is_valid_cron_expression("*/5 * * * *") is True
+
+def test_is_valid_cron_expression_invalid():
+    """測試無效的 cron 表達式"""
+    assert is_valid_cron_expression("invalid cron") is False
+    assert is_valid_cron_expression("* * * * * *") is False # Too many fields
+    assert is_valid_cron_expression("") is False
+
+# --- Additional tests for validate_crawler_data_api ---
+
+def test_validate_crawler_data_api_missing_source_name_on_create(crawler_service):
+    """測試創建模式下缺少 source_name"""
+    data = {
+        # 'source_name': 'missing', # Omitted intentionally
+        'base_url': 'https://example.com',
+        'crawler_type': 'rss',
+        'is_active': True,
+        'config_file_name': 'test_config.json'
+    }
+    # CrawlersRepository 在創建時會檢查 source_name
+    # 但 api_validators 在調用 repo 之前就檢查了
+    with pytest.raises(ValidationError, match="來源名稱 \\(source_name\\) 是必填欄位"):
+        validate_crawler_data_api(data, crawler_service, is_update=False)
+
+
+# --- Additional tests for validate_task_data_api ---
+
+def test_validate_task_data_api_create_adds_default_retries(task_service):
+    """測試創建模式下自動添加預設重試次數"""
+    data = {
+        'crawler_id': 1,
+        'task_name': 'test_task_defaults',
+        'task_args': {},
+        'ai_only': False,
+        'current_phase': TaskPhase.INIT,
+        'scrape_mode': ScrapeMode.FULL_SCRAPE
+        # 'max_retries', 'retry_count' are missing
+    }
+    validated_data = validate_task_data_api(data, task_service, is_update=False)
+    # 驗證器本身會添加預設值
+    assert 'max_retries' in data
+    assert data['max_retries'] == 3 # Check if default is added to original data
+    assert 'retry_count' in data
+    assert data['retry_count'] == 0 # Check if default is added to original data
+    # 底層驗證後應該也存在
+    assert 'max_retries' in validated_data
+    assert validated_data['max_retries'] == 3
+    assert 'retry_count' in validated_data
+    assert validated_data['retry_count'] == 0
+
+
+@pytest.mark.parametrize("param, value, error_msg_part", [
+    ("max_pages", 0, "max_pages: max_pages: 必須是正整數且大於0"),
+    ("num_articles", -1, "num_articles: num_articles: 必須是正整數且大於0"),
+    ("min_keywords", "abc", "min_keywords: min_keywords: 必須是整數"),
+    ("timeout", -5, "timeout: timeout: 必須是正整數且大於0"),
+])
+def test_validate_task_data_api_task_args_invalid_positive_int(task_service, param, value, error_msg_part):
+    """測試 task_args 中無效的正整數參數"""
+    data = {
+        'crawler_id': 1, 'task_name': 'test_task', 'scrape_mode': ScrapeMode.FULL_SCRAPE,
+        'task_args': {param: value}
+    }
+    with pytest.raises(ValidationError, match=error_msg_part):
+         validate_task_data_api(data, task_service)
+
+@pytest.mark.parametrize("param, value, error_msg_part", [
+    ("retry_delay", 0, "'retry_delay' 必須是正數"),
+    ("retry_delay", -1.5, "'retry_delay' 必須是正數"),
+    ("retry_delay", "abc", "'retry_delay' 必須是正數"), # Also checks type
+])
+def test_validate_task_data_api_task_args_invalid_positive_float(task_service, param, value, error_msg_part):
+    """測試 task_args 中無效的正數 (float/int) 參數"""
+    data = {
+        'crawler_id': 1, 'task_name': 'test_task', 'scrape_mode': ScrapeMode.FULL_SCRAPE,
+        'task_args': {param: value}
+    }
+    with pytest.raises(ValidationError, match=error_msg_part):
+         validate_task_data_api(data, task_service)
+
+@pytest.mark.parametrize("param, value, error_msg_part", [
+    # Remove the case for 'true' as it's considered valid by validate_boolean
+    # ("ai_only", "true", "ai_only: 必須是布爾值"),
+    ("save_to_csv", 1, "save_to_csv: 必須是布爾值"),
+    ("save_to_database", 0, "save_to_database: 必須是布爾值"),
+    # Remove the case for None as it's considered valid (not required) by validate_boolean
+    # ("get_links_by_task_id", None, "get_links_by_task_id: 必須是布爾值"),
+])
+def test_validate_task_data_api_task_args_invalid_boolean(task_service, param, value, error_msg_part):
+    """測試 task_args 中無效的布爾參數"""
+    data = {
+        'crawler_id': 1, 'task_name': 'test_task', 'scrape_mode': ScrapeMode.FULL_SCRAPE,
+        'task_args': {param: value},
+        # Add required top-level fields to pass schema validation first
+        'ai_only': False, # Default valid value for top-level field
+        'current_phase': TaskPhase.INIT,
+        'max_retries': 3,
+        'retry_count': 0
+    }
+    # Adjust top-level ai_only if it's the param being tested in task_args,
+    # ensuring the top-level one is valid.
+    if param == 'ai_only':
+        data['ai_only'] = False
+
+    # The error message format is f"{param}: {original_error}"
+    # original_error format is f"{param}: message"
+    expected_error_regex = f"{param}: {error_msg_part}" # error_msg_part already includes the inner param name
+    with pytest.raises(ValidationError, match=expected_error_regex):
+         validate_task_data_api(data, task_service)
+
+
+def test_validate_task_data_api_content_only_missing_ids_or_links(task_service):
+    """測試 CONTENT_ONLY 模式, get_links_by_task_id=False 但缺少 article_ids/links"""
+    data = {
+        'crawler_id': 1, 'task_name': 'test_task', 'scrape_mode': ScrapeMode.CONTENT_ONLY,
+        'task_args': {
+            'scrape_mode': ScrapeMode.CONTENT_ONLY.value,
+            'get_links_by_task_id': False
+            # Missing 'article_ids' and 'article_links'
+        }
+    }
+    error_msg = "內容抓取模式且不從任務ID獲取連結時，必須提供 'article_ids' 或 'article_links'"
+    with pytest.raises(ValidationError, match=error_msg):
+         validate_task_data_api(data, task_service)
+
+@pytest.mark.parametrize("param, value, error_msg_part", [
+    # Ensure error_msg_part matches the wrapped error: f"{param}: {original_message}"
+    ("article_ids", "not_a_list", "article_ids: 必須是列表"),
+    ("article_links", {"a": 1}, "article_links: 必須是列表"),
+])
+def test_validate_task_data_api_content_only_invalid_list_type(task_service, param, value, error_msg_part):
+    """測試 CONTENT_ONLY 模式, get_links_by_task_id=False 且 article_ids/links 類型錯誤"""
+    task_args = {
+        'scrape_mode': ScrapeMode.CONTENT_ONLY.value,
+        'get_links_by_task_id': False,
+        param: value
+    }
+    # Ensure the other list parameter is present if needed to avoid the "missing" error
+    if param == "article_ids":
+        task_args['article_links'] = []
+    else:
+        task_args['article_ids'] = []
+
+    data = {
+        'crawler_id': 1, 'task_name': 'test_task', 'scrape_mode': ScrapeMode.CONTENT_ONLY,
+        'task_args': task_args,
+        # Add required top-level fields
+        'ai_only': False,
+        'current_phase': TaskPhase.INIT,
+        'max_retries': 3,
+        'retry_count': 0
+    }
+    # Expected regex is f"{param}: {error_msg_part}"
+    # Actual error is f"{param}: {param}: {original_message}"
+    # So error_msg_part should be f"{param}: {original_message}"
+    expected_error_regex = f"{param}: {error_msg_part}"
+    with pytest.raises(ValidationError, match=expected_error_regex):
+         validate_task_data_api(data, task_service)
