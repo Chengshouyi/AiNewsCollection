@@ -5,6 +5,7 @@ from src.services.article_service import ArticleService
 from src.error.handle_api_error import handle_api_error
 from src.utils.validators import validate_task_data_api
 import threading
+from src.models.crawler_tasks_model import ScrapeMode
 
 tasks_bp = Blueprint('tasks_api', __name__, url_prefix='/api/tasks')
 
@@ -27,6 +28,8 @@ def run_manual_task_thread(task_id, task_args):
 def run_fetch_content_thread(task_id, link_ids):
     """執行抓取內容的背景執行緒"""
     service = get_task_service()
+    # 設定抓取模式為僅抓取內容
+    task_args = {'article_ids': link_ids, 'scrape_mode': ScrapeMode.CONTENT_ONLY.value}
     service.fetch_article_content(task_id, link_ids)
 
 def run_collect_links_thread(task_id):
@@ -107,18 +110,39 @@ def start_manual_task():
     try:
         data = request.get_json()
         task_service = get_task_service()
+        
+        # 處理任務參數中的抓取模式
+        task_args = data.get('task_args', {})
+        if 'scrape_mode' in task_args:
+            # 確保scrape_mode是字符串形式
+            if isinstance(task_args['scrape_mode'], str):
+                # 驗證scrape_mode是否為有效的枚舉值
+                try:
+                    ScrapeMode(task_args['scrape_mode'])
+                except ValueError:
+                    return jsonify({"error": f"無效的抓取模式: {task_args['scrape_mode']}"}), 400
+            else:
+                return jsonify({"error": "抓取模式必須為字符串"}), 400
+        else:
+            # 默認設置為完整抓取模式
+            task_args['scrape_mode'] = ScrapeMode.FULL_SCRAPE.value
+            data['task_args'] = task_args
+            
         validate_task_data_api(data, task_service)
         result = task_service.create_task(data)
         if not result['success']:
             return jsonify({"error": result['message']}), 500
         task_id = result['task_id']
-        task_args = data.get('task_args', {})
         
         thread = threading.Thread(target=run_manual_task_thread, args=(task_id, task_args))
         thread.daemon = True
         thread.start()
         
-        return jsonify({"task_id": task_id, "status": "pending"}), 202
+        return jsonify({
+            "task_id": task_id, 
+            "status": "pending", 
+            "scrape_mode": task_args['scrape_mode']
+        }), 202
     except Exception as e:
         return handle_api_error(e)
 
@@ -152,12 +176,15 @@ def collect_manual_task_links(task_id):
         task_check = service.get_task_by_id(task_id)
         if not task_check['success']:
             return jsonify({"error": task_check['message']}), 404
+        
+        # 更新任務以使用LINKS_ONLY模式
+        service.update_task(task_id, {'scrape_mode': ScrapeMode.LINKS_ONLY.value})
             
         thread = threading.Thread(target=run_collect_links_thread, args=(task_id,))
         thread.daemon = True
         thread.start()
         
-        return jsonify({"message": "Link collection initiated"}), 202
+        return jsonify({"message": "Link collection initiated", "scrape_mode": ScrapeMode.LINKS_ONLY.value}), 202
     except Exception as e:
         return handle_api_error(e)
     
@@ -168,12 +195,20 @@ def fetch_manual_task_content(task_id):
         link_ids = data.get('link_ids')
         if not link_ids:
             return jsonify({"error": "Missing link_ids"}), 400
+        
+        # 更新任務以使用CONTENT_ONLY模式
+        service = get_task_service()
+        service.update_task(task_id, {'scrape_mode': ScrapeMode.CONTENT_ONLY.value})
             
         thread = threading.Thread(target=run_fetch_content_thread, args=(task_id, link_ids))
         thread.daemon = True
         thread.start()
         
-        return jsonify({"message": "Content fetching initiated"}), 202
+        return jsonify({
+            "message": "Content fetching initiated", 
+            "scrape_mode": ScrapeMode.CONTENT_ONLY.value,
+            "link_count": len(link_ids)
+        }), 202
     except Exception as e:
         return handle_api_error(e)
 
@@ -194,6 +229,25 @@ def test_crawler():
         data = request.get_json()
         task_data = data.get('task_data')
         crawler_data = data.get('crawler_data')
+        
+        # 處理任務參數中的抓取模式
+        if task_data and 'task_args' in task_data:
+            task_args = task_data.get('task_args', {})
+            if 'scrape_mode' in task_args:
+                # 確保scrape_mode是字符串形式
+                if isinstance(task_args['scrape_mode'], str):
+                    # 驗證scrape_mode是否為有效的枚舉值
+                    try:
+                        ScrapeMode(task_args['scrape_mode'])
+                    except ValueError:
+                        return jsonify({"error": f"無效的抓取模式: {task_args['scrape_mode']}"}), 400
+                else:
+                    return jsonify({"error": "抓取模式必須為字符串"}), 400
+            else:
+                # 默認設置為完整抓取模式
+                task_args['scrape_mode'] = ScrapeMode.LINKS_ONLY.value  # 測試時通常只抓取連結
+                task_data['task_args'] = task_args
+        
         service = get_task_service()
         result = service.test_crawler_task(crawler_data, task_data)
         return jsonify(result), 200

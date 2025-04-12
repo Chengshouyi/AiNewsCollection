@@ -159,6 +159,17 @@ def mock_task_service(monkeypatch, sample_tasks):
                 for field in required_fields:
                     if field not in data:
                         raise ValidationError(f"缺少必要欄位: {field}")
+            
+            # 額外驗證 task_args 中的 scrape_mode
+            if 'task_args' in data and isinstance(data['task_args'], dict):
+                if 'scrape_mode' in data['task_args']:
+                    scrape_mode = data['task_args']['scrape_mode']
+                    # 檢查是否為有效的模式
+                    try:
+                        ScrapeMode(scrape_mode)
+                    except ValueError:
+                        raise ValidationError(f"無效的抓取模式: {scrape_mode}")
+                    
             return data
 
         def create_task(self, data):
@@ -252,7 +263,16 @@ def mock_task_service(monkeypatch, sample_tasks):
             task.status = 'running'
             # 記錄開始時間
             task.last_run_at = datetime.now(timezone.utc)
-            return {'success': True, 'message': '任務開始執行'}
+            
+            # 處理抓取模式
+            if task_args and 'scrape_mode' in task_args:
+                try:
+                    scrape_mode = ScrapeMode(task_args['scrape_mode'])
+                    task.scrape_mode = scrape_mode
+                except ValueError:
+                    return {'success': False, 'message': f'無效的抓取模式: {task_args["scrape_mode"]}'}
+            
+            return {'success': True, 'message': '任務開始執行', 'scrape_mode': task.scrape_mode.value if hasattr(task.scrape_mode, 'value') else str(task.scrape_mode)}
 
         def fetch_article_content(self, task_id, link_ids):
             task = self.tasks.get(task_id)
@@ -261,7 +281,9 @@ def mock_task_service(monkeypatch, sample_tasks):
             # 模擬狀態變更
             task.status = 'content_scraping'
             task.current_phase = TaskPhase.CONTENT_SCRAPING
-            return {'success': True, 'message': '開始抓取文章內容'}
+            # 設定抓取模式
+            task.scrape_mode = ScrapeMode.CONTENT_ONLY
+            return {'success': True, 'message': '開始抓取文章內容', 'articles_count': len(link_ids)}
 
         def collect_article_links(self, task_id):
             task = self.tasks.get(task_id)
@@ -270,6 +292,8 @@ def mock_task_service(monkeypatch, sample_tasks):
             # 模擬狀態變更
             task.status = 'link_collecting'
             task.current_phase = TaskPhase.LINK_COLLECTION
+            # 設定抓取模式
+            task.scrape_mode = ScrapeMode.LINKS_ONLY
             return {
                 'success': True,
                 'message': '文章連結收集完成，共收集 5 個連結',
@@ -548,7 +572,10 @@ class TestTasksApiRoutes:
             'task_name': '新手動任務',
             'crawler_id': 1,
             'is_scheduled': False,
-            'task_args': {'max_items': 50}
+            'task_args': {
+                'max_items': 50,
+                'scrape_mode': 'full_scrape'  # 測試顯式設置抓取模式
+            }
         }
 
         response = client.post('/api/tasks/manual/start', json=task_data)
@@ -556,6 +583,8 @@ class TestTasksApiRoutes:
         data = json.loads(response.data)
         assert 'task_id' in data
         assert data['status'] == 'pending'
+        assert 'scrape_mode' in data
+        assert data['scrape_mode'] == 'full_scrape'
 
     def test_get_manual_task_status(self, client, mock_task_service):
         """測試獲取手動任務狀態"""
@@ -585,6 +614,10 @@ class TestTasksApiRoutes:
         assert response.status_code == 202
         data = json.loads(response.data)
         assert data['message'] == 'Content fetching initiated'
+        assert 'scrape_mode' in data
+        assert data['scrape_mode'] == 'content_only'
+        assert 'link_count' in data
+        assert data['link_count'] == 2
 
     def test_get_manual_task_results(self, client, mock_task_service, mock_article_service):
         """測試獲取手動任務的結果"""
@@ -702,4 +735,42 @@ class TestTasksApiRoutes:
         response = client.post('/api/tasks/manual/3/collect-links')
         assert response.status_code == 202
         data = json.loads(response.data)
-        assert data['message'] == 'Link collection initiated' 
+        assert data['message'] == 'Link collection initiated'
+        assert 'scrape_mode' in data
+        assert data['scrape_mode'] == 'links_only'
+
+    def test_invalid_scrape_mode(self, client, mock_task_service):
+        """測試無效的抓取模式"""
+        task_data = {
+            'task_name': '無效模式任務',
+            'crawler_id': 1,
+            'is_scheduled': False,
+            'task_args': {
+                'max_items': 50,
+                'scrape_mode': 'invalid_mode'  # 無效的抓取模式
+            }
+        }
+
+        response = client.post('/api/tasks/manual/start', json=task_data)
+        assert response.status_code == 400
+        data = json.loads(response.data)
+        assert 'error' in data
+        assert '無效的抓取模式' in data['error']
+
+    def test_manual_task_with_default_scrape_mode(self, client, mock_task_service, patch_thread):
+        """測試未指定抓取模式時的默認模式"""
+        task_data = {
+            'task_name': '默認模式任務',
+            'crawler_id': 1,
+            'is_scheduled': False,
+            'task_args': {
+                'max_items': 50
+                # 不指定scrape_mode
+            }
+        }
+
+        response = client.post('/api/tasks/manual/start', json=task_data)
+        assert response.status_code == 202
+        data = json.loads(response.data)
+        assert 'scrape_mode' in data
+        assert data['scrape_mode'] == 'full_scrape'  # 默認應該是full_scrape 
