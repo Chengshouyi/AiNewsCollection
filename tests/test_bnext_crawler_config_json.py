@@ -21,9 +21,6 @@ def test_config_structure():
     assert "list_url_template" in config
     assert "categories" in config
     assert "full_categories" in config
-    assert "article_settings" in config
-    assert "extraction_settings" in config
-    assert "storage_settings" in config
     assert "valid_domains" in config
     assert "url_patterns" in config
     assert "url_file_extensions" in config
@@ -40,17 +37,6 @@ def test_config_values():
     assert "ai" in config["categories"]
     assert isinstance(config["full_categories"], list)
     assert "cloudcomputing" in config["full_categories"]
-    assert isinstance(config["article_settings"], dict)
-    assert config["article_settings"].get("max_pages") == 3
-    assert config["article_settings"].get("ai_only") is True
-    assert config["article_settings"].get("num_articles") == 10
-    assert config["article_settings"].get("min_keywords") == 3
-    assert isinstance(config["extraction_settings"], dict)
-    assert config["extraction_settings"].get("num_articles") == 3
-    assert config["extraction_settings"].get("min_keywords") == 3
-    assert isinstance(config["storage_settings"], dict)
-    assert config["storage_settings"].get("save_to_csv") is True
-    assert config["storage_settings"].get("save_to_database") is False
     assert isinstance(config["valid_domains"], list)
     assert "https://www.bnext.com.tw" in config["valid_domains"]
     assert isinstance(config["url_patterns"], list)
@@ -69,13 +55,25 @@ def test_selectors_structure():
     assert isinstance(config["selectors"]["get_article_links"], dict)
     assert "articles_container" in config["selectors"]["get_article_links"]
     assert "link" in config["selectors"]["get_article_links"]
+    assert "category" in config["selectors"]["get_article_links"]
+    assert "title" in config["selectors"]["get_article_links"]
+    assert "summary" in config["selectors"]["get_article_links"]
+    assert "published_age" in config["selectors"]["get_article_links"]
     assert isinstance(config["selectors"]["get_article_links"].get("article_grid_container"), dict)
     assert "container" in config["selectors"]["get_article_links"]["article_grid_container"]
+    assert "link" in config["selectors"]["get_article_links"]["article_grid_container"]
     assert "title" in config["selectors"]["get_article_links"]["article_grid_container"]
+    assert "summary" in config["selectors"]["get_article_links"]["article_grid_container"]
+    assert "published_age" in config["selectors"]["get_article_links"]["article_grid_container"]
 
     assert isinstance(config["selectors"]["get_article_contents"], dict)
     assert "content_container" in config["selectors"]["get_article_contents"]
     assert "published_date" in config["selectors"]["get_article_contents"]
+    assert "category" in config["selectors"]["get_article_contents"]
+    assert "title" in config["selectors"]["get_article_contents"]
+    assert "summary" in config["selectors"]["get_article_contents"]
+    assert "author" in config["selectors"]["get_article_contents"]
+    assert "content" in config["selectors"]["get_article_contents"]
     assert isinstance(config["selectors"]["get_article_contents"].get("tags"), dict)
     assert "container" in config["selectors"]["get_article_contents"]["tags"]
     assert "tag" in config["selectors"]["get_article_contents"]["tags"]

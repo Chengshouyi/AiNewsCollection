@@ -14,9 +14,6 @@ class TestSiteConfig:
             base_url="https://www.bnext.com.tw",
             categories=["ai", "tech", "iot", "smartmedical", "smartcity", "cloudcomputing", "security"],
             full_categories=["ai", "tech", "iot", "smartmedical", "smartcity", "cloudcomputing", "security"],
-            article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-            extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-            storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
             selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
             list_url_template="{base_url}/categories/{category}"
         )
@@ -25,9 +22,6 @@ class TestSiteConfig:
         assert config.base_url == "https://www.bnext.com.tw"
         assert config.categories == ["ai", "tech", "iot", "smartmedical", "smartcity", "cloudcomputing", "security"]
         assert config.full_categories == ["ai", "tech", "iot", "smartmedical", "smartcity", "cloudcomputing", "security"]
-        assert config.article_settings == {'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
-        assert config.extraction_settings == {'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
-        assert config.storage_settings == {'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
         assert config.selectors == {'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
         assert config.headers == DEFAULT_HEADERS
         assert config.list_url_template == "{base_url}/categories/{category}"
@@ -42,9 +36,6 @@ class TestSiteConfig:
             list_url_template="https://example.com/{category}/list",
             categories=["news", "blog"],
             full_categories=["news", "blog"],
-            article_settings={'max_retries': 5, 'timeout': 15},
-            extraction_settings={'max_retries': 5, 'timeout': 15},
-            storage_settings={'max_retries': 5, 'timeout': 15},
             selectors={'max_retries': 5, 'timeout': 15},
             headers={"User-Agent": "CustomAgent"},
             valid_domains=["https://example.com", "https://blog.example.com"],
@@ -57,9 +48,6 @@ class TestSiteConfig:
         assert custom_config.list_url_template == "https://example.com/{category}/list"
         assert custom_config.categories == ["news", "blog"]
         assert custom_config.full_categories == ["news", "blog"]
-        assert custom_config.article_settings == {'max_retries': 5, 'timeout': 15}
-        assert custom_config.extraction_settings == {'max_retries': 5, 'timeout': 15}
-        assert custom_config.storage_settings == {'max_retries': 5, 'timeout': 15}
         assert custom_config.selectors == {'max_retries': 5, 'timeout': 15}
         assert custom_config.headers == {"User-Agent": "CustomAgent"}
         assert custom_config.valid_domains == ["https://example.com", "https://blog.example.com"]
@@ -75,9 +63,6 @@ class TestSiteConfig:
                 list_url_template="{base_url}/categories/{category}",
                 categories=["ai", "tech"],
                 full_categories=["ai", "tech"],
-                article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-                extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-                storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
                 selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
             )
 
@@ -90,9 +75,6 @@ class TestSiteConfig:
                 list_url_template="{base_url}/categories/{category}",
                 categories=["ai", "tech"],
                 full_categories=["ai", "tech"],
-                article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-                extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-                storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
                 selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
             )
 
@@ -105,9 +87,6 @@ class TestSiteConfig:
                 list_url_template="",   
                 categories=["ai", "tech"],
                 full_categories=["ai", "tech"],
-                article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-                extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-                storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
                 selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
             )
 
@@ -120,9 +99,6 @@ class TestSiteConfig:
                 list_url_template="{base_url}/categories/{category}",
                 categories=[],
                 full_categories=["ai", "tech"],
-                article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-                extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-                storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},   
                 selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
             )
 
@@ -135,9 +111,6 @@ class TestSiteConfig:
                 list_url_template="{base_url}/categories/{category}",
                 categories=["ai", "tech"],
                 full_categories=[], 
-                article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-                extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-                storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
                 selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
             )
 
@@ -149,9 +122,6 @@ class TestSiteConfig:
             list_url_template="{base_url}/cat/{category}",
             categories=["ai", "tech"],
             full_categories=["ai", "tech"],
-            article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-            extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-            storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
             selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
         )
         
@@ -171,9 +141,6 @@ class TestSiteConfig:
             list_url_template="{base_url}/cat/{category}",
             categories=["ai", "tech"],
             full_categories=["ai", "tech"],
-            article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-            extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-            storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
             selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
             valid_domains=["https://example.com"],
             url_patterns=["/article/", "/blog/"],
@@ -205,9 +172,6 @@ class TestSiteConfig:
             list_url_template="{base_url}/cat/{category}",
             categories=["ai", "tech"],
             full_categories=["ai", "tech"],
-            article_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-            extraction_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
-            storage_settings={'max_retries': 3, 'retry_delay': 5, 'timeout': 10},
             selectors={'max_retries': 3, 'retry_delay': 5, 'timeout': 10}
         )
         assert valid_config.validate() is True
