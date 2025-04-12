@@ -1,6 +1,6 @@
 import pytest
 from flask import Flask, jsonify
-from src.web.routes.tasks import tasks_bp
+from src.web.routes.tasks_api import tasks_bp
 from src.error.errors import ValidationError
 import json
 from datetime import datetime, timezone
@@ -263,6 +263,21 @@ def mock_task_service(monkeypatch, sample_tasks):
             task.current_phase = TaskPhase.CONTENT_SCRAPING
             return {'success': True, 'message': '開始抓取文章內容'}
 
+        def collect_article_links(self, task_id):
+            task = self.tasks.get(task_id)
+            if not task:
+                return {'success': False, 'message': '任務不存在'}
+            # 模擬狀態變更
+            task.status = 'link_collecting'
+            task.current_phase = TaskPhase.LINK_COLLECTION
+            return {
+                'success': True,
+                'message': '文章連結收集完成，共收集 5 個連結',
+                'links_found': 5,
+                'article_ids': [101, 102, 103, 104, 105],
+                'next_step': 'content_scraping'
+            }
+
         def test_crawler_task(self, crawler_data, task_data):
             # 模擬測試結果
             return {
@@ -300,7 +315,7 @@ def mock_task_service(monkeypatch, sample_tasks):
             return {'success': True, 'history': self.task_history[task_id]}
     
     mock_service = MockTaskService()
-    monkeypatch.setattr('src.web.routes.tasks.get_task_service', lambda: mock_service)
+    monkeypatch.setattr('src.web.routes.tasks_api.get_task_service', lambda: mock_service)
     return mock_service
 
 @pytest.fixture
@@ -397,7 +412,7 @@ def mock_article_service(monkeypatch, sample_articles):
             }
 
     mock_service = MockArticleService()
-    monkeypatch.setattr('src.web.routes.tasks.get_article_service', lambda: mock_service)
+    monkeypatch.setattr('src.web.routes.tasks_api.get_article_service', lambda: mock_service)
     return mock_service
 
 @pytest.fixture
@@ -415,7 +430,7 @@ def mock_scheduler_service(monkeypatch):
     mock_scheduler._schedule_task.return_value = True
     
     # 應用模擬
-    monkeypatch.setattr('src.web.routes.tasks.get_scheduler_service', lambda: mock_scheduler)
+    monkeypatch.setattr('src.web.routes.tasks_api.get_scheduler_service', lambda: mock_scheduler)
     return mock_scheduler
 
 @pytest.fixture
@@ -463,7 +478,7 @@ def mock_handle_api_error(monkeypatch):
         # 其他錯誤類型
         return jsonify({"error": str(error)}), 500
     
-    monkeypatch.setattr('src.web.routes.tasks.handle_api_error', mock_error_handler)
+    monkeypatch.setattr('src.web.routes.tasks_api.handle_api_error', mock_error_handler)
     return mock_error_handler
 
 class TestTasksApiRoutes:
@@ -680,4 +695,11 @@ class TestTasksApiRoutes:
         data = json.loads(response.data)
         assert 'error' in data
         assert 'details' in data
-        assert 'crawler_id' in data['details'] 
+        assert 'crawler_id' in data['details']
+
+    def test_collect_manual_task_links(self, client, mock_task_service, patch_thread):
+        """測試收集手動任務的文章連結"""
+        response = client.post('/api/tasks/manual/3/collect-links')
+        assert response.status_code == 202
+        data = json.loads(response.data)
+        assert data['message'] == 'Link collection initiated' 

@@ -29,6 +29,11 @@ def run_fetch_content_thread(task_id, link_ids):
     service = get_task_service()
     service.fetch_article_content(task_id, link_ids)
 
+def run_collect_links_thread(task_id):
+    """執行收集文章連結的背景執行緒"""
+    service = get_task_service()
+    service.collect_article_links(task_id)
+
 # 排程任務相關端點
 @tasks_bp.route('/scheduled', methods=['GET'])
 def get_scheduled_tasks():
@@ -139,6 +144,23 @@ def get_manual_task_links(task_id):
     except Exception as e:
         return handle_api_error(e)
 
+@tasks_bp.route('/manual/<int:task_id>/collect-links', methods=['POST'])
+def collect_manual_task_links(task_id):
+    try:
+        service = get_task_service()
+        # 檢查任務是否存在
+        task_check = service.get_task_by_id(task_id)
+        if not task_check['success']:
+            return jsonify({"error": task_check['message']}), 404
+            
+        thread = threading.Thread(target=run_collect_links_thread, args=(task_id,))
+        thread.daemon = True
+        thread.start()
+        
+        return jsonify({"message": "Link collection initiated"}), 202
+    except Exception as e:
+        return handle_api_error(e)
+    
 @tasks_bp.route('/manual/<int:task_id>/fetch-content', methods=['POST'])
 def fetch_manual_task_content(task_id):
     try:

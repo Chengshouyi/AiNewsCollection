@@ -1,5 +1,6 @@
 from flask import Flask
-from src.web.routes.crawler import crawler_bp
+from src.web.routes.crawler_api import crawler_bp
+from src.web.routes.tasks_api import tasks_bp
 
 def create_app():
     """創建並配置 Flask 應用程式"""
@@ -7,7 +8,8 @@ def create_app():
     
     # 註冊藍圖
     app.register_blueprint(crawler_bp)
-    
+    app.register_blueprint(tasks_bp)
+
     return app
 
 if __name__ == '__main__':
