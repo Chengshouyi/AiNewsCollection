@@ -644,7 +644,7 @@ class ArticleService(BaseService[Articles]):
         Args:
             filters: 過濾條件，包含：
                 - task_id: 任務ID
-                - scraped: 是否已抓取內容
+                - is_scraped: 是否已抓取內容
                 - preview: 是否只返回預覽資料
                 
         Returns:
@@ -671,11 +671,15 @@ class ArticleService(BaseService[Articles]):
                 
                 # 構建查詢條件
                 query_filters = {'task_id': task_id}
-                if 'scraped' in filters:
-                    query_filters['scraped'] = filters['scraped']
+                if 'is_scraped' in filters:
+                    query_filters['is_scraped'] = filters['is_scraped']
+                # elif 'scraped' in filters:  # 增加對 'scraped' 參數的支持
+                #     query_filters['is_scraped'] = filters['scraped']
                 
-                # 獲取文章列表
+                # 打印查詢條件和返回結果，用於調試
+                logger.debug(f"查詢條件: {query_filters}")
                 articles = article_repo.get_by_filter(query_filters)
+                logger.debug(f"查詢結果: {[a.id for a in articles]}, is_scraped狀態: {[a.is_scraped for a in articles]}")
                 
                 # 如果需要預覽，只返回部分欄位
                 if filters.get('preview'):
@@ -687,7 +691,7 @@ class ArticleService(BaseService[Articles]):
                             'link': article.link,
                             'source': article.source,
                             'published_at': article.published_at,
-                            'scraped': article.scraped
+                            'is_scraped': article.is_scraped
                         })
                     articles = preview_articles
                 

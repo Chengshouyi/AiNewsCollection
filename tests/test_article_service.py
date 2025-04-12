@@ -5,6 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from src.models.articles_model import Articles, Base, ArticleScrapeStatus
 from src.services.article_service import ArticleService
 from src.database.database_manager import DatabaseManager
+from src.models.crawler_tasks_model import CrawlerTasks, ScrapeMode
 
 # 設置測試資料庫
 @pytest.fixture(scope="session")
@@ -495,3 +496,138 @@ class TestArticleServiceAdvancedFeatures:
         result = article_service.count_scraped_articles(source="科技日報")
         assert result["success"] is True
         assert result["count"] == 2
+
+    def test_get_articles_by_task(self, article_service, sample_articles, session):
+        """測試根據任務ID獲取文章，用於支援不同的爬取模式(ScrapeMode)"""
+        # 創建測試任務
+        tasks = [
+            CrawlerTasks(
+                task_name="僅連結任務",
+                crawler_id=1,
+                scrape_mode=ScrapeMode.LINKS_ONLY
+            ),
+            CrawlerTasks(
+                task_name="僅內容任務",
+                crawler_id=1,
+                scrape_mode=ScrapeMode.CONTENT_ONLY
+            ),
+            CrawlerTasks(
+                task_name="完整爬取任務",
+                crawler_id=1,
+                scrape_mode=ScrapeMode.FULL_SCRAPE
+            )
+        ]
+        session.add_all(tasks)
+        session.commit()
+        
+        # 為每個任務創建對應的文章
+        test_articles = []
+        
+        # 為LINKS_ONLY任務創建僅保存了連結的文章（未爬取內容）
+        for i in range(2):
+            article = Articles(
+                title=f"連結任務文章{i}",
+                link=f"https://example.com/links_only_{i}",
+                summary="連結任務摘要",
+                content=None,  # 無內容
+                source="測試來源",
+                source_url="https://example.com/source",
+                category="測試",
+                published_at=datetime.now(timezone.utc),
+                is_ai_related=False,
+                is_scraped=False,  # 未爬取
+                scrape_status=ArticleScrapeStatus.LINK_SAVED,  # 僅保存連結
+                task_id=tasks[0].id  # 關聯到LINKS_ONLY任務
+            )
+            test_articles.append(article)
+        
+        # 為CONTENT_ONLY任務創建已爬取內容的文章
+        for i in range(2):
+            article = Articles(
+                title=f"內容任務文章{i}",
+                link=f"https://example.com/content_only_{i}",
+                summary="內容任務摘要",
+                content="內容任務的詳細內容",  # 有內容
+                source="測試來源",
+                source_url="https://example.com/source",
+                category="測試",
+                published_at=datetime.now(timezone.utc),
+                is_ai_related=False,
+                is_scraped=True,  # 已爬取
+                scrape_status=ArticleScrapeStatus.CONTENT_SCRAPED,  # 已爬取內容
+                task_id=tasks[1].id  # 關聯到CONTENT_ONLY任務
+            )
+            test_articles.append(article)
+        
+        # 為FULL_SCRAPE任務創建混合狀態的文章（一些已爬取內容，一些僅有連結）
+        for i in range(2):
+            is_scraped = i == 0  # 第一篇已爬取，第二篇未爬取
+            scrape_status = ArticleScrapeStatus.CONTENT_SCRAPED if is_scraped else ArticleScrapeStatus.LINK_SAVED
+            content = "完整任務的詳細內容" if is_scraped else None
+            
+            article = Articles(
+                title=f"完整任務文章{i}",
+                link=f"https://example.com/full_scrape_{i}",
+                summary="完整任務摘要",
+                content=content,
+                source="測試來源",
+                source_url="https://example.com/source",
+                category="測試",
+                published_at=datetime.now(timezone.utc),
+                is_ai_related=False,
+                is_scraped=is_scraped,
+                scrape_status=scrape_status,
+                task_id=tasks[2].id  # 關聯到FULL_SCRAPE任務
+            )
+            test_articles.append(article)
+        
+        session.add_all(test_articles)
+        session.commit()
+        
+        # 測試1: 獲取LINKS_ONLY任務的所有文章
+        result = article_service.get_articles_by_task({'task_id': tasks[0].id})
+        assert result["success"] is True
+        assert len(result["articles"]) == 2
+        assert all(article.task_id == tasks[0].id for article in result["articles"])
+        assert all(article.scrape_status == ArticleScrapeStatus.LINK_SAVED for article in result["articles"])
+        
+        # 測試2: 獲取CONTENT_ONLY任務的已爬取文章
+        result = article_service.get_articles_by_task({'task_id': tasks[1].id, 'scraped': True})
+        assert result["success"] is True
+        assert len(result["articles"]) == 2
+        assert all(article.task_id == tasks[1].id for article in result["articles"])
+        assert all(article.is_scraped for article in result["articles"])
+        
+        # 測試3: 獲取FULL_SCRAPE任務的未爬取文章
+        result = article_service.get_articles_by_task({'task_id': tasks[2].id, 'is_scraped': False})
+        assert result["success"] is True
+        assert len(result["articles"]) == 1
+        assert all(article.task_id == tasks[2].id for article in result["articles"])
+        assert all(not article.is_scraped for article in result["articles"])
+        
+        # 測試4: 獲取FULL_SCRAPE任務的已爬取文章
+        result = article_service.get_articles_by_task({'task_id': tasks[2].id, 'is_scraped': True})
+        assert result["success"] is True
+        assert len(result["articles"]) == 1
+        assert all(article.task_id == tasks[2].id for article in result["articles"])
+        assert all(article.is_scraped for article in result["articles"])
+        
+        # 測試5: 獲取FULL_SCRAPE任務的所有文章，並以預覽模式返回
+        result = article_service.get_articles_by_task({'task_id': tasks[2].id, 'preview': True})
+        assert result["success"] is True
+        assert len(result["articles"]) == 2
+        assert all(isinstance(article, dict) for article in result["articles"])  # 預覽模式返回字典而非模型對象
+        assert all('id' in article for article in result["articles"])
+        assert all('title' in article for article in result["articles"])
+        assert all('link' in article for article in result["articles"])
+        assert all('content' not in article for article in result["articles"])  # 預覽模式不包含內容
+        
+        # 測試6: 測試缺少必要參數
+        result = article_service.get_articles_by_task({})
+        assert result["success"] is False
+        assert result["message"] == '必須提供任務ID'
+        
+        # 測試7: 測試獲取不存在的任務ID
+        result = article_service.get_articles_by_task({'task_id': 999})
+        assert result["success"] is True
+        assert len(result["articles"]) == 0  # 應返回空列表而不是錯誤

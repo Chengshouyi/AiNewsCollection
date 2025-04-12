@@ -16,6 +16,7 @@ from src.models.base_model import Base
 from src.models.articles_model import Articles, ArticleScrapeStatus
 from src.crawlers.bnext_scraper import BnextUtils
 from src.database.database_manager import DatabaseManager
+from src.models.crawler_tasks_model import ScrapeMode
 
 # 配置日誌
 logger = logging.getLogger(__name__)
@@ -274,9 +275,13 @@ class TestBaseCrawler:
         with pytest.raises(ValueError, match="未提供文章服務"):
             MockCrawlerForTest(mock_config_file)
     
-    def test_execute_task_with_real_db(self, mock_config_file, article_service, logs_dir):
+    def test_execute_task_with_real_db(self, mock_config_file, article_service, logs_dir, session):
         """測試使用真實記憶體資料庫執行任務的完整流程"""
         with patch('os.makedirs', return_value=None):
+            # 先清除資料庫中的所有文章，確保測試環境乾淨
+            session.query(Articles).delete()
+            session.commit()
+            
             crawler = MockCrawlerForTest(mock_config_file, article_service)
             task_id = 1
             task_args = {
@@ -284,11 +289,12 @@ class TestBaseCrawler:
                 "ai_only": True,
                 "num_articles": 10,
                 "max_retries": 2,  # 這是全局參數
-                "retry_delay": 0.1  # 這是全局參數
+                "retry_delay": 0.1,  # 這是全局參數
+                "save_to_database": True  # 關鍵：確保保存到資料庫的參數設為True
             }
             
-            # 設置全局參數
-            crawler.global_params = {'max_retries': 2, 'retry_delay': 0.1}
+            # 設置全局參數 - 確保save_to_database設為True，否則文章不會被保存
+            crawler.global_params = {'max_retries': 2, 'retry_delay': 0.1, 'save_to_database': True}
             
             # 保存原始函數
             original_validate = crawler._validate_and_update_task_params
@@ -475,12 +481,12 @@ class TestBaseCrawler:
         assert articles[0].is_scraped is False
         assert articles[1].is_scraped is False
     
-    def test_save_to_database_with_db_link(self, mock_config_file, article_service, session):
-        """測試從資料庫連結獲取文章"""
+    def test_save_to_database_with_get_links_by_task_id(self, mock_config_file, article_service, session):
+        """測試從資料庫根據任務ID獲取文章"""
         crawler = MockCrawlerForTest(mock_config_file, article_service)
         
-        # 設定從資料庫連結獲取文章
-        crawler.site_config.article_settings['from_db_link'] = True
+        # 設定從資料庫根據任務ID獲取文章
+        crawler.global_params = {'get_links_by_task_id': True}
         
         # 保存測試用的時間
         test_time = datetime.now(timezone.utc)
@@ -738,9 +744,9 @@ class TestBaseCrawler:
         
         result = crawler._validate_and_update_task_params(task_id, valid_article_params)
         assert result is True
-        assert crawler.site_config.article_settings['max_pages'] == 5
-        assert crawler.site_config.article_settings['ai_only'] is True
-        assert crawler.site_config.article_settings['num_articles'] == 20
+        assert crawler.global_params['max_pages'] == 5
+        assert crawler.global_params['ai_only'] is True
+        assert crawler.global_params['num_articles'] == 20
         assert crawler.update_config_called
         
         # 測試有效參數 - 全局參數
@@ -774,7 +780,9 @@ class TestBaseCrawler:
         }
         
         result = crawler._validate_and_update_task_params(task_id, unknown_params)
-        assert result is False
+        assert result is True  # 更改為True，因為未知參數現在被接受並添加到global_params
+        assert 'unknown_param' in crawler.global_params
+        assert crawler.global_params['unknown_param'] == 'value'
 
     def test_calculate_progress(self, mock_config_file, article_service):
         """測試進度計算方法"""
@@ -809,7 +817,7 @@ class TestBaseCrawler:
         }
         
         # 測試從網站抓取
-        crawler.site_config.article_settings['from_db_link'] = False
+        crawler.global_params = {'get_links_by_task_id': False}
         # 模擬 retry_operation 的行為，直接返回 _fetch_article_links 的結果
         crawler.retry_operation = MagicMock(return_value=crawler._fetch_article_links())
         
@@ -821,7 +829,7 @@ class TestBaseCrawler:
         
         # 測試從資料庫抓取
         crawler.fetch_article_links_called = False
-        crawler.site_config.article_settings['from_db_link'] = True
+        crawler.global_params = {'get_links_by_task_id': True}
         
         # 建立測試資料
         test_articles = [
@@ -889,16 +897,20 @@ class TestBaseCrawler:
             crawler._save_to_database = MagicMock()
             
             # 測試都不保存的情況
-            crawler.site_config.storage_settings['save_to_csv'] = False
-            crawler.site_config.storage_settings['save_to_database'] = False
+            crawler.global_params = {
+                'save_to_csv': False,
+                'save_to_database': False
+            }
             
             crawler._save_results(task_id)
             crawler._save_to_csv.assert_not_called()
             crawler._save_to_database.assert_not_called()
             
             # 測試只保存到CSV
-            crawler.site_config.storage_settings['save_to_csv'] = True
-            crawler.site_config.storage_settings['save_to_database'] = False
+            crawler.global_params = {
+                'save_to_csv': True,
+                'save_to_database': False
+            }
             
             crawler._save_results(task_id)
             crawler._save_to_csv.assert_called_once()
@@ -908,8 +920,10 @@ class TestBaseCrawler:
             crawler._save_to_csv.reset_mock()
             
             # 測試只保存到數據庫
-            crawler.site_config.storage_settings['save_to_csv'] = False
-            crawler.site_config.storage_settings['save_to_database'] = True
+            crawler.global_params = {
+                'save_to_csv': False,
+                'save_to_database': True
+            }
             
             crawler._save_results(task_id)
             crawler._save_to_csv.assert_not_called()
@@ -920,8 +934,10 @@ class TestBaseCrawler:
             
             # 測試空的DataFrame
             crawler.articles_df = pd.DataFrame()
-            crawler.site_config.storage_settings['save_to_csv'] = True
-            crawler.site_config.storage_settings['save_to_database'] = True
+            crawler.global_params = {
+                'save_to_csv': True,
+                'save_to_database': True
+            }
             
             crawler._save_results(task_id)
             crawler._save_to_csv.assert_not_called()
@@ -1069,6 +1085,383 @@ class TestBaseCrawler:
         assert saved_article.scrape_error is None
         assert saved_article.last_scrape_attempt is not None
         assert saved_article.task_id == 456
+
+    def test_execute_content_only_task_with_get_links_by_task_id(self, mock_config_file, article_service):
+        """測試使用get_links_by_task_id參數執行僅抓取內容的任務"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        task_id = 1
+        
+        # 設置全局參數
+        crawler.global_params = {
+            'get_links_by_task_id': True,
+            'scrape_mode': ScrapeMode.CONTENT_ONLY
+        }
+        
+        # 模擬 _fetch_article_links_by_filter 方法
+        crawler._fetch_article_links_by_filter = MagicMock(return_value=pd.DataFrame({
+            'title': ['Test Article'],
+            'link': ['https://example.com']
+        }))
+        
+        # 模擬 _fetch_articles 方法以返回一些文章內容
+        crawler._fetch_articles = MagicMock(return_value=[{
+            'title': 'Test Article',
+            'content': 'Test Content',
+            'link': 'https://example.com',
+            'is_scraped': True,
+            'scrape_status': 'content_scraped'
+        }])
+        
+        # 模擬 _save_results 方法以避免實際執行保存
+        crawler._save_results = MagicMock()
+        
+        # 調用方法
+        result = crawler._execute_content_only_task(task_id, 3, 0.1)
+        
+        # 驗證 _fetch_article_links_by_filter 被調用，並且傳入了正確的 task_id
+        crawler._fetch_article_links_by_filter.assert_called_once_with(task_id=task_id, is_scraped=False)
+        
+        # 驗證結果
+        assert result['success'] is True
+        assert 'articles_count' in result
+
+    def test_validate_get_links_by_task_id_param(self, mock_config_file, article_service):
+        """測試驗證get_links_by_task_id參數"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        task_id = 1
+        
+        # 初始化任務狀態
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc)
+        }
+        
+        # 測試有效的get_links_by_task_id參數
+        valid_params = {
+            'get_links_by_task_id': True,
+            'scrape_mode': 'content_only'
+        }
+        
+        result = crawler._validate_and_update_task_params(task_id, valid_params)
+        assert result is True
+        assert crawler.global_params['get_links_by_task_id'] is True
+        assert crawler.global_params['scrape_mode'] == ScrapeMode.CONTENT_ONLY
+        
+        # 測試CONTENT_ONLY模式下缺少必要參數的情況
+        invalid_params = {
+            'get_links_by_task_id': False,
+            'scrape_mode': 'content_only',
+            # 沒有提供article_ids或article_links
+        }
+        
+        result = crawler._validate_and_update_task_params(task_id, invalid_params)
+        assert result is False
+        # 驗證狀態更新為失敗
+        assert crawler.task_status[task_id]['status'] == 'failed'
+        # 驗證錯誤消息包含預期文本
+        assert "當抓取模式為CONTENT_ONLY且get_links_by_task_id=False時，必須提供article_ids或article_links" in crawler.task_status[task_id]['message']
+
+    def test_execute_links_only_task(self, mock_config_file, article_service):
+        """測試僅抓取連結的任務執行模式"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        task_id = 1
+        
+        # 設置全局參數
+        crawler.global_params = {
+            'scrape_mode': ScrapeMode.LINKS_ONLY
+        }
+        
+        # 初始化任務狀態
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc)
+        }
+        
+        # 模擬 _fetch_article_list 方法
+        test_df = pd.DataFrame({
+            'title': ['Article 1', 'Article 2'],
+            'link': ['https://example.com/1', 'https://example.com/2'],
+            'is_scraped': [False, False]
+        })
+        crawler._fetch_article_list = MagicMock(return_value=test_df)
+        
+        # 模擬 _save_results 方法以避免實際執行保存
+        crawler._save_results = MagicMock()
+        
+        # 調用 _execute_links_only_task 方法
+        result = crawler._execute_links_only_task(task_id, 3, 0.1)
+        
+        # 驗證方法調用與結果
+        crawler._fetch_article_list.assert_called_once_with(task_id, 3, 0.1)
+        crawler._save_results.assert_called_once_with(task_id)
+        
+        # 驗證結果
+        assert result['success'] is True
+        assert result['message'] == '文章連結收集完成'
+        assert result['articles_count'] == 2
+        assert crawler.task_status[task_id]['status'] == 'completed'
+        assert crawler.task_status[task_id]['progress'] == 100
+    
+    def test_execute_full_scrape_task(self, mock_config_file, article_service):
+        """測試完整抓取模式 (連結和內容)"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        task_id = 1
+        
+        # 設置全局參數
+        crawler.global_params = {
+            'scrape_mode': ScrapeMode.FULL_SCRAPE
+        }
+        
+        # 初始化任務狀態
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc)
+        }
+        
+        # 模擬 _fetch_article_list 方法
+        test_df = pd.DataFrame({
+            'title': ['Article 1', 'Article 2'],
+            'link': ['https://example.com/1', 'https://example.com/2'],
+            'is_scraped': [False, False]
+        })
+        crawler._fetch_article_list = MagicMock(return_value=test_df)
+        
+        # 模擬 _fetch_articles 方法
+        current_time = datetime.now(timezone.utc)
+        crawler._fetch_articles = MagicMock(return_value=[
+            {
+                'title': 'Article 1',
+                'content': 'Content 1',
+                'link': 'https://example.com/1',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'published_at': current_time
+            },
+            {
+                'title': 'Article 2',
+                'content': 'Content 2',
+                'link': 'https://example.com/2',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'published_at': current_time
+            }
+        ])
+        
+        # 模擬 _update_articles_with_content 和 _save_results 方法
+        crawler._update_articles_with_content = MagicMock(return_value=test_df)
+        crawler._save_results = MagicMock()
+        
+        # 調用 _execute_full_scrape_task 方法
+        result = crawler._execute_full_scrape_task(task_id, 3, 0.1)
+        
+        # 驗證方法調用與結果
+        crawler._fetch_article_list.assert_called_once_with(task_id, 3, 0.1)
+        crawler._fetch_articles.assert_called_once()
+        crawler._update_articles_with_content.assert_called_once()
+        crawler._save_results.assert_called_once_with(task_id)
+        
+        # 驗證結果
+        assert result['success'] is True
+        assert result['message'] == '任務完成'
+        assert result['articles_count'] == 2
+        assert crawler.task_status[task_id]['status'] == 'completed'
+        assert crawler.task_status[task_id]['progress'] == 100
+    
+    def test_execute_content_only_task_with_article_ids(self, mock_config_file, article_service):
+        """測試使用文章ID列表的內容抓取模式"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        task_id = 1
+        
+        # 設置全局參數
+        crawler.global_params = {
+            'get_links_by_task_id': False,
+            'scrape_mode': ScrapeMode.CONTENT_ONLY,
+            'article_ids': [101, 102]
+        }
+        
+        # 初始化任務狀態
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc)
+        }
+        
+        # 模擬 _fetch_article_links_by_filter 方法
+        test_df = pd.DataFrame({
+            'title': ['Test Article 1', 'Test Article 2'],
+            'link': ['https://example.com/1', 'https://example.com/2'],
+            'id': [101, 102],
+            'is_scraped': [False, False]
+        })
+        crawler._fetch_article_links_by_filter = MagicMock(return_value=test_df)
+        
+        # 模擬 _fetch_articles 方法
+        current_time = datetime.now(timezone.utc)
+        crawler._fetch_articles = MagicMock(return_value=[
+            {
+                'title': 'Test Article 1',
+                'content': 'Content 1',
+                'link': 'https://example.com/1',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'published_at': current_time
+            },
+            {
+                'title': 'Test Article 2',
+                'content': 'Content 2',
+                'link': 'https://example.com/2',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'published_at': current_time
+            }
+        ])
+        
+        # 模擬 _update_articles_with_content 和 _save_results 方法
+        crawler._update_articles_with_content = MagicMock(return_value=test_df)
+        crawler._save_results = MagicMock()
+        
+        # 調用 _execute_content_only_task 方法
+        result = crawler._execute_content_only_task(task_id, 3, 0.1)
+        
+        # 驗證方法調用與結果
+        crawler._fetch_article_links_by_filter.assert_called_once()
+        # 確認調用時傳遞了article_ids參數
+        call_args = crawler._fetch_article_links_by_filter.call_args[1]
+        assert 'article_ids' in call_args
+        assert call_args['article_ids'] == [101, 102]
+        
+        crawler._fetch_articles.assert_called_once()
+        crawler._update_articles_with_content.assert_called_once()
+        crawler._save_results.assert_called_once_with(task_id)
+        
+        # 驗證結果
+        assert result['success'] is True
+        assert result['message'] == '任務完成'
+        assert 'articles_count' in result
+        assert crawler.task_status[task_id]['status'] == 'completed'
+        assert crawler.task_status[task_id]['progress'] == 100
+    
+    def test_execute_content_only_task_with_article_links(self, mock_config_file, article_service):
+        """測試使用文章連結列表的內容抓取模式"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        task_id = 1
+        
+        # 設置全局參數
+        crawler.global_params = {
+            'get_links_by_task_id': False,
+            'scrape_mode': ScrapeMode.CONTENT_ONLY,
+            'article_links': ['https://example.com/link1', 'https://example.com/link2']
+        }
+        
+        # 初始化任務狀態
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc)
+        }
+        
+        # 模擬 _fetch_article_links_by_filter 方法
+        test_df = pd.DataFrame({
+            'title': ['Link Article 1', 'Link Article 2'],
+            'link': ['https://example.com/link1', 'https://example.com/link2'],
+            'is_scraped': [False, False]
+        })
+        crawler._fetch_article_links_by_filter = MagicMock(return_value=test_df)
+        
+        # 模擬 _fetch_articles 方法
+        current_time = datetime.now(timezone.utc)
+        crawler._fetch_articles = MagicMock(return_value=[
+            {
+                'title': 'Link Article 1',
+                'content': 'Content from link 1',
+                'link': 'https://example.com/link1',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'published_at': current_time
+            },
+            {
+                'title': 'Link Article 2',
+                'content': 'Content from link 2',
+                'link': 'https://example.com/link2',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'published_at': current_time
+            }
+        ])
+        
+        # 模擬 _update_articles_with_content 和 _save_results 方法
+        crawler._update_articles_with_content = MagicMock(return_value=test_df)
+        crawler._save_results = MagicMock()
+        
+        # 調用 _execute_content_only_task 方法
+        result = crawler._execute_content_only_task(task_id, 3, 0.1)
+        
+        # 驗證方法調用與結果
+        crawler._fetch_article_links_by_filter.assert_called_once()
+        # 確認調用時傳遞了article_links參數
+        call_args = crawler._fetch_article_links_by_filter.call_args[1]
+        assert 'article_links' in call_args
+        assert call_args['article_links'] == ['https://example.com/link1', 'https://example.com/link2']
+        
+        crawler._fetch_articles.assert_called_once()
+        crawler._update_articles_with_content.assert_called_once()
+        crawler._save_results.assert_called_once_with(task_id)
+        
+        # 驗證結果
+        assert result['success'] is True
+        assert result['message'] == '任務完成'
+        assert 'articles_count' in result
+        assert crawler.task_status[task_id]['status'] == 'completed'
+        assert crawler.task_status[task_id]['progress'] == 100
+        
+    def test_execute_task_different_modes(self, mock_config_file, article_service):
+        """測試 execute_task 方法對不同模式的調用"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 模擬子方法
+        crawler._execute_links_only_task = MagicMock(return_value={'success': True, 'message': 'LINKS_ONLY完成'})
+        crawler._execute_content_only_task = MagicMock(return_value={'success': True, 'message': 'CONTENT_ONLY完成'})
+        crawler._execute_full_scrape_task = MagicMock(return_value={'success': True, 'message': 'FULL_SCRAPE完成'})
+        crawler._validate_and_update_task_params = MagicMock(return_value=True)
+        
+        # 測試LINKS_ONLY模式
+        crawler.global_params = {'scrape_mode': ScrapeMode.LINKS_ONLY, 'max_retries': 3, 'retry_delay': 0.1}
+        result = crawler.execute_task(1, {'scrape_mode': 'links_only'})
+        crawler._execute_links_only_task.assert_called_once_with(1, 3, 0.1)
+        assert result['success'] is True
+        assert result['message'] == 'LINKS_ONLY完成'
+        
+        # 重置模擬
+        crawler._execute_links_only_task.reset_mock()
+        crawler._execute_content_only_task.reset_mock() 
+        crawler._execute_full_scrape_task.reset_mock()
+        
+        # 測試CONTENT_ONLY模式
+        crawler.global_params = {'scrape_mode': ScrapeMode.CONTENT_ONLY, 'max_retries': 3, 'retry_delay': 0.1}
+        result = crawler.execute_task(2, {'scrape_mode': 'content_only'})
+        crawler._execute_content_only_task.assert_called_once_with(2, 3, 0.1)
+        assert result['success'] is True
+        assert result['message'] == 'CONTENT_ONLY完成'
+        
+        # 重置模擬
+        crawler._execute_links_only_task.reset_mock()
+        crawler._execute_content_only_task.reset_mock() 
+        crawler._execute_full_scrape_task.reset_mock()
+        
+        # 測試FULL_SCRAPE模式
+        crawler.global_params = {'scrape_mode': ScrapeMode.FULL_SCRAPE, 'max_retries': 3, 'retry_delay': 0.1}
+        result = crawler.execute_task(3, {'scrape_mode': 'full_scrape'})
+        crawler._execute_full_scrape_task.assert_called_once_with(3, 3, 0.1)
+        assert result['success'] is True
+        assert result['message'] == 'FULL_SCRAPE完成'
 
 if __name__ == "__main__":
     pytest.main()

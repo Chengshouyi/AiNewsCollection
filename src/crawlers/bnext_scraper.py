@@ -94,7 +94,7 @@ class BnextScraper:
                         # 根據提供的選擇器爬取內容
                         # 1. 爬取文章連結
                         logger.debug(f"BnextScraper(scrape_article_list()) - call self.extract_article_links() 爬取文章連結")
-                        current_page_article_links_list = self.extract_article_links(soup, ai_filter=ai_only, min_keywords=min_keywords)
+                        current_page_article_links_list = self.extract_article_links(soup, ai_only=ai_only, min_keywords=min_keywords)
                         
                         all_article_links_list.extend(current_page_article_links_list)
                         logger.debug(f"共爬取 {len(all_article_links_list)} 篇文章連結")
@@ -174,13 +174,18 @@ class BnextScraper:
             logger.error(f"訪問下一頁時出錯: {str(e)}", exc_info=True)
             return False
 
-
-
-    def extract_article_links(self, soup, ai_filter: bool = True, min_keywords: int = 3):
+    def extract_article_links(self, soup, ai_only: bool = True, min_keywords: int = 3):
         """
         提取文章連結，增加容錯和詳細日誌
+        
+        Parameters:
+        soup: BeautifulSoup對象，包含要爬取的頁面內容
+        ai_only: 是否只返回AI相關文章，默認為True
+        min_keywords: 判斷文章是否與AI相關所需的最小關鍵詞數量，默認為3
+        
+        Returns:
+        List[Dict]: 文章連結列表
         """
-
         
         article_links_list = []
 
@@ -216,7 +221,7 @@ class BnextScraper:
                 source_url=self.site_config.base_url,
                 article_type='',
                 tags='',
-                is_ai_related=ai_filter,
+                is_ai_related=ai_only,
                 is_scraped=False,
                 scrape_status='link_saved',
                 scrape_error=None,
@@ -225,7 +230,7 @@ class BnextScraper:
             )
 
             # AI 相關性檢查
-            if ai_filter:
+            if ai_only:
                 is_ai_related = ArticleAnalyzer().is_ai_related(article_link_dict, min_keywords=min_keywords)
                 logger.debug(f"AI相關性檢查: {'通過' if is_ai_related else '未通過'}")
                 if not is_ai_related:
@@ -281,7 +286,7 @@ class BnextScraper:
                             source_url=self.site_config.base_url,
                             article_type='',
                             tags='',
-                            is_ai_related=ai_filter,
+                            is_ai_related=ai_only,
                             is_scraped=False,
                             scrape_status='link_saved',
                             scrape_error=None,
@@ -290,7 +295,7 @@ class BnextScraper:
                         )
 
                         # AI 相關性檢查
-                        if ai_filter:
+                        if ai_only:
                             is_ai_related = ArticleAnalyzer().is_ai_related(article_link_dict, min_keywords=min_keywords)
                             logger.debug(f"AI相關性檢查: {'通過' if is_ai_related else '未通過'}")
                             if not is_ai_related:
