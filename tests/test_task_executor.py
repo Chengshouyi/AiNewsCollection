@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
 from src.services.task_executor import TaskExecutor
-from src.models.crawler_tasks_model import CrawlerTasks
+from src.models.crawler_tasks_model import CrawlerTasks, ScrapeMode
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
 
@@ -40,6 +40,10 @@ class TestTaskExecutor:
         mock_task.id = 1
         mock_task.crawler = MagicMock()
         mock_task.crawler.crawler_name = 'TestCrawler'
+        mock_task.task_args = {}
+        # 添加 scrape_mode 和 ai_only 屬性
+        mock_task.scrape_mode = ScrapeMode.FULL_SCRAPE
+        mock_task.ai_only = True
         return mock_task
     
     def test_init(self, mock_task_history_repo):
@@ -110,6 +114,9 @@ class TestTaskExecutor:
         # 模擬 CrawlerFactory.get_crawler 返回模擬爬蟲物件
         mock_factory.get_crawler.return_value = mock_crawler
         
+        # 設置任務屬性
+        mock_task.task_args = {'other_param': 'value'}
+        
         # 執行任務
         result = executor.execute_task(mock_task)
         
@@ -120,7 +127,19 @@ class TestTaskExecutor:
         
         # 驗證函數調用
         mock_factory.get_crawler.assert_called_once_with(mock_task.crawler.crawler_name)
-        mock_crawler.execute_task.assert_called_once_with(mock_task.id, mock_task.task_args)
+        
+        # 驗證爬蟲執行時收到的參數
+        call_args = mock_crawler.execute_task.call_args[0]
+        assert call_args[0] == mock_task.id  # 第一個參數是 task_id
+        
+        # 驗證 task_args 包含原始參數和附加的參數
+        passed_args = call_args[1]
+        assert 'other_param' in passed_args
+        assert passed_args['other_param'] == 'value'
+        assert 'scrape_mode' in passed_args
+        assert passed_args['scrape_mode'] == 'full_scrape'
+        assert 'ai_only' in passed_args
+        assert passed_args['ai_only'] is True
         
         # 驗證歷史記錄創建和更新
         mock_task_history_repo.create.assert_called_once()
@@ -137,6 +156,9 @@ class TestTaskExecutor:
         # 模擬 CrawlerFactory.get_crawler 返回模擬爬蟲物件
         mock_factory.get_crawler.return_value = mock_crawler
         
+        # 設置任務屬性
+        mock_task.task_args = {'other_param': 'value'}
+        
         # 模擬爬蟲執行拋出異常
         mock_crawler.execute_task.side_effect = Exception("爬蟲執行錯誤")
         
@@ -149,7 +171,15 @@ class TestTaskExecutor:
         assert '爬蟲執行錯誤' in result['message']
         
         # 驗證爬蟲執行時使用了正確的參數
-        mock_crawler.execute_task.assert_called_once_with(mock_task.id, mock_task.task_args)
+        call_args = mock_crawler.execute_task.call_args[0]
+        assert call_args[0] == mock_task.id  # 第一個參數是 task_id
+        
+        # 驗證 task_args 包含原始參數和附加的參數
+        passed_args = call_args[1]
+        assert 'other_param' in passed_args
+        assert passed_args['other_param'] == 'value'
+        assert 'scrape_mode' in passed_args
+        assert 'ai_only' in passed_args
         
         # 驗證任務從執行中集合移除
         assert mock_task.id not in executor.executing_tasks
@@ -236,4 +266,30 @@ class TestTaskExecutor:
         executor.executing_tasks.remove(1)
         
         # 驗證任務不再執行中
-        assert executor.is_task_executing(1) is False 
+        assert executor.is_task_executing(1) is False
+    
+    @patch('src.services.task_executor.CrawlerFactory')
+    def test_execute_task_with_scrape_mode_and_ai_only(self, mock_factory, mock_task_history_repo, mock_task, mock_crawler):
+        """測試含有 scrape_mode 和 ai_only 參數的任務執行"""
+        executor = TaskExecutor(mock_task_history_repo)
+        
+        # 模擬 CrawlerFactory.get_crawler 返回模擬爬蟲物件
+        mock_factory.get_crawler.return_value = mock_crawler
+        
+        # 確保 mock_task 有 scrape_mode 和 ai_only 屬性
+        mock_task.scrape_mode = ScrapeMode.LINKS_ONLY
+        mock_task.ai_only = True
+        
+        # 執行任務
+        result = executor.execute_task(mock_task)
+        
+        # 驗證結果
+        assert result['success'] is True
+        
+        # 驗證爬蟲執行時參數包含正確的 scrape_mode 和 ai_only
+        call_args = mock_crawler.execute_task.call_args[0][1]  # 獲取第二個位置參數 (task_args)
+        assert call_args['scrape_mode'] == 'links_only'  # 應該是字串值而非枚舉
+        assert call_args['ai_only'] is True
+        
+        # 驗證任務從執行中集合移除
+        assert mock_task.id not in executor.executing_tasks 

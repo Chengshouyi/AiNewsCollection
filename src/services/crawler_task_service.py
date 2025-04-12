@@ -524,7 +524,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 history_id = history.id if history else None
                 
                 try:
-                    # 更新任務階段為內容爬取階段
+                    # 更新任務階段為內容抓取階段
                     self.update_task_phase(task_id, TaskPhase.CONTENT_SCRAPING)
                     
                     # 獲取爬蟲資訊
@@ -533,45 +533,6 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         return {
                             'success': False,
                             'message': '任務未關聯有效的爬蟲'
-                        }
-                    
-                    # 獲取要抓取內容的文章
-                    article_repo = self._get_articles_repository()
-                    articles_to_fetch = []
-                    
-                    # 驗證連結ID是否有效
-                    if not link_ids:
-                        return {
-                            'success': False,
-                            'message': '沒有提供要抓取的文章連結ID'
-                        }
-                    
-                    # 獲取每個ID對應的文章
-                    for link_id in link_ids:
-                        article = article_repo.get_by_id(link_id)
-                        if article and not article.is_scraped:
-                            articles_to_fetch.append(article)
-                    
-                    if not articles_to_fetch:
-                        history_update_data = {
-                            'end_time': datetime.now(timezone.utc),
-                            'status': 'completed',
-                            'message': '沒有需要抓取內容的文章'
-                        }
-                        
-                        validated_history_update = self.validate_data('TaskHistory', history_update_data, SchemaType.UPDATE)
-                        history_repo.update(history_id, validated_history_update)
-                        
-                        # 更新任務階段為完成
-                        self.update_task_phase(task_id, TaskPhase.COMPLETED)
-                        
-                        # 更新任務最後執行狀態
-                        tasks_repo.update_last_run(task_id, True, '沒有需要抓取內容的文章')
-                        
-                        return {
-                            'success': True,
-                            'message': '沒有需要抓取內容的文章',
-                            'articles_count': 0
                         }
                     
                     # 創建爬蟲實例
@@ -583,28 +544,20 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     # 將任務的ai_only設置傳給爬蟲
                     crawler_params['ai_only'] = task.ai_only
                     # 設置為只抓取內容模式
-                    crawler_params['content_only'] = True
-                    # 將文章ID傳給爬蟲
-                    crawler_params['article_ids'] = [article.id for article in articles_to_fetch]
-                    # 將文章連結傳給爬蟲
-                    crawler_params['article_links'] = [article.link for article in articles_to_fetch]
-                    
-                    # 增加task_id，讓爬蟲可以把抓取的文章關聯到當前任務
-                    crawler_params['task_id'] = task_id
+                    from src.models.crawler_tasks_model import ScrapeMode
+                    crawler_params['scrape_mode'] = ScrapeMode.CONTENT_ONLY.value
+                    # 設置文章ID列表
+                    crawler_params['article_ids'] = link_ids
                     
                     # 執行爬蟲
                     result = crawler_instance.execute_task(task_id, crawler_params)
                     
-                    # 檢查執行結果
-                    success = result.get('success', False)
-                    articles_count = result.get('articles_count', 0)
-                    
                     # 更新任務歷史記錄
                     history_update_data = {
                         'end_time': datetime.now(timezone.utc),
-                        'status': 'completed' if success else 'failed',
-                        'message': result.get('message', '文章內容抓取完成' if success else '文章內容抓取失敗'),
-                        'articles_count': articles_count
+                        'status': 'completed' if result.get('success', False) else 'failed',
+                        'message': result.get('message', '文章內容抓取完成'),
+                        'articles_count': result.get('articles_count', 0)
                     }
                     
                     # 驗證歷史記錄更新資料
@@ -612,20 +565,18 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     # 更新歷史記錄
                     history_repo.update(history_id, validated_history_update)
                     
-                    # 更新任務階段為完成
-                    self.update_task_phase(task_id, TaskPhase.COMPLETED)
-                    
                     # 成功執行後重置重試次數
-                    self.reset_retry_count(task_id)
+                    if result.get('success', False):
+                        self.reset_retry_count(task_id)
                     
                     # 更新任務最後執行狀態
-                    tasks_repo.update_last_run(task_id, success, result.get('message', '文章內容抓取完成' if success else '文章內容抓取失敗'))
+                    tasks_repo.update_last_run(
+                        task_id, 
+                        result.get('success', False), 
+                        result.get('message', '文章內容抓取完成' if result.get('success', False) else '文章內容抓取失敗')
+                    )
                     
-                    return {
-                        'success': success,
-                        'message': result.get('message', '文章內容抓取完成' if success else '文章內容抓取失敗'),
-                        'articles_count': articles_count
-                    }
+                    return result
                 except Exception as e:
                     # 更新任務歷史記錄
                     history_update_data = {
@@ -733,7 +684,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 # 準備測試參數 (只收集連結，不抓取內容)
                 test_args = task_data.get('task_args', {}).copy()
-                test_args['links_only'] = True
+                from src.models.crawler_tasks_model import ScrapeMode
+                test_args['scrape_mode'] = ScrapeMode.LINKS_ONLY.value
                 test_args['ai_only'] = task_data.get('ai_only', False)
                 
                 # 修改參數，限制測試範圍
@@ -1396,24 +1348,19 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     from src.crawlers.crawler_factory import CrawlerFactory
                     crawler_instance = CrawlerFactory.get_crawler(crawler.crawler_name)
                     
+                    # 獲取文章儲存庫
+                    article_repo = self._get_articles_repository()
+                    
+                    # 獲取該任務ID下最初的文章數量作為基準
+                    initial_count = article_repo.count_articles_by_task_id(task_id)
+                    
                     # 設置爬蟲參數
                     crawler_params = task.task_args or {}
                     # 將任務的ai_only設置傳給爬蟲
                     crawler_params['ai_only'] = task.ai_only
-                    
-                    # 執行連結收集
-                    # 讓爬蟲只執行連結收集部分
-                    from src.services.article_service import ArticleService
-                    article_service = ArticleService(self.db_manager)
-                    
-                    # 獲取最初文章數量作為基準
-                    article_repo = self._get_articles_repository()
-                    initial_count = article_repo.count({
-                        'source': crawler.crawler_name
-                    })
-                    
-                    # 修改task_args確保只抓取連結不抓內容
-                    crawler_params['links_only'] = True
+                    # 設置為只抓取連結模式
+                    from src.models.crawler_tasks_model import ScrapeMode
+                    crawler_params['scrape_mode'] = ScrapeMode.LINKS_ONLY.value
                     
                     # 增加task_id，讓爬蟲可以把抓取的文章關聯到當前任務
                     crawler_params['task_id'] = task_id
@@ -1421,18 +1368,15 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     # 執行爬蟲
                     result = crawler_instance.execute_task(task_id, crawler_params)
                     
-                    # 獲取新增的文章數量
-                    new_count = article_repo.count({
-                        'source': crawler.crawler_name
-                    })
+                    # 獲取新增的文章數量 - 使用task_id作為過濾條件
+                    new_count = article_repo.count_articles_by_task_id(task_id)
                     links_found = new_count - initial_count
                     
-                    # 獲取新增的文章ID
-                    # 這裡假設最新的文章ID就是剛抓取的連結，實務上可能需要更精確的過濾
-                    # 例如根據時間範圍或特定標記
-                    newly_added_articles = article_repo.find_unscraped_links(
-                        limit=links_found,
-                        source=crawler.crawler_name
+                    # 獲取新增的文章 - 使用task_id作為過濾條件
+                    newly_added_articles = article_repo.find_articles_by_task_id(
+                        task_id=task_id,
+                        is_scraped=False,
+                        limit=links_found
                     )
                     newly_added_ids = [article.id for article in newly_added_articles]
                     

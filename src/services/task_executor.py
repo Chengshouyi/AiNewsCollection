@@ -1,6 +1,6 @@
 import logging
 from typing import Optional, Dict, Any, List
-from src.models.crawler_tasks_model import CrawlerTasks
+from src.models.crawler_tasks_model import CrawlerTasks, ScrapeMode
 from datetime import datetime, timezone
 from src.crawlers.crawler_factory import CrawlerFactory
 from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
@@ -83,8 +83,19 @@ class TaskExecutor:
                     'message': error_msg
                 }
                 
+            # 準備任務參數
+            task_args = task.task_args or {}
+            
+            # 確保scrape_mode參數存在
+            if hasattr(task, 'scrape_mode') and task.scrape_mode:
+                task_args['scrape_mode'] = task.scrape_mode.value if isinstance(task.scrape_mode, ScrapeMode) else task.scrape_mode
+            
+            # 確保ai_only參數
+            if hasattr(task, 'ai_only'):
+                task_args['ai_only'] = task.ai_only
+                
             # 執行爬蟲任務，並傳遞任務參數
-            result = crawler.execute_task(task_id, task.task_args)
+            result = crawler.execute_task(task_id, task_args)
             
             # 記錄結束時間和結果
             end_time = datetime.now(timezone.utc)
