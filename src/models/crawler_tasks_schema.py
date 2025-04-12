@@ -2,83 +2,23 @@ from typing import Annotated, Optional, Any
 from pydantic import BeforeValidator, model_validator
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.utils.model_utils import validate_str, validate_boolean, validate_positive_int, validate_cron_expression, validate_dict
+from src.utils.model_utils import validate_str, validate_boolean, validate_positive_int, validate_cron_expression, validate_dict, validate_task_phase, validate_task_args
 from src.utils.schema_utils import validate_required_fields_schema, validate_update_schema
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
-from src.models.crawler_tasks_model import TaskPhase, ScrapeMode
-
-def validate_task_phase(v, field_name="current_phase", required=False):
-    """驗證任務階段"""
-    if v is None:
-        if required:
-            raise ValidationError(f"{field_name}: 不能為空")
-        return None
-    
-    # 如果已經是枚舉類型，直接返回
-    if isinstance(v, TaskPhase):
-        return v
-    
-    # 如果是字串，嘗試轉換為枚舉
-    try:
-        # 處理不同大小寫的情況
-        if isinstance(v, str):
-            # 嘗試直接轉換
-            try:
-                return TaskPhase(v)
-            except ValueError:
-                # 嘗試大寫轉換
-                try:
-                    return TaskPhase(v.upper())
-                except ValueError:
-                    # 嘗試小寫轉換
-                    return TaskPhase(v.lower())
-    except ValueError:
-        raise ValidationError(f"{field_name}: 無效的任務階段值，可用值: {', '.join([e.value for e in TaskPhase])}")
-    
-    raise ValidationError(f"{field_name}: 必須是TaskPhase枚舉或其字串值")
-
-def validate_scrape_mode(v, field_name="scrape_mode", required=False):
-    """驗證抓取模式"""
-    if v is None:
-        if required:
-            raise ValidationError(f"{field_name}: 不能為空")
-        return None
-    
-    # 如果已經是枚舉類型，直接返回
-    if isinstance(v, ScrapeMode):
-        return v
-    
-    # 如果是字串，嘗試轉換為枚舉
-    try:
-        # 處理不同大小寫的情況
-        if isinstance(v, str):
-            # 嘗試直接轉換
-            try:
-                return ScrapeMode(v)
-            except ValueError:
-                # 嘗試大寫轉換
-                try:
-                    return ScrapeMode(v.upper())
-                except ValueError:
-                    # 嘗試小寫轉換
-                    return ScrapeMode(v.lower())
-    except ValueError:
-        raise ValidationError(f"{field_name}: 無效的抓取模式值，可用值: {', '.join([e.value for e in ScrapeMode])}")
-    
-    raise ValidationError(f"{field_name}: 必須是ScrapeMode枚舉或其字串值")
-
+from src.utils.model_utils import TaskPhase, ScrapeMode, validate_scrape_mode
+from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
 
 # 通用字段定義
 TaskName = Annotated[str, BeforeValidator(validate_str("task_name", max_length=255, required=True))]
 CrawlerId = Annotated[int, BeforeValidator(validate_positive_int("crawler_id", is_zero_allowed=False, required=True))]
-TaskArgs = Annotated[dict, BeforeValidator(validate_dict("task_args", required=True))]
+TaskArgs = Annotated[dict, BeforeValidator(validate_task_args("task_args", required=True))]
 IsAuto = Annotated[bool, BeforeValidator(validate_boolean("is_auto", required=True))]
 AiOnly = Annotated[bool, BeforeValidator(validate_boolean("ai_only", required=True))]
 Notes = Annotated[Optional[str], BeforeValidator(validate_str("notes", max_length=65536, required=False))]
 CronExpression = Annotated[Optional[str], BeforeValidator(validate_cron_expression("cron_expression", max_length=255, min_length=5, required=False))]
 LastRunMessage = Annotated[Optional[str], BeforeValidator(validate_str("last_run_message", max_length=65536, required=False))]
-TaskPhaseDef = Annotated[Optional[TaskPhase], BeforeValidator(validate_task_phase)]
-ScrapeModeEnum = Annotated[Optional[ScrapeMode], BeforeValidator(validate_scrape_mode)]
+CurrentPhase = Annotated[Optional[TaskPhase], BeforeValidator(validate_task_phase("current_phase", required=True))]
+ScrapeModeEnum = Annotated[Optional[ScrapeMode], BeforeValidator(validate_scrape_mode("scrape_mode", required=True))]
 MaxRetries = Annotated[Optional[int], BeforeValidator(validate_positive_int("max_retries", is_zero_allowed=False, required=True))]
 RetryCount = Annotated[Optional[int], BeforeValidator(validate_positive_int("retry_count", is_zero_allowed=True, required=True))]
 
@@ -88,15 +28,15 @@ class CrawlerTasksCreateSchema(BaseCreateSchema):
     crawler_id: CrawlerId
     is_auto: IsAuto = True
     ai_only: AiOnly = False
-    task_args: TaskArgs = {}
+    task_args: TaskArgs = TASK_ARGS_DEFAULT
     notes: Notes = None
     last_run_at: Optional[datetime] = None
     last_run_success: Optional[bool] = None
     last_run_message: LastRunMessage = None
     cron_expression: CronExpression = None
-    current_phase: TaskPhaseDef
-    max_retries: MaxRetries
-    retry_count: RetryCount
+    current_phase: CurrentPhase = TaskPhase.INIT
+    max_retries: MaxRetries = 3
+    retry_count: RetryCount = 0
     scrape_mode: ScrapeModeEnum = ScrapeMode.FULL_SCRAPE
 
     @model_validator(mode='before')
@@ -105,10 +45,9 @@ class CrawlerTasksCreateSchema(BaseCreateSchema):
         """驗證必填欄位"""
         if isinstance(data, dict):
             required_fields = CrawlerTasksCreateSchema.get_required_fields()
-            if data.get('is_auto') is True:
-                if data.get('cron_expression') is None:
-                    raise ValidationError("cron_expression: 當設定為自動執行時,此欄位不能為空")
             return validate_required_fields_schema(required_fields, data)
+        else:
+            raise ValidationError("無效的資料格式，需要字典")
 
     @classmethod
     def get_required_fields(cls):
@@ -125,7 +64,7 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     last_run_success: Optional[bool] = None
     last_run_message: Optional[LastRunMessage] = None
     cron_expression: Optional[CronExpression] = None
-    current_phase: Optional[TaskPhaseDef] = None
+    current_phase: Optional[CurrentPhase] = None
     max_retries: Optional[MaxRetries] = None
     retry_count: Optional[RetryCount] = None
     scrape_mode: Optional[ScrapeModeEnum] = None
@@ -146,8 +85,7 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     def validate_update(cls, data):
         """驗證更新操作"""
         if isinstance(data, dict):
-            if data.get('is_auto') is True:
-                if data.get('cron_expression') is None:
-                    raise ValidationError("cron_expression: 當設定為自動執行時,此欄位不能為空")
             return validate_update_schema(cls.get_immutable_fields(), cls.get_updated_fields(), data)
+        else:
+            raise ValidationError("無效的資料格式，需要字典")
     

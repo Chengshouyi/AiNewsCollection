@@ -127,7 +127,6 @@ class BaseCrawler(ABC):
             **filters: 可選的過濾條件，直接傳遞給advanced_search_articles方法
                 - task_id: 任務ID
                 - is_scraped: 是否已抓取內容
-                - article_ids: 文章ID列表 (特殊處理)
                 - article_links: 文章連結列表 (特殊處理)
                 - keywords: 搜尋關鍵字
                 - category: 文章分類
@@ -143,38 +142,6 @@ class BaseCrawler(ABC):
             # 從global_params獲取task_id（如果沒有在filters中指定）
             if 'task_id' not in filters and 'task_id' in self.global_params:
                 filters['task_id'] = self.global_params.get('task_id')
-            
-            # 處理article_ids（需要特殊處理，因為advanced_search_articles不直接支援）
-            article_ids = filters.pop('article_ids', self.global_params.get('article_ids', []))
-            if article_ids:
-                # 如果有article_ids，則直接從資料庫獲取這些文章
-                articles_data = []
-                for article_id in article_ids:
-                    article_response = self.article_service.get_article_by_id(article_id)
-                    if article_response["success"] and article_response["article"]:
-                        article = article_response["article"]
-                        articles_data.append(BnextUtils.get_article_columns_dict(
-                            title=article.title,
-                            summary=article.summary,
-                            content=article.content,
-                            link=article.link,
-                            category=article.category,
-                            published_at=article.published_at,
-                            author=article.author,
-                            source=article.source,
-                            source_url=article.source_url,
-                            article_type=article.article_type,
-                            tags=article.tags,
-                            is_ai_related=article.is_ai_related,
-                            is_scraped=article.is_scraped,
-                            scrape_status=article.scrape_status.value if hasattr(article, 'scrape_status') and article.scrape_status else 'pending',
-                            scrape_error=article.scrape_error if hasattr(article, 'scrape_error') else None,
-                            last_scrape_attempt=article.last_scrape_attempt if hasattr(article, 'last_scrape_attempt') else None,
-                            task_id=article.task_id if hasattr(article, 'task_id') else None
-                        ))
-                if articles_data:
-                    return pd.DataFrame(articles_data)
-                return None
             
             # 處理article_links（需要特殊處理）
             article_links = filters.pop('article_links', self.global_params.get('article_links', []))
@@ -546,7 +513,7 @@ class BaseCrawler(ABC):
         
         Args:
             task_id: 任務ID
-            task_args: 任務參數 
+            task_args: 任務參數 (與crawler_tasks_model.py的task_args對應)
                 - max_pages: 最大頁數
                 - ai_only: 是否只抓取AI相關文章
                 - num_articles: 抓取的文章數量
@@ -559,7 +526,6 @@ class BaseCrawler(ABC):
                 - save_to_database: 是否保存到資料庫
                 - scrape_mode: 抓取模式 (LINKS_ONLY, CONTENT_ONLY, FULL_SCRAPE)
                 - get_links_by_task_id: 是否從資料庫根據任務ID獲取要抓取內容的文章(scrape_mode=CONTENT_ONLY時有效)
-                - article_ids: 要抓取內容的文章ID列表 (scrape_mode=CONTENT_ONLY且get_links_by_task_id=False時有效)
                 - article_links: 要抓取內容的文章連結列表 (scrape_mode=CONTENT_ONLY且get_links_by_task_id=False時有效)
                 
         Returns:
@@ -638,16 +604,15 @@ class BaseCrawler(ABC):
                     'task_status': self.get_task_status(task_id)
                 }
         else:
-            # 獲取要抓取的文章ID或連結
-            article_ids = self.global_params.get('article_ids', [])
+            # 獲取要抓取的文章連結
             article_links = self.global_params.get('article_links', [])
             
-            if not article_ids and not article_links:
-                logger.warning("沒有提供要抓取內容的文章ID或連結")
-                self._update_task_status(task_id, 100, '沒有提供要抓取內容的文章ID或連結', 'completed')
+            if not article_links:
+                logger.warning("沒有提供要抓取內容的文章連結")
+                self._update_task_status(task_id, 100, '沒有提供要抓取內容的文章連結', 'completed')
                 return {
                     'success': False,
-                    'message': '沒有提供要抓取內容的文章ID或連結',
+                    'message': '沒有提供要抓取內容的文章連結',
                     'articles_count': 0,
                     'task_status': self.get_task_status(task_id)
                 }
@@ -655,7 +620,6 @@ class BaseCrawler(ABC):
             # 使用過濾功能獲取文章資訊
             self.articles_df = self.retry_operation(
                 lambda: self._fetch_article_links_by_filter(
-                    article_ids=article_ids,
                     article_links=article_links
                 ),
                 max_retries=max_retries,

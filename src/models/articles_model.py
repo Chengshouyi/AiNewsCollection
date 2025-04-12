@@ -6,16 +6,13 @@ from datetime import datetime
 from .base_entity import BaseEntity
 import logging
 import enum
+from src.utils.model_utils import ArticleScrapeStatus
 
 # 設定 logger
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class ArticleScrapeStatus(enum.Enum):
-    PENDING = "pending"  # 等待爬取
-    LINK_SAVED = "link_saved"  # 連結已保存
-    CONTENT_SCRAPED = "content_scraped"  # 內容已爬取
-    FAILED = "failed"  # 爬取失敗
+
 
 class Articles(Base, BaseEntity):
     """文章模型

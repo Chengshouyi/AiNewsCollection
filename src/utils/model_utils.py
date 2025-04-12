@@ -1,44 +1,31 @@
-from typing import Optional, Any, Callable, Dict, Hashable, List, Type
+from typing import Optional, Any, Callable, Dict, Hashable, List, Type, TypeVar
 from datetime import datetime,  timezone
 from src.error.errors import ValidationError
 from croniter import croniter
+from src.utils.transform_utils import str_to_enum, convert_to_dict, convert_hashable_dict_to_str_dict
 import re
+import enum
 
 
-def convert_to_dict(data: Any) -> Dict[str, Any]:
-    """將任意類型轉換為字典"""
-    # 轉換為字典
-    if isinstance(data, dict):
-        processed_data = data.copy()
-    elif hasattr(data, 'dict') and callable(data.dict):
-        # 處理 Pydantic 模型
-        processed_data = data.dict(exclude_unset=True)
-    elif hasattr(data, '__dict__'):
-        # 處理普通物件
-        processed_data = {k: v for k, v in data.__dict__.items() 
-                            if not k.startswith('_')}
-    else:
-        raise ValidationError("無效的資料格式，需要字典或支援轉換的物件")
-    return processed_data
+class TaskPhase(enum.Enum):
+    """任務階段枚舉"""
+    INIT = "init"  # 初始化
+    LINK_COLLECTION = "link_collection"  # 連結收集階段
+    CONTENT_SCRAPING = "content_scraping"  # 內容爬取階段
+    COMPLETED = "completed"  # 完成
 
-def is_str_dict(data: Dict[Hashable, Any]) -> bool:
-    """檢查字典的所有鍵是否都是字符串類型"""
-    return all(isinstance(k, str) for k in data.keys())
+class ScrapeMode(enum.Enum):
+    """抓取模式枚舉"""
+    LINKS_ONLY = "links_only"  # 僅抓取連結
+    CONTENT_ONLY = "content_only"  # 僅抓取內容(從已有連結)
+    FULL_SCRAPE = "full_scrape"  # 連結與內容一起抓取
 
-def convert_hashable_dict_to_str_dict(data: Dict[Any, Any]) -> Dict[str, Any]:
-    """
-    將 Dict[Hashable, Any] 轉換為 Dict[str, Any]
-    
-    Args:
-        data: 包含 Hashable 鍵的字典
-        
-    Returns:
-        Dict[str, Any]: 包含字符串鍵的字典
-    """
-    if not is_str_dict(data):
-        raise ValueError("字典的所有鍵必須是字符串類型")
-    
-    return {str(k): v for k, v in data.items()}
+class ArticleScrapeStatus(enum.Enum):
+    PENDING = "pending"  # 等待爬取
+    LINK_SAVED = "link_saved"  # 連結已保存
+    CONTENT_SCRAPED = "content_scraped"  # 內容已爬取
+    FAILED = "failed"  # 爬取失敗
+
 
 def validate_int(field_name: str, required: bool = False):
     """整數驗證"""
@@ -437,4 +424,112 @@ def validate_url(
         return value
     
     return validator
+
+
+def validate_task_args(field_name: str, required: bool = False):
+    """任務參數驗證"""
+    def validator(value: Any) -> Optional[Dict[str, Any]]:
+        if value is None:
+            if required:
+                raise ValidationError(f"{field_name}: 不能為空")
+            return {}
+        dict_validator = validate_dict(field_name, required=required)
+        validated_data = dict_validator(value)
+        # 驗證數值類型參數
+        numeric_params = ['max_pages', 'num_articles', 'min_keywords', 'timeout']
+        for param in numeric_params:
+            if param in validated_data:
+                if validated_data[param] is not None:
+                    try:
+                        validate_positive_int(param, required=True)(validated_data[param]) 
+                    except Exception as e:
+                        raise ValidationError(f"task_args.{param}: {str(e)}")
+        
+        # 驗證可為小數的數值類型參數 
+        float_params = ['retry_delay']
+        for param in float_params:
+            if param in validated_data:
+                if validated_data[param] is not None:
+                    try:
+                        validate_positive_float(param, is_zero_allowed=False, required=True)(validated_data[param]) 
+                    except Exception as e:
+                        raise ValidationError(f"task_args.{param}: {str(e)}")
+
+        # 驗證布爾類型參數
+        bool_params = ['ai_only', 'save_to_csv', 'save_to_database', 'get_links_by_task_id']
+        for param in bool_params:
+            if param in validated_data:
+                if validated_data[param] is not None:
+                    try:
+                        validate_boolean(param, required=True)(validated_data[param])
+                    except Exception as e:
+                        raise ValidationError(f"task_args.{param}: {str(e)}")
+        
+        if 'article_links' in validated_data:
+            try:
+                if validated_data['article_links'] is not None:
+                    validate_list("article_links", min_length=0, type=str)(validated_data['article_links'])
+            except Exception as e:
+                raise ValidationError(f"task_args.article_links: {str(e)}")
+        return validated_data
+    return validator    
+
+def validate_positive_float(field_name: str, is_zero_allowed: bool = False, required: bool = False):
+    """正浮點數驗證"""
+    def validator(value: Any) -> Optional[float]:
+        if value is None:
+            if required:
+                raise ValidationError(f"{field_name}: 不能為空")
+            return 0
+        if not isinstance(value, (int, float)):
+            raise ValidationError(f"{field_name}: 必須是數值")
+        if not is_zero_allowed:
+            if value <= 0:
+                raise ValidationError(f"{field_name}: 必須是正數且大於0")
+        else:
+            if value < 0:
+                raise ValidationError(f"{field_name}: 必須是正數且大於等於0")
+        return value
+    return validator
+
+def validate_task_phase(field_name: str, required: bool = False):
+    """任務階段驗證"""
+    def validator(value: Any) -> Optional[TaskPhase]:
+        if value is None:
+            if required:
+                raise ValidationError(f"{field_name}: 不能為空")
+            return None
+        if isinstance(value, TaskPhase):
+            return value
+        else:
+            return str_to_enum(value, TaskPhase, field_name)
+    return validator
+
+def validate_scrape_mode(field_name: str, required: bool = False):
+    """抓取模式驗證"""
+    def validator(value: Any) -> Optional[ScrapeMode]:
+        if value is None:
+            if required:
+                raise ValidationError(f"{field_name}: 不能為空")
+            return None
+        if isinstance(value, ScrapeMode):
+            return value
+        else:
+           return str_to_enum(value, ScrapeMode, field_name)
+    return validator
+
+
+def validate_article_scrape_status(field_name: str, required: bool = False):
+    """文章爬取狀態驗證"""
+    def validator(value: Any) -> Optional[ArticleScrapeStatus]:
+        if value is None:
+            if required:
+                raise ValidationError(f"{field_name}: 不能為空")
+            return None 
+        if isinstance(value, ArticleScrapeStatus):
+            return value
+        else:
+            return str_to_enum(value, ArticleScrapeStatus, field_name)
+    return validator
+
 

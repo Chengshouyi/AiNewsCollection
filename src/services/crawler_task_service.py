@@ -11,11 +11,13 @@ from src.database.crawlers_repository import CrawlersRepository
 from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
 from src.database.articles_repository import ArticlesRepository
 from src.models.base_model import Base
-from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase, ScrapeMode
+from src.models.crawler_tasks_model import CrawlerTasks, TASK_ARGS_DEFAULT
+from src.models.crawler_tasks_schema import validate_scrape_mode, validate_task_phase
 from src.models.crawlers_model import Crawlers
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.articles_model import Articles
 from src.error.errors import ValidationError
+from src.utils.model_utils import ScrapeMode, TaskPhase
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -58,6 +60,23 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         Returns:
             Dict[str, Any]: 驗證後的資料
         """
+
+        if data.get('is_auto') is True:
+            if data.get('cron_expression') is None:
+                raise ValidationError("cron_expression: 當設定為自動執行時,此欄位不能為空")
+
+        task_args = data.get('task_args', TASK_ARGS_DEFAULT)
+        # 根據抓取模式處理相關參數
+        if data.get('scrape_mode') == ScrapeMode.CONTENT_ONLY.value:
+            if 'get_links_by_task_id' not in task_args:
+                task_args['get_links_by_task_id'] = True
+                
+            if not task_args.get('get_links_by_task_id'):
+                if 'article_links' not in task_args:
+                    raise ValidationError("內容抓取模式需要提供 article_links")
+        
+        # 更新 task_args
+        data['task_args'] = task_args
         schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
         return self.validate_data('CrawlerTask', data, schema_type)
         
@@ -479,15 +498,16 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'message': error_msg
             }
 
-    def fetch_article_content(self, task_id: int, link_ids: List[int]) -> Dict[str, Any]:
+    def fetch_article_content(self, task_id: int, task_args: Dict[str, Any]) -> Dict[str, Any]:
         """ 抓取文章內容，並更新文章內容
             使用情境：
-                1. 手動任務：當使用者手動選擇要抓取的文章連結時，會使用此方法
+                1. 手動任務：當使用者手動選擇要抓取的文章時，會使用此方法
                 2. 自動任務：當任務執行時，會使用此方法
 
         Args:
             task_id: 任務ID
-            link_ids: 文章連結ID列表
+            task_args: 任務參數
+                article_links: 文章連結列表
             
         Returns:
             Dict[str, Any]: 執行結果
@@ -547,7 +567,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     from src.models.crawler_tasks_model import ScrapeMode
                     crawler_params['scrape_mode'] = ScrapeMode.CONTENT_ONLY.value
                     # 設置文章ID列表
-                    crawler_params['article_ids'] = link_ids
+                    crawler_params['article_links'] = task_args['article_links']
                     
                     # 執行爬蟲
                     result = crawler_instance.execute_task(task_id, crawler_params)

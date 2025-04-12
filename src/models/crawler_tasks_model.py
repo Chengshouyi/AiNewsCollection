@@ -5,20 +5,23 @@ from typing import Optional
 from datetime import datetime
 from .base_entity import BaseEntity
 from sqlalchemy.dialects.mysql import JSON
-import enum
+from src.utils.model_utils import TaskPhase, ScrapeMode
 
-class TaskPhase(enum.Enum):
-    """任務階段枚舉"""
-    INIT = "init"  # 初始化
-    LINK_COLLECTION = "link_collection"  # 連結收集階段
-    CONTENT_SCRAPING = "content_scraping"  # 內容爬取階段
-    COMPLETED = "completed"  # 完成
-
-class ScrapeMode(enum.Enum):
-    """抓取模式枚舉"""
-    LINKS_ONLY = "links_only"  # 僅抓取連結
-    CONTENT_ONLY = "content_only"  # 僅抓取內容(從已有連結)
-    FULL_SCRAPE = "full_scrape"  # 連結與內容一起抓取
+TASK_ARGS_DEFAULT = {
+    'max_pages': 10,
+    'ai_only': False,
+    'num_articles': 10,
+    'min_keywords': 10,
+    'max_retries': 3,
+    'retry_delay': 2.0,
+    'timeout': 10,
+    'save_to_csv': False,
+    'csv_file_prefix': '',
+    'save_to_database': False,
+    'scrape_mode': ScrapeMode.FULL_SCRAPE,
+    'get_links_by_task_id': True,
+    'article_links': []
+}
 
 class CrawlerTasks(Base, BaseEntity):
     """爬蟲任務模型
@@ -28,7 +31,6 @@ class CrawlerTasks(Base, BaseEntity):
     - crawler_id: 外鍵，關聯爬蟲
     - is_auto: 是否自動爬取
     - ai_only: 是否只爬取AI相關文章
-    - task_args: 任務參數
     - notes: 備註
     - last_run_at: 上次執行時間
     - last_run_success: 上次執行成功與否
@@ -38,6 +40,20 @@ class CrawlerTasks(Base, BaseEntity):
     - max_retries: 最大重試次數
     - retry_count: 當前重試次數
     - scrape_mode: 抓取模式
+    - task_args: 任務參數 
+        - max_pages: 最大頁數
+        - ai_only: 是否只抓取AI相關文章
+        - num_articles: 抓取的文章數量
+        - min_keywords: 最小關鍵字數量
+        - max_retries: 最大重試次數
+        - retry_delay: 重試延遲時間
+        - timeout: 超時時間 
+        - save_to_csv: 是否保存到CSV文件
+        - csv_file_prefix: CSV檔案名稱前綴，最終文件名格式為 {前綴}_{任務ID}_{時間戳}.csv
+        - save_to_database: 是否保存到資料庫
+        - scrape_mode: 抓取模式 (LINKS_ONLY, CONTENT_ONLY, FULL_SCRAPE)
+        - get_links_by_task_id: 是否從資料庫根據任務ID獲取要抓取內容的文章(scrape_mode=CONTENT_ONLY時有效)
+        - article_links: 要抓取內容的文章連結列表 (scrape_mode=CONTENT_ONLY且get_links_by_task_id=False時有效)
     """
     __tablename__ = 'crawler_tasks'
 
@@ -60,7 +76,7 @@ class CrawlerTasks(Base, BaseEntity):
         default=False, 
         nullable=False
     )
-    task_args: Mapped[dict] = mapped_column(JSON)
+    task_args: Mapped[dict] = mapped_column(JSON, default=TASK_ARGS_DEFAULT)
     notes: Mapped[Optional[str]] = mapped_column(Text)
     last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
     last_run_success: Mapped[Optional[bool]] = mapped_column(Boolean)
