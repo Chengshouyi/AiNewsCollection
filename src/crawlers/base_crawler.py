@@ -50,6 +50,7 @@ class BaseCrawler(ABC):
 
         self._create_site_config()
 
+
     @abstractmethod # 抓取文章列表
     def _fetch_article_links(self) -> Optional[pd.DataFrame]:
         """
@@ -473,7 +474,7 @@ class BaseCrawler(ABC):
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc)
         }
-        
+        self.task_status[task_id]['cancelled'] = False
         # 驗證並更新任務參數
         if not self._validate_and_update_task_params(task_id, task_args):
             return {
@@ -482,7 +483,13 @@ class BaseCrawler(ABC):
                 'articles_count': 0,
                 'task_status': self.get_task_status(task_id)
             }
-        
+        if self._check_if_cancelled(task_id):
+            return {
+                'success': False,
+                'message': '任務已取消',
+                'articles_count': 0,
+                'task_status': self.get_task_status(task_id)
+            }
         try:
             # 獲取重試參數
             max_retries = self.global_params.get('max_retries', 3)
@@ -490,7 +497,13 @@ class BaseCrawler(ABC):
             
             # 獲取當前的抓取模式
             scrape_mode = self.global_params.get('scrape_mode', ScrapeMode.FULL_SCRAPE)
-            
+            if self._check_if_cancelled(task_id):
+                return {
+                    'success': False,
+                    'message': '任務已取消',
+                    'articles_count': 0,
+                    'task_status': self.get_task_status(task_id)
+                }
             # 根據抓取模式執行不同的流程
             if scrape_mode == ScrapeMode.CONTENT_ONLY:
                 return self._execute_content_only_task(task_id, max_retries, retry_delay)
@@ -511,6 +524,13 @@ class BaseCrawler(ABC):
 
     def _execute_content_only_task(self, task_id: int, max_retries: int, retry_delay: float):
         """執行僅抓取內容的任務"""
+        if self._check_if_cancelled(task_id):
+            return {
+                'success': False,
+                'message': '任務已取消',
+                'articles_count': 0,
+                'task_status': self.get_task_status(task_id)
+            }
         # 獲取是否從資料庫根據任務ID獲取文章
         get_links_by_task_id = self.global_params.get('get_links_by_task_id', False)
         
@@ -547,7 +567,13 @@ class BaseCrawler(ABC):
                     'articles_count': 0,
                     'task_status': self.get_task_status(task_id)
                 }
-            
+            if self._check_if_cancelled(task_id):
+                return {
+                    'success': False,
+                    'message': '任務已取消',
+                    'articles_count': 0,
+                    'task_status': self.get_task_status(task_id)
+                }
             # 使用過濾功能獲取文章資訊
             self.articles_df = self.retry_operation(
                 lambda: self._fetch_article_links_by_filter(
@@ -573,7 +599,7 @@ class BaseCrawler(ABC):
         progress_msg = f'抓取文章詳細內容中 (0/{articles_count})...'
         progress = self._calculate_progress('fetch_contents', 0)
         self._update_task_status(task_id, progress, progress_msg)
-        
+
         # 使用重試機制抓取文章內容
         fetched_articles = self.retry_operation(
             lambda: self._fetch_articles(),
@@ -599,7 +625,7 @@ class BaseCrawler(ABC):
         # 記錄成功獲取的文章內容數量
         content_count = len(fetched_articles)
         logger.info(f"成功獲取 {content_count}/{articles_count} 篇文章內容")
-        
+
         # 步驟2：更新 articles_df 添加文章內容
         progress = self._calculate_progress('update_dataframe', 0)
         self._update_task_status(task_id, progress, '更新文章數據中...')
@@ -626,6 +652,13 @@ class BaseCrawler(ABC):
 
     def _execute_links_only_task(self, task_id: int, max_retries: int, retry_delay: float):
         """執行僅抓取連結的任務"""
+        if self._check_if_cancelled(task_id):
+            return {
+                'success': False,
+                'message': '任務已取消',
+                'articles_count': 0,
+                'task_status': self.get_task_status(task_id)
+            }
         # 步驟1：抓取文章列表
         fetched_articles_df = self._fetch_article_list(task_id, max_retries, retry_delay)
         
@@ -663,6 +696,13 @@ class BaseCrawler(ABC):
 
     def _execute_full_scrape_task(self, task_id: int, max_retries: int, retry_delay: float):
         """執行完整爬取任務(連結和內容)"""
+        if self._check_if_cancelled(task_id):
+            return {
+                'success': False,
+                'message': '任務已取消',
+                'articles_count': 0,
+                'task_status': self.get_task_status(task_id)
+            }
         # 步驟1：抓取文章列表
         fetched_articles_df = self._fetch_article_list(task_id, max_retries, retry_delay)
         
@@ -839,10 +879,24 @@ class BaseCrawler(ABC):
             'message': '任務不存在'
         })
         
-    def retry_operation(self, operation, max_retries=3, retry_delay=2.0):
-        """重試操作的通用方法"""
+    def retry_operation(self, operation, max_retries=3, retry_delay=2.0, task_id=None):
+        """重試操作的通用方法，支持取消檢查
+        
+        Args:
+            operation: 要執行的操作
+            max_retries: 最大重試次數
+            retry_delay: 重試延遲時間
+            task_id: 任務ID，用於檢查是否取消
+            
+        Returns:
+            操作結果
+        """
         retries = 0
         while retries < max_retries:
+            # 檢查任務是否已取消
+            if task_id and self._check_if_cancelled(task_id):
+                raise Exception(f"任務 {task_id} 已取消")
+            
             try:
                 return operation()
             except Exception as e:
@@ -867,15 +921,23 @@ class BaseCrawler(ABC):
             logger.warning(f"任務 {task_id} 不存在，無法取消")
             return False
             
-        status = self.task_status[task_id]['status']
-        if status not in ['running', 'paused']:
-            logger.warning(f"任務 {task_id} 當前狀態為 {status}，無法取消")
-            return False
-            
-        # 更新任務狀態
+        self.task_status[task_id]['cancelled'] = True
         self._update_task_status(task_id, self.task_status[task_id]['progress'], '任務已取消', 'cancelled')
-        logger.info(f"任務 {task_id} 已被取消")
         return True
+
+    def _check_if_cancelled(self, task_id: int) -> bool:
+        """檢查任務是否已被取消，如已取消則記錄日誌
+        
+        Args:
+            task_id: 任務ID
+            
+        Returns:
+            bool: 是否已取消
+        """
+        if task_id in self.task_status and self.task_status[task_id].get('cancelled', False):
+            logger.info(f"任務 {task_id} 已被取消，停止執行")
+            return True
+        return False
 
 
 

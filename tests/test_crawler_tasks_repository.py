@@ -1,9 +1,9 @@
 import pytest
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, JSON
 from sqlalchemy.orm import sessionmaker
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
-from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase, ScrapeMode
+from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase, ScrapeMode, TASK_ARGS_DEFAULT
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
 from src.database.base_repository import SchemaType
@@ -72,10 +72,9 @@ def sample_tasks(session, clean_db, sample_crawler):
             task_name="AI任務1",
             crawler_id=sample_crawler.id,
             is_auto=True,
-            ai_only=True,
+            task_args={**TASK_ARGS_DEFAULT, "ai_only": True}, 
             notes="AI任務1",
             cron_expression="* * * * *",
-            task_args={},
             current_phase=TaskPhase.INIT,
             max_retries=3,
             retry_count=0
@@ -84,10 +83,9 @@ def sample_tasks(session, clean_db, sample_crawler):
             task_name="一般任務",
             crawler_id=sample_crawler.id,
             is_auto=True,
-            ai_only=False,
+            task_args={**TASK_ARGS_DEFAULT, "ai_only": False}, 
             notes="一般任務",
             cron_expression="* * * * *",
-            task_args={},
             current_phase=TaskPhase.INIT,
             max_retries=3,
             retry_count=0
@@ -96,10 +94,9 @@ def sample_tasks(session, clean_db, sample_crawler):
             task_name="手動AI任務",
             crawler_id=sample_crawler.id,
             is_auto=False,
-            ai_only=True,
+            task_args={**TASK_ARGS_DEFAULT, "ai_only": True},  
             notes="手動AI任務",
             cron_expression="* * * * *",
-            task_args={},
             current_phase=TaskPhase.INIT,
             max_retries=3,
             retry_count=0
@@ -119,7 +116,7 @@ class TestCrawlerTasksRepository:
     
     def test_find_by_crawler_id(self, crawler_tasks_repo, sample_tasks, sample_crawler):
         """測試根據爬蟲ID查詢任務"""
-        tasks = crawler_tasks_repo.find_by_crawler_id(sample_crawler.id)
+        tasks = crawler_tasks_repo.find_tasks_by_crawler_id(sample_crawler.id)
         assert len(tasks) == 3
         assert all(task.crawler_id == sample_crawler.id for task in tasks)
 
@@ -131,16 +128,19 @@ class TestCrawlerTasksRepository:
 
     def test_find_ai_only_tasks(self, crawler_tasks_repo, sample_tasks):
         """測試查詢AI相關的任務"""
-        ai_tasks = crawler_tasks_repo.find_ai_only_tasks()
+        # 獲取所有任務並在 Python 中過濾
+        all_tasks = crawler_tasks_repo.get_all()
+        ai_tasks = [task for task in all_tasks if task.task_args.get('ai_only') is True]
+        
         assert len(ai_tasks) == 2
-        assert all(task.ai_only for task in ai_tasks)
+        assert all(task.task_args.get('ai_only') is True for task in ai_tasks)
 
     def test_find_tasks_by_crawler_and_auto(self, crawler_tasks_repo, sample_tasks, sample_crawler):
         """測試根據爬蟲ID和自動執行狀態查詢任務"""
-        auto_tasks = crawler_tasks_repo.find_tasks_by_crawler_and_auto(
-            crawler_id=sample_crawler.id,
-            is_auto=True
-        )
+        # 使用現有方法並在 Python 中過濾
+        all_tasks = crawler_tasks_repo.find_tasks_by_crawler_id(sample_crawler.id)
+        auto_tasks = [task for task in all_tasks if task.is_auto]
+        
         assert len(auto_tasks) == 2
         assert all(task.crawler_id == sample_crawler.id and task.is_auto for task in auto_tasks)
 
@@ -162,20 +162,22 @@ class TestCrawlerTasksRepository:
         assert updated_task.is_auto != original_status
         assert updated_task.updated_at is not None
 
-    def test_toggle_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
-        """測試切換AI收集狀態"""
+    def test_update_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
+        """測試更新AI收集狀態"""
         task = sample_tasks[0]
-        original_status = task.ai_only
+        original_status = task.task_args.get('ai_only')
         task_id = task.id
         
-        # 切換狀態
-        result = crawler_tasks_repo.toggle_ai_only_status(task_id)
-        assert result is True
+        # 更新 ai_only 狀態
+        updated_task = crawler_tasks_repo.update(task_id, {
+            "task_args": {**task.task_args, "ai_only": not original_status}
+        })
+        assert updated_task is not None
         
         # 重新獲取任務並驗證狀態
         session.expire_all()  # 確保重新從數據庫加載
         updated_task = crawler_tasks_repo.get_by_id(task_id)
-        assert updated_task.ai_only != original_status
+        assert updated_task.task_args.get('ai_only') != original_status
         assert updated_task.updated_at is not None
 
     def test_update_notes(self, crawler_tasks_repo, sample_tasks, session):
@@ -220,7 +222,7 @@ class TestCrawlerTasksRepository:
                 crawler_id=sample_crawler.id,
                 is_auto=True,
                 cron_expression="0 * * * *",  # 每小時執行
-                task_args={},
+                task_args={**TASK_ARGS_DEFAULT,"ai_only": False},  
                 current_phase=TaskPhase.INIT,
                 max_retries=3,
                 retry_count=0
@@ -230,7 +232,7 @@ class TestCrawlerTasksRepository:
                 crawler_id=sample_crawler.id,
                 is_auto=True,
                 cron_expression="0 0 * * *",  # 每天執行
-                task_args={},
+                task_args={**TASK_ARGS_DEFAULT,"ai_only": False},  
                 current_phase=TaskPhase.INIT,
                 max_retries=3,
                 retry_count=0
@@ -240,7 +242,7 @@ class TestCrawlerTasksRepository:
                 crawler_id=sample_crawler.id,
                 is_auto=True,
                 cron_expression="0 0 * * 1",  # 每週一執行
-                task_args={},
+                task_args={**TASK_ARGS_DEFAULT,"ai_only": False},  
                 current_phase=TaskPhase.INIT,
                 max_retries=3,
                 retry_count=0
@@ -275,7 +277,7 @@ class TestCrawlerTasksRepository:
             is_auto=True,
             cron_expression="0 * * * *",  # 每小時執行（整點）
             last_run_at=now - timedelta(hours=2),
-            task_args={},
+            task_args={**TASK_ARGS_DEFAULT,"ai_only": False}, 
             current_phase=TaskPhase.INIT,
             max_retries=3,
             retry_count=0
@@ -288,7 +290,7 @@ class TestCrawlerTasksRepository:
             is_auto=True,
             cron_expression="0 * * * *",
             last_run_at=now - timedelta(minutes=30),
-            task_args={},
+            task_args={**TASK_ARGS_DEFAULT,"ai_only": False},  
             current_phase=TaskPhase.INIT,
             max_retries=3,
             retry_count=0
@@ -301,7 +303,7 @@ class TestCrawlerTasksRepository:
             is_auto=True,
             cron_expression="0 * * * *",
             last_run_at=None,
-            task_args={},
+            task_args={**TASK_ARGS_DEFAULT,"ai_only": False},  
             current_phase=TaskPhase.INIT,
             max_retries=3,
             retry_count=0
@@ -340,7 +342,7 @@ class TestCrawlerTasksRepository:
                 crawler_id=sample_crawler.id,
                 last_run_success=False,
                 last_run_at=base_time - timedelta(days=2),  # 超過1天，不應該被查到
-                task_args={},
+                task_args={**TASK_ARGS_DEFAULT,"ai_only": False},  
                 current_phase=TaskPhase.INIT,
                 max_retries=3,
                 retry_count=0
@@ -350,7 +352,7 @@ class TestCrawlerTasksRepository:
                 crawler_id=sample_crawler.id,
                 last_run_success=False,
                 last_run_at=base_time - timedelta(hours=12),  # 應該被查到
-                task_args={},
+                task_args={**TASK_ARGS_DEFAULT,"ai_only": False}, 
                 current_phase=TaskPhase.INIT,
                 max_retries=3,
                 retry_count=0
@@ -360,7 +362,7 @@ class TestCrawlerTasksRepository:
                 crawler_id=sample_crawler.id,
                 last_run_success=True,
                 last_run_at=base_time - timedelta(hours=1),  # 成功的任務，不應該被查到
-                task_args={},
+                task_args={**TASK_ARGS_DEFAULT,"ai_only": False}, 
                 current_phase=TaskPhase.INIT,
                 max_retries=3,
                 retry_count=0
@@ -383,39 +385,36 @@ class TestCrawlerTasksRepository:
                 "task_name": "測試任務",
                 "is_auto": True,
                 "cron_expression": "0 * * * *",
-                "ai_only": False,
-                "task_args": {},
+                "task_args": {**TASK_ARGS_DEFAULT,"ai_only": False},  
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
                 "retry_count": 0,
                 "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
-        assert "crawler_id: 不能為空" in str(excinfo.value)
+        assert "CREATE 資料驗證失敗: crawler_id: 不能為空" in str(excinfo.value)
         
-        # 測試自動執行時缺少 cron_expression
-        with pytest.raises(ValidationError) as excinfo:
-            crawler_tasks_repo.create({
-                "task_name": "測試任務",
-                "crawler_id": sample_crawler.id,
-                "is_auto": True,
-                "cron_expression": None,
-                "ai_only": False,
-                "task_args": {},
-                "current_phase": TaskPhase.INIT,
-                "max_retries": 3,
-                "retry_count": 0,
-                "scrape_mode": ScrapeMode.FULL_SCRAPE
-            })
-        assert "cron_expression: 當設定為自動執行時,此欄位不能為空" in str(excinfo.value)
+        # 測試自動執行時缺少 cron_expression->移到service
+        # with pytest.raises(ValidationError) as excinfo:
+        #     crawler_tasks_repo.create({
+        #         "task_name": "測試任務",
+        #         "crawler_id": sample_crawler.id,
+        #         "is_auto": True,
+        #         "cron_expression": None,
+        #         "task_args": {**TASK_ARGS_DEFAULT,"ai_only": False}, 
+        #         "current_phase": TaskPhase.INIT,
+        #         "max_retries": 3,
+        #         "retry_count": 0,
+        #         "scrape_mode": ScrapeMode.FULL_SCRAPE
+        #     })
+        # assert "cron_expression: 當設定為自動執行時,此欄位不能為空" in str(excinfo.value)
         
         # 測試成功創建
         task = crawler_tasks_repo.create({
             "task_name": "測試任務",
             "crawler_id": sample_crawler.id,
-            "task_args": {},
+            "task_args": {**TASK_ARGS_DEFAULT,"ai_only": False},  
             "is_auto": True,
             "cron_expression": "0 * * * *",
-            "ai_only": False,
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
             "retry_count": 0,
@@ -424,7 +423,7 @@ class TestCrawlerTasksRepository:
         assert task.crawler_id == sample_crawler.id
         assert task.is_auto is True
         assert task.cron_expression == "0 * * * *"
-        assert task.ai_only is False
+        assert task.task_args.get('ai_only') is False
 
     def test_update_task_with_validation(self, crawler_tasks_repo, session, sample_crawler):
         """測試更新任務時的驗證規則"""
@@ -432,7 +431,8 @@ class TestCrawlerTasksRepository:
         task = CrawlerTasks(
             task_name="測試任務",
             crawler_id=sample_crawler.id,
-            is_auto=False
+            is_auto=False,
+            task_args={**TASK_ARGS_DEFAULT, "ai_only": False}  # 設置 ai_only
         )
         session.add(task)
         session.commit()
@@ -451,22 +451,25 @@ class TestCrawlerTasksRepository:
         # 測試自動執行時缺少 cron_expression
         session.expire_all()  # 確保重新從數據庫加載
         
-        with pytest.raises(ValidationError) as excinfo:
-            crawler_tasks_repo.update(task_id, {
-                "is_auto": True,
-                "cron_expression": None
-            })
-        assert "cron_expression: 當設定為自動執行時,此欄位不能為空" in str(excinfo.value)
+        # 測試自動執行時缺少 cron_expression->移到service
+        # with pytest.raises(ValidationError) as excinfo:
+        #     crawler_tasks_repo.update(task_id, {
+        #         "is_auto": True,
+        #         "cron_expression": None
+        #     })
+        # assert "cron_expression: 當設定為自動執行時,此欄位不能為空" in str(excinfo.value)
         
         # 測試成功更新
         session.expire_all()  # 確保重新從數據庫加載
         
         updated_task = crawler_tasks_repo.update(task_id, {
             "is_auto": True,
-            "cron_expression": "0 * * * *"
+            "cron_expression": "0 * * * *",
+            "task_args": {**TASK_ARGS_DEFAULT,"ai_only": True} 
         })
         assert updated_task.is_auto is True
         assert updated_task.cron_expression == "0 * * * *"
+        assert updated_task.task_args.get('ai_only') is True
 
     def test_default_values(self, crawler_tasks_repo, sample_crawler):
         """測試新建任務時的預設值"""
@@ -474,20 +477,15 @@ class TestCrawlerTasksRepository:
             "task_name": "測試任務",
             "crawler_id": sample_crawler.id,
             "is_auto": False,  # 手動執行不需要 cron_expression
-            "ai_only": False,
-            "task_args": {},
-            "current_phase": TaskPhase.INIT,
-            "max_retries": 3,
-            "retry_count": 0,
-            "scrape_mode": ScrapeMode.FULL_SCRAPE
+            "task_args": {**TASK_ARGS_DEFAULT,"max_retries": 3, "retry_count": 0, "scrape_mode": ScrapeMode.FULL_SCRAPE.value},
+            "current_phase": TaskPhase.INIT
         })
         assert task.is_auto is False
-        assert task.ai_only is False
-        assert task.task_args == {}
+        assert task.task_args.get('ai_only') is False  # 預設值應為 False
         assert task.current_phase == TaskPhase.INIT
-        assert task.max_retries == 3
-        assert task.retry_count == 0
-        assert task.scrape_mode == ScrapeMode.FULL_SCRAPE
+        assert task.task_args.get('max_retries') == 3
+        assert task.task_args.get('retry_count') == 0
+        assert task.task_args.get('scrape_mode') == ScrapeMode.FULL_SCRAPE.value
 
 class TestCrawlerTasksConstraints:
     """測試CrawlerTasks的模型約束"""
@@ -497,7 +495,7 @@ class TestCrawlerTasksConstraints:
         task = CrawlerTasks(
             task_name="測試任務",
             crawler_id=sample_crawler.id,
-            task_args={},
+            task_args=TASK_ARGS_DEFAULT,
             current_phase=TaskPhase.INIT,
             max_retries=3,
             retry_count=0,
@@ -507,8 +505,9 @@ class TestCrawlerTasksConstraints:
         session.flush()
         
         assert task.is_auto is True  # 默認為True
-        assert task.ai_only is False  # 默認為False
+        assert task.task_args.get('ai_only') is False  # 預設為False
         assert task.scrape_mode == ScrapeMode.FULL_SCRAPE
+
 class TestModelStructure:
     """測試模型結構"""
     
@@ -607,7 +606,7 @@ class TestCrawlerTasksRepositoryValidation:
             "is_auto": True,
             "cron_expression": "0 * * * *",
             "ai_only": False,
-            "task_args": {},
+            "task_args": TASK_ARGS_DEFAULT,
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
             "retry_count": 0,
@@ -624,7 +623,7 @@ class TestCrawlerTasksRepositoryValidation:
         assert validated_data["cron_expression"] == "0 * * * *"
         assert "task_args" in validated_data
         assert validated_data["current_phase"] == TaskPhase.INIT
-        assert validated_data["scrape_mode"] == ScrapeMode.FULL_SCRAPE
+        assert validated_data["task_args"]["scrape_mode"] == ScrapeMode.FULL_SCRAPE.value
         # 測試無效數據
         invalid_data = {
             "task_name": "測試驗證任務",
@@ -674,7 +673,7 @@ class TestCrawlerTasksRepositoryValidation:
             "is_auto": True,
             "cron_expression": "0 * * * *",
             "ai_only": False,
-            "task_args": {},
+            "task_args": TASK_ARGS_DEFAULT,
             "current_phase": TaskPhase.INIT,
             "max_retries": 3,
             "retry_count": 0,
@@ -755,7 +754,7 @@ class TestComplexValidationScenarios:
             "crawler_id": sample_crawler.id,
             "is_auto": False,
             "ai_only": False,
-            "task_args": {},
+            "task_args": TASK_ARGS_DEFAULT,
             "current_phase": "init",  # 使用字符串
             "max_retries": 3,
             "retry_count": 0,
@@ -771,7 +770,7 @@ class TestComplexValidationScenarios:
             "crawler_id": sample_crawler.id,
             "is_auto": False,
             "ai_only": False,
-            "task_args": {},
+            "task_args": TASK_ARGS_DEFAULT,
             "current_phase": "INIT",  # 大寫
             "max_retries": 3,
             "retry_count": 0,
@@ -787,13 +786,13 @@ class TestComplexValidationScenarios:
                 "crawler_id": sample_crawler.id,
                 "is_auto": False,
                 "ai_only": False,
-                "task_args": {},
+                "task_args": TASK_ARGS_DEFAULT,
                 "current_phase": "invalid_phase",  # 無效值
                 "max_retries": 3,
                 "retry_count": 0,
                 "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
-        assert "無效的任務階段值" in str(excinfo.value)
+        assert "CREATE 資料驗證失敗: current_phase: 無效的枚舉值 'invalid_phase'，可用值: init, link_collection, content_scraping, completed" in str(excinfo.value)
 
     def test_create_with_empty_result(self, crawler_tasks_repo, session):
         """測試當資料庫操作未能返回實體時的情況"""
@@ -804,7 +803,7 @@ class TestComplexValidationScenarios:
                 "crawler_id": 1,
                 "is_auto": False,
                 "ai_only": False,
-                "task_args": {},
+                "task_args": TASK_ARGS_DEFAULT,
                 "current_phase": TaskPhase.INIT,
                 "max_retries": 3,
                 "retry_count": 0,

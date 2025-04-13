@@ -19,7 +19,7 @@ TASK_ARGS_DEFAULT = {
     'save_to_csv': False,
     'csv_file_prefix': '',
     'save_to_database': True,
-    'scrape_mode': ScrapeMode.FULL_SCRAPE,
+    'scrape_mode': ScrapeMode.FULL_SCRAPE.value,
     'get_links_by_task_id': True,
     'article_links': []
 }

@@ -7,7 +7,8 @@ from src.models.crawlers_model import Crawlers
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.services.crawler_task_service import CrawlerTaskService
 from src.database.database_manager import DatabaseManager
-
+from src.error.errors import ValidationError
+from src.models.crawler_tasks_schema import TASK_ARGS_DEFAULT
 # 設置測試資料庫
 @pytest.fixture(scope="session")
 def engine():
@@ -106,18 +107,14 @@ class TestCrawlerTaskService:
             "task_name": "測試任務",
             "crawler_id": 1,
             "is_auto": True,
-            "ai_only": False,
-            "task_args": {"max_items": 100},
-            "current_phase": "init",
-            "max_retries": 3,
-            "retry_count": 0,
             "cron_expression": "0 0 * * *",
-            "scrape_mode": "full_scrape"
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_retries": 3, "retry_count": 0, "scrape_mode": "full_scrape"},
+            "current_phase": "init"
         }
         
         result = crawler_task_service.create_task(task_data)
         assert result["success"] is True
-        assert "task_id" in result
+        assert "task" in result.keys()
         assert result["message"] == "任務創建成功"
 
     def test_update_task(self, crawler_task_service, sample_tasks):
@@ -126,8 +123,7 @@ class TestCrawlerTaskService:
         update_data = {
             "task_name": "更新後的任務名稱",
             "is_active": False,
-            "ai_only": False,
-            "task_args": {}
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_retries": 3, "retry_count": 0, "scrape_mode": "full_scrape"},
         }
         
         result = crawler_task_service.update_task(task_id, update_data)
@@ -223,47 +219,58 @@ class TestCrawlerTaskService:
         assert result["success"] is False
         assert result["message"] == "任務不存在"
 
-    def test_test_crawler_task(self, crawler_task_service, monkeypatch):
+    def test_test_crawler(self, crawler_task_service, monkeypatch):
         """測試爬蟲任務的測試功能"""
-        # 爬蟲配置數據
-        crawler_data = {
-            "crawler_name": "測試爬蟲",
-            "base_url": "https://test.com",
-            "crawler_type": "RSS",
-            "config_file_name": "test_config.json"
-        }
-        
         # 任務配置數據
         task_data = {
             "task_name": "測試爬蟲任務",
             "crawler_id": 1,
-            "task_args": {"test_mode": True},
+            "task_args": {**TASK_ARGS_DEFAULT, "test_mode": True, "ai_only": False, "scrape_mode": "full_scrape"},
             "current_phase": "init",
-            "max_retries": 3,
-            "retry_count": 0,
-            "cron_expression": "0 0 * * *",
             "is_auto": True,
-            "ai_only": False,
-            "scrape_mode": "full_scrape"
+            "cron_expression": "0 0 * * *"
         }
         
-        # 模擬 CrawlerFactory.get_crawler 方法拋出 ValueError
+        # 模擬 Crawler 對象，模擬 repository 返回這個物件
+        class MockCrawler:
+            id = 1
+            crawler_name = "測試爬蟲"
+            base_url = "https://test.com"
+            crawler_type = "RSS"
+            config_file_name = "test_config.json"
+        
+        # 模擬 CrawlerFactory.get_crawler 方法返回一個可以成功執行任務的爬蟲
+        class MockCrawlerInstance:
+            def execute_task(self, *args, **kwargs):
+                return {
+                    'success': True,
+                    'message': '測試執行成功',
+                    'links_found': 10,
+                    'sample_links': ['https://test.com/1', 'https://test.com/2']
+                }
+        
+        # 模擬查詢爬蟲數據的函數
+        def mock_get_crawler_by_id(crawler_id):
+            return MockCrawler()
+        
         def mock_get_crawler(crawler_name):
-            raise ValueError(f"未知的爬蟲類型: {crawler_name}")
-            
-        # 補丁替換 CrawlerFactory.get_crawler 方法
-        import sys
-        from unittest.mock import MagicMock
+            return MockCrawlerInstance()
+        
+        # 補丁替換相關方法
+        monkeypatch.setattr(crawler_task_service._get_repositories()[1], 'get_by_id', mock_get_crawler_by_id)
         
         # 確保模塊已經加載
+        import sys
+        from unittest.mock import MagicMock
         if 'src.crawlers.crawler_factory' not in sys.modules:
             sys.modules['src.crawlers.crawler_factory'] = MagicMock()
-            
+        
         # 設置 CrawlerFactory.get_crawler 方法
         sys.modules['src.crawlers.crawler_factory'].CrawlerFactory.get_crawler = mock_get_crawler
         
-        # 調用測試方法，傳入兩個必要參數
-        result = crawler_task_service.test_crawler_task(crawler_data, task_data)
+        # 調用測試方法
+        result = crawler_task_service.test_crawler(task_data)
+        
         assert result["success"] is True
         assert "test_results" in result
         assert "links_found" in result["test_results"]
@@ -428,14 +435,10 @@ class TestCrawlerTaskService:
             # 模擬任務對象
             class MockTask:
                 from src.models.crawler_tasks_model import TaskPhase
-                scrape_mode = mode
                 crawler = sample_tasks[0].crawler
                 is_auto = True
-                ai_only = False
-                task_args = {}
-                current_phase = TaskPhase.INIT  # 添加必要屬性
-                max_retries = 3               # 添加必要屬性 
-                retry_count = 0               # 添加必要屬性
+                task_args = {**TASK_ARGS_DEFAULT, "ai_only": False, "scrape_mode": mode.value}
+                current_phase = TaskPhase.INIT
             
             # 替換獲取任務的方法
             def mock_get_by_id(task_id):
@@ -514,13 +517,9 @@ class TestCrawlerTaskService:
             "task_name": "測試抓取模式任務",
             "crawler_id": 1,
             "is_auto": True,
-            "ai_only": False,
-            "scrape_mode": "links_only",  # 指定為只抓取連結模式
             "cron_expression": "0 0 * * *",
-            "task_args": {},
-            "current_phase": "init",  # 必要欄位
-            "max_retries": 3,         # 必要欄位
-            "retry_count": 0          # 必要欄位
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "scrape_mode": "links_only", "max_retries": 3, "retry_count": 0},
+            "current_phase": "init"
         }
         
         result = crawler_task_service.create_task(task_data)
@@ -532,7 +531,7 @@ class TestCrawlerTaskService:
         
         # 確認抓取模式已正確設置
         assert task_result["success"] is True
-        assert task_result["task"].scrape_mode.value == "links_only"
+        assert task_result["task"].task_args.get("scrape_mode") == "links_only"
 
     def test_content_only_mode_with_limit(self, crawler_task_service, sample_tasks, mocker):
         """測試CONTENT_ONLY模式時的文章限制邊界條件"""
@@ -540,7 +539,7 @@ class TestCrawlerTaskService:
         
         # 修改任務為僅抓取內容模式
         from src.models.crawler_tasks_model import ScrapeMode
-        crawler_task_service.update_task(task_id, {"scrape_mode": "content_only"})
+        crawler_task_service.update_task(task_id, {"task_args": {**TASK_ARGS_DEFAULT, "scrape_mode": "content_only"}})
         
         # 創建超過100篇的文章模擬對象
         mock_articles = [mocker.Mock(id=i) for i in range(1, 120)]
@@ -564,11 +563,9 @@ class TestCrawlerTaskService:
         
         # 模擬任務對象
         mock_task = mocker.Mock()
-        mock_task.scrape_mode = ScrapeMode.CONTENT_ONLY
+        mock_task.task_args = {"scrape_mode": ScrapeMode.CONTENT_ONLY.value, "ai_only": False}
         mock_task.crawler = sample_tasks[0].crawler
         mock_task.is_auto = True
-        mock_task.ai_only = False
-        mock_task.task_args = {}
         mocker.patch.object(crawler_task_service._get_repositories()[0], 'get_by_id', return_value=mock_task)
         
         result = crawler_task_service.run_task(task_id, {})
@@ -578,3 +575,216 @@ class TestCrawlerTaskService:
         # 檢查調用參數中限制值是否為100
         assert mock_article_repo.find_articles_by_task_id.call_args[1]['limit'] == 100
         assert result["success"] is True
+
+    def test_validate_task_data(self, crawler_task_service):
+        """測試任務資料驗證功能"""
+        # 有效的任務資料
+        valid_data = {
+            "task_name": "測試驗證",
+            "crawler_id": 1,
+            "is_auto": True,
+            "cron_expression": "0 0 * * *",
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_retries": 3, "retry_count": 0, "scrape_mode": "full_scrape"},
+            "current_phase": "init"
+        }
+        
+        try:
+            result = crawler_task_service.validate_task_data(valid_data)
+            assert isinstance(result, dict)
+            assert "task_name" in result
+        except ValidationError:
+            pytest.fail("驗證應該通過，但卻失敗了")
+        
+        # 無效的任務資料 - 自動執行但沒有cron表達式
+        invalid_data = {
+            "task_name": "測試驗證",
+            "crawler_id": 1,
+            "is_auto": True,  # 自動執行
+            "cron_expression": None,  # 沒有cron表達式
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_retries": 3, "retry_count": 0, "scrape_mode": "full_scrape"},
+            "current_phase": "init"
+        }
+        
+        with pytest.raises(ValidationError):
+            crawler_task_service.validate_task_data(invalid_data)
+            
+    def test_find_tasks_by_multiple_crawlers(self, crawler_task_service, sample_tasks, session):
+        """測試根據多個爬蟲ID查詢任務"""
+        crawler_ids = [sample_tasks[0].crawler_id]
+        
+        result = crawler_task_service.find_tasks_by_multiple_crawlers(crawler_ids)
+        assert result["success"] is True
+        assert len(result["tasks"]) > 0
+        assert all(task.crawler_id in crawler_ids for task in result["tasks"])
+        
+    def test_find_tasks_by_cron_expression(self, crawler_task_service, sample_tasks):
+        """測試根據cron表達式查詢任務"""
+        cron_expression = "0 0 * * *"  # 每天午夜執行
+        
+        result = crawler_task_service.find_tasks_by_cron_expression(cron_expression)
+        assert result["success"] is True
+        assert len(result["tasks"]) > 0
+        assert all(task.cron_expression == cron_expression for task in result["tasks"])
+        
+    def test_find_pending_tasks(self, crawler_task_service, sample_tasks):
+        """測試查詢待執行任務"""
+        cron_expression = "0 0 * * *"  # 每天午夜執行
+        
+        result = crawler_task_service.find_pending_tasks(cron_expression)
+        assert result["success"] is True
+        # 注意：這個測試可能會因為任務的上次執行時間而有不同結果
+        
+    def test_update_task_last_run(self, crawler_task_service, sample_tasks):
+        """測試更新任務最後執行狀態"""
+        task_id = sample_tasks[0].id
+        message = "測試執行狀態更新"
+        
+        result = crawler_task_service.update_task_last_run(task_id, True, message)
+        assert result["success"] is True
+        
+        # 檢查更新是否成功
+        task_result = crawler_task_service.get_task_by_id(task_id)
+        assert task_result["success"] is True
+        assert task_result["task"].last_success is True
+        assert task_result["task"].last_message == message
+        
+    def test_update_task_phase(self, crawler_task_service, sample_tasks):
+        """測試更新任務階段"""
+        task_id = sample_tasks[0].id
+        
+        # 測試更新為各種階段
+        phases = [
+            TaskPhase.INIT,
+            TaskPhase.LINK_COLLECTION,
+            TaskPhase.CONTENT_SCRAPING,
+            TaskPhase.COMPLETED
+        ]
+        
+        for phase in phases:
+            result = crawler_task_service.update_task_phase(task_id, phase)
+            assert result["success"] is True
+            
+            # 檢查更新是否成功
+            task_result = crawler_task_service.get_task_by_id(task_id)
+            assert task_result["success"] is True
+            assert task_result["task"].current_phase == phase
+            
+    def test_increment_retry_count(self, crawler_task_service, sample_tasks):
+        """測試增加任務重試次數"""
+        task_id = sample_tasks[0].id
+        
+        # 獲取初始重試次數
+        initial_task = crawler_task_service.get_task_by_id(task_id)
+        initial_retry_count = initial_task["task"].retry_count
+        
+        # 測試增加重試次數
+        result = crawler_task_service.increment_retry_count(task_id)
+        assert result["success"] is True
+        assert result["retry_count"] == initial_retry_count + 1
+        
+        # 檢查更新是否成功
+        task_result = crawler_task_service.get_task_by_id(task_id)
+        assert task_result["success"] is True
+        assert task_result["task"].retry_count == initial_retry_count + 1
+        
+    def test_reset_retry_count(self, crawler_task_service, sample_tasks):
+        """測試重置任務重試次數"""
+        task_id = sample_tasks[0].id
+        
+        # 先增加重試次數
+        crawler_task_service.increment_retry_count(task_id)
+        
+        # 測試重置重試次數
+        result = crawler_task_service.reset_retry_count(task_id)
+        assert result["success"] is True
+        
+        # 檢查更新是否成功
+        task_result = crawler_task_service.get_task_by_id(task_id)
+        assert task_result["success"] is True
+        assert task_result["task"].retry_count == 0
+        
+    def test_update_max_retries(self, crawler_task_service, sample_tasks):
+        """測試更新任務最大重試次數"""
+        task_id = sample_tasks[0].id
+        new_max_retries = 5
+        
+        result = crawler_task_service.update_max_retries(task_id, new_max_retries)
+        assert result["success"] is True
+        
+        # 檢查更新是否成功
+        task_result = crawler_task_service.get_task_by_id(task_id)
+        assert task_result["success"] is True
+        assert task_result["task"].max_retries == new_max_retries
+        
+    def test_get_retryable_tasks(self, crawler_task_service, sample_tasks, session):
+        """測試獲取可重試的任務"""
+        # 設置一個任務為失敗狀態
+        task_id = sample_tasks[0].id
+        crawler_task_service.update_task_last_run(task_id, False, "測試失敗")
+        
+        # 確保重試次數小於最大重試次數
+        crawler_task_service.reset_retry_count(task_id)
+        
+        result = crawler_task_service.get_retryable_tasks()
+        assert result["success"] is True
+        
+        # 由於測試環境的差異，不一定能找到可重試的任務
+        # 因此只檢查結果格式
+        assert "tasks" in result
+        
+    def test_toggle_auto_status(self, crawler_task_service, sample_tasks):
+        """測試切換任務自動執行狀態"""
+        task_id = sample_tasks[0].id
+        
+        # 獲取初始狀態
+        initial_task = crawler_task_service.get_task_by_id(task_id)
+        initial_auto_status = initial_task["task"].is_auto
+        
+        # 測試切換狀態
+        result = crawler_task_service.toggle_auto_status(task_id)
+        assert result["success"] is True
+        
+        # 檢查切換是否成功
+        task_result = crawler_task_service.get_task_by_id(task_id)
+        assert task_result["success"] is True
+        assert task_result["task"].is_auto != initial_auto_status
+        
+    def test_toggle_active_status(self, crawler_task_service, sample_tasks):
+        """測試切換任務啟用狀態"""
+        task_id = sample_tasks[0].id
+        
+        # 獲取初始狀態
+        initial_task = crawler_task_service.get_task_by_id(task_id)
+        initial_active_status = initial_task["task"].is_active
+        
+        # 測試切換狀態
+        result = crawler_task_service.toggle_active_status(task_id)
+        assert result["success"] is True
+        
+        # 檢查切換是否成功
+        task_result = crawler_task_service.get_task_by_id(task_id)
+        assert task_result["success"] is True
+        assert task_result["task"].is_active != initial_active_status
+        
+    def test_update_task_notes(self, crawler_task_service, sample_tasks):
+        """測試更新任務備註"""
+        task_id = sample_tasks[0].id
+        new_notes = "這是測試備註"
+        
+        result = crawler_task_service.update_task_notes(task_id, new_notes)
+        assert result["success"] is True
+        
+        # 檢查更新是否成功
+        task_result = crawler_task_service.get_task_by_id(task_id)
+        assert task_result["success"] is True
+        assert task_result["task"].notes == new_notes
+        
+    def test_get_failed_tasks(self, crawler_task_service, sample_tasks):
+        """測試獲取失敗的任務"""
+        # 設置一個任務為失敗狀態
+        task_id = sample_tasks[0].id
+        crawler_task_service.update_task_last_run(task_id, False, "測試失敗")
+        
+        result = crawler_task_service.get_failed_tasks(days=1)
+        assert result["success"] is True
+        assert "tasks" in result

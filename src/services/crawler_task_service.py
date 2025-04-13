@@ -4,6 +4,7 @@ import threading
 import time
 import logging
 from src.crawlers.crawler_factory import CrawlerFactory
+from src.crawlers.base_crawler import BaseCrawler
 from src.services.base_service import BaseService
 from src.database.base_repository import BaseRepository, SchemaType
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
@@ -18,6 +19,7 @@ from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.articles_model import Articles
 from src.error.errors import ValidationError
 from src.utils.model_utils import ScrapeMode, TaskPhase, validate_positive_int, validate_boolean, validate_task_args
+from contextlib import contextmanager
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -28,6 +30,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
     """爬蟲任務服務，負責管理爬蟲任務的數據操作（CRUD）"""
     
     def __init__(self, db_manager=None):
+        self.running_crawlers = {}
         super().__init__(db_manager)
     
     def _get_repository_mapping(self) -> Dict[str, Tuple[Type[BaseRepository], Type[Base]]]:
@@ -49,7 +52,13 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
     def _get_articles_repository(self) -> ArticlesRepository:
         """獲取文章資料庫訪問對象"""
         return cast(ArticlesRepository, super()._get_repository('Articles'))
-        
+
+
+    def _get_crawler_instance(self, crawler_name: str, task_id: int) -> BaseCrawler:
+        """獲取爬蟲實例"""
+        if task_id not in self.running_crawlers:
+            self.running_crawlers[task_id] = CrawlerFactory.get_crawler(crawler_name)
+        return self.running_crawlers[task_id]
 
     def validate_task_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
         """驗證任務資料
@@ -95,7 +104,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not tasks_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'task': None
                     }
                 
                 # 創建任務
@@ -385,7 +395,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         }
                     
                     # 創建爬蟲實例
-                    crawler_instance = CrawlerFactory.get_crawler(crawler.crawler_name)
+                    crawler_instance = self._get_crawler_instance(crawler.crawler_name, task_id)
                                             
                     # 執行爬蟲
                     task.task_args['scrape_mode'] = ScrapeMode.FULL_SCRAPE.value
@@ -450,7 +460,9 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'success': False,
                 'message': error_msg
             }
-        
+        finally:
+            # 釋放爬蟲資源
+            self.cleanup_crawler_instance(task_id)
 
     def collect_links_only(self, task_id: int) -> Dict[str, Any]:
         """ 收集文章連結
@@ -508,7 +520,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         }
                     
                     # 創建爬蟲實例
-                    crawler_instance = CrawlerFactory.get_crawler(crawler.crawler_name)
+                    crawler_instance = self._get_crawler_instance(crawler.crawler_name, task_id)
                     
                     # 獲取文章儲存庫
                     article_repo = self._get_articles_repository()
@@ -594,7 +606,10 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'success': False,
                 'message': error_msg
             }
-        
+        finally:
+            # 釋放爬蟲資源
+            self.cleanup_crawler_instance(task_id)
+
     def fetch_content_only(self, task_id: int) -> Dict[str, Any]:
         """ 抓取文章內容，並更新文章內容
             使用情境：
@@ -653,7 +668,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         }
                     
                     # 創建爬蟲實例
-                    crawler_instance = CrawlerFactory.get_crawler(crawler.crawler_name)
+                    crawler_instance = self._get_crawler_instance(crawler.crawler_name, task_id)
                     
                     
                     # 執行爬蟲
@@ -716,6 +731,120 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'success': False,
                 'message': error_msg
             }
+        finally:
+            # 釋放爬蟲資源
+            self.cleanup_crawler_instance(task_id)
+
+    def cancel_task(self, task_id: int) -> Dict[str, Any]:
+        """取消正在執行的爬蟲任務
+        
+        Args:
+            task_id: 要取消的任務ID
+            
+        Returns:
+            Dict[str, Any]: 操作結果
+        """
+        try:
+            # 取得任務資訊
+            tasks_repo, _, history_repo = self._get_repositories()
+            task = tasks_repo.get_by_id(task_id)
+            
+            if not task:
+                return {"success": False, "message": f"找不到ID為 {task_id} 的任務"}
+            
+            # 取消任務歷史記錄
+            history_data = {
+                'task_id': task_id,
+                'start_time': datetime.now(timezone.utc),
+                'status': 'running',
+                'message': '開始取消任務'
+            }
+            
+            # 先驗證歷史記錄資料
+            validated_history_data = self.validate_data('TaskHistory', history_data, SchemaType.CREATE)
+            # 創建歷史記錄
+            history = history_repo.create(validated_history_data)
+            history_id = history.id if history else None
+            
+            # 檢查任務狀態，只有運行中的任務才能取消
+            task_status = self.get_task_status(task_id)
+            if task_status.get('status', '') != 'running':
+                return {"success": False, "message": f"任務 {task_id} 當前狀態為 {task_status.get('status', '')}，無法取消"}
+            
+            # 檢查爬蟲實例是否存在
+            if task_id not in self.running_crawlers:
+                return {"success": False, "message": f"任務 {task_id} 沒有對應的運行中爬蟲實例"}
+            
+            # 取得爬蟲實例並呼叫取消方法
+            crawler = self.running_crawlers[task_id]
+            cancelled = crawler.cancel_task(task_id)
+            
+
+            if not cancelled:
+                # 更新任務歷史記錄
+                history_update_data = {
+                    'end_time': datetime.now(timezone.utc),
+                    'status': 'failed',
+                    'message': '無法取消任務'
+                }
+                
+                # 驗證歷史記錄更新資料
+                validated_history_update = self.validate_data('TaskHistory', history_update_data, SchemaType.UPDATE)
+                # 更新歷史記錄
+                history_repo.update(history_id, validated_history_update)
+
+                return {"success": False, "message": f"無法取消任務 {task_id}"}
+            
+            # 更新任務歷史記錄
+            history_update_data = {
+                'end_time': datetime.now(timezone.utc),
+                'status': 'cancelled',
+                'message': '任務已被使用者取消'
+            }
+            # 驗證歷史記錄更新資料
+            validated_history_update = self.validate_data('TaskHistory', history_update_data, SchemaType.UPDATE)
+            # 更新歷史記錄
+            history_repo.update(history_id, validated_history_update)
+
+            # 重置重試次數
+            self.reset_retry_count(task_id)
+
+            # 更新任務最後執行狀態
+            tasks_repo.update_last_run(
+                task_id, 
+                False, 
+                '任務已被使用者取消'
+            )
+            # 釋放爬蟲資源
+            self.cleanup_crawler_instance(task_id)
+            return {
+                "success": True,
+                "message": f"任務 {task_id} 已成功取消",
+                "task_status": crawler.get_task_status(task_id)
+            }
+
+        except Exception as e:
+            logger.error(f"取消任務失敗 (ID={task_id}): {str(e)}", exc_info=True)
+            # 更新任務歷史記錄
+            history_update_data = {
+                'end_time': datetime.now(timezone.utc),
+                'status': 'failed',
+                'message': f'取消任務失敗: {str(e)}'
+            }
+            
+            # 驗證歷史記錄更新資料
+            validated_history_update = self.validate_data('TaskHistory', history_update_data, SchemaType.UPDATE)
+            # 更新歷史記錄
+            history_repo.update(history_id, validated_history_update)
+            # 更新任務最後執行狀態
+            tasks_repo.update_last_run(task_id, False, f'取消任務失敗: {str(e)}')
+            
+            return {
+                'success': False,
+                'message': f'取消任務失敗: {str(e)}'
+            }
+        
+
 
     def test_crawler(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """測試爬蟲任務
@@ -734,32 +863,46 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 # 查詢爬蟲資料
                 crawler_id = data.get('crawler_id')
                 if not crawler_id:
+                    logger.error("未提供爬蟲ID")
                     return {
                         'success': False,
-                        'message': '未提供爬蟲ID'
+                        'message': '未提供爬蟲ID',
+                        'errors': '未提供爬蟲ID',
+                        'task_phase': TaskPhase.INIT.value,
+                        'test_results': None
                     }
                 
                 crawler = crawlers_repo.find_by_crawler_id(crawler_id, is_active=True)
                 if not crawler:
+                    logger.error("爬蟲不存在")
                     return {
                         'success': False,
-                        'message': '爬蟲不存在'
+                        'message': '爬蟲不存在',
+                        'errors': '爬蟲不存在',
+                        'task_phase': TaskPhase.INIT.value,
+                        'test_results': None
                     }
             except ValidationError as e:
+                logger.error("爬蟲搜尋失敗")
                 return {
                     'success': False,
                     'message': '爬蟲搜尋失敗',
-                    'errors': str(e)
+                    'errors': str(e),
+                    'task_phase': TaskPhase.INIT.value,
+                    'test_results': None
                 }
             
             try:
                 # 驗證任務資料
                 self.validate_data('CrawlerTask', data, SchemaType.CREATE)
             except ValidationError as e:
+                logger.error("任務資料驗證失敗")
                 return {
                     'success': False,
                     'message': '任務資料驗證失敗',
-                    'errors': str(e)
+                    'errors': str(e),
+                    'task_phase': TaskPhase.INIT.value,
+                    'test_results': None
                 }
             
             # 設定階段為初始階段
@@ -770,22 +913,27 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 # 從爬蟲資料中獲取爬蟲名稱
                 crawler_name = crawler.crawler_name
                 if not crawler_name:
+                    logger.error("未提供爬蟲名稱")
                     return {
                         'success': False,
                         'message': '未提供爬蟲名稱',
-                        'task_phase': TaskPhase.INIT.value
+                        'errors': '未提供爬蟲名稱',
+                        'task_phase': TaskPhase.INIT.value,
+                        'test_results': None
                     }
-                
-                
                 # 測試爬蟲是否能成功初始化
                 try:
-                    crawler_instance = CrawlerFactory.get_crawler(crawler_name)
+                    crawler_instance = self._get_crawler_instance(crawler_name, 0)
                 except ValueError:
+                    logger.error("爬蟲初始化失敗")
                     return {
                         'success': False,
-                        'message': '爬蟲不存在'
+                        'message': '爬蟲初始化失敗',
+                        'errors': '爬蟲初始化失敗',
+                        'task_phase': TaskPhase.INIT.value,
+                        'test_results': None
                     }
-                
+
                 # 準備測試參數 (只收集連結，不抓取內容)
                 test_args = data.get('task_args', TASK_ARGS_DEFAULT).copy()
                 #預防設置錯誤，強制
@@ -797,7 +945,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 test_args['save_to_csv'] = False
                 test_args['save_to_database'] = False
                 test_args['timeout'] = 30
-                
+                logger.info(f"測試參數: {test_args}")
                 # 執行爬蟲測試，收集連結
                 start_time = datetime.now(timezone.utc)
                 try:
@@ -816,7 +964,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     
                     result = crawler_instance.execute_task(0, test_args)  
                     # 使用0作為測試任務ID
-                    
+                    logger.info(f"爬蟲測試結果: {result}")
                     # 關閉超時
                     signal.alarm(0)
                     
@@ -827,32 +975,28 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     if result.get('success', False):
                         links_found = result.get('articles_count', 0)
                         
-                        # 獲取樣本連結
-                        sample_links = []
-                        if hasattr(crawler_instance, 'articles_df') and not crawler_instance.articles_df.empty:
-                            # 從爬蟲的文章DataFrame中獲取樣本連結
-                            sample_df = crawler_instance.articles_df.head(3)
-                            if 'link' in sample_df.columns:
-                                sample_links = sample_df['link'].tolist()
-                        
                         return {
                             'success': True,
                             'message': f'爬蟲測試成功，執行時間: {execution_time:.2f}秒',
+                            'errors': None,
                             'test_results': {
                                 'links_found': links_found,
-                                'sample_links': sample_links,
                                 'execution_time': execution_time
                             },
                             'task_phase': TaskPhase.LINK_COLLECTION.value
                         }
                     else:
                         # 爬蟲執行失敗
+                        logger.error(f"爬蟲測試失敗: {result.get('message', '未知錯誤')}")
                         return {
                             'success': False,
                             'message': f'爬蟲測試失敗: {result.get("message", "未知錯誤")}',
-                            'task_phase': TaskPhase.INIT.value
+                            'errors': result.get("message", "未知錯誤"),
+                            'task_phase': TaskPhase.INIT.value,
+                            'test_results': None
                         }
                 except TimeoutException:
+                    logger.error("爬蟲測試超時")
                     return {
                         'success': False,
                         'message': '爬蟲測試超時，請檢查爬蟲配置或網站狀態',
@@ -860,17 +1004,23 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     }
                 except Exception as e:
                     # 爬蟲執行出錯
+                    logger.error(f"爬蟲測試執行異常: {str(e)}")
                     return {
                         'success': False,
                         'message': f'爬蟲測試執行異常: {str(e)}',
-                        'task_phase': TaskPhase.INIT.value
+                        'task_phase': TaskPhase.INIT.value,
+                        'errors': str(e),
+                        'test_results': None
                     }
             except Exception as e:
                 # 測試爬蟲連結收集失敗
+                logger.error(f"爬蟲連結收集測試失敗: {str(e)}")
                 return {
                     'success': False,
                     'message': f'爬蟲連結收集測試失敗: {str(e)}',
-                    'task_phase': TaskPhase.INIT.value
+                    'task_phase': TaskPhase.INIT.value,
+                    'errors': str(e),
+                    'test_results': None
                 }
                 
         except Exception as e:
@@ -878,9 +1028,13 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
-                'message': error_msg
+                'message': error_msg,
+                'errors': str(e),
+                'test_results': None
             }
-
+        finally:
+            # 釋放爬蟲資源
+            self.cleanup_crawler_instance(0)
 
     def get_failed_tasks(self, days: int = 1) -> Dict:
         """獲取最近失敗的任務"""
@@ -1364,3 +1518,17 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         # 檢查調用參數中限制值是否為100
         assert mock_article_repo.find_articles_by_task_id.call_args[1]['limit'] == 100
         assert result["success"] is True
+
+    def cleanup_crawler_instance(self, task_id: int) -> None:
+        """清理爬蟲實例，釋放資源
+        
+        Args:
+            task_id: 任務ID
+        """
+        if task_id in self.running_crawlers:
+            # 釋放資源（如有需要）
+            # 例如: self.running_crawlers[task_id].cleanup()
+            
+            # 從運行中爬蟲清單移除
+            del self.running_crawlers[task_id]
+            logger.info(f"已清理任務 {task_id} 的爬蟲實例")

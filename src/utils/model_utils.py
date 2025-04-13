@@ -13,6 +13,7 @@ class TaskPhase(enum.Enum):
     LINK_COLLECTION = "link_collection"  # 連結收集階段
     CONTENT_SCRAPING = "content_scraping"  # 內容爬取階段
     COMPLETED = "completed"  # 完成
+    CANCELLED = "cancelled"  # 取消
 
 class ScrapeMode(enum.Enum):
     """抓取模式枚舉"""

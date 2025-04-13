@@ -106,11 +106,20 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
     def find_auto_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
         """查詢所有自動執行的任務"""
         return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(is_auto=True, is_active=is_active).all(),
+            lambda: self.session.query(self.model_class).filter_by(
+                is_auto=True, is_active=is_active
+            ).all(),
             err_msg="查詢自動執行任務時發生錯誤"
         )
-    
-    
+    def find_ai_only_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
+        """查詢 AI 專用任務"""
+        return self.execute_query(
+            lambda: self.session.query(self.model_class).filter(
+                self.model_class.is_active == is_active,
+                self.model_class.task_args.contains({"ai_only": True})
+            ).all(),
+            err_msg="查詢 AI 專用任務時發生錯誤"
+        )
     def toggle_auto_status(self, task_id: int) -> bool:
         """切換任務的自動執行狀態"""
         task = self.get_by_id(task_id)
@@ -122,6 +131,29 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             err_msg=f"切換任務ID {task_id} 的自動執行狀態時發生錯誤"
         )
     
+    def toggle_ai_only_status(self, task_id: int) -> bool:
+        """切換任務的 AI 專用狀態"""
+        task = self.get_by_id(task_id)
+        if not task:
+            return False
+        
+        def toggle_ai_only():
+            # 獲取當前 task_args
+            current_args = task.task_args or {}
+            # 切換 ai_only 值
+            current_args['ai_only'] = not current_args.get('ai_only', False)
+            # 更新整個 task_args 字典
+            task.task_args = current_args
+            task.updated_at = datetime.now(timezone.utc)
+            self.session.commit()
+            return True
+        
+        return self.execute_query(
+            toggle_ai_only,
+            err_msg=f"切換任務ID {task_id} 的 AI 專用狀態時發生錯誤"
+        )
+            
+
     def toggle_active_status(self, task_id: int) -> bool:
         """切換任務的啟用狀態"""
         task = self.get_by_id(task_id)

@@ -1,4 +1,5 @@
-from src.models.crawler_tasks_model import CrawlerTasks, TaskPhase, ScrapeMode
+from src.models.crawler_tasks_model import CrawlerTasks, TASK_ARGS_DEFAULT
+from src.utils.model_utils import TaskPhase, ScrapeMode
 from datetime import datetime, timezone
 import pytest
 from sqlalchemy import create_engine
@@ -36,24 +37,7 @@ class TestCrawlerTasksModel:
             task_name="測試任務",
             crawler_id=1,
             is_auto=True,
-            task_args={
-                "article_settings": {
-                    "max_pages": 3,
-                    "ai_only": True,
-                    "num_articles": 10,
-                    "min_keywords": 3,
-                    "from_db_link": False
-                },
-                "extraction_settings": {
-                    "num_articles": 3,
-                    "min_keywords": 3
-                },
-                "storage_settings": {
-                    "save_to_csv": True,
-                    "csv_file_name": "articles_bnext.csv",
-                    "save_to_database": False
-                }
-            },
+            task_args=TASK_ARGS_DEFAULT,
             notes="測試任務"
         )
         session.add(task)
@@ -63,24 +47,7 @@ class TestCrawlerTasksModel:
         assert task.task_name == "測試任務"
         assert task.crawler_id == 1
         assert task.is_auto is True
-        assert task.task_args == {
-            "article_settings": {
-                "max_pages": 3,
-                "ai_only": True,
-                "num_articles": 10,
-                "min_keywords": 3,
-                "from_db_link": False
-            },
-            "extraction_settings": {
-                "num_articles": 3,
-                "min_keywords": 3
-            },
-            "storage_settings": {
-                "save_to_csv": True,
-                "csv_file_name": "articles_bnext.csv",
-                "save_to_database": False
-            }
-        }
+        assert task.task_args == TASK_ARGS_DEFAULT
         assert task.notes == "測試任務"
         
         # 測試自動生成的欄位
@@ -95,7 +62,6 @@ class TestCrawlerTasksModel:
         
         # 測試新增欄位的預設值
         assert task.current_phase == TaskPhase.INIT
-        assert task.max_retries == 3
         assert task.retry_count == 0
     
     def test_default_values(self, session):
@@ -109,10 +75,24 @@ class TestCrawlerTasksModel:
         
         # 測試布林欄位預設值
         assert task.is_auto is True
-        assert task.ai_only is False
+        assert task.is_active is True
         
         # 測試默認的 task_args
-        assert task.task_args == {}
+        assert task.task_args['max_pages'] == 10
+        assert task.task_args['ai_only'] is False
+        assert task.task_args['num_articles'] == 10
+        assert task.task_args['min_keywords'] == 10
+        assert task.task_args['max_retries'] == 3
+        assert task.task_args['retry_delay'] == 2.0
+        assert task.task_args['timeout'] == 10
+        assert task.task_args['is_test'] is False
+        assert task.task_args['save_to_csv'] is False
+        assert task.task_args['csv_file_prefix'] == ''
+        assert task.task_args['save_to_database'] is True
+        assert task.task_args['scrape_mode'] == ScrapeMode.FULL_SCRAPE.value
+        assert task.task_args['get_links_by_task_id'] is True
+        assert isinstance(task.task_args['article_links'], list)
+        assert len(task.task_args['article_links']) == 0
         
         # 測試可選欄位預設值
         assert task.notes is None
@@ -123,9 +103,7 @@ class TestCrawlerTasksModel:
         
         # 測試新增欄位的預設值
         assert task.current_phase == TaskPhase.INIT
-        assert task.max_retries == 3
         assert task.retry_count == 0
-        assert task.scrape_mode == ScrapeMode.FULL_SCRAPE  # 測試 scrape_mode 預設值
     
     def test_crawler_tasks_repr(self):
         """測試 CrawlerTasks 的 __repr__ 方法"""
@@ -146,18 +124,16 @@ class TestCrawlerTasksModel:
         task.is_auto = False
         assert task.is_auto is False
         
-        task.ai_only = True
-        assert task.ai_only is True
+        task.is_active = False
+        assert task.is_active is False
         
         # 測試 task_args 更新
         task.task_args = {
-            "article_settings": {
-                "max_pages": 5,
-                "num_articles": 20
-            }
+            "max_pages": 5,
+            "num_articles": 20
         }
-        assert task.task_args["article_settings"]["max_pages"] == 5
-        assert task.task_args["article_settings"]["num_articles"] == 20
+        assert task.task_args["max_pages"] == 5
+        assert task.task_args["num_articles"] == 20
         
         # 測試文字欄位更新
         task.task_name = "更新後的任務名稱"
@@ -188,24 +164,31 @@ class TestCrawlerTasksModel:
             task_name="測試任務",
             crawler_id=1,
             notes="測試任務",
-            scrape_mode=ScrapeMode.LINKS_ONLY  # 設置非預設的 scrape_mode
+            task_args={
+                "max_pages": 5,
+                "num_articles": 20,
+                "scrape_mode": ScrapeMode.LINKS_ONLY.value
+            }
         )
         
         task_dict = task.to_dict()
         
         # 驗證所有欄位都在字典中
         expected_keys = {
-            'id', 'task_name', 'crawler_id', 'is_auto', 'ai_only', 'task_args', 
+            'id', 'task_name', 'crawler_id', 'is_auto', 'is_active',  'task_args', 
             'notes', 'created_at', 'updated_at', 'last_run_at', 
             'last_run_success', 'last_run_message', 'cron_expression',
-            'current_phase', 'max_retries', 'retry_count', 'scrape_mode'  # 添加 scrape_mode
+            'current_phase', 'retry_count'
         }
         
         assert set(task_dict.keys()) == expected_keys
         
+        # 測試預設值的序列化
+        assert task_dict['is_active'] is True
+        
         # 測試枚舉值的序列化
         assert task_dict['current_phase'] == TaskPhase.INIT.value
-        assert task_dict['scrape_mode'] == ScrapeMode.LINKS_ONLY.value  # 測試 scrape_mode 序列化
+        assert task_dict['task_args']['scrape_mode'] == ScrapeMode.LINKS_ONLY.value
     
     def test_task_phase_transitions(self):
         """測試任務階段轉換"""
@@ -279,21 +262,23 @@ class TestCrawlerTasksModel:
         
         # 測試在 CrawlerTasks 中設置和獲取 scrape_mode
         task = CrawlerTasks(crawler_id=1)
-        assert task.scrape_mode == ScrapeMode.FULL_SCRAPE  # 預設值
+        assert task.task_args['scrape_mode'] == ScrapeMode.FULL_SCRAPE.value  # 預設值
         
         # 測試更改 scrape_mode
-        task.scrape_mode = ScrapeMode.LINKS_ONLY
-        assert task.scrape_mode == ScrapeMode.LINKS_ONLY
+        task.task_args['scrape_mode'] = ScrapeMode.LINKS_ONLY.value
+        assert task.task_args['scrape_mode'] == ScrapeMode.LINKS_ONLY.value
         
-        task.scrape_mode = ScrapeMode.CONTENT_ONLY
-        assert task.scrape_mode == ScrapeMode.CONTENT_ONLY
+        task.task_args['scrape_mode'] = ScrapeMode.CONTENT_ONLY.value
+        assert task.task_args['scrape_mode'] == ScrapeMode.CONTENT_ONLY.value
         
         # 測試在初始化時指定 scrape_mode
         task2 = CrawlerTasks(
             crawler_id=1, 
-            scrape_mode=ScrapeMode.LINKS_ONLY
+            task_args={
+                "scrape_mode": ScrapeMode.LINKS_ONLY.value
+            }
         )
-        assert task2.scrape_mode == ScrapeMode.LINKS_ONLY
+        assert task2.task_args['scrape_mode'] == ScrapeMode.LINKS_ONLY.value
     
     def test_relationship_fields(self, session):
         """測試關聯關係欄位是否存在"""
@@ -325,3 +310,26 @@ class TestCrawlerTasksModel:
         
         task.scrape_mode = ScrapeMode.FULL_SCRAPE
         assert task.scrape_mode == ScrapeMode.FULL_SCRAPE
+
+    def test_task_args_default(self):
+        """測試 task_args 的預設值"""
+        from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
+        
+        task = CrawlerTasks(crawler_id=1)
+        
+        # 測試 task_args 預設值
+        assert task.task_args['max_pages'] == TASK_ARGS_DEFAULT['max_pages']
+        assert task.task_args['ai_only'] == TASK_ARGS_DEFAULT['ai_only']
+        assert task.task_args['num_articles'] == TASK_ARGS_DEFAULT['num_articles']
+        assert task.task_args['min_keywords'] == TASK_ARGS_DEFAULT['min_keywords']
+        assert task.task_args['max_retries'] == TASK_ARGS_DEFAULT['max_retries']
+        assert task.task_args['retry_delay'] == TASK_ARGS_DEFAULT['retry_delay']
+        assert task.task_args['timeout'] == TASK_ARGS_DEFAULT['timeout']
+        assert task.task_args['is_test'] == TASK_ARGS_DEFAULT['is_test']
+        assert task.task_args['save_to_csv'] == TASK_ARGS_DEFAULT['save_to_csv']
+        assert task.task_args['csv_file_prefix'] == TASK_ARGS_DEFAULT['csv_file_prefix']
+        assert task.task_args['save_to_database'] == TASK_ARGS_DEFAULT['save_to_database']
+        assert task.task_args['scrape_mode'] == TASK_ARGS_DEFAULT['scrape_mode']
+        assert task.task_args['get_links_by_task_id'] == TASK_ARGS_DEFAULT['get_links_by_task_id']
+        assert isinstance(task.task_args['article_links'], list)
+        assert len(task.task_args['article_links']) == 0
