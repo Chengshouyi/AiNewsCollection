@@ -428,50 +428,62 @@ def validate_url(
 
 def validate_task_args(field_name: str, required: bool = False):
     """任務參數驗證"""
-    def validator(value: Any) -> Optional[Dict[str, Any]]:
+    def validator(value: Any) -> Dict[str, Any]:
         if value is None:
             if required:
                 raise ValidationError(f"{field_name}: 不能為空")
             return {}
-        dict_validator = validate_dict(field_name, required=required)
-        validated_data = dict_validator(value)
+        try:
+            validate_dict(field_name, required=required)(value)
+        except Exception as e:
+            raise ValidationError(f"task_args: 必須是字典，{str(e)}")
+
+        # 驗證scrape_mode
+        if 'scrape_mode' not in value:
+            raise ValidationError(f"task_args: 必須包含scrape_mode")
+        try:
+            validate_scrape_mode('scrape_mode', required=True)(value['scrape_mode'])
+        except Exception as e:
+                raise ValidationError(f"task_args.scrape_mode: {str(e)}")
+
         # 驗證數值類型參數
-        numeric_params = ['max_pages', 'num_articles', 'min_keywords', 'timeout']
+        numeric_params = ['max_pages', 'num_articles', 'min_keywords', 'timeout', 'max_retries']
         for param in numeric_params:
-            if param in validated_data:
-                if validated_data[param] is not None:
-                    try:
-                        validate_positive_int(param, required=True)(validated_data[param]) 
-                    except Exception as e:
+            if param in value:
+                if param not in value:
+                    raise ValidationError(f"task_args.{param}: 不能為空")
+                try:
+                    validate_positive_int(param, required=True)(value[param]) 
+                except Exception as e:
                         raise ValidationError(f"task_args.{param}: {str(e)}")
         
         # 驗證可為小數的數值類型參數 
         float_params = ['retry_delay']
         for param in float_params:
-            if param in validated_data:
-                if validated_data[param] is not None:
-                    try:
-                        validate_positive_float(param, is_zero_allowed=False, required=True)(validated_data[param]) 
-                    except Exception as e:
-                        raise ValidationError(f"task_args.{param}: {str(e)}")
+            if param not in value:
+                raise ValidationError(f"task_args.{param}: 不能為空")
+            try:
+                validate_positive_float(param, is_zero_allowed=False, required=True)(value[param]) 
+            except Exception as e:
+                raise ValidationError(f"task_args.{param}: {str(e)}")
 
         # 驗證布爾類型參數
-        bool_params = ['ai_only', 'save_to_csv', 'save_to_database', 'get_links_by_task_id']
+        bool_params = ['ai_only', 'save_to_csv', 'save_to_database', 'get_links_by_task_id', 'is_test']
         for param in bool_params:
-            if param in validated_data:
-                if validated_data[param] is not None:
-                    try:
-                        validate_boolean(param, required=True)(validated_data[param])
-                    except Exception as e:
-                        raise ValidationError(f"task_args.{param}: {str(e)}")
-        
-        if 'article_links' in validated_data:
+            if param not in value:
+                raise ValidationError(f"task_args.{param}: 不能為空")
             try:
-                if validated_data['article_links'] is not None:
-                    validate_list("article_links", min_length=0, type=str)(validated_data['article_links'])
+                validate_boolean(param, required=True)(value[param])
             except Exception as e:
-                raise ValidationError(f"task_args.article_links: {str(e)}")
-        return validated_data
+                raise ValidationError(f"task_args.{param}: {str(e)}")
+        
+        if 'article_links' not in value:
+            raise ValidationError(f"task_args.article_links: 不能為空")
+        try:
+            validate_list("article_links", min_length=0, type=str)(value['article_links'])
+        except Exception as e:
+            raise ValidationError(f"task_args.article_links: {str(e)}")
+        return value
     return validator    
 
 def validate_positive_float(field_name: str, is_zero_allowed: bool = False, required: bool = False):

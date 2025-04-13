@@ -15,9 +15,10 @@ TASK_ARGS_DEFAULT = {
     'max_retries': 3,
     'retry_delay': 2.0,
     'timeout': 10,
+    'is_test': False,
     'save_to_csv': False,
     'csv_file_prefix': '',
-    'save_to_database': False,
+    'save_to_database': True,
     'scrape_mode': ScrapeMode.FULL_SCRAPE,
     'get_links_by_task_id': True,
     'article_links': []
@@ -30,16 +31,14 @@ class CrawlerTasks(Base, BaseEntity):
     - task_name: 任務名稱
     - crawler_id: 外鍵，關聯爬蟲
     - is_auto: 是否自動爬取
-    - ai_only: 是否只爬取AI相關文章
+    - is_active: 是否啟用
     - notes: 備註
     - last_run_at: 上次執行時間
     - last_run_success: 上次執行成功與否
     - last_run_message: 上次執行訊息
     - cron_expression: 排程-cron表達式
     - current_phase: 當前任務階段
-    - max_retries: 最大重試次數
-    - retry_count: 當前重試次數
-    - scrape_mode: 抓取模式
+    - retry_count: 重試次數
     - task_args: 任務參數 
         - max_pages: 最大頁數
         - ai_only: 是否只抓取AI相關文章
@@ -48,6 +47,7 @@ class CrawlerTasks(Base, BaseEntity):
         - max_retries: 最大重試次數
         - retry_delay: 重試延遲時間
         - timeout: 超時時間 
+        - is_test: 是否為測試模式
         - save_to_csv: 是否保存到CSV文件
         - csv_file_prefix: CSV檔案名稱前綴，最終文件名格式為 {前綴}_{任務ID}_{時間戳}.csv
         - save_to_database: 是否保存到資料庫
@@ -71,9 +71,14 @@ class CrawlerTasks(Base, BaseEntity):
         default=True, 
         nullable=False
     )
-    ai_only: Mapped[bool] = mapped_column(
+    is_active: Mapped[bool] = mapped_column(
         Boolean, 
-        default=False, 
+        default=True, 
+        nullable=False
+    )
+    retry_count: Mapped[int] = mapped_column(
+        Integer,
+        default=0,
         nullable=False
     )
     task_args: Mapped[dict] = mapped_column(JSON, default=TASK_ARGS_DEFAULT)
@@ -86,24 +91,6 @@ class CrawlerTasks(Base, BaseEntity):
     current_phase: Mapped[TaskPhase] = mapped_column(
         Enum(TaskPhase),
         default=TaskPhase.INIT,
-        nullable=False
-    )
-    
-    max_retries: Mapped[int] = mapped_column(
-        Integer,
-        default=3,
-        nullable=False
-    )
-    
-    retry_count: Mapped[int] = mapped_column(
-        Integer,
-        default=0,
-        nullable=False
-    )
-    
-    scrape_mode: Mapped[ScrapeMode] = mapped_column(
-        Enum(ScrapeMode),
-        default=ScrapeMode.FULL_SCRAPE,
         nullable=False
     )
 
@@ -122,18 +109,14 @@ class CrawlerTasks(Base, BaseEntity):
         # 設置預設值
         if 'is_auto' not in kwargs:
             kwargs['is_auto'] = True
-        if 'ai_only' not in kwargs:
-            kwargs['ai_only'] = False
-        if 'task_args' not in kwargs:
-            kwargs['task_args'] = {}
+        if 'is_active' not in kwargs:
+            kwargs['is_active'] = True
         if 'current_phase' not in kwargs:
             kwargs['current_phase'] = TaskPhase.INIT
-        if 'max_retries' not in kwargs:
-            kwargs['max_retries'] = 3
         if 'retry_count' not in kwargs:
             kwargs['retry_count'] = 0
-        if 'scrape_mode' not in kwargs:
-            kwargs['scrape_mode'] = ScrapeMode.FULL_SCRAPE
+        if 'task_args' not in kwargs:
+            kwargs['task_args'] = TASK_ARGS_DEFAULT
 
         # 告知父類需要監聽的 datetime 欄位
         super().__init__(datetime_fields_to_watch=
@@ -148,7 +131,7 @@ class CrawlerTasks(Base, BaseEntity):
             'task_name': self.task_name,
             'crawler_id': self.crawler_id,
             'is_auto': self.is_auto,
-            'ai_only': self.ai_only,
+            'is_active': self.is_active,
             'task_args': self.task_args,
             'notes': self.notes,
             'last_run_at': self.last_run_at,
@@ -156,7 +139,5 @@ class CrawlerTasks(Base, BaseEntity):
             'last_run_message': self.last_run_message,
             'cron_expression': self.cron_expression,
             'current_phase': self.current_phase.value,
-            'max_retries': self.max_retries,
             'retry_count': self.retry_count,
-            'scrape_mode': self.scrape_mode.value
         }

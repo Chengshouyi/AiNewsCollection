@@ -102,12 +102,21 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             return None
         return result
     
+    def find_by_crawler_id(self, crawler_id: int, is_active: bool = True) -> Optional[Crawlers]:
+        """根據爬蟲ID查詢，回傳匹配的列表"""
+        result = self.execute_query(
+            lambda: self.session.query(self.model_class).filter_by(id=crawler_id, is_active=is_active).first(),
+            err_msg=f"查詢爬蟲ID {crawler_id} 時發生錯誤"
+        )
+        if not result:
+            return None
+        return result
     
-    def find_by_crawler_name(self, crawler_name: str) -> Optional[List['Crawlers']]:
+    def find_by_crawler_name(self, crawler_name: str, is_active: bool = True) -> Optional[List['Crawlers']]:
         """根據爬蟲名稱模糊查詢，回傳匹配的列表"""
         result = self.execute_query(
             lambda: self.session.query(self.model_class)
-                .filter(self.model_class.crawler_name.like(f"%{crawler_name}%"))
+                .filter(self.model_class.crawler_name.like(f"%{crawler_name}%"), self.model_class.is_active == is_active)
                 .all()
         )
         if not result:
@@ -134,11 +143,11 @@ class CrawlersRepository(BaseRepository['Crawlers']):
         )
 
 
-    def find_by_type(self, crawler_type: str) -> Optional[List[Crawlers]]:
+    def find_by_type(self, crawler_type: str, is_active: bool = True) -> Optional[List[Crawlers]]:
         """根據爬蟲類型查找爬蟲"""
         result = self.execute_query(
             lambda: self.session.query(self.model_class)
-                .filter(self.model_class.crawler_type == crawler_type)
+                .filter(self.model_class.crawler_type == crawler_type, self.model_class.is_active == is_active)
                 .all(),
             err_msg=f"查詢類型為{crawler_type}的爬蟲時發生錯誤"
         )
@@ -146,11 +155,11 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             return None
         return result
     
-    def find_by_target(self, target_pattern: str) -> Optional[List[Crawlers]]:
+    def find_by_target(self, target_pattern: str, is_active: bool = True) -> Optional[List[Crawlers]]:
         """根據爬取目標模糊查詢爬蟲"""
         result = self.execute_query(
             lambda: self.session.query(self.model_class)
-                .filter(self.model_class.base_url.like(f"%{target_pattern}%"))
+                .filter(self.model_class.base_url.like(f"%{target_pattern}%"), self.model_class.is_active == is_active)
                 .all(),
             err_msg=f"查詢目標包含{target_pattern}的爬蟲時發生錯誤"
         )

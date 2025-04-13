@@ -10,7 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.crawlers.bnext_utils import BnextUtils
 from src.crawlers.configs.site_config import SiteConfig
 from src.services.article_service import ArticleService
-from src.utils.model_utils import convert_hashable_dict_to_str_dict, validate_positive_int, validate_boolean, validate_str
+from src.utils.model_utils import convert_hashable_dict_to_str_dict, validate_positive_int, validate_boolean, validate_str, validate_task_args
+from src.error.errors import ValidationError
 import enum
 from src.models.crawler_tasks_model import ScrapeMode
 
@@ -142,10 +143,10 @@ class BaseCrawler(ABC):
             # 從global_params獲取task_id（如果沒有在filters中指定）
             if 'task_id' not in filters and 'task_id' in self.global_params:
                 filters['task_id'] = self.global_params.get('task_id')
-            
+
             # 處理article_links（需要特殊處理）
             article_links = filters.pop('article_links', self.global_params.get('article_links', []))
-            if article_links:
+            if article_links and len(article_links) > 0:
                 # 如果有article_links，則直接建立DataFrame
                 articles_data = []
                 for link in article_links:
@@ -382,87 +383,16 @@ class BaseCrawler(ABC):
         try:
             # 保存任務ID到全局參數
             self.global_params['task_id'] = task_id
+            try:
+                validated_task_args = validate_task_args('task_args', required=True)(task_args)
+            except ValidationError as e:
+                logger.error(f"任務參數驗證失敗: {str(e)}")
+                self._update_task_status(task_id, 0, f'任務參數驗證失敗: {str(e)}', 'failed')
+                return False
             
-            # 先處理基本參數驗證
-            for key, value in task_args.items():
-                # 特殊處理task_id，直接添加到global_params
-                if key == 'task_id':
-                    self.global_params['task_id'] = value
-                    continue
-                
-                # 特殊處理scrape_mode
-                if key == 'scrape_mode':
-                    # 檢查是否為有效的ScrapeMode枚舉值
-                    if isinstance(value, str):
-                        try:
-                            # 嘗試將字符串轉換為枚舉值
-                            self.global_params['scrape_mode'] = ScrapeMode(value)
-                        except ValueError:
-                            logger.error(f"無效的抓取模式: {value}")
-                            raise ValueError(f"無效的抓取模式: {value}")
-                    elif isinstance(value, ScrapeMode):
-                        self.global_params['scrape_mode'] = value
-                    else:
-                        logger.error(f"抓取模式必須為ScrapeMode枚舉值或對應的字符串")
-                        raise ValueError(f"抓取模式必須為ScrapeMode枚舉值或對應的字符串")
-                    continue
-                
-                # 處理其他一般參數
-                if key in ['max_pages', 'num_articles', 'min_keywords', 'max_retries', 'timeout']:
-                    validated_value = validate_positive_int(key, is_zero_allowed=False)(value)
-                    self.global_params[key] = validated_value
-                elif key in ['ai_only', 'save_to_csv', 'save_to_database', 'get_links_by_task_id']:
-                    validated_value = validate_boolean(key)(value)
-                    self.global_params[key] = validated_value
-                elif key == 'retry_delay':
-                    if not isinstance(value, (int, float)) or value < 0:
-                        logger.error(f"參數 {key} 必須為非負數")
-                        raise ValueError(f"參數 {key} 必須為非負數")
-                    self.global_params[key] = value
-                elif key == 'csv_file_prefix':
-                    validated_value = validate_str(key, max_length=255)(value)
-                    self.global_params[key] = validated_value
-                elif key in ['article_ids', 'article_links']:
-                    if not isinstance(value, list):
-                        logger.error(f"參數 {key} 必須為列表類型")
-                        raise ValueError(f"參數 {key} 必須為列表類型")
-                    self.global_params[key] = value
-                elif key in ['links_only', 'content_only']:
-                    # 完全拒絕接受舊版參數
-                    logger.error(f"參數 {key} 已不再支援，請改用 scrape_mode 參數")
-                    raise ValueError(f"參數 {key} 已不再支援，請改用 scrape_mode 參數")
-                else:
-                    # 其他未知參數，直接添加到全局參數中
-                    logger.info(f"添加未驗證的參數到全局參數: {key}")
-                    self.global_params[key] = value
-            
-            # 確保存在scrape_mode，如果沒有則設置為預設值
-            if 'scrape_mode' not in self.global_params:
-                self.global_params['scrape_mode'] = ScrapeMode.FULL_SCRAPE
-            
-            # 根據scrape_mode進行後續驗證
-            if self.global_params['scrape_mode'] == ScrapeMode.CONTENT_ONLY:
-                get_links_by_task_id = self.global_params.get('get_links_by_task_id', False)
-                
-                # 當get_links_by_task_id為False時，必須提供article_ids或article_links
-                if not get_links_by_task_id:
-                    article_ids = self.global_params.get('article_ids', [])
-                    article_links = self.global_params.get('article_links', [])
-                    
-                    if not article_ids and not article_links:
-                        logger.error("當抓取模式為CONTENT_ONLY且get_links_by_task_id=False時，必須提供article_ids或article_links")
-                        raise ValueError("當抓取模式為CONTENT_ONLY且get_links_by_task_id=False時，必須提供article_ids或article_links")
-            
-            # 當抓取模式為LINKS_ONLY時，清除無關參數
-            if self.global_params['scrape_mode'] == ScrapeMode.LINKS_ONLY:
-                if self.global_params.get('article_ids', []) or self.global_params.get('article_links', []):
-                    logger.warning("抓取模式為LINKS_ONLY時，article_ids和article_links參數將被忽略")
-                
-                # 清除無效參數，避免混淆
-                if 'article_ids' in self.global_params:
-                    del self.global_params['article_ids']
-                if 'article_links' in self.global_params:
-                    del self.global_params['article_links']
+            # 參數驗證成功，更新全局參數
+            for key, value in validated_task_args.items():
+                self.global_params[key] = value
             
             # 更新配置以確保與新參數兼容
             self._update_config()
@@ -521,6 +451,7 @@ class BaseCrawler(ABC):
                 - max_retries: 最大重試次數
                 - retry_delay: 重試延遲時間
                 - timeout: 超時時間 
+                - is_test: 是否為測試模式
                 - save_to_csv: 是否保存到CSV文件
                 - csv_file_prefix: CSV檔案名稱前綴，最終文件名格式為 {前綴}_{任務ID}_{時間戳}.csv
                 - save_to_database: 是否保存到資料庫
@@ -607,7 +538,7 @@ class BaseCrawler(ABC):
             # 獲取要抓取的文章連結
             article_links = self.global_params.get('article_links', [])
             
-            if not article_links:
+            if not article_links or len(article_links) == 0:
                 logger.warning("沒有提供要抓取內容的文章連結")
                 self._update_task_status(task_id, 100, '沒有提供要抓取內容的文章連結', 'completed')
                 return {

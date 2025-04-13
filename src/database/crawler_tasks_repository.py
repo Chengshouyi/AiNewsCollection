@@ -88,36 +88,28 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             logger.error(f"更新 CrawlerTask (ID={entity_id}) 時發生未預期錯誤: {e}", exc_info=True)
             raise DatabaseOperationError(f"更新 CrawlerTask (ID={entity_id}) 時發生未預期錯誤: {e}") from e
 
-    def find_by_crawler_id(self, crawler_id: int) -> List[CrawlerTasks]:
+    def find_tasks_by_id(self, task_id: int, is_active: bool = True) -> Optional[CrawlerTasks]:
+        """查詢特定任務"""
+        return self.execute_query(
+            lambda: self.session.query(self.model_class).filter_by(id=task_id, is_active=is_active).first(),
+            err_msg=f"查詢任務ID {task_id} 時發生錯誤"
+        )
+
+    def find_tasks_by_crawler_id(self, crawler_id: int, is_active: bool = True) -> List[CrawlerTasks]:
         """根據爬蟲ID查詢相關的任務"""
         return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(crawler_id=crawler_id).all(),
-            err_msg=f"查詢爬蟲ID {crawler_id} 的任務時發生錯誤"
+            lambda: self.session.query(self.model_class).filter_by(crawler_id=crawler_id, is_active=is_active).all(),
+            err_msg=f"查詢爬蟲ID {crawler_id} 的啟用任務時發生錯誤"
         )
     
-    def find_auto_tasks(self) -> List[CrawlerTasks]:
+    
+    def find_auto_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
         """查詢所有自動執行的任務"""
         return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(is_auto=True).all(),
+            lambda: self.session.query(self.model_class).filter_by(is_auto=True, is_active=is_active).all(),
             err_msg="查詢自動執行任務時發生錯誤"
         )
     
-    def find_ai_only_tasks(self) -> List[CrawlerTasks]:
-        """查詢所有僅收集AI相關的任務"""
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(ai_only=True).all(),
-            err_msg="查詢僅收集AI相關的任務時發生錯誤"
-        )
-    
-    def find_tasks_by_crawler_and_auto(self, crawler_id: int, is_auto: bool) -> List[CrawlerTasks]:
-        """根據爬蟲ID和自動執行狀態查詢任務"""
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(
-                crawler_id=crawler_id,
-                is_auto=is_auto
-            ).all(),
-            err_msg=f"查詢爬蟲ID {crawler_id} 和自動執行狀態 {is_auto} 的任務時發生錯誤"
-        )
     
     def toggle_auto_status(self, task_id: int) -> bool:
         """切換任務的自動執行狀態"""
@@ -130,17 +122,17 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             err_msg=f"切換任務ID {task_id} 的自動執行狀態時發生錯誤"
         )
     
-    def toggle_ai_only_status(self, task_id: int) -> bool:
-        """切換任務的AI收集狀態"""
+    def toggle_active_status(self, task_id: int) -> bool:
+        """切換任務的啟用狀態"""
         task = self.get_by_id(task_id)
         if not task:
             return False
-            
+        
         return self.execute_query(
-            lambda: self._toggle_status(task, 'ai_only'),
-            err_msg=f"切換任務ID {task_id} 的AI收集狀態時發生錯誤"
+            lambda: self._toggle_status(task, 'is_active'),
+            err_msg=f"切換任務ID {task_id} 的啟用狀態時發生錯誤"
         )
-    
+
     def _toggle_status(self, task: CrawlerTasks, field: str) -> bool:
         """內部方法：切換狀態"""
         setattr(task, field, not getattr(task, field))
