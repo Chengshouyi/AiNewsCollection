@@ -1,10 +1,11 @@
 from datetime import datetime, timezone
-from typing import List, Dict, Any, Tuple, Type, cast, Optional
+from typing import List, Dict, Any, Tuple, Type, cast, Optional, TYPE_CHECKING
 import threading
 import time
 import logging
 from src.crawlers.crawler_factory import CrawlerFactory
-from src.crawlers.base_crawler import BaseCrawler
+if TYPE_CHECKING:
+    from src.crawlers.base_crawler import BaseCrawler
 from src.services.base_service import BaseService
 from src.database.base_repository import BaseRepository, SchemaType
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
@@ -54,7 +55,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         return cast(ArticlesRepository, super()._get_repository('Articles'))
 
 
-    def _get_crawler_instance(self, crawler_name: str, task_id: int) -> BaseCrawler:
+    def _get_crawler_instance(self, crawler_name: str, task_id: int) -> 'BaseCrawler':
         """獲取爬蟲實例"""
         if task_id not in self.running_crawlers:
             self.running_crawlers[task_id] = CrawlerFactory.get_crawler(crawler_name)

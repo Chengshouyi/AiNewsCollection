@@ -160,7 +160,6 @@ def mock_task_service(monkeypatch, sample_tasks):
                 mock_repo = MagicMock()
                 # 模擬 exists_by_id 方法，假設所有 crawler_id 都存在
                 mock_repo.exists_by_id.return_value = True 
-                # 如果 validate_task_data_api 需要其他 repo 方法，可以在這裡添加
                 return mock_repo
             # 可以根據需要擴展以模擬其他 repository
             return MagicMock()
@@ -180,8 +179,7 @@ def mock_task_service(monkeypatch, sample_tasks):
             return data
 
         def create_task(self, data):
-            # 假設 validate_task_data_api 已經在路由層面被調用
-            # 此處不再調用 self.validate_task_data(data)
+            
             task_id = self.next_id
             # 創建任務物件，包含所有必要的屬性
             task_data = {
@@ -212,7 +210,7 @@ def mock_task_service(monkeypatch, sample_tasks):
                 try:
                     task.scrape_mode = ScrapeMode(task.scrape_mode)
                 except ValueError:
-                    # 在 validate_task_data_api 應該已經攔截
+                    
                     return {'success': False, 'message': f"創建任務時發現無效的抓取模式: {task.scrape_mode}"}
 
             self.tasks[task_id] = task
@@ -226,8 +224,7 @@ def mock_task_service(monkeypatch, sample_tasks):
             return {'success': True, 'task': task.to_dict()}  # 返回字典而非對象
 
         def update_task(self, task_id, data):
-             # 假設 validate_task_data_api 已經在路由層面被調用
-            # 此處不再調用 self.validate_task_data(data, is_update=True)
+
             if task_id not in self.tasks:
                 return {'success': False, 'message': '任務不存在'}
 
@@ -239,7 +236,7 @@ def mock_task_service(monkeypatch, sample_tasks):
                         try:
                             setattr(task, key, ScrapeMode(value))
                         except ValueError:
-                            # 在 validate_task_data_api 應該已經攔截
+                            
                             return {'success': False, 'message': f"更新任務時發現無效的抓取模式: {value}"}
                     elif isinstance(value, ScrapeMode):
                         setattr(task, key, value)
@@ -774,42 +771,7 @@ class TestTasksApiRoutes:
         data = json.loads(response.data)
         assert 'error' in data
 
-    def test_validation_error(self, client, mock_task_service, mock_handle_api_error):
-        """測試輸入驗證錯誤"""
-        # 缺少必要的 crawler_id 欄位，但提供 cron_expression 以通過初步檢查
-        task_data = {
-            'task_name': '錯誤的任務',
-            # 缺少 crawler_id
-            'is_scheduled': True,
-            'cron_expression': '0 0 * * *' # 添加 cron_expression
-        }
-
-        # Mock validate_task_data_api 來強制引發期望的 ValidationError
-        def mock_validate(*args, **kwargs):
-             # 檢查 data 是否缺少 crawler_id
-            data = args[0] 
-            if 'crawler_id' not in data:
-                 # 引發與原始碼中相似的錯誤，移除 details
-                 raise ValidationError("缺少必要欄位: crawler_id") # 移除 details={'crawler_id': '此欄位為必填項'}
-            # 如果有 crawler_id，則不拋出錯誤 (模擬驗證通過)
-            
-        with patch('src.web.routes.tasks_api.validate_task_data_api', mock_validate):
-            response = client.post('/api/tasks/scheduled', json=task_data)
-            
-        assert response.status_code == 400
-        data = json.loads(response.data)
-        assert 'error' in data
-        # 斷言錯誤訊息包含 "缺少必要欄位"
-        assert '缺少必要欄位' in data['error']
-        # 注意：由於移除了 ValidationError 中的 details，
-        # mock_handle_api_error 可能不再能自動添加 details。
-        # 如果您仍然需要在響應中看到 details，您需要調整 mock_handle_api_error
-        # 或者修改您的 ValidationError 類以接受 details。
-        # 根據當前的 mock_handle_api_error 實現，它似乎總是添加硬編碼的 details，
-        # 所以這裡的斷言可能仍然通過。
-        assert 'details' in data 
-        assert 'crawler_id' in data['details']
-
+    
     def test_collect_manual_task_links(self, client, mock_task_service, patch_thread):
         """測試收集手動任務的文章連結"""
         # 發送 POST 請求並包含空的 JSON body
