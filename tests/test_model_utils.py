@@ -15,10 +15,12 @@ from src.utils.model_utils import (
     validate_scrape_mode,
     validate_article_scrape_status,
     validate_task_args,
+    convert_hashable_dict_to_str_dict,
+)
+from src.utils.enum_utils import (
     ScrapePhase,
     ScrapeMode,
     ArticleScrapeStatus,
-    convert_hashable_dict_to_str_dict,
 )
 from datetime import datetime, timezone, timedelta
 
@@ -469,7 +471,7 @@ class TestValidateScrapePhase:
     def test_invalid_value(self):
         """測試無效的值"""
         validator = validate_scrape_phase("phase")
-        with pytest.raises(ValidationError, match="phase: 無效的枚舉值 'invalid_phase'，可用值: init, link_collection, content_scraping, completed"):
+        with pytest.raises(ValidationError, match="phase: 無效的枚舉值 'invalid_phase'，可用值: init, link_collection, content_scraping, failed, save_to_csv, save_to_database, completed, cancelled, unknown"):
             validator("invalid_phase")
 
 class TestValidateScrapeMode:

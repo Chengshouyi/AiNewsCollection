@@ -16,6 +16,7 @@ class CrawlerTaskHistory(Base, BaseEntity):
     - end_time: 結束時間
     - success: 是否成功
     - message: 訊息
+    - task_status: 任務狀態
     - articles_count: 文章數量
     """
     __tablename__ = 'crawler_task_history'

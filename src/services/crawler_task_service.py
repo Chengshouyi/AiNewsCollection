@@ -14,12 +14,11 @@ from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepos
 from src.database.articles_repository import ArticlesRepository
 from src.models.base_model import Base
 from src.models.crawler_tasks_model import CrawlerTasks, TASK_ARGS_DEFAULT
-from src.models.crawler_tasks_schema import validate_scrape_phase
 from src.models.crawlers_model import Crawlers
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.articles_model import Articles
 from src.error.errors import ValidationError
-from src.utils.enum_utils import ScrapeMode, ScrapePhase
+from src.utils.enum_utils import ScrapeMode, ScrapePhase, TaskStatus
 from src.utils.model_utils import validate_task_args
 
 
@@ -33,6 +32,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
     
     def __init__(self, db_manager=None):
         self.running_crawlers = {}
+        self.task_execution_status = {}
         super().__init__(db_manager)
     
     def _get_repository_mapping(self) -> Dict[str, Tuple[Type[BaseRepository], Type[Base]]]:
@@ -359,7 +359,9 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not tasks_repo or not history_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'task': None,
+                        'history': None
                     }
                 
                 # 檢查任務是否存在
@@ -367,59 +369,78 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not task:
                     return {
                         'success': False,
-                        'message': '任務不存在'
+                        'message': '任務不存在',
+                        'task': None,
+                        'history': None
                     }
                 
                 # 創建任務歷史記錄
                 history_data = {
                     'task_id': task_id,
                     'start_time': datetime.now(timezone.utc),
-                    'status': 'running',
+                    'task_status': TaskStatus.RUNNING.value,
                     'message': '任務開始執行'
                 }
-                
-                # 先驗證歷史記錄資料
-                validated_history_data = self.validate_data('TaskHistory', history_data, SchemaType.CREATE)
-                # 創建歷史記錄
-                history = history_repo.create(validated_history_data)
-                history_id = history.id if history else None
+                update_task_status_result = self.update_task_status(task_id, TaskStatus.RUNNING, ScrapePhase.INIT, history_data=history_data)
+                if not update_task_status_result.get('success', False):
+                    return update_task_status_result
+            
+                history_id = update_task_status_result['history'].id if update_task_status_result['history'] else None
                 
                 try:
-                    # 更新任務階段為初始階段
-                    self.update_scrape_phase(task_id, ScrapePhase.INIT)
                     
                     # 獲取爬蟲資訊
                     crawler = crawlers_repo.find_by_crawler_id(task.crawler_id, is_active=True)
                     if not crawler:
+                        history_data = {
+                            'end_time': datetime.now(timezone.utc),
+                            'task_status': TaskStatus.FAILED.value,
+                            'message': '任務未關聯有效的爬蟲'
+                        }
+                        update_task_status_result = self.update_task_status(task_id, TaskStatus.FAILED, ScrapePhase.INIT, history_id=history_id, history_data=history_data)
+                        if not update_task_status_result.get('success', False):
+                            return update_task_status_result
                         return {
                             'success': False,
-                            'message': '任務未關聯有效的爬蟲'
+                            'message': '任務未關聯有效的爬蟲',
+                            'task': None,
+                            'history': None
                         }
                     
                     # 創建爬蟲實例
                     crawler_instance = self._get_crawler_instance(crawler.crawler_name, task_id)
-                                            
-                    # 執行爬蟲
+
+                    if not crawler_instance:
+                        history_data = {
+                            'end_time': datetime.now(timezone.utc),
+                            'task_status': TaskStatus.FAILED.value,
+                            'message': '無法創建爬蟲實例'
+                        }
+                        update_task_status_result = self.update_task_status(task_id, TaskStatus.FAILED, ScrapePhase.INIT, history_id=history_id, history_data=history_data)
+                        if not update_task_status_result.get('success', False):
+                            return update_task_status_result
+                        return {
+                            'success': False,
+                            'message': '無法創建爬蟲實例',
+                            'task': None,
+                            'history': None
+                        }
+                        
                     task.task_args['scrape_mode'] = ScrapeMode.FULL_SCRAPE.value
                     result = crawler_instance.execute_task(task_id, task.task_args)
-                        
-                    
+
                     # 更新任務歷史記錄
-                    history_update_data = {
+                    history_data = {
                         'end_time': datetime.now(timezone.utc),
-                        'status': 'completed' if result.get('success', False) else 'failed',
+                        'task_status': TaskStatus.COMPLETED.value if result.get('success', False) else TaskStatus.FAILED.value,
                         'message': result.get('message', '任務執行完成'),
                         'articles_count': result.get('articles_count', 0)
                     }
-                    
-                    # 驗證歷史記錄更新資料
-                    validated_history_update = self.validate_data('TaskHistory', history_update_data, SchemaType.UPDATE)
-                    # 更新歷史記錄
-                    history_repo.update(history_id, validated_history_update)
+
+                    self.update_task_status(task_id, TaskStatus.COMPLETED if result.get('success', False) else TaskStatus.FAILED, ScrapePhase.COMPLETED if result.get('success', False) else ScrapePhase.FAILED, history_id=history_id, history_data=history_data)
                     
                     # 更新任務階段為完成
                     if result.get('success', False):
-                        self.update_scrape_phase(task_id, ScrapePhase.COMPLETED)
                         # 成功執行後重置重試次數
                         self.reset_retry_count(task_id)
                     
@@ -433,16 +454,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     return result
                 except Exception as e:
                     # 更新任務歷史記錄
-                    history_update_data = {
+                    history_data = {
                         'end_time': datetime.now(timezone.utc),
-                        'status': 'failed',
+                        'task_status': TaskStatus.FAILED.value,
                         'message': f'任務執行失敗: {str(e)}'
                     }
-                    
-                    # 驗證歷史記錄更新資料
-                    validated_history_update = self.validate_data('TaskHistory', history_update_data, SchemaType.UPDATE)
-                    # 更新歷史記錄
-                    history_repo.update(history_id, validated_history_update)
+                    self.update_task_status(task_id, TaskStatus.FAILED, ScrapePhase.FAILED, history_id=history_id, history_data=history_data)
                     
                     # 增加重試次數
                     retry_result = self.increment_retry_count(task_id)
@@ -457,7 +474,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     }
         except Exception as e:
             error_msg = f"執行任務失敗, ID={task_id}: {str(e)}"
-            logger.error(error_msg, exc_info=True)
+            history_data = {
+                'end_time': datetime.now(timezone.utc),
+                'task_status': TaskStatus.FAILED.value,
+                'message': f'任務執行失敗: {str(e)}'
+            }
+            self.update_task_status(task_id, TaskStatus.FAILED, ScrapePhase.FAILED, history_data=history_data)
             return {
                 'success': False,
                 'message': error_msg
@@ -499,7 +521,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 history_data = {
                     'task_id': task_id,
                     'start_time': datetime.now(timezone.utc),
-                    'status': 'running',
+                    'task_status': TaskStatus.RUNNING.value,
                     'message': '開始收集文章連結'
                 }
                 
@@ -1294,24 +1316,28 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'message': error_msg
             }
 
-    def update_scrape_phase(self, task_id: int, phase: ScrapePhase) -> Dict:
-        """更新任務階段
+    def update_task_status(self, task_id: int, task_status: TaskStatus ,scrape_phase: ScrapePhase, history_id: Optional[int] = None, history_data: Optional[dict] = None) -> Dict:
+        """更新任務狀態
         
         Args:
             task_id: 任務ID
-            phase: 任務階段
+            history_id: 任務歷史ID
+            task_status: 任務狀態
+            scrape_phase: 任務階段
+            history_data: 任務歷史資料
             
         Returns:
             更新結果
         """
         try:
             with self._transaction():
-                tasks_repo, _, _ = self._get_repositories()
-                if not tasks_repo:
+                tasks_repo, _, history_repo = self._get_repositories()
+                if not tasks_repo or not history_repo:
                     return {
                         'success': False,
                         'message': '無法取得資料庫存取器',
-                        'task': None
+                        'task': None,
+                        'history': None
                     }
                 
                 task = tasks_repo.get_by_id(task_id)
@@ -1319,17 +1345,35 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     return {
                         'success': False,
                         'message': '任務不存在',
-                        'task': None
+                        'task': None,
+                        'history': None
                     }
                 
                 # 更新任務階段
-                task_data = {'scrape_phase': phase}
-                result = tasks_repo.update(task_id, task_data)
-                
+                task_data = {'scrape_phase': scrape_phase}
+                task_result = tasks_repo.update(task_id, task_data)
+                history_result = None
+                if history_data:
+                    if not history_id:
+                        # 先驗證歷史記錄資料
+                        validated_history_data = self.validate_data('TaskHistory', history_data, SchemaType.CREATE)
+                        history_result = history_repo.create(validated_history_data)
+                        history_id = history_result.id if history_result else None
+                    else:
+                        # 更新歷史記錄資料
+                        validated_history_data = self.validate_data('TaskHistory', history_data, SchemaType.UPDATE)
+                        history_result = history_repo.update(history_id, validated_history_data)
+
+                self.task_execution_status[task_id] = {
+                    'task_status': task_status,
+                    'scrape_phase': scrape_phase
+                }
+                logger.info(f"任務 {task_id} 爬取階段更新為 {scrape_phase.value}, 任務狀態更新為 {task_status.value}")
                 return {
                     'success': True,
-                    'message': f'任務階段更新為 {phase.value}',
-                    'task': result
+                    'message': f'爬取階段更新為 {scrape_phase.value}, 任務狀態更新為 {task_status.value}',
+                    'task': task_result,
+                    'history': history_result
                 }
         except Exception as e:
             error_msg = f"更新任務階段失敗, ID={task_id}: {str(e)}"
@@ -1337,7 +1381,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             return {
                 'success': False,
                 'message': error_msg,
-                'task': None
+                'task': None,
+                'history': None
             }
 
     def increment_retry_count(self, task_id: int) -> Dict:

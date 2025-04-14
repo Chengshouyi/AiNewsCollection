@@ -41,7 +41,8 @@ class CrawlerTasks(Base, BaseEntity):
     - last_run_success: 上次執行成功與否
     - last_run_message: 上次執行訊息
     - cron_expression: 排程-cron表達式
-    - scrape_phase: 當前任務階段
+    - scrape_phase: 當前爬取階段
+    - task_status: 當前任務狀態
     - retry_count: 重試次數
     - task_args: 任務參數 
         - max_pages: 最大頁數
