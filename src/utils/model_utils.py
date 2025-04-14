@@ -4,29 +4,7 @@ from src.error.errors import ValidationError
 from croniter import croniter
 from src.utils.transform_utils import str_to_enum, convert_to_dict, convert_hashable_dict_to_str_dict
 import re
-import enum
 
-
-class TaskPhase(enum.Enum):
-    """任務階段枚舉"""
-    INIT = "init"  # 初始化
-    LINK_COLLECTION = "link_collection"  # 連結收集階段
-    CONTENT_SCRAPING = "content_scraping"  # 內容爬取階段
-    COMPLETED = "completed"  # 完成
-    CANCELLED = "cancelled"  # 取消
-
-class ScrapeMode(enum.Enum):
-    """抓取模式枚舉"""
-    LINKS_ONLY = "links_only"  # 僅抓取連結
-    CONTENT_ONLY = "content_only"  # 僅抓取內容(從已有連結)
-    FULL_SCRAPE = "full_scrape"  # 連結與內容一起抓取
-
-class ArticleScrapeStatus(enum.Enum):
-    PENDING = "pending"  # 等待爬取
-    LINK_SAVED = "link_saved"  # 連結已保存
-    PARTIAL_SAVED = "partial_saved"  # 部分保存
-    CONTENT_SCRAPED = "content_scraped"  # 內容已爬取
-    FAILED = "failed"  # 爬取失敗
 
 
 def validate_int(field_name: str, required: bool = False):
@@ -563,21 +541,23 @@ def validate_positive_float(field_name: str, is_zero_allowed: bool = False, requ
         return value
     return validator
 
-def validate_task_phase(field_name: str, required: bool = False):
+def validate_scrape_phase(field_name: str, required: bool = False):
     """任務階段驗證"""
-    def validator(value: Any) -> Optional[TaskPhase]:
+    from src.utils.enum_utils import ScrapePhase
+    def validator(value: Any) -> Optional[ScrapePhase]:
         if value is None:
             if required:
                 raise ValidationError(f"{field_name}: 不能為空")
             return None
-        if isinstance(value, TaskPhase):
+        if isinstance(value, ScrapePhase):
             return value
         else:
-            return str_to_enum(value, TaskPhase, field_name)
+            return str_to_enum(value, ScrapePhase, field_name)
     return validator
 
 def validate_scrape_mode(field_name: str, required: bool = False):
     """抓取模式驗證"""
+    from src.utils.enum_utils import ScrapeMode
     def validator(value: Any) -> Optional[ScrapeMode]:
         if value is None:
             if required:
@@ -592,6 +572,7 @@ def validate_scrape_mode(field_name: str, required: bool = False):
 
 def validate_article_scrape_status(field_name: str, required: bool = False):
     """文章爬取狀態驗證"""
+    from src.utils.enum_utils import ArticleScrapeStatus
     def validator(value: Any) -> Optional[ArticleScrapeStatus]:
         if value is None:
             if required:
@@ -603,4 +584,18 @@ def validate_article_scrape_status(field_name: str, required: bool = False):
             return str_to_enum(value, ArticleScrapeStatus, field_name)
     return validator
 
+
+def validate_task_status(field_name: str, required: bool = False):
+    """任務狀態驗證"""
+    from src.utils.enum_utils import TaskStatus
+    def validator(value: Any) -> Optional[TaskStatus]:
+        if value is None:
+            if required:
+                raise ValidationError(f"{field_name}: 不能為空")
+            return None
+        if isinstance(value, TaskStatus):
+            return value
+        else:
+            return str_to_enum(value, TaskStatus, field_name)
+    return validator
 

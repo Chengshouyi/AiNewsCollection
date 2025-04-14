@@ -2,6 +2,7 @@ import pytest
 from datetime import datetime, timezone
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.error.errors import ValidationError
+from src.utils.enum_utils import TaskStatus
 
 class TestCrawlerTaskHistoryModel:
     """CrawlerTaskHistory 模型的測試類"""
@@ -18,6 +19,7 @@ class TestCrawlerTaskHistoryModel:
         assert history.articles_count is None
         assert history.end_time is None
         assert history.message is None
+        assert history.task_status == TaskStatus.INIT  # 檢查預設狀態
     
     def test_history_creation_with_all_fields(self):
         """測試使用所有欄位創建 CrawlerTaskHistory"""
@@ -28,7 +30,8 @@ class TestCrawlerTaskHistoryModel:
             end_time=now,
             success=True,
             message="測試完成",
-            articles_count=10
+            articles_count=10,
+            task_status=TaskStatus.COMPLETED
         )
         
         assert history.task_id == 1
@@ -37,7 +40,16 @@ class TestCrawlerTaskHistoryModel:
         assert history.success is True
         assert history.message == "測試完成"
         assert history.articles_count == 10
+        assert history.task_status == TaskStatus.COMPLETED
     
+    def test_task_status_default(self):
+        """測試 task_status 的預設值設置"""
+        history = CrawlerTaskHistory(task_id=1)
+        assert history.task_status == TaskStatus.INIT
+        
+        # 測試明確設置 task_status
+        history2 = CrawlerTaskHistory(task_id=1, task_status=TaskStatus.RUNNING)
+        assert history2.task_status == TaskStatus.RUNNING
     
     def test_history_repr(self):
         """測試 CrawlerTaskHistory 的 __repr__ 方法"""
@@ -71,6 +83,10 @@ class TestCrawlerTaskHistoryModel:
         now = datetime.now(timezone.utc)
         history.end_time = now
         assert history.end_time == now
+        
+        # 測試任務狀態欄位更新
+        history.task_status = TaskStatus.RUNNING
+        assert history.task_status == TaskStatus.RUNNING
     
     def test_relationship_attributes(self):
         """測試關聯屬性存在"""
@@ -87,17 +103,19 @@ class TestCrawlerTaskHistoryModel:
             end_time=now,
             success=True,
             message="測試完成",
-            articles_count=10
+            articles_count=10,
+            task_status=TaskStatus.COMPLETED
         )
         
         history_dict = history.to_dict()
         expected_keys = {
             'id', 'created_at', 'updated_at', 'task_id', 'start_time', 'end_time',
-            'success', 'message', 'articles_count', 'duration'
+            'success', 'message', 'articles_count', 'duration', 'task_status'
         }
         
         assert set(history_dict.keys()) == expected_keys
         assert history_dict['duration'] == 0.0  # start_time 和 end_time 相同
+        assert history_dict['task_status'] == TaskStatus.COMPLETED.value
         
         # 測試沒有 end_time 的情況
         history.end_time = None

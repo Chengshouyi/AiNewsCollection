@@ -14,13 +14,14 @@ from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepos
 from src.database.articles_repository import ArticlesRepository
 from src.models.base_model import Base
 from src.models.crawler_tasks_model import CrawlerTasks, TASK_ARGS_DEFAULT
-from src.models.crawler_tasks_schema import validate_task_phase
+from src.models.crawler_tasks_schema import validate_scrape_phase
 from src.models.crawlers_model import Crawlers
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.articles_model import Articles
 from src.error.errors import ValidationError
-from src.utils.model_utils import ScrapeMode, TaskPhase, validate_positive_int, validate_boolean, validate_task_args
-from contextlib import contextmanager
+from src.utils.enum_utils import ScrapeMode, ScrapePhase
+from src.utils.model_utils import validate_task_args
+
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -272,7 +273,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             logger.error(error_msg, exc_info=True)
             raise e
 
-    def get_task_status(self, task_id: int) -> Dict:
+    def get_scrape_phase(self, task_id: int) -> Dict:
         """獲取任務的當前狀態（從歷史記錄中）"""
         try:
             with self._transaction():
@@ -385,7 +386,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 try:
                     # 更新任務階段為初始階段
-                    self.update_task_phase(task_id, TaskPhase.INIT)
+                    self.update_scrape_phase(task_id, ScrapePhase.INIT)
                     
                     # 獲取爬蟲資訊
                     crawler = crawlers_repo.find_by_crawler_id(task.crawler_id, is_active=True)
@@ -418,7 +419,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     
                     # 更新任務階段為完成
                     if result.get('success', False):
-                        self.update_task_phase(task_id, TaskPhase.COMPLETED)
+                        self.update_scrape_phase(task_id, ScrapePhase.COMPLETED)
                         # 成功執行後重置重試次數
                         self.reset_retry_count(task_id)
                     
@@ -510,7 +511,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 try:
                     # 更新任務階段為連結收集階段
-                    self.update_task_phase(task_id, TaskPhase.LINK_COLLECTION)
+                    self.update_scrape_phase(task_id, ScrapePhase.LINK_COLLECTION)
                     
                     # 獲取爬蟲資訊
                     crawler = crawlers_repo.find_by_crawler_id(task.crawler_id, is_active=True)
@@ -560,7 +561,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     history_repo.update(history_id, validated_history_update)
                     
 
-                    self.update_task_phase(task_id, TaskPhase.COMPLETED)
+                    self.update_scrape_phase(task_id, ScrapePhase.COMPLETED)
                     next_step = "completed"
                     
                     # 成功執行後重置重試次數
@@ -658,7 +659,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 try:
                     # 更新任務階段為內容抓取階段
-                    self.update_task_phase(task_id, TaskPhase.CONTENT_SCRAPING)
+                    self.update_scrape_phase(task_id, ScrapePhase.CONTENT_SCRAPING)
                     
                     # 獲取爬蟲資訊
                     crawler = crawlers_repo.find_by_crawler_id(task.crawler_id, is_active=True)
@@ -768,9 +769,9 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             history_id = history.id if history else None
             
             # 檢查任務狀態，只有運行中的任務才能取消
-            task_status = self.get_task_status(task_id)
-            if task_status.get('status', '') != 'running':
-                return {"success": False, "message": f"任務 {task_id} 當前狀態為 {task_status.get('status', '')}，無法取消"}
+            scrape_phase = self.get_scrape_phase(task_id)
+            if scrape_phase.get('status', '') != 'running':
+                return {"success": False, "message": f"任務 {task_id} 當前狀態為 {scrape_phase.get('status', '')}，無法取消"}
             
             # 檢查爬蟲實例是否存在
             if task_id not in self.running_crawlers:
@@ -807,18 +808,18 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 return {"success": False, "message": f"無法取消任務 {task_id}"}
             
             # 獲取任務取消後的狀態（包含部分數據保存信息）
-            crawler_task_status = crawler.get_task_status(task_id)
+            crawler_scrape_phase = crawler.get_scrape_phase(task_id)
             
             # 更新任務歷史記錄
             history_update_data = {
                 'end_time': datetime.now(timezone.utc),
                 'status': 'cancelled',
-                'message': crawler_task_status.get('message', '任務已被使用者取消')
+                'message': crawler_scrape_phase.get('message', '任務已被使用者取消')
             }
             
             # 如果有部分數據被保存，記錄到歷史記錄中
-            if crawler_task_status.get('cancelled_but_saved_partial', False):
-                partial_saved_count = crawler_task_status.get('partial_saved_count', 0)
+            if crawler_scrape_phase.get('cancelled_but_saved_partial', False):
+                partial_saved_count = crawler_scrape_phase.get('partial_saved_count', 0)
                 history_update_data['articles_count'] = partial_saved_count
                 history_update_data['message'] += f"，已保存 {partial_saved_count} 篇部分完成的文章"
             
@@ -834,7 +835,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             tasks_repo.update_last_run(
                 task_id, 
                 False, 
-                crawler_task_status.get('message', '任務已被使用者取消')
+                crawler_scrape_phase.get('message', '任務已被使用者取消')
             )
             
             # 增加延遲，確保資源清理完成
@@ -847,14 +848,14 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             result = {
                 "success": True,
                 "message": f"任務 {task_id} 已成功取消",
-                "task_status": crawler_task_status
+                "scrape_phase": crawler_scrape_phase
             }
             
             # 如果有部分數據被保存，添加到結果中
-            if 'partial_data_saved' in crawler_task_status and crawler_task_status['partial_data_saved']:
+            if 'partial_data_saved' in crawler_scrape_phase and crawler_scrape_phase['partial_data_saved']:
                 result['partial_data_saved'] = True
                 result['partial_saved_info'] = {
-                    'count': crawler_task_status.get('partial_saved_count', 0),
+                    'count': crawler_scrape_phase.get('partial_saved_count', 0),
                     'saved_to_csv': save_partial_results,
                     'saved_to_database': save_partial_to_database
                 }
@@ -904,7 +905,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'success': False,
                         'message': '未提供爬蟲ID',
                         'errors': '未提供爬蟲ID',
-                        'task_phase': TaskPhase.INIT.value,
+                        'scrape_phase': ScrapePhase.INIT.value,
                         'test_results': None
                     }
                 
@@ -915,7 +916,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'success': False,
                         'message': '爬蟲不存在',
                         'errors': '爬蟲不存在',
-                        'task_phase': TaskPhase.INIT.value,
+                        'scrape_phase': ScrapePhase.INIT.value,
                         'test_results': None
                     }
             except ValidationError as e:
@@ -924,7 +925,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     'success': False,
                     'message': '爬蟲搜尋失敗',
                     'errors': str(e),
-                    'task_phase': TaskPhase.INIT.value,
+                    'scrape_phase': ScrapePhase.INIT.value,
                     'test_results': None
                 }
             
@@ -937,12 +938,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     'success': False,
                     'message': '任務資料驗證失敗',
                     'errors': str(e),
-                    'task_phase': TaskPhase.INIT.value,
+                    'scrape_phase': ScrapePhase.INIT.value,
                     'test_results': None
                 }
             
             # 設定階段為初始階段
-            data['current_phase'] = TaskPhase.INIT
+            data['scrape_phase'] = ScrapePhase.INIT
             
             # 實際測試爬蟲功能
             try:
@@ -954,7 +955,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'success': False,
                         'message': '未提供爬蟲名稱',
                         'errors': '未提供爬蟲名稱',
-                        'task_phase': TaskPhase.INIT.value,
+                        'scrape_phase': ScrapePhase.INIT.value,
                         'test_results': None
                     }
                 # 測試爬蟲是否能成功初始化
@@ -966,7 +967,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'success': False,
                         'message': '爬蟲初始化失敗',
                         'errors': '爬蟲初始化失敗',
-                        'task_phase': TaskPhase.INIT.value,
+                        'scrape_phase': ScrapePhase.INIT.value,
                         'test_results': None
                     }
 
@@ -1019,7 +1020,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                                 'links_found': links_found,
                                 'execution_time': execution_time
                             },
-                            'task_phase': TaskPhase.LINK_COLLECTION.value
+                            'scrape_phase': ScrapePhase.LINK_COLLECTION.value
                         }
                     else:
                         # 爬蟲執行失敗
@@ -1028,7 +1029,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                             'success': False,
                             'message': f'爬蟲測試失敗: {result.get("message", "未知錯誤")}',
                             'errors': result.get("message", "未知錯誤"),
-                            'task_phase': TaskPhase.INIT.value,
+                            'scrape_phase': ScrapePhase.INIT.value,
                             'test_results': None
                         }
                 except TimeoutException:
@@ -1036,7 +1037,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     return {
                         'success': False,
                         'message': '爬蟲測試超時，請檢查爬蟲配置或網站狀態',
-                        'task_phase': TaskPhase.INIT.value
+                        'scrape_phase': ScrapePhase.INIT.value
                     }
                 except Exception as e:
                     # 爬蟲執行出錯
@@ -1044,7 +1045,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     return {
                         'success': False,
                         'message': f'爬蟲測試執行異常: {str(e)}',
-                        'task_phase': TaskPhase.INIT.value,
+                        'scrape_phase': ScrapePhase.INIT.value,
                         'errors': str(e),
                         'test_results': None
                     }
@@ -1054,7 +1055,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 return {
                     'success': False,
                     'message': f'爬蟲連結收集測試失敗: {str(e)}',
-                    'task_phase': TaskPhase.INIT.value,
+                    'scrape_phase': ScrapePhase.INIT.value,
                     'errors': str(e),
                     'test_results': None
                 }
@@ -1293,7 +1294,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'message': error_msg
             }
 
-    def update_task_phase(self, task_id: int, phase: TaskPhase) -> Dict:
+    def update_scrape_phase(self, task_id: int, phase: ScrapePhase) -> Dict:
         """更新任務階段
         
         Args:
@@ -1309,18 +1310,20 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not tasks_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'task': None
                     }
                 
                 task = tasks_repo.get_by_id(task_id)
                 if not task:
                     return {
                         'success': False,
-                        'message': '任務不存在'
+                        'message': '任務不存在',
+                        'task': None
                     }
                 
                 # 更新任務階段
-                task_data = {'current_phase': phase}
+                task_data = {'scrape_phase': phase}
                 result = tasks_repo.update(task_id, task_data)
                 
                 return {
@@ -1333,7 +1336,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
-                'message': error_msg
+                'message': error_msg,
+                'task': None
             }
 
     def increment_retry_count(self, task_id: int) -> Dict:
@@ -1351,14 +1355,22 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not tasks_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'exceeded_max_retries': None,
+                        'retry_count': None,
+                        'max_retries': None,
+                        'task': None
                     }
                 
                 task = tasks_repo.get_by_id(task_id)
                 if not task:
                     return {
                         'success': False,
-                        'message': '任務不存在'
+                        'message': '任務不存在',
+                        'exceeded_max_retries': None,
+                        'retry_count': None,
+                        'max_retries': None,
+                        'task': None
                     }
                 
                 # 檢查是否已超過最大重試次數
@@ -1369,7 +1381,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'message': f'已超過最大重試次數 {max_retries}',
                         'exceeded_max_retries': True,
                         'retry_count': task.retry_count,
-                        'max_retries': max_retries
+                        'max_retries': max_retries,
+                        'task': task
                     }
                 
                 # 增加重試次數
@@ -1393,7 +1406,11 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
-                'message': error_msg
+                'message': error_msg,
+                'exceeded_max_retries': None,
+                'retry_count': None,
+                'max_retries': None,
+                'task': None
             }
 
     def reset_retry_count(self, task_id: int) -> Dict:
@@ -1411,14 +1428,16 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not tasks_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'task': None
                     }
                 
                 task = tasks_repo.get_by_id(task_id)
                 if not task:
                     return {
                         'success': False,
-                        'message': '任務不存在'
+                        'message': '任務不存在',
+                        'task': None
                     }
                 
                 # 重置重試次數
@@ -1435,7 +1454,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
-                'message': error_msg
+                'message': error_msg,
+                'task': None
             }
 
     def update_max_retries(self, task_id: int, max_retries: int) -> Dict:
@@ -1460,14 +1480,16 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not tasks_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器'
+                        'message': '無法取得資料庫存取器',
+                        'task': None
                     }
                 
                 task = tasks_repo.get_by_id(task_id)
                 if not task:
                     return {
                         'success': False,
-                        'message': '任務不存在'
+                        'message': '任務不存在',
+                        'task': None
                     }
                 
                 # 更新最大重試次數
@@ -1484,7 +1506,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
-                'message': error_msg
+                'message': error_msg,
+                'task': None
             }
 
     def get_retryable_tasks(self) -> Dict:

@@ -6,6 +6,7 @@ from src.models.crawler_task_history_schema import (
 )
 from src.error.errors import ValidationError
 from datetime import timedelta
+from src.utils.enum_utils import TaskStatus
 
 class TestCrawlerTaskHistoryCreateSchema:
     """CrawlerTaskHistoryCreateSchema 的測試類"""
@@ -23,6 +24,7 @@ class TestCrawlerTaskHistoryCreateSchema:
         assert schema.success is None
         assert schema.message is None
         assert schema.articles_count is None
+        assert schema.task_status == TaskStatus.INIT
     
     def test_valid_complete_create(self):
         """測試完整有效創建"""
@@ -33,7 +35,8 @@ class TestCrawlerTaskHistoryCreateSchema:
             "end_time": now,
             "success": True,
             "message": "測試訊息",
-            "articles_count": 10
+            "articles_count": 10,
+            "task_status": TaskStatus.COMPLETED
         }
         schema = CrawlerTaskHistoryCreateSchema.model_validate(data)
         
@@ -43,6 +46,7 @@ class TestCrawlerTaskHistoryCreateSchema:
         assert schema.success is True
         assert schema.message == "測試訊息"
         assert schema.articles_count == 10
+        assert schema.task_status == TaskStatus.COMPLETED
     
     def test_task_id_validation(self):
         """測試 task_id 驗證"""
@@ -86,6 +90,18 @@ class TestCrawlerTaskHistoryCreateSchema:
             with pytest.raises(ValidationError) as exc_info:
                 CrawlerTaskHistoryCreateSchema.model_validate(data)
             assert expected_error in str(exc_info.value)
+            
+    def test_task_status_validation(self):
+        """測試任務狀態驗證"""
+        invalid_cases = [
+            ({"task_id": 1, "task_status": "invalid_status"}, "task_status: 無效的枚舉值"),
+            ({"task_id": 1, "task_status": 123}, "task_status: 無效的輸入類型")
+        ]
+        
+        for data, expected_error in invalid_cases:
+            with pytest.raises(ValidationError) as exc_info:
+                CrawlerTaskHistoryCreateSchema.model_validate(data)
+            assert expected_error in str(exc_info.value)
 
 class TestCrawlerTaskHistoryUpdateSchema:
     """CrawlerTaskHistoryUpdateSchema 的測試類"""
@@ -100,22 +116,27 @@ class TestCrawlerTaskHistoryUpdateSchema:
         assert schema.end_time is None
         assert schema.message is None
         assert schema.articles_count is None
+        assert schema.task_status is None
     
     def test_valid_complete_update(self):
         """測試完整有效更新"""
         now = datetime.now(timezone.utc)
         data = {
             "end_time": now,
+            "start_time": now,
             "success": True,
             "message": "更新訊息",
-            "articles_count": 20
+            "articles_count": 20,
+            "task_status": TaskStatus.COMPLETED
         }
         schema = CrawlerTaskHistoryUpdateSchema.model_validate(data)
         
         assert schema.end_time == now
+        assert schema.start_time == now
         assert schema.success is True
         assert schema.message == "更新訊息"
         assert schema.articles_count == 20
+        assert schema.task_status == TaskStatus.COMPLETED
     
     def test_immutable_fields_update(self):
         """測試不可變欄位更新"""
@@ -142,7 +163,8 @@ class TestCrawlerTaskHistoryUpdateSchema:
             ({"articles_count": -1}, "articles_count: 必須是正整數且大於等於0"),
             ({"articles_count": "abc"}, "articles_count: 必須是整數"),
             ({"end_time": "invalid-date"}, "end_time: 無效的日期時間格式"),
-            ({"message": "a" * 65537}, "message: 長度不能超過 65536 字元")
+            ({"message": "a" * 65537}, "message: 長度不能超過 65536 字元"),
+            ({"task_status": "invalid_status"}, "task_status: 無效的枚舉值")
         ]
         
         for data, expected_error in invalid_cases:

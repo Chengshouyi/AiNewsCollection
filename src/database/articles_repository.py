@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class ArticlesRepository(BaseRepository[Articles]):
-    """Article 特定的Repository"""
+    """Article 的Repository"""
     
     @overload
     def get_schema_class(self, schema_type: Literal[SchemaType.UPDATE]) -> Type[ArticleUpdateSchema]: ...

@@ -5,7 +5,7 @@ from src.error.errors import ValidationError
 import json
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
-from src.models.crawler_tasks_model import TaskPhase, ScrapeMode
+from src.models.crawler_tasks_model import ScrapePhase, ScrapeMode
 import enum
 
 @pytest.fixture
@@ -52,7 +52,7 @@ class CrawlerTaskMock:
         self.cron_expression = data.get('cron_expression')
         self.is_scheduled = data.get('is_scheduled', False)
         # 使用枚舉值或字串
-        self.current_phase = data.get('current_phase', TaskPhase.INIT)
+        self.scrape_phase = data.get('scrape_phase', ScrapePhase.INIT)
         self.max_retries = data.get('max_retries', 3)
         self.retry_count = data.get('retry_count', 0)
         self.scrape_mode = data.get('scrape_mode', ScrapeMode.FULL_SCRAPE)
@@ -63,7 +63,7 @@ class CrawlerTaskMock:
     def to_dict(self):
         """將物件轉換為字典，模擬模型的 to_dict 方法"""
         # 處理枚舉類型
-        current_phase = self.current_phase.value if hasattr(self.current_phase, 'value') else self.current_phase
+        scrape_phase = self.scrape_phase.value if hasattr(self.scrape_phase, 'value') else self.scrape_phase
         scrape_mode = self.scrape_mode.value if hasattr(self.scrape_mode, 'value') else self.scrape_mode
 
         return {
@@ -79,7 +79,7 @@ class CrawlerTaskMock:
             'last_run_message': self.last_run_message,
             'cron_expression': self.cron_expression,
             'is_scheduled': self.is_scheduled,
-            'current_phase': current_phase,
+            'scrape_phase': scrape_phase,
             'max_retries': self.max_retries,
             'retry_count': self.retry_count,
             'scrape_mode': scrape_mode,
@@ -101,7 +101,7 @@ def sample_tasks():
             'task_args': {'max_items': 100},
             'cron_expression': '0 0 * * *',
             'is_scheduled': True,
-            'current_phase': TaskPhase.INIT,
+            'scrape_phase': ScrapePhase.INIT,
             'max_retries': 3,
             'retry_count': 0,
             'scrape_mode': ScrapeMode.FULL_SCRAPE,
@@ -118,7 +118,7 @@ def sample_tasks():
             'task_args': {'max_items': 50},
             'cron_expression': '0 0 * * 1-5',
             'is_scheduled': True,
-            'current_phase': TaskPhase.INIT,
+            'scrape_phase': ScrapePhase.INIT,
             'max_retries': 3,
             'retry_count': 0,
             'scrape_mode': ScrapeMode.FULL_SCRAPE,
@@ -134,7 +134,7 @@ def sample_tasks():
             'ai_only': False,
             'task_args': {'max_pages': 5},
             'is_scheduled': False,
-            'current_phase': TaskPhase.INIT,
+            'scrape_phase': ScrapePhase.INIT,
             'max_retries': 3,
             'retry_count': 0,
             'scrape_mode': ScrapeMode.FULL_SCRAPE,
@@ -195,7 +195,7 @@ def mock_task_service(monkeypatch, sample_tasks):
                 'last_run_at': None,
                 'last_run_success': None,
                 'last_run_message': None,
-                'current_phase': TaskPhase.INIT,
+                'scrape_phase': ScrapePhase.INIT,
                 'max_retries': data.get('max_retries', 3), # 從 data 讀取 max_retries
                 'retry_count': 0,
                 # 從頂層 data 讀取 scrape_mode，若無則使用預設值
@@ -291,7 +291,7 @@ def mock_task_service(monkeypatch, sample_tasks):
             tasks_dicts = [task.to_dict() for task in tasks]
             return {'success': True, 'tasks': tasks_dicts}  # 返回字典列表而非對象列表
 
-        def get_task_status(self, task_id):
+        def get_scrape_phase(self, task_id):
             task = self.tasks.get(task_id)
             if not task:
                 return {'success': False, 'message': '任務不存在'}
@@ -324,7 +324,7 @@ def mock_task_service(monkeypatch, sample_tasks):
                 return {'success': False, 'message': '任務不存在'}
             # 模擬狀態變更
             task.status = 'content_scraping'
-            task.current_phase = TaskPhase.CONTENT_SCRAPING
+            task.scrape_phase = ScrapePhase.CONTENT_SCRAPING
             # 設定抓取模式 (這個特定方法強制設定為 CONTENT_ONLY)
             task.scrape_mode = ScrapeMode.CONTENT_ONLY
             return {'success': True, 'message': '開始抓取文章內容', 'articles_count': len(link_ids)}
@@ -335,7 +335,7 @@ def mock_task_service(monkeypatch, sample_tasks):
                 return {'success': False, 'message': '任務不存在'}
             # 模擬狀態變更
             task.status = 'link_collecting'
-            task.current_phase = TaskPhase.LINK_COLLECTION
+            task.scrape_phase = ScrapePhase.LINK_COLLECTION
             # 設定抓取模式 (這個特定方法強制設定為 LINKS_ONLY)
             task.scrape_mode = ScrapeMode.LINKS_ONLY
             return {
@@ -643,7 +643,7 @@ class TestTasksApiRoutes:
         assert 'scrape_mode' in data
         assert data['scrape_mode'] == 'full_scrape'
 
-    def test_get_manual_task_status(self, client, mock_task_service):
+    def test_get_manual_scrape_phase(self, client, mock_task_service):
         """測試獲取手動任務狀態"""
         response = client.get('/api/tasks/manual/3/status')
         assert response.status_code == 200

@@ -4,6 +4,8 @@ from datetime import datetime
 from typing import Optional
 from src.models.base_model import Base
 from .base_entity import BaseEntity
+from src.utils.enum_utils import TaskStatus
+from sqlalchemy import Enum
 
 class CrawlerTaskHistory(Base, BaseEntity):
     """爬蟲任務執行歷史記錄
@@ -28,7 +30,11 @@ class CrawlerTaskHistory(Base, BaseEntity):
     success: Mapped[Optional[bool]] = mapped_column(Boolean)
     message: Mapped[Optional[str]] = mapped_column(Text)
     articles_count: Mapped[Optional[int]] = mapped_column(Integer)
-
+    task_status: Mapped[TaskStatus] = mapped_column(
+        Enum(TaskStatus),
+        default=TaskStatus.INIT,
+        nullable=False
+    )
     # 關聯到爬蟲任務
     task = relationship("CrawlerTasks", back_populates="history", lazy="joined")
 
@@ -36,6 +42,8 @@ class CrawlerTaskHistory(Base, BaseEntity):
     _datetime_fields_to_watch = {'start_time', 'end_time'}
 
     def __init__(self, **kwargs):
+        if 'task_status' not in kwargs:
+            kwargs['task_status'] = TaskStatus.INIT
         # 告知父類需要監聽的 datetime 欄位
         super().__init__(datetime_fields_to_watch=
                          self._datetime_fields_to_watch, **kwargs)
@@ -52,5 +60,6 @@ class CrawlerTaskHistory(Base, BaseEntity):
             'success': self.success,
             'message': self.message,
             'articles_count': self.articles_count,
+            'task_status': self.task_status.value,
             'duration': (self.end_time - self.start_time).total_seconds() if self.end_time and self.start_time else None
         }

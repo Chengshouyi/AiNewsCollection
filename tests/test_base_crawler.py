@@ -13,10 +13,12 @@ from src.crawlers.base_crawler import BaseCrawler
 from src.crawlers.configs.site_config import SiteConfig
 from src.services.article_service import ArticleService
 from src.models.base_model import Base
-from src.models.articles_model import Articles, ArticleScrapeStatus
+from src.models.articles_model import Articles
 from src.crawlers.bnext_scraper import BnextUtils
 from src.database.database_manager import DatabaseManager
-from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT, ScrapeMode
+from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
+from src.utils.enum_utils import ScrapeMode, ArticleScrapeStatus, ScrapePhase
+
 
 # 配置日誌
 logger = logging.getLogger(__name__)
@@ -321,9 +323,9 @@ class TestBaseCrawler:
             assert result['articles_count'] == 2
             
             # 驗證任務狀態
-            task_status = crawler.get_task_status(task_id)
-            assert task_status["status"] == "completed"
-            assert task_status["progress"] == 100
+            scrape_phase = crawler.get_scrape_phase(task_id)
+            assert scrape_phase["scrape_phase"] == ScrapePhase.COMPLETED.value
+            assert scrape_phase["progress"] == 100
             
             # 驗證方法調用
             assert crawler.fetch_article_links_called
@@ -352,8 +354,8 @@ class TestBaseCrawler:
         assert '沒有獲取到任何文章連結' in result['message']
         
         # 驗證任務狀態
-        task_status = crawler.get_task_status(task_id)
-        assert task_status["status"] == "completed" 
+        scrape_phase = crawler.get_scrape_phase(task_id)
+        assert scrape_phase["scrape_phase"] == ScrapePhase.COMPLETED.value
         
         # 驗證 fetch_articles 沒有被調用
         assert not crawler.fetch_articles_called
@@ -386,9 +388,9 @@ class TestBaseCrawler:
         assert '測試執行錯誤' in result['message']
         
         # 驗證任務狀態
-        task_status = crawler.get_task_status(task_id)
-        assert task_status["status"] == "failed"
-        assert '測試執行錯誤' in task_status["message"]
+        scrape_phase = crawler.get_scrape_phase(task_id)
+        assert scrape_phase["scrape_phase"] == ScrapePhase.FAILED.value
+        assert '測試執行錯誤' in scrape_phase["message"]
     
     def test_save_to_csv(self, mock_config_file, article_service, logs_dir):
         """測試保存數據到CSV文件"""
@@ -524,24 +526,24 @@ class TestBaseCrawler:
         assert article_data[0]['link'] == "https://example.com/1"
         assert article_data[1]['link'] == "https://example.com/2"
     
-    def test_get_task_status(self, mock_config_file, article_service):
+    def test_get_scrape_phase(self, mock_config_file, article_service):
         """測試獲取任務狀態"""
         crawler = MockCrawlerForTest(mock_config_file, article_service)
         
         # 測試獲取不存在任務的狀態
-        status = crawler.get_task_status(999)
-        assert status["status"] == "unknown"
+        status = crawler.get_scrape_phase(999)
+        assert status["scrape_phase"] == ScrapePhase.UNKNOWN.value
         
         # 測試獲取存在任務的狀態
         task_id = 1
-        crawler.task_status[task_id] = {
-            "status": "running",
+        crawler.scrape_phase[task_id] = {
+            "scrape_phase": ScrapePhase.LINK_COLLECTION.value,
             "progress": 50,
             "message": "測試任務"
         }
         
-        status = crawler.get_task_status(task_id)
-        assert status["status"] == "running"
+        status = crawler.get_scrape_phase(task_id)
+        assert status["scrape_phase"] == ScrapePhase.LINK_COLLECTION.value
         assert status["progress"] == 50
         assert status["message"] == "測試任務"
     
@@ -569,12 +571,12 @@ class TestBaseCrawler:
         
         # 測試任務取消的情況
         task_id = 123
-        crawler.task_status[task_id] = {
-            'status': 'running',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.LINK_COLLECTION.value,
             'progress': 50,
             'message': '正在執行任務',
             'start_time': datetime.now(timezone.utc),
-            'cancelled': True
+            'cancel_flag': True
         }
         
         # 模擬一個正常操作，但在重試期間檢查到任務已取消
@@ -585,34 +587,34 @@ class TestBaseCrawler:
         # 操作應該沒有被調用，因為任務已取消
         operation_with_task_id.assert_not_called()
 
-    def test_update_task_status(self, mock_config_file, article_service):
+    def test_update_scrape_phase(self, mock_config_file, article_service):
         """測試更新任務狀態功能"""
         crawler = MockCrawlerForTest(mock_config_file, article_service)
         
         task_id = 1
         # 初始化任務狀態
-        crawler.task_status[task_id] = {
-            'status': 'running',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.INIT.value,
             'progress': 0,
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc)
         }
         
         # 更新進度
-        crawler._update_task_status(task_id, 50, '處理中')
-        assert crawler.task_status[task_id]['progress'] == 50
-        assert crawler.task_status[task_id]['message'] == '處理中'
-        assert crawler.task_status[task_id]['status'] == 'running'
+        crawler._update_scrape_phase(task_id, 50, '處理中')
+        assert crawler.scrape_phase[task_id]['progress'] == 50
+        assert crawler.scrape_phase[task_id]['message'] == '處理中'
+        assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.INIT.value
         
         # 更新狀態
-        crawler._update_task_status(task_id, 100, '完成', 'completed')
-        assert crawler.task_status[task_id]['progress'] == 100
-        assert crawler.task_status[task_id]['message'] == '完成'
-        assert crawler.task_status[task_id]['status'] == 'completed'
+        crawler._update_scrape_phase(task_id, 100, '完成', ScrapePhase.COMPLETED)
+        assert crawler.scrape_phase[task_id]['progress'] == 100
+        assert crawler.scrape_phase[task_id]['message'] == '完成'
+        assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.COMPLETED.value
         
         # 測試更新不存在的任務
-        crawler._update_task_status(999, 50, '不存在的任務')
-        assert 999 not in crawler.task_status
+        crawler._update_scrape_phase(999, 50, '不存在的任務')
+        assert 999 not in crawler.scrape_phase
 
     def test_fetch_article_links_from_db(self, mock_config_file, article_service, session):
         """測試從資料庫獲取未爬取的文章連結"""
@@ -840,7 +842,7 @@ class TestBaseCrawler:
         task_id = 1
         
         # 初始化任務狀態
-        crawler.task_status[task_id] = {
+        crawler.scrape_phase[task_id] = {
             'status': 'running',
             'progress': 0,
             'message': '開始執行任務',
@@ -883,7 +885,7 @@ class TestBaseCrawler:
         
         result = crawler._validate_and_update_task_params(task_id, invalid_params)
         assert result is False
-        assert crawler.task_status[task_id]['status'] == 'failed'
+        assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.FAILED.value
         
         # 測試未知參數
         crawler.update_config_called = False
@@ -921,7 +923,7 @@ class TestBaseCrawler:
         task_id = 1
         
         # 初始化任務狀態
-        crawler.task_status[task_id] = {
+        crawler.scrape_phase[task_id] = {
             'status': 'running',
             'progress': 0,
             'message': '開始執行任務',
@@ -988,7 +990,7 @@ class TestBaseCrawler:
             task_id = 1
             
             # 初始化任務狀態
-            crawler.task_status[task_id] = {
+            crawler.scrape_phase[task_id] = {
                 'status': 'running',
                 'progress': 0,
                 'message': '開始執行任務',
@@ -1065,8 +1067,8 @@ class TestBaseCrawler:
         
         # 測試取消正在執行的任務
         task_id = 1
-        crawler.task_status[task_id] = {
-            'status': 'running',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.LINK_COLLECTION.value,
             'progress': 50,
             'message': '正在執行任務',
             'start_time': datetime.now(timezone.utc)
@@ -1074,13 +1076,13 @@ class TestBaseCrawler:
         
         result = crawler.cancel_task(task_id)
         assert result is True
-        assert crawler.task_status[task_id]['status'] == 'cancelled'
-        assert crawler.task_status[task_id]['message'] == '任務已取消'
+        assert crawler.scrape_phase[task_id]['cancel_flag'] == True
+        assert crawler.scrape_phase[task_id]['message'] == '任務已取消'
         
         # 測試取消已完成的任務
         task_id = 2
-        crawler.task_status[task_id] = {
-            'status': 'completed',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.COMPLETED.value,
             'progress': 100,
             'message': '任務已完成',
             'start_time': datetime.now(timezone.utc)
@@ -1088,7 +1090,7 @@ class TestBaseCrawler:
         
         result = crawler.cancel_task(task_id)
         assert result is False
-        assert crawler.task_status[task_id]['status'] == 'completed'
+        assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.COMPLETED.value
 
     def test_check_if_cancelled(self, mock_config_file, article_service):
         """測試檢查任務是否被取消的方法"""
@@ -1100,12 +1102,12 @@ class TestBaseCrawler:
         
         # 測試未取消的任務
         task_id = 1
-        crawler.task_status[task_id] = {
-            'status': 'running',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.LINK_COLLECTION.value,
             'progress': 50,
             'message': '正在執行任務',
             'start_time': datetime.now(timezone.utc),
-            'cancelled': False
+            'cancel_flag': False
         }
         
         result = crawler._check_if_cancelled(task_id)
@@ -1113,12 +1115,12 @@ class TestBaseCrawler:
         
         # 測試已取消的任務
         task_id = 2
-        crawler.task_status[task_id] = {
-            'status': 'running',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.LINK_COLLECTION.value,
             'progress': 50,
             'message': '正在執行任務',
             'start_time': datetime.now(timezone.utc),
-            'cancelled': True
+            'cancel_flag': True
         }
         
         result = crawler._check_if_cancelled(task_id)
@@ -1126,8 +1128,8 @@ class TestBaseCrawler:
         
         # 測試沒有設置 cancelled 標誌的任務
         task_id = 3
-        crawler.task_status[task_id] = {
-            'status': 'running',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.LINK_COLLECTION.value,
             'progress': 50,
             'message': '正在執行任務',
             'start_time': datetime.now(timezone.utc)
@@ -1253,7 +1255,7 @@ class TestBaseCrawler:
         }
         
         # 初始化任務狀態
-        crawler.task_status[task_id] = {
+        crawler.scrape_phase[task_id] = {
             'status': 'running',
             'progress': 0,
             'message': '開始執行任務',
@@ -1300,7 +1302,7 @@ class TestBaseCrawler:
         task_id = 1
         
         # 初始化任務狀態
-        crawler.task_status[task_id] = {
+        crawler.scrape_phase[task_id] = {
             'status': 'running',
             'progress': 0,
             'message': '開始執行任務',
@@ -1328,9 +1330,9 @@ class TestBaseCrawler:
         result = crawler._validate_and_update_task_params(task_id, invalid_params)
         assert result is False
         # 驗證狀態更新為失敗
-        assert crawler.task_status[task_id]['status'] == 'failed'
+        assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.FAILED.value
         # 驗證錯誤消息包含預期文本
-        assert "任務參數驗證失敗: task_args: task_args.article_links: 必填欄位不能缺少" in crawler.task_status[task_id]['message']
+        assert "任務參數驗證失敗: task_args: task_args.article_links: 必填欄位不能缺少" in crawler.scrape_phase[task_id]['message']
 
     def test_execute_links_only_task(self, mock_config_file, article_service):
         """測試僅抓取連結的任務執行模式"""
@@ -1343,7 +1345,7 @@ class TestBaseCrawler:
         }
         
         # 初始化任務狀態
-        crawler.task_status[task_id] = {
+        crawler.scrape_phase[task_id] = {
             'status': 'running',
             'progress': 0,
             'message': '開始執行任務',
@@ -1375,8 +1377,8 @@ class TestBaseCrawler:
         assert result['success'] is True
         assert result['message'] == '文章連結收集完成'
         assert result['articles_count'] == 2
-        assert crawler.task_status[task_id]['status'] == 'completed'
-        assert crawler.task_status[task_id]['progress'] == 100
+        assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.COMPLETED.value
+        assert crawler.scrape_phase[task_id]['progress'] == 100
     
     def test_execute_full_scrape_task(self, mock_config_file, article_service):
         """測試完整抓取模式 (連結和內容)"""
@@ -1389,8 +1391,8 @@ class TestBaseCrawler:
         }
         
         # 初始化任務狀態
-        crawler.task_status[task_id] = {
-            'status': 'running',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.LINK_COLLECTION.value,
             'progress': 0,
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc)
@@ -1445,8 +1447,8 @@ class TestBaseCrawler:
         assert result['success'] is True
         assert result['message'] == '任務完成'
         assert result['articles_count'] == 2
-        assert crawler.task_status[task_id]['status'] == 'completed'
-        assert crawler.task_status[task_id]['progress'] == 100
+        assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.COMPLETED.value
+        assert crawler.scrape_phase[task_id]['progress'] == 100
     
     def test_execute_content_only_task_with_article_ids(self, mock_config_file, article_service):
         """測試使用文章ID列表的內容抓取模式"""
@@ -1462,8 +1464,8 @@ class TestBaseCrawler:
         }
         
         # 初始化任務狀態
-        crawler.task_status[task_id] = {
-            'status': 'running',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.LINK_COLLECTION.value,
             'progress': 0,
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc)
@@ -1524,8 +1526,8 @@ class TestBaseCrawler:
         assert result['success'] is True
         assert result['message'] == '任務完成'
         assert 'articles_count' in result
-        assert crawler.task_status[task_id]['status'] == 'completed'
-        assert crawler.task_status[task_id]['progress'] == 100
+        assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.COMPLETED.value
+        assert crawler.scrape_phase[task_id]['progress'] == 100
     
     def test_execute_content_only_task_with_article_links(self, mock_config_file, article_service):
         """測試使用文章連結列表的內容抓取模式"""
@@ -1540,8 +1542,8 @@ class TestBaseCrawler:
         }
         
         # 初始化任務狀態
-        crawler.task_status[task_id] = {
-            'status': 'running',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.LINK_COLLECTION.value,
             'progress': 0,
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc)
@@ -1601,8 +1603,8 @@ class TestBaseCrawler:
         assert result['success'] is True
         assert result['message'] == '任務完成'
         assert 'articles_count' in result
-        assert crawler.task_status[task_id]['status'] == 'completed'
-        assert crawler.task_status[task_id]['progress'] == 100
+        assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.COMPLETED.value
+        assert crawler.scrape_phase[task_id]['progress'] == 100
         
     def test_execute_task_different_modes(self, mock_config_file, article_service):
         """測試 execute_task 方法對不同模式的調用"""
@@ -1637,8 +1639,8 @@ class TestBaseCrawler:
         # 測試LINKS_ONLY模式
         task_id = 1
         crawler.global_params = {}  # 清除全局參數
-        crawler.task_status[task_id] = {
-            'status': 'running',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.LINK_COLLECTION.value,
             'progress': 0,
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc)
@@ -1656,7 +1658,7 @@ class TestBaseCrawler:
         # 測試CONTENT_ONLY模式
         task_id = 2
         crawler.global_params = {}  # 清除全局參數
-        crawler.task_status[task_id] = {
+        crawler.scrape_phase[task_id] = {
             'status': 'running',
             'progress': 0,
             'message': '開始執行任務',
@@ -1675,7 +1677,7 @@ class TestBaseCrawler:
         # 測試FULL_SCRAPE模式
         task_id = 3
         crawler.global_params = {}  # 清除全局參數
-        crawler.task_status[task_id] = {
+        crawler.scrape_phase[task_id] = {
             'status': 'running',
             'progress': 0,
             'message': '開始執行任務',
@@ -1692,12 +1694,12 @@ class TestBaseCrawler:
         
         # 初始化任務並將其設為已取消
         task_id = 999
-        crawler.task_status[task_id] = {
+        crawler.scrape_phase[task_id] = {
             'status': 'running',
             'progress': 0,
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc),
-            'cancelled': True
+            'cancel_flag': True
         }
         
         # 模擬 _validate_and_update_task_params 通過驗證
@@ -1711,7 +1713,7 @@ class TestBaseCrawler:
             'success': False,
             'message': '任務已取消',
             'articles_count': 0,
-            'task_status': {'status': 'cancelled'},
+            'scrape_phase': {'status': 'cancelled'},
             'partial_data_saved': False
         }
         crawler._handle_task_cancellation = MagicMock(return_value=expected_result)
@@ -1746,12 +1748,12 @@ class TestBaseCrawler:
             # 準備測試數據
             task_id = 111
             current_time = datetime.now(timezone.utc)
-            crawler.task_status[task_id] = {
-                'status': 'running',
+            crawler.scrape_phase[task_id] = {
+                'scrape_phase': ScrapePhase.LINK_COLLECTION.value,
                 'progress': 50,
                 'message': '正在執行任務',
                 'start_time': current_time,
-                'cancelled': True
+                'cancel_flag': True
             }
             
             # 測試1: 沒有數據的情況
@@ -1761,7 +1763,7 @@ class TestBaseCrawler:
             assert result['message'] == '任務已取消'
             assert result['articles_count'] == 0
             assert result['partial_data_saved'] is False
-            assert crawler.task_status[task_id]['status'] == 'cancelled'
+            assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.CANCELLED.value
             
             # 測試2: 有數據但不保存
             crawler.articles_df = pd.DataFrame({
@@ -1842,14 +1844,9 @@ class TestBaseCrawler:
             assert '並保存部分數據' in result['message']
             assert result['partial_data_saved'] is True
             crawler._save_to_database.assert_called_once()
-            
-            # _handle_task_cancellation方法會創建一個新的DataFrame，只包含is_scraped=True的行
-            # 檢查傳遞給_save_to_database方法的self.articles_df中的數據是否正確標記
+
             assert crawler._save_to_database.called
-            
-            # 在_handle_task_cancellation中，會臨時替換articles_df為只包含已抓取文章的DataFrame
-            # 所以我們無法直接獲取傳入的DataFrame，但可以檢查其他條件
-            
+
             # 測試5: 處理在保存過程中發生錯誤的情況
             crawler._save_to_database = MagicMock(side_effect=Exception("保存錯誤"))
             
@@ -1868,12 +1865,12 @@ class TestBaseCrawler:
             
             # 初始化任務
             task_id = 222
-            crawler.task_status[task_id] = {
-                'status': 'running',
+            crawler.scrape_phase[task_id] = {
+                'scrape_phase': ScrapePhase.LINK_COLLECTION.value,  # 使用正確的枚舉值
                 'progress': 30,
                 'message': '正在抓取文章',
                 'start_time': datetime.now(timezone.utc),
-                'cancelled': True
+                'cancel_flag': True  # 從 'cancelled' 改為 'cancel_flag'
             }
             
             # 準備測試數據 - 太少的數據
@@ -1923,9 +1920,6 @@ class TestBaseCrawler:
             assert result['partial_data_saved'] is True
             crawler._save_to_database.assert_called_once()
             
-            # 在_handle_task_cancellation中，_save_to_database是直接被調用的，不帶參數
-            # 因此不能通過call_args獲取參數，只能檢查方法是否被調用
-            # 檢查結果中的相關標記
             assert result['message'] == '任務已取消並保存部分數據'
             assert result['partial_data_saved'] is True
 
@@ -1935,7 +1929,7 @@ class TestBaseCrawler:
         
         # 初始化任務
         task_id = 333
-        crawler.task_status[task_id] = {
+        crawler.scrape_phase[task_id] = {
             'status': 'running',
             'progress': 0,
             'message': '開始執行任務',
@@ -1950,24 +1944,24 @@ class TestBaseCrawler:
             'success': False,
             'message': '任務已取消(模擬)',
             'articles_count': 0,
-            'task_status': {'status': 'cancelled'},
+            'scrape_phase': {'scrape_phase': ScrapePhase.CANCELLED.value},  # 修改為正確的結構
             'partial_data_saved': False
         })
         
         # 測試1: 獲取連結階段取消
         def fetch_article_list_and_cancel(task_id, max_retries=None, retry_delay=None):
             # 模擬在抓取文章列表時取消任務
-            crawler.task_status[task_id]['cancelled'] = True
+            crawler.scrape_phase[task_id]['cancel_flag'] = True
             return None
         
         # 模擬_check_if_cancelled方法始終返回True，確保任務被視為已取消
         # 注意：在_execute_full_scrape_task方法的開頭就會檢查取消狀態
         crawler._check_if_cancelled = MagicMock(return_value=True)
         crawler._fetch_article_list = MagicMock(side_effect=fetch_article_list_and_cancel)
-        crawler.global_params = {'scrape_mode': ScrapeMode.FULL_SCRAPE}
+        crawler.global_params = {'scrape_mode': ScrapeMode.FULL_SCRAPE.value}
         
         # 重設取消狀態
-        crawler.task_status[task_id]['cancelled'] = False
+        crawler.scrape_phase[task_id]['cancel_flag'] = False
         
         result = crawler._execute_full_scrape_task(task_id, 3, 0.1)
         assert crawler._handle_task_cancellation.called
@@ -1984,7 +1978,7 @@ class TestBaseCrawler:
         
         def fetch_articles_and_cancel(task_id):
             # 模擬在抓取文章內容時取消任務
-            crawler.task_status[task_id]['cancelled'] = True
+            crawler.scrape_phase[task_id]['cancel_flag'] = True
             return None
         
         crawler._fetch_article_list = MagicMock(side_effect=fetch_article_list_mock)
@@ -1992,7 +1986,7 @@ class TestBaseCrawler:
         crawler.retry_operation = MagicMock(side_effect=lambda func, max_retries=None, retry_delay=None, task_id=None: func())
         
         # 重設取消狀態
-        crawler.task_status[task_id]['cancelled'] = False
+        crawler.scrape_phase[task_id]['cancel_flag'] = False
         
         result = crawler._execute_full_scrape_task(task_id, 3, 0.1)
         assert crawler._handle_task_cancellation.called
@@ -2010,7 +2004,7 @@ class TestBaseCrawler:
         
         def save_results_and_cancel(task_id):
             # 模擬在保存結果時取消任務
-            crawler.task_status[task_id]['cancelled'] = True
+            crawler.scrape_phase[task_id]['cancel_flag'] = True
             raise Exception(f"任務 {task_id} 已取消")
         
         crawler._fetch_articles = MagicMock(side_effect=fetch_articles_mock)
@@ -2018,7 +2012,7 @@ class TestBaseCrawler:
         crawler._save_results = MagicMock(side_effect=save_results_and_cancel)
         
         # 重設取消狀態
-        crawler.task_status[task_id]['cancelled'] = False
+        crawler.scrape_phase[task_id]['cancel_flag'] = False
         
         result = crawler._execute_full_scrape_task(task_id, 3, 0.1)
         assert crawler._handle_task_cancellation.called
@@ -2029,12 +2023,12 @@ class TestBaseCrawler:
         
         # 初始化任務
         task_id = 444
-        crawler.task_status[task_id] = {
-            'status': 'running',
+        crawler.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.INIT.value,  # 使用正確的枚舉值
             'progress': 0,
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc),
-            'cancelled': True
+            'cancel_flag': True  # 從 'cancelled' 改為 'cancel_flag'
         }
         
         # 準備測試數據

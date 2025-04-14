@@ -2,7 +2,7 @@ import pytest
 from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from src.models.crawler_tasks_model import CrawlerTasks, Base, TaskPhase, ScrapeMode
+from src.models.crawler_tasks_model import CrawlerTasks, Base, ScrapePhase, ScrapeMode
 from src.models.crawlers_model import Crawlers
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.services.crawler_task_service import CrawlerTaskService
@@ -72,7 +72,7 @@ def sample_tasks(session):
             task_args={"max_items": 100, "scrape_mode": ScrapeMode.FULL_SCRAPE.value},
             created_at=datetime(2023, 1, 1, tzinfo=timezone.utc),
             updated_at=datetime(2023, 1, 1, tzinfo=timezone.utc),
-            current_phase=TaskPhase.INIT,
+            scrape_phase=ScrapePhase.INIT,
             max_retries=3,
             retry_count=0,
             ai_only=False
@@ -85,7 +85,7 @@ def sample_tasks(session):
             task_args={"max_items": 50, "scrape_mode": ScrapeMode.LINKS_ONLY.value},
             created_at=datetime(2023, 1, 2, tzinfo=timezone.utc),
             updated_at=datetime(2023, 1, 2, tzinfo=timezone.utc),
-            current_phase=TaskPhase.INIT,
+            scrape_phase=ScrapePhase.INIT,
             max_retries=3,
             retry_count=0,
             ai_only=True
@@ -107,7 +107,7 @@ class TestCrawlerTaskService:
             "is_auto": True,
             "cron_expression": "0 0 * * *",
             "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_retries": 3, "retry_count": 0, "scrape_mode": "full_scrape"},
-            "current_phase": "init"
+            "scrape_phase": "init"
         }
         
         result = crawler_task_service.create_task(task_data)
@@ -186,7 +186,7 @@ class TestCrawlerTaskService:
         assert result["success"] is True
         assert len(result["history"]) == 2
 
-    def test_get_task_status(self, crawler_task_service, sample_tasks, session):
+    def test_get_scrape_phase(self, crawler_task_service, sample_tasks, session):
         """測試獲取任務狀態"""
         task_id = sample_tasks[0].id
         
@@ -200,7 +200,7 @@ class TestCrawlerTaskService:
         session.add(history)
         session.commit()
         
-        result = crawler_task_service.get_task_status(task_id)
+        result = crawler_task_service.get_scrape_phase(task_id)
         assert result["status"] == "running"
         assert 0 <= result["progress"] <= 95
         assert result["message"] == "正在執行中"
@@ -224,7 +224,7 @@ class TestCrawlerTaskService:
             "task_name": "測試爬蟲任務",
             "crawler_id": 1,
             "task_args": {**TASK_ARGS_DEFAULT, "test_mode": True, "ai_only": False, "scrape_mode": "full_scrape"},
-            "current_phase": "init",
+            "scrape_phase": "init",
             "is_auto": True,
             "cron_expression": "0 0 * * *"
         }
@@ -295,7 +295,7 @@ class TestCrawlerTaskService:
         class MockCrawler:
             def __init__(self):
                 self.global_params = {}
-                self.task_status = {
+                self.scrape_phase = {
                     task_id: {
                         'status': 'running',
                         'progress': 50,
@@ -305,23 +305,23 @@ class TestCrawlerTaskService:
                 }
                 
             def cancel_task(self, task_id):
-                self.task_status[task_id]['status'] = 'cancelled'
-                self.task_status[task_id]['message'] = '任務已被使用者取消'
+                self.scrape_phase[task_id]['status'] = 'cancelled'
+                self.scrape_phase[task_id]['message'] = '任務已被使用者取消'
                 return True
                 
-            def get_task_status(self, task_id):
-                return self.task_status[task_id]
+            def get_scrape_phase(self, task_id):
+                return self.scrape_phase[task_id]
         
         # 注入模擬的爬蟲實例到服務中
         mock_crawler = MockCrawler()
         crawler_task_service.running_crawlers[task_id] = mock_crawler
         
-        # 模擬get_task_status方法返回running狀態
-        def mock_get_task_status(task_id):
+        # 模擬get_scrape_phase方法返回running狀態
+        def mock_get_scrape_phase(task_id):
             return {'status': 'running', 'progress': 50, 'message': '正在執行任務'}
         
-        original_get_task_status = crawler_task_service.get_task_status
-        crawler_task_service.get_task_status = mock_get_task_status
+        original_get_scrape_phase = crawler_task_service.get_scrape_phase
+        crawler_task_service.get_scrape_phase = mock_get_scrape_phase
         
         try:
             # 執行取消任務
@@ -332,7 +332,7 @@ class TestCrawlerTaskService:
             assert "任務 1 已成功取消" in result["message"]
         finally:
             # 還原方法
-            crawler_task_service.get_task_status = original_get_task_status
+            crawler_task_service.get_scrape_phase = original_get_scrape_phase
             # 清理模擬的爬蟲實例
             if task_id in crawler_task_service.running_crawlers:
                 del crawler_task_service.running_crawlers[task_id]
@@ -467,11 +467,11 @@ class TestCrawlerTaskService:
         ]:
             # 模擬任務對象
             class MockTask:
-                from src.models.crawler_tasks_model import TaskPhase
+                from src.models.crawler_tasks_model import ScrapePhase
                 crawler = sample_tasks[0].crawler
                 is_auto = True
                 task_args = {**TASK_ARGS_DEFAULT, "ai_only": False, "get_links_by_task_id": True, "scrape_mode": mode.value}
-                current_phase = TaskPhase.INIT
+                scrape_phase = ScrapePhase.INIT
             
             # 替換獲取任務的方法
             def mock_get_by_id(task_id):
@@ -552,7 +552,7 @@ class TestCrawlerTaskService:
             "is_auto": True,
             "cron_expression": "0 0 * * *",
             "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_retries": 3, "retry_count": 0, "scrape_mode": "links_only"},
-            "current_phase": "init"
+            "scrape_phase": "init"
         }
         
         result = crawler_task_service.create_task(task_data)
@@ -618,7 +618,7 @@ class TestCrawlerTaskService:
             "is_auto": True,
             "cron_expression": "0 0 * * *",
             "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_retries": 3, "retry_count": 0, "scrape_mode": "full_scrape"},
-            "current_phase": "init"
+            "scrape_phase": "init"
         }
         
         try:
@@ -635,7 +635,7 @@ class TestCrawlerTaskService:
             "is_auto": True,  # 自動執行
             "cron_expression": None,  # 沒有cron表達式
             "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_retries": 3, "retry_count": 0, "scrape_mode": "full_scrape"},
-            "current_phase": "init"
+            "scrape_phase": "init"
         }
         
         with pytest.raises(ValidationError):
@@ -648,7 +648,7 @@ class TestCrawlerTaskService:
             "is_auto": False,
             "task_args": {**TASK_ARGS_DEFAULT, "scrape_mode": "content_only"},
             "scrape_mode": "content_only",  # 為了兼容舊版本的程式碼，同時提供頂層屬性
-            "current_phase": "init"
+            "scrape_phase": "init"
         }
         
         result = crawler_task_service.validate_task_data(content_only_data)
@@ -661,7 +661,7 @@ class TestCrawlerTaskService:
             "is_auto": False,
             "task_args": {**TASK_ARGS_DEFAULT, "scrape_mode": "content_only", "get_links_by_task_id": False},
             "scrape_mode": "content_only",  # 為了兼容舊版本的程式碼，同時提供頂層屬性
-            "current_phase": "init"
+            "scrape_phase": "init"
         }
         
         with pytest.raises(ValidationError) as exc_info:
@@ -708,26 +708,26 @@ class TestCrawlerTaskService:
         assert task_result["task"].last_success is True
         assert task_result["task"].last_message == message
         
-    def test_update_task_phase(self, crawler_task_service, sample_tasks):
+    def test_update_scrape_phase(self, crawler_task_service, sample_tasks):
         """測試更新任務階段"""
         task_id = sample_tasks[0].id
         
         # 測試更新為各種階段
         phases = [
-            TaskPhase.INIT,
-            TaskPhase.LINK_COLLECTION,
-            TaskPhase.CONTENT_SCRAPING,
-            TaskPhase.COMPLETED
+            ScrapePhase.INIT,
+            ScrapePhase.LINK_COLLECTION,
+            ScrapePhase.CONTENT_SCRAPING,
+            ScrapePhase.COMPLETED
         ]
         
         for phase in phases:
-            result = crawler_task_service.update_task_phase(task_id, phase)
+            result = crawler_task_service.update_scrape_phase(task_id, phase)
             assert result["success"] is True
             
             # 檢查更新是否成功
             task_result = crawler_task_service.get_task_by_id(task_id)
             assert task_result["success"] is True
-            assert task_result["task"].current_phase == phase
+            assert task_result["task"].scrape_phase == phase
             
     def test_increment_retry_count(self, crawler_task_service, sample_tasks):
         """測試增加任務重試次數"""

@@ -12,8 +12,7 @@ from src.crawlers.configs.site_config import SiteConfig
 from src.services.article_service import ArticleService
 from src.utils.model_utils import convert_hashable_dict_to_str_dict, validate_positive_int, validate_boolean, validate_str, validate_task_args
 from src.error.errors import ValidationError
-import enum
-from src.models.crawler_tasks_model import ScrapeMode
+from src.utils.enum_utils import ScrapePhase, ScrapeMode
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -39,7 +38,7 @@ class BaseCrawler(ABC):
     def __init__(self, config_file_name: Optional[str] = None, article_service: Optional[ArticleService] = None):
         self.config_data: Dict[str, Any] = {}
         self.site_config: SiteConfig
-        self.task_status = {}
+        self.scrape_phase = {}
         self.config_file_name = config_file_name
         self.articles_df = pd.DataFrame()
         if article_service is None:
@@ -51,9 +50,9 @@ class BaseCrawler(ABC):
         self._create_site_config()
 
         # 確保任務狀態不包含取消標記
-        for task_id in self.task_status:
-            if 'cancelled' in self.task_status[task_id]:
-                self.task_status[task_id]['cancelled'] = False
+        for task_id in self.scrape_phase:
+            if ScrapePhase.CANCELLED.value in self.scrape_phase[task_id]:
+                self.scrape_phase[task_id][ScrapePhase.CANCELLED.value] = False
 
     @abstractmethod # 抓取文章列表
     def _fetch_article_links(self, task_id: int) -> Optional[pd.DataFrame]:
@@ -95,7 +94,7 @@ class BaseCrawler(ABC):
                     file_config = json.load(f)
                     # 使用文件配置更新默認配置
                     self.config_data.update(file_config)
-                    
+                
                 logger.debug(f"已載入爬蟲配置: {self.config_file_name}")
                 logger.debug(f"已載入爬蟲配置: {self.config_data}")
             except (json.JSONDecodeError, FileNotFoundError) as e:
@@ -400,7 +399,7 @@ class BaseCrawler(ABC):
                 validated_task_args = validate_task_args('task_args')(task_args, is_update=False)
             except ValidationError as e:
                 logger.error(f"任務參數驗證失敗: {str(e)}")
-                self._update_task_status(task_id, 0, f'任務參數驗證失敗: {str(e)}', 'failed')
+                self._update_scrape_phase(task_id, 0, f'任務參數驗證失敗: {str(e)}', ScrapePhase.FAILED)
                 return False
             
             # 參數驗證成功，更新全局參數
@@ -414,7 +413,7 @@ class BaseCrawler(ABC):
             
         except Exception as e:
             logger.error(f"更新任務參數失敗: {str(e)}", exc_info=True)
-            self._update_task_status(task_id, 0, f'更新任務參數失敗: {str(e)}', 'failed')
+            self._update_scrape_phase(task_id, 0, f'更新任務參數失敗: {str(e)}', ScrapePhase.FAILED)
             return False
 
     def _calculate_progress(self, stage: str, sub_progress: float = 1.0) -> int:
@@ -486,20 +485,20 @@ class BaseCrawler(ABC):
             raise ValueError("site_config 未初始化")
         
         # 初始化任務狀態
-        self.task_status[task_id] = {
-            'status': 'running',
+        self.scrape_phase[task_id] = {
+            'scrape_phase': ScrapePhase.INIT.value,
             'progress': 0,
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc)
         }
-        self.task_status[task_id]['cancelled'] = False
+        self.scrape_phase[task_id][ScrapePhase.CANCELLED.value] = False
         # 驗證並更新任務參數
         if not self._validate_and_update_task_params(task_id, task_args):
             return {
                 'success': False,
                 'message': '任務參數驗證失敗',
                 'articles_count': 0,
-                'task_status': self.get_task_status(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id)
             }
         if self._check_if_cancelled(task_id):
             return self._handle_task_cancellation(task_id)
@@ -525,13 +524,13 @@ class BaseCrawler(ABC):
             if "任務 {} 已取消".format(task_id) in str(e):
                 return self._handle_task_cancellation(task_id)
             
-            self._update_task_status(task_id, 0, f'任務失敗: {str(e)}', 'failed')
+            self._update_scrape_phase(task_id, 0, f'任務失敗: {str(e)}', ScrapePhase.FAILED)
             logger.error(f"執行任務失敗 (ID={task_id}): {str(e)}", exc_info=True)
             return {
                 'success': False,
                 'message': f'任務失敗: {str(e)}',
                 'articles_count': 0,
-                'task_status': self.get_task_status(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id)
             }
 
     def _execute_content_only_task(self, task_id: int, max_retries: int, retry_delay: float):
@@ -555,12 +554,12 @@ class BaseCrawler(ABC):
             # 檢查是否成功獲取文章連結
             if self.articles_df is None or self.articles_df.empty:
                 logger.warning("從資料庫未獲取到任何文章連結")
-                self._update_task_status(task_id, 100, '從資料庫未獲取到任何文章連結', 'completed')
+                self._update_scrape_phase(task_id, 100, '從資料庫未獲取到任何文章連結', ScrapePhase.COMPLETED)
                 return {
                     'success': False,
                     'message': '從資料庫未獲取到任何文章連結',
                     'articles_count': 0,
-                    'task_status': self.get_task_status(task_id)
+                    'scrape_phase': self.get_scrape_phase(task_id)
                 }
         else:
             # 獲取要抓取的文章連結
@@ -568,12 +567,12 @@ class BaseCrawler(ABC):
             
             if not article_links or len(article_links) == 0:
                 logger.warning("沒有提供要抓取內容的文章連結")
-                self._update_task_status(task_id, 100, '沒有提供要抓取內容的文章連結', 'completed')
+                self._update_scrape_phase(task_id, 100, '沒有提供要抓取內容的文章連結', ScrapePhase.COMPLETED)
                 return {
                     'success': False,
                     'message': '沒有提供要抓取內容的文章連結',
                     'articles_count': 0,
-                    'task_status': self.get_task_status(task_id)
+                    'scrape_phase': self.get_scrape_phase(task_id)
                 }
             if self._check_if_cancelled(task_id):
                 return self._handle_task_cancellation(task_id)
@@ -590,19 +589,19 @@ class BaseCrawler(ABC):
         # 確認是否有文章要抓取
         if not hasattr(self, 'articles_df') or self.articles_df is None or self.articles_df.empty:
             logger.warning("沒有獲取到要抓取內容的文章資訊")
-            self._update_task_status(task_id, 100, '沒有獲取到要抓取內容的文章資訊', 'completed')
+            self._update_scrape_phase(task_id, 100, '沒有獲取到要抓取內容的文章資訊', ScrapePhase.COMPLETED)
             return {
                 'success': False,
                 'message': '沒有獲取到要抓取內容的文章資訊',
                 'articles_count': 0,
-                'task_status': self.get_task_status(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id)
             }
         
         # 步驟1：抓取文章詳細內容
         articles_count = len(self.articles_df)
         progress_msg = f'抓取文章詳細內容中 (0/{articles_count})...'
         progress = self._calculate_progress('fetch_contents', 0)
-        self._update_task_status(task_id, progress, progress_msg)
+        self._update_scrape_phase(task_id, progress, progress_msg)
 
         # 使用重試機制抓取文章內容
         fetched_articles = self.retry_operation(
@@ -619,12 +618,12 @@ class BaseCrawler(ABC):
             # 即使沒有獲取到內容，仍然保存連結
             self._save_results(task_id)
             
-            self._update_task_status(task_id, 100, '沒有獲取到任何文章內容，但已保存連結', 'completed')
+            self._update_scrape_phase(task_id, 100, '沒有獲取到任何文章內容，但已保存連結', ScrapePhase.COMPLETED)
             return {
                 'success': True,
                 'message': '沒有獲取到任何文章內容，但已保存連結',
                 'articles_count': articles_count,
-                'task_status': self.get_task_status(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id)
             }
         
         # 記錄成功獲取的文章內容數量
@@ -633,26 +632,26 @@ class BaseCrawler(ABC):
 
         # 步驟2：更新 articles_df 添加文章內容
         progress = self._calculate_progress('update_dataframe', 0)
-        self._update_task_status(task_id, progress, '更新文章數據中...')
+        self._update_scrape_phase(task_id, progress, '更新文章數據中...')
         
         # 使用優化的批量更新方法
         self.articles_df = self._update_articles_with_content(self.articles_df, fetched_articles)
         
         progress = self._calculate_progress('update_dataframe', 1)
-        self._update_task_status(task_id, progress, '更新文章數據完成')
+        self._update_scrape_phase(task_id, progress, '更新文章數據完成')
         
         # 步驟3：保存結果
         self._save_results(task_id)
         
         # 任務完成
-        self._update_task_status(task_id, 100, '任務完成', 'completed')
+        self._update_scrape_phase(task_id, 100, '任務完成', ScrapePhase.COMPLETED)
         
         # 返回成功結果
         return {
             'success': True,
             'message': '任務完成',
             'articles_count': len(self.articles_df) if hasattr(self, 'articles_df') and not self.articles_df.empty else 0,
-            'task_status': self.get_task_status(task_id)
+            'scrape_phase': self.get_scrape_phase(task_id)
         }
 
     def _execute_links_only_task(self, task_id: int, max_retries: int, retry_delay: float):
@@ -665,12 +664,12 @@ class BaseCrawler(ABC):
         # 檢查是否成功獲取文章列表
         if fetched_articles_df is None or fetched_articles_df.empty:
             logger.warning("沒有獲取到任何文章連結")
-            self._update_task_status(task_id, 100, '沒有獲取到任何文章連結', 'completed')
+            self._update_scrape_phase(task_id, 100, '沒有獲取到任何文章連結', ScrapePhase.COMPLETED)
             return {
                 'success': False,
                 'message': '沒有獲取到任何文章連結',
                 'articles_count': 0,
-                'task_status': self.get_task_status(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id)
             }
         
         # 記錄找到的文章數量
@@ -684,14 +683,14 @@ class BaseCrawler(ABC):
         self._save_results(task_id)
         
         # 任務完成
-        self._update_task_status(task_id, 100, '文章連結收集完成', 'completed')
+        self._update_scrape_phase(task_id, 100, '文章連結收集完成', ScrapePhase.COMPLETED)
         
         # 返回成功結果
         return {
             'success': True,
             'message': '文章連結收集完成',
             'articles_count': articles_count,
-            'task_status': self.get_task_status(task_id)
+            'scrape_phase': self.get_scrape_phase(task_id)
         }
 
     def _execute_full_scrape_task(self, task_id: int, max_retries: int, retry_delay: float):
@@ -704,12 +703,12 @@ class BaseCrawler(ABC):
         # 檢查是否成功獲取文章列表
         if fetched_articles_df is None or fetched_articles_df.empty:
             logger.warning("沒有獲取到任何文章連結")
-            self._update_task_status(task_id, 100, '沒有獲取到任何文章連結', 'completed')
+            self._update_scrape_phase(task_id, 100, '沒有獲取到任何文章連結', ScrapePhase.COMPLETED)
             return {
                 'success': False,
                 'message': '沒有獲取到任何文章連結',
                 'articles_count': 0,
-                'task_status': self.get_task_status(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id)
             }
         
         # 記錄找到的文章數量
@@ -722,7 +721,7 @@ class BaseCrawler(ABC):
         # 步驟2：抓取文章詳細內容
         progress_msg = f'抓取文章詳細內容中 (0/{articles_count})...'
         progress = self._calculate_progress('fetch_contents', 0)
-        self._update_task_status(task_id, progress, progress_msg)
+        self._update_scrape_phase(task_id, progress, progress_msg)
         
         # 使用重試機制抓取文章內容
         fetched_articles = self.retry_operation(
@@ -739,12 +738,12 @@ class BaseCrawler(ABC):
             # 即使沒有獲取到內容，仍然保存連結
             self._save_results(task_id)
             
-            self._update_task_status(task_id, 100, '沒有獲取到任何文章內容，但已保存連結', 'completed')
+            self._update_scrape_phase(task_id, 100, '沒有獲取到任何文章內容，但已保存連結', ScrapePhase.COMPLETED)
             return {
                 'success': True,
                 'message': '沒有獲取到任何文章內容，但已保存連結',
                 'articles_count': articles_count,
-                'task_status': self.get_task_status(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id)
             }
         
         # 記錄成功獲取的文章內容數量
@@ -753,26 +752,26 @@ class BaseCrawler(ABC):
         
         # 步驟3：更新 articles_df 添加文章內容
         progress = self._calculate_progress('update_dataframe', 0)
-        self._update_task_status(task_id, progress, '更新文章數據中...')
+        self._update_scrape_phase(task_id, progress, '更新文章數據中...')
         
         # 使用優化的批量更新方法
         self.articles_df = self._update_articles_with_content(self.articles_df, fetched_articles)
         
         progress = self._calculate_progress('update_dataframe', 1)
-        self._update_task_status(task_id, progress, '更新文章數據完成')
+        self._update_scrape_phase(task_id, progress, '更新文章數據完成')
         
         # 步驟4：保存結果
         self._save_results(task_id)
         
         # 任務完成
-        self._update_task_status(task_id, 100, '任務完成', 'completed')
+        self._update_scrape_phase(task_id, 100, '任務完成', ScrapePhase.COMPLETED)
         
         # 返回成功結果
         return {
             'success': True,
             'message': '任務完成',
             'articles_count': len(self.articles_df) if hasattr(self, 'articles_df') and not self.articles_df.empty else 0,
-            'task_status': self.get_task_status(task_id)
+            'scrape_phase': self.get_scrape_phase(task_id)
         }
 
     def _fetch_article_list(self, task_id: int, max_retries: int = 3, retry_delay: float = 2.0) -> Optional[pd.DataFrame]:
@@ -781,7 +780,7 @@ class BaseCrawler(ABC):
             progress = self._calculate_progress('fetch_links', 0)
             
             if not self.global_params.get('get_links_by_task_id', False):
-                self._update_task_status(task_id, progress, '連接網站抓取文章列表中...')
+                self._update_scrape_phase(task_id, progress, '連接網站抓取文章列表中...')
                 logger.info("開始從網站抓取文章列表")
                 
                 # 使用重試機制
@@ -793,9 +792,9 @@ class BaseCrawler(ABC):
                 )
                 
                 progress = self._calculate_progress('fetch_links', 1)
-                self._update_task_status(task_id, progress, '連接網站抓取文章列表完成')
+                self._update_scrape_phase(task_id, progress, '連接網站抓取文章列表完成', ScrapePhase.LINK_COLLECTION)
             else:
-                self._update_task_status(task_id, progress, '從資料庫連結獲取文章列表中...')
+                self._update_scrape_phase(task_id, progress, '從資料庫連結獲取文章列表中...', ScrapePhase.LINK_COLLECTION)
                 logger.info("開始從資料庫連結獲取文章列表")
                 
                 # 使用重試機制
@@ -807,7 +806,7 @@ class BaseCrawler(ABC):
                 )
                 
                 progress = self._calculate_progress('fetch_links', 1)
-                self._update_task_status(task_id, progress, '從資料庫連結獲取文章列表完成')
+                self._update_scrape_phase(task_id, progress, '從資料庫連結獲取文章列表完成', ScrapePhase.LINK_COLLECTION)
             
             return fetched_articles_df
             
@@ -836,7 +835,7 @@ class BaseCrawler(ABC):
             # 保存到CSV
             if self.global_params.get('save_to_csv', False):
                 progress = self._calculate_progress('save_to_csv', 0)
-                self._update_task_status(task_id, progress, '保存數據到CSV文件中...')
+                self._update_scrape_phase(task_id, progress, '保存數據到CSV文件中...', ScrapePhase.SAVE_TO_CSV)
                 
                 csv_file_prefix = self.global_params.get("csv_file_prefix", "articles")
                 # 使用前綴+任務ID+時間戳作為文件名
@@ -848,41 +847,41 @@ class BaseCrawler(ABC):
                 self._save_to_csv(self.articles_df, csv_path)
                 
                 progress = self._calculate_progress('save_to_csv', 1)
-                self._update_task_status(task_id, progress, '保存數據到CSV文件完成')
+                self._update_scrape_phase(task_id, progress, '保存數據到CSV文件完成', ScrapePhase.SAVE_TO_CSV)
             
             # 保存到資料庫
             if self.global_params.get('save_to_database', False):
                 progress = self._calculate_progress('save_to_database', 0)
-                self._update_task_status(task_id, progress, '保存數據到資料庫中...')
+                self._update_scrape_phase(task_id, progress, '保存數據到資料庫中...', ScrapePhase.SAVE_TO_DATABASE)
                 
                 self._save_to_database()
                 
                 progress = self._calculate_progress('save_to_database', 1)
-                self._update_task_status(task_id, progress, '保存數據到資料庫完成')
+                self._update_scrape_phase(task_id, progress, '保存數據到資料庫完成', ScrapePhase.SAVE_TO_DATABASE)
                 
         except Exception as e:
             logger.error(f"保存結果失敗: {str(e)}", exc_info=True)
             raise
     
-    def _update_task_status(self, task_id: int, progress: int, message: str, status: Optional[str] = None):
+    def _update_scrape_phase(self, task_id: int, progress: int, message: str, scrape_phase: Optional[ScrapePhase] = None):
         """更新任務狀態並記錄日誌"""
-        if task_id in self.task_status:
+        if task_id in self.scrape_phase:
             # 更新狀態
-            self.task_status[task_id]['progress'] = progress
-            self.task_status[task_id]['message'] = message
-            if status:
-                self.task_status[task_id]['status'] = status
+            self.scrape_phase[task_id]['progress'] = progress
+            self.scrape_phase[task_id]['message'] = message
+            if scrape_phase:
+                self.scrape_phase[task_id]['scrape_phase'] = scrape_phase.value
                 
             # 記錄日誌
-            if status:
-                logger.info(f"任務 {task_id} {status}: {progress}%, {message}")
+            if scrape_phase:
+                logger.info(f"任務 {task_id} {scrape_phase.value}: {progress}%, {message}")
             else:
                 logger.debug(f"任務進度更新 (ID={task_id}): {progress}%, {message}")
     
-    def get_task_status(self, task_id: int):
+    def get_scrape_phase(self, task_id: int):
         """獲取任務狀態"""
-        return self.task_status.get(task_id, {
-            'status': 'unknown',
+        return self.scrape_phase.get(task_id, {
+            'scrape_phase': ScrapePhase.UNKNOWN.value,
             'progress': 0,
             'message': '任務不存在'
         })
@@ -925,17 +924,17 @@ class BaseCrawler(ABC):
         Returns:
             是否成功取消
         """
-        if task_id not in self.task_status:
+        if task_id not in self.scrape_phase:
             logger.warning(f"任務 {task_id} 不存在，無法取消")
             return False
             
         # 檢查任務狀態，只有運行中的任務才能取消
-        if self.task_status[task_id].get('status') != 'running':
-            logger.warning(f"任務 {task_id} 當前狀態為 {self.task_status[task_id].get('status')}，無法取消")
+        if self.scrape_phase[task_id].get('scrape_phase') in [ScrapePhase.CANCELLED.value,  ScrapePhase.FAILED.value, ScrapePhase.COMPLETED.value]:
+            logger.warning(f"任務 {task_id} 當前狀態為 {self.scrape_phase[task_id].get('scrape_phase')}，無法取消")
             return False
             
-        self.task_status[task_id]['cancelled'] = True
-        self._update_task_status(task_id, self.task_status[task_id]['progress'], '任務已取消', 'cancelled')
+        self.scrape_phase[task_id]['cancel_flag'] = True
+        self._update_scrape_phase(task_id, self.scrape_phase[task_id]['progress'], '任務已取消', ScrapePhase.CANCELLED)
         return True
 
     def _check_if_cancelled(self, task_id: int) -> bool:
@@ -947,7 +946,7 @@ class BaseCrawler(ABC):
         Returns:
             bool: 是否已取消
         """
-        if task_id in self.task_status and self.task_status[task_id].get('cancelled', False):
+        if task_id in self.scrape_phase and self.scrape_phase[task_id].get('cancel_flag', False):
             logger.info(f"任務 {task_id} 已被取消，停止執行")
             return True
         return False
@@ -970,7 +969,7 @@ class BaseCrawler(ABC):
         logger.info(f"正在處理任務 {task_id} 的取消清理工作...")
         
         # 更新任務狀態為取消
-        self._update_task_status(task_id, self.task_status[task_id].get('progress', 0), '任務已取消並清理完成', 'cancelled')
+        self._update_scrape_phase(task_id, self.scrape_phase[task_id].get('progress', 0), '任務已取消並清理完成', ScrapePhase.CANCELLED)
         
         # 如果有未保存的有價值數據，可以選擇保存
         partial_data_saved = False
@@ -1025,7 +1024,7 @@ class BaseCrawler(ABC):
             'success': False,
             'message': '任務已取消' + ('並保存部分數據' if partial_data_saved else ''),
             'articles_count': 0,
-            'task_status': self.get_task_status(task_id),
+            'scrape_phase': self.get_scrape_phase(task_id),
             'partial_data_saved': partial_data_saved
         }
 

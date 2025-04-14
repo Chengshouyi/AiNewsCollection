@@ -11,11 +11,11 @@ from src.utils.model_utils import (
     validate_boolean,
     validate_positive_int,
     validate_positive_float,
-    validate_task_phase,
+    validate_scrape_phase,
     validate_scrape_mode,
     validate_article_scrape_status,
     validate_task_args,
-    TaskPhase,
+    ScrapePhase,
     ScrapeMode,
     ArticleScrapeStatus,
     convert_hashable_dict_to_str_dict,
@@ -439,36 +439,36 @@ class TestValidatePositiveFloat:
         with pytest.raises(ValidationError, match="value: 必須是數值"):
             validator("not a number")
 
-class TestValidateTaskPhase:
+class TestValidateScrapePhase:
     """測試任務階段驗證功能"""
     
     def test_valid_enum(self):
         """測試有效的枚舉值"""
-        validator = validate_task_phase("phase")
-        assert validator(TaskPhase.INIT) == TaskPhase.INIT
+        validator = validate_scrape_phase("phase")
+        assert validator(ScrapePhase.INIT) == ScrapePhase.INIT
         
     def test_valid_string(self):
         """測試有效的字符串值"""
-        validator = validate_task_phase("phase")
-        assert validator("init") == TaskPhase.INIT
-        assert validator("link_collection") == TaskPhase.LINK_COLLECTION
-        assert validator("content_scraping") == TaskPhase.CONTENT_SCRAPING
-        assert validator("completed") == TaskPhase.COMPLETED
+        validator = validate_scrape_phase("phase")
+        assert validator("init") == ScrapePhase.INIT
+        assert validator("link_collection") == ScrapePhase.LINK_COLLECTION
+        assert validator("content_scraping") == ScrapePhase.CONTENT_SCRAPING
+        assert validator("completed") == ScrapePhase.COMPLETED
         
     def test_none_not_required(self):
         """測試非必填時的 None 值"""
-        validator = validate_task_phase("phase")
+        validator = validate_scrape_phase("phase")
         assert validator(None) is None
         
     def test_none_required(self):
         """測試必填時的 None 值"""
-        validator = validate_task_phase("phase", required=True)
+        validator = validate_scrape_phase("phase", required=True)
         with pytest.raises(ValidationError, match="phase: 不能為空"):
             validator(None)
             
     def test_invalid_value(self):
         """測試無效的值"""
-        validator = validate_task_phase("phase")
+        validator = validate_scrape_phase("phase")
         with pytest.raises(ValidationError, match="phase: 無效的枚舉值 'invalid_phase'，可用值: init, link_collection, content_scraping, completed"):
             validator("invalid_phase")
 

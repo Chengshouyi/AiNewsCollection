@@ -2,10 +2,10 @@ from typing import Annotated, Optional, Any
 from pydantic import BeforeValidator, model_validator
 from datetime import datetime
 from src.error.errors import ValidationError
-from src.utils.model_utils import validate_str, validate_boolean, validate_positive_int, validate_cron_expression, validate_dict, validate_task_phase, validate_task_args
+from src.utils.model_utils import validate_str, validate_boolean, validate_positive_int, validate_cron_expression, validate_scrape_phase, validate_task_args, validate_task_status
 from src.utils.schema_utils import validate_required_fields_schema, validate_update_schema
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
-from src.utils.model_utils import TaskPhase
+from src.utils.enum_utils import ScrapePhase, TaskStatus
 from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
 
 # 通用字段定義
@@ -18,8 +18,8 @@ RetryCount = Annotated[int, BeforeValidator(validate_positive_int("retry_count",
 Notes = Annotated[Optional[str], BeforeValidator(validate_str("notes", max_length=65536, required=False))]
 CronExpression = Annotated[Optional[str], BeforeValidator(validate_cron_expression("cron_expression", max_length=255, min_length=5, required=False))]
 LastRunMessage = Annotated[Optional[str], BeforeValidator(validate_str("last_run_message", max_length=65536, required=False))]
-CurrentPhase = Annotated[Optional[TaskPhase], BeforeValidator(validate_task_phase("current_phase", required=True))]
-
+CurrentPhase = Annotated[Optional[ScrapePhase], BeforeValidator(validate_scrape_phase("scrape_phase", required=True))]
+TaskStatusValidator = Annotated[TaskStatus, BeforeValidator(validate_task_status("task_status", required=True))]
 class CrawlerTasksCreateSchema(BaseCreateSchema):
     """爬蟲任務創建模型"""
     task_name: TaskName
@@ -32,7 +32,8 @@ class CrawlerTasksCreateSchema(BaseCreateSchema):
     last_run_success: Optional[bool] = None
     last_run_message: LastRunMessage = None
     cron_expression: CronExpression = None
-    current_phase: CurrentPhase = TaskPhase.INIT
+    scrape_phase: CurrentPhase = ScrapePhase.INIT
+    task_status: TaskStatusValidator = TaskStatus.INIT
     retry_count: RetryCount = 0
 
     @model_validator(mode='before')
@@ -47,7 +48,7 @@ class CrawlerTasksCreateSchema(BaseCreateSchema):
 
     @classmethod
     def get_required_fields(cls):
-        return ['task_name', 'crawler_id', 'task_args', 'current_phase']
+        return ['task_name', 'crawler_id', 'task_args', 'scrape_phase']
 
 class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     """爬蟲任務更新模型"""
@@ -60,9 +61,9 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     last_run_success: Optional[bool] = None
     last_run_message: Optional[LastRunMessage] = None
     cron_expression: Optional[CronExpression] = None
-    current_phase: Optional[CurrentPhase] = None
+    scrape_phase: Optional[CurrentPhase] = None
     retry_count: Optional[RetryCount] = None
-
+    task_status: Optional[TaskStatusValidator] = None
     @classmethod
     def get_immutable_fields(cls):
         return ['crawler_id'] + BaseUpdateSchema.get_immutable_fields()
@@ -70,7 +71,7 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     @classmethod
     def get_updated_fields(cls):
         return ['task_name', 'is_auto', 'is_active', 'task_args', 'notes', 'last_run_at', 'last_run_success', 
-                'last_run_message', 'cron_expression', 'current_phase', 'retry_count'] + BaseUpdateSchema.get_updated_fields()
+                'last_run_message', 'cron_expression', 'scrape_phase', 'retry_count', 'task_status'] + BaseUpdateSchema.get_updated_fields()
     
 
     @model_validator(mode='before')

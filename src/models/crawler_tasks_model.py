@@ -4,7 +4,7 @@ from src.models.base_model import Base
 from typing import Optional
 from datetime import datetime
 from .base_entity import BaseEntity
-from src.utils.model_utils import TaskPhase, ScrapeMode
+from src.utils.enum_utils import ScrapePhase, ScrapeMode, TaskStatus
 
 TASK_ARGS_DEFAULT = {
     'max_pages': 10,
@@ -41,7 +41,7 @@ class CrawlerTasks(Base, BaseEntity):
     - last_run_success: 上次執行成功與否
     - last_run_message: 上次執行訊息
     - cron_expression: 排程-cron表達式
-    - current_phase: 當前任務階段
+    - scrape_phase: 當前任務階段
     - retry_count: 重試次數
     - task_args: 任務參數 
         - max_pages: 最大頁數
@@ -97,9 +97,14 @@ class CrawlerTasks(Base, BaseEntity):
     last_run_message: Mapped[Optional[str]] = mapped_column(Text)
     cron_expression: Mapped[Optional[str]] = mapped_column(VARCHAR(255))
     
-    current_phase: Mapped[TaskPhase] = mapped_column(
-        Enum(TaskPhase),
-        default=TaskPhase.INIT,
+    scrape_phase: Mapped[ScrapePhase] = mapped_column(
+        Enum(ScrapePhase),
+        default=ScrapePhase.INIT,
+        nullable=False
+    )
+    task_status: Mapped[TaskStatus] = mapped_column(
+        Enum(TaskStatus),
+        default=TaskStatus.INIT,
         nullable=False
     )
 
@@ -120,8 +125,10 @@ class CrawlerTasks(Base, BaseEntity):
             kwargs['is_auto'] = True
         if 'is_active' not in kwargs:
             kwargs['is_active'] = True
-        if 'current_phase' not in kwargs:
-            kwargs['current_phase'] = TaskPhase.INIT
+        if 'scrape_phase' not in kwargs:
+            kwargs['scrape_phase'] = ScrapePhase.INIT
+        if 'task_status' not in kwargs:
+            kwargs['task_status'] = TaskStatus.INIT
         if 'retry_count' not in kwargs:
             kwargs['retry_count'] = 0
         if 'task_args' not in kwargs:
@@ -147,6 +154,7 @@ class CrawlerTasks(Base, BaseEntity):
             'last_run_success': self.last_run_success,
             'last_run_message': self.last_run_message,
             'cron_expression': self.cron_expression,
-            'current_phase': self.current_phase.value,
+            'scrape_phase': self.scrape_phase.value,
             'retry_count': self.retry_count,
+            'task_status': self.task_status.value if self.task_status else None,
         }

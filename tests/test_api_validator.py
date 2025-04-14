@@ -8,11 +8,9 @@ from src.database.crawler_tasks_repository import CrawlerTasksRepository
 from src.database.crawlers_repository import CrawlersRepository
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawlers_model import Crawlers
-from src.models.crawler_tasks_model import TaskPhase, ScrapeMode
 from src.services.crawler_task_service import CrawlerTaskService
 from src.services.crawlers_service import CrawlersService
 from src.database.database_manager import DatabaseManager
-from src.database.base_repository import SchemaType
 from unittest.mock import MagicMock, patch
 
 # 創建一個模擬的ValidationError類，用於測試

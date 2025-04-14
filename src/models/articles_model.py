@@ -5,8 +5,7 @@ from typing import Optional
 from datetime import datetime
 from .base_entity import BaseEntity
 import logging
-import enum
-from src.utils.model_utils import ArticleScrapeStatus
+from src.utils.enum_utils import ArticleScrapeStatus
 
 # 設定 logger
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')

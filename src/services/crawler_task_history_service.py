@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 T = TypeVar('T', bound=Base)
 
 class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
-    """爬蟲任務歷史記錄服務"""
+    """CrawlerTaskHistory 的Service"""
     
     def __init__(self, db_manager=None):
         super().__init__(db_manager)

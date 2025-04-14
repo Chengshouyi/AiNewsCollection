@@ -1,7 +1,8 @@
 import pytest
 from datetime import datetime, timezone
 from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
-from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT, TaskPhase, ScrapeMode
+from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT, ScrapePhase, ScrapeMode
+from src.utils.enum_utils import TaskStatus
 from src.error.errors import ValidationError
 
 class TestCrawlerTasksCreateSchema:
@@ -40,7 +41,8 @@ class TestCrawlerTasksCreateSchema:
             "notes": "測試任務",
             "cron_expression": "*/10 * * * *",
             "last_run_message": "測試訊息",
-            "current_phase": TaskPhase.INIT,
+            "scrape_phase": ScrapePhase.INIT,
+            "task_status": TaskStatus.INIT,
             "retry_count": 0
         }
         
@@ -54,7 +56,8 @@ class TestCrawlerTasksCreateSchema:
         assert schema.notes == "測試任務"
         assert schema.cron_expression == "*/10 * * * *"
         assert schema.last_run_message == "測試訊息"
-        assert schema.current_phase == TaskPhase.INIT
+        assert schema.scrape_phase == ScrapePhase.INIT
+        assert schema.task_status == TaskStatus.INIT
         assert schema.retry_count == 0
         
         # task_args 測試
@@ -103,7 +106,7 @@ class TestCrawlerTasksCreateSchema:
             CrawlerTasksCreateSchema.model_validate(data)
         assert "task_args: 不能為空" in str(exc_info.value) or "task_args: 不能為 None" in str(exc_info.value)
         
-        # 測試缺少current_phase
+        # 測試缺少scrape_phase
         data = {
             "task_name": "測試任務",
             "crawler_id": 1,
@@ -112,7 +115,7 @@ class TestCrawlerTasksCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data)
-        assert "current_phase: 不能為空" in str(exc_info.value) or "current_phase: 不能為 None" in str(exc_info.value)
+        assert "scrape_phase: 不能為空" in str(exc_info.value) or "scrape_phase: 不能為 None" in str(exc_info.value)
 
     def test_crawler_tasks_with_all_fields(self):
         """測試包含所有欄位的爬蟲任務資料"""
@@ -148,7 +151,8 @@ class TestCrawlerTasksCreateSchema:
             "created_at": datetime.now(timezone.utc),
             "updated_at": None,
             "cron_expression": "* * * * *",
-            "current_phase": TaskPhase.INIT,
+            "scrape_phase": ScrapePhase.INIT,
+            "task_status": TaskStatus.RUNNING,
             "retry_count": 0
         }
         
@@ -160,7 +164,8 @@ class TestCrawlerTasksCreateSchema:
         assert schema.is_auto is True
         assert schema.is_active is True
         assert schema.notes == "測試任務"
-        assert schema.current_phase == TaskPhase.INIT
+        assert schema.scrape_phase == ScrapePhase.INIT
+        assert schema.task_status == TaskStatus.RUNNING
         assert schema.retry_count == 0
         
         # task_args 測試
@@ -183,7 +188,7 @@ class TestCrawlerTasksCreateSchema:
             "is_active": True,
             "task_args": TASK_ARGS_DEFAULT,
             "cron_expression": "* * * * *",
-            "current_phase": TaskPhase.INIT,
+            "scrape_phase": ScrapePhase.INIT,
             "retry_count": 0
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -200,7 +205,7 @@ class TestCrawlerTasksCreateSchema:
             "is_active": True,
             "task_args": TASK_ARGS_DEFAULT,
             "cron_expression": "* * * * *",
-            "current_phase": TaskPhase.INIT,
+            "scrape_phase": ScrapePhase.INIT,
             "retry_count": -1
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -217,7 +222,7 @@ class TestCrawlerTasksCreateSchema:
             "is_active": True,
             "task_args": TASK_ARGS_DEFAULT,
             "cron_expression": "* * * * *",
-            "current_phase": TaskPhase.INIT,
+            "scrape_phase": ScrapePhase.INIT,
             "retry_count": 0
         }
         with pytest.raises(ValidationError) as exc_info:
@@ -230,7 +235,7 @@ class TestCrawlerTasksCreateSchema:
             "task_name": "測試任務",
             "crawler_id": 1,
             "task_args": TASK_ARGS_DEFAULT,
-            "current_phase": TaskPhase.INIT
+            "scrape_phase": ScrapePhase.INIT
         }
         schema = CrawlerTasksCreateSchema.model_validate(data)
         assert schema.is_auto is True
@@ -241,6 +246,7 @@ class TestCrawlerTasksCreateSchema:
         assert schema.last_run_at is None
         assert schema.last_run_success is None
         assert schema.last_run_message is None
+        assert schema.task_status == TaskStatus.INIT
         assert schema.retry_count == 0
 
     def test_field_validations(self):
@@ -251,7 +257,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_name": "測試任務", 
                 "task_args": TASK_ARGS_DEFAULT, 
                 "crawler_id": None, 
-                "current_phase": TaskPhase.INIT
+                "scrape_phase": ScrapePhase.INIT
             })
             pytest.fail("預期 ValidationError for crawler_id=None")
         except ValidationError as e:
@@ -263,7 +269,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_name": "測試任務", 
                 "task_args": TASK_ARGS_DEFAULT, 
                 "crawler_id": "", 
-                "current_phase": TaskPhase.INIT
+                "scrape_phase": ScrapePhase.INIT
             })
             pytest.fail("預期 ValidationError for crawler_id=''")
         except ValidationError as e:
@@ -275,7 +281,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_name": "測試任務", 
                 "task_args": TASK_ARGS_DEFAULT, 
                 "crawler_id": 0, 
-                "current_phase": TaskPhase.INIT
+                "scrape_phase": ScrapePhase.INIT
             })
             pytest.fail("預期 ValidationError for crawler_id=0")
         except ValidationError as e:
@@ -287,7 +293,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_name": "測試任務", 
                 "task_args": TASK_ARGS_DEFAULT, 
                 "crawler_id": -1, 
-                "current_phase": TaskPhase.INIT
+                "scrape_phase": ScrapePhase.INIT
             })
             pytest.fail("預期 ValidationError for crawler_id=-1")
         except ValidationError as e:
@@ -299,7 +305,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_name": "測試任務", 
                 "task_args": TASK_ARGS_DEFAULT, 
                 "crawler_id": "abc", 
-                "current_phase": TaskPhase.INIT
+                "scrape_phase": ScrapePhase.INIT
             })
             pytest.fail("預期 ValidationError for crawler_id='abc'")
         except ValidationError as e:
@@ -311,7 +317,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_name": "測試任務", 
                 "crawler_id": 1, 
                 "task_args": "not_a_dict", 
-                "current_phase": TaskPhase.INIT
+                "scrape_phase": ScrapePhase.INIT
             })
         assert "task_args: 必須是字典格式" in str(exc_info.value)
 
@@ -325,7 +331,7 @@ class TestCrawlerTasksCreateSchema:
                 "task_name": "測試任務", 
                 "crawler_id": 1, 
                 "task_args": TASK_ARGS_DEFAULT, 
-                "current_phase": TaskPhase.INIT,
+                "scrape_phase": ScrapePhase.INIT,
                 field: value
             }
             with pytest.raises(ValidationError) as exc_info:
@@ -337,28 +343,28 @@ class TestCrawlerTasksCreateSchema:
                 "task_name": "a" * 256, 
                 "crawler_id": 1, 
                 "task_args": TASK_ARGS_DEFAULT, 
-                "current_phase": TaskPhase.INIT
+                "scrape_phase": ScrapePhase.INIT
             })
         assert "task_name: 長度不能超過 255 字元" in str(exc_info.value)
         
-        # 測試 current_phase 驗證
+        # 測試 scrape_phase 驗證
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate({
                 "task_name": "測試任務", 
                 "crawler_id": 1, 
                 "task_args": TASK_ARGS_DEFAULT, 
-                "current_phase": "a" * 256
+                "scrape_phase": "a" * 256
             })
-        assert "current_phase: 無效的枚舉值" in str(exc_info.value)
+        assert "scrape_phase: 無效的枚舉值" in str(exc_info.value)
 
-    def test_task_phase_validation(self):
+    def test_scrape_phase_validation(self):
         """測試任務階段的驗證"""
         # 測試所有有效值
         valid_phases = [
-            TaskPhase.INIT,
-            TaskPhase.LINK_COLLECTION,
-            TaskPhase.CONTENT_SCRAPING,
-            TaskPhase.COMPLETED,
+            ScrapePhase.INIT,
+            ScrapePhase.LINK_COLLECTION,
+            ScrapePhase.CONTENT_SCRAPING,
+            ScrapePhase.COMPLETED,
             "init",
             "link_collection",
             "content_scraping",
@@ -372,17 +378,73 @@ class TestCrawlerTasksCreateSchema:
                 "task_name": "測試任務",
                 "crawler_id": 1,
                 "task_args": TASK_ARGS_DEFAULT,
-                "current_phase": phase
+                "scrape_phase": phase
             }
             schema = CrawlerTasksCreateSchema.model_validate(data)
             if isinstance(phase, str):
                 try:
-                    expected_phase = TaskPhase(phase)
+                    expected_phase = ScrapePhase(phase)
                 except ValueError:
-                    expected_phase = TaskPhase(phase.lower())
+                    expected_phase = ScrapePhase(phase.lower())
             else:
                 expected_phase = phase
-            assert schema.current_phase == expected_phase
+            assert schema.scrape_phase == expected_phase
+
+    def test_task_status_validation(self):
+        """測試任務狀態的驗證"""
+        # 測試所有有效值
+        valid_statuses = [
+            TaskStatus.INIT,
+            TaskStatus.RUNNING,
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+            "init",
+            "running",
+            "completed",
+            "failed",
+            "cancelled",
+            "INIT",  # 測試大寫
+            "Running"  # 測試混合大小寫
+        ]
+        
+        for status in valid_statuses:
+            data = {
+                "task_name": "測試任務",
+                "crawler_id": 1,
+                "task_args": TASK_ARGS_DEFAULT,
+                "scrape_phase": ScrapePhase.INIT,
+                "task_status": status
+            }
+            schema = CrawlerTasksCreateSchema.model_validate(data)
+            if isinstance(status, str):
+                try:
+                    expected_status = TaskStatus(status)
+                except ValueError:
+                    expected_status = TaskStatus(status.lower())
+            else:
+                expected_status = status
+            assert schema.task_status == expected_status
+        
+        # 測試無效值
+        invalid_statuses = [
+            "invalid_status",
+            "pending",
+            123,
+            {}
+        ]
+        
+        for status in invalid_statuses:
+            data = {
+                "task_name": "測試任務",
+                "crawler_id": 1,
+                "task_args": TASK_ARGS_DEFAULT,
+                "scrape_phase": ScrapePhase.INIT,
+                "task_status": status
+            }
+            with pytest.raises(ValidationError) as exc_info:
+                CrawlerTasksCreateSchema.model_validate(data)
+            assert "task_status" in str(exc_info.value)
 
 class TestCrawlerTasksUpdateSchema:
     """CrawlerTasksUpdateSchema 的測試類"""
@@ -419,13 +481,9 @@ class TestCrawlerTasksUpdateSchema:
             "notes": "更新的備註",
             "cron_expression": "* */2 * * *",
             "last_run_message": "更新測試",
-            "current_phase": TaskPhase.INIT,
-            "retry_count": 2,
-            "max_cancel_wait": 30,
-            "cancel_interrupt_interval": 5,
-            "cancel_timeout": 60,
-            "save_partial_results_on_cancel": True,
-            "save_partial_to_database": True
+            "scrape_phase": ScrapePhase.INIT,
+            "task_status": TaskStatus.COMPLETED,
+            "retry_count": 2
         }
         
         schema = CrawlerTasksUpdateSchema.model_validate(data)
@@ -437,7 +495,8 @@ class TestCrawlerTasksUpdateSchema:
         assert schema.notes == "更新的備註"
         assert schema.cron_expression == "* */2 * * *"
         assert schema.last_run_message == "更新測試"
-        assert schema.current_phase == TaskPhase.INIT
+        assert schema.scrape_phase == ScrapePhase.INIT
+        assert schema.task_status == TaskStatus.COMPLETED
         assert schema.retry_count == 2
         
         # task_args 測試
@@ -540,7 +599,8 @@ class TestCrawlerTasksUpdateSchema:
             {"field": "task_args", "value": TASK_ARGS_DEFAULT},
             {"field": "cron_expression", "value": "30 18 * * 0"},
             {"field": "last_run_message", "value": "部分更新測試"},
-            {"field": "current_phase", "value": TaskPhase.INIT},
+            {"field": "scrape_phase", "value": ScrapePhase.INIT},
+            {"field": "task_status", "value": TaskStatus.RUNNING},
             {"field": "retry_count", "value": 3}
         ]
         

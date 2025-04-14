@@ -1,5 +1,5 @@
 from src.models.crawler_tasks_model import CrawlerTasks, TASK_ARGS_DEFAULT
-from src.utils.model_utils import TaskPhase, ScrapeMode
+from src.utils.enum_utils import ScrapePhase, ScrapeMode, TaskStatus
 from datetime import datetime, timezone
 import pytest
 from sqlalchemy import create_engine
@@ -61,7 +61,8 @@ class TestCrawlerTasksModel:
         assert task.cron_expression is None
         
         # 測試新增欄位的預設值
-        assert task.current_phase == TaskPhase.INIT
+        assert task.scrape_phase == ScrapePhase.INIT
+        assert task.task_status == TaskStatus.INIT
         assert task.retry_count == 0
     
     def test_default_values(self, session):
@@ -102,7 +103,8 @@ class TestCrawlerTasksModel:
         assert task.last_run_message is None
         
         # 測試新增欄位的預設值
-        assert task.current_phase == TaskPhase.INIT
+        assert task.scrape_phase == ScrapePhase.INIT
+        assert task.task_status == TaskStatus.INIT
         assert task.retry_count == 0
     
     def test_crawler_tasks_repr(self):
@@ -145,8 +147,8 @@ class TestCrawlerTasksModel:
         assert task.last_run_message == "執行成功"
         
         # 測試新增欄位更新
-        task.current_phase = TaskPhase.CONTENT_SCRAPING
-        assert task.current_phase == TaskPhase.CONTENT_SCRAPING
+        task.scrape_phase = ScrapePhase.CONTENT_SCRAPING
+        assert task.scrape_phase == ScrapePhase.CONTENT_SCRAPING
         
         task.max_retries = 5
         assert task.max_retries == 5
@@ -178,7 +180,7 @@ class TestCrawlerTasksModel:
             'id', 'task_name', 'crawler_id', 'is_auto', 'is_active',  'task_args', 
             'notes', 'created_at', 'updated_at', 'last_run_at', 
             'last_run_success', 'last_run_message', 'cron_expression',
-            'current_phase', 'retry_count'
+            'scrape_phase', 'task_status', 'retry_count'
         }
         
         assert set(task_dict.keys()) == expected_keys
@@ -187,25 +189,26 @@ class TestCrawlerTasksModel:
         assert task_dict['is_active'] is True
         
         # 測試枚舉值的序列化
-        assert task_dict['current_phase'] == TaskPhase.INIT.value
+        assert task_dict['scrape_phase'] == ScrapePhase.INIT.value
+        assert task_dict['task_status'] == TaskStatus.INIT.value
         assert task_dict['task_args']['scrape_mode'] == ScrapeMode.LINKS_ONLY.value
     
-    def test_task_phase_transitions(self):
+    def test_scrape_phase_transitions(self):
         """測試任務階段轉換"""
         task = CrawlerTasks(crawler_id=1)
         
         # 測試初始階段
-        assert task.current_phase == TaskPhase.INIT
+        assert task.scrape_phase == ScrapePhase.INIT
         
         # 測試階段轉換
-        task.current_phase = TaskPhase.LINK_COLLECTION
-        assert task.current_phase == TaskPhase.LINK_COLLECTION
+        task.scrape_phase = ScrapePhase.LINK_COLLECTION
+        assert task.scrape_phase == ScrapePhase.LINK_COLLECTION
         
-        task.current_phase = TaskPhase.CONTENT_SCRAPING
-        assert task.current_phase == TaskPhase.CONTENT_SCRAPING
+        task.scrape_phase = ScrapePhase.CONTENT_SCRAPING
+        assert task.scrape_phase == ScrapePhase.CONTENT_SCRAPING
         
-        task.current_phase = TaskPhase.COMPLETED
-        assert task.current_phase == TaskPhase.COMPLETED
+        task.scrape_phase = ScrapePhase.COMPLETED
+        assert task.scrape_phase == ScrapePhase.COMPLETED
     
     def test_retry_mechanism(self):
         """測試重試機制相關欄位"""
@@ -333,3 +336,34 @@ class TestCrawlerTasksModel:
         assert task.task_args['get_links_by_task_id'] == TASK_ARGS_DEFAULT['get_links_by_task_id']
         assert isinstance(task.task_args['article_links'], list)
         assert len(task.task_args['article_links']) == 0
+
+    def test_task_status_transitions(self):
+        """測試任務狀態轉換"""
+        task = CrawlerTasks(crawler_id=1)
+        
+        # 測試初始狀態
+        assert task.task_status == TaskStatus.INIT
+        
+        # 測試狀態轉換
+        task.task_status = TaskStatus.RUNNING
+        assert task.task_status == TaskStatus.RUNNING
+        
+        task.task_status = TaskStatus.COMPLETED
+        assert task.task_status == TaskStatus.COMPLETED
+        
+        task.task_status = TaskStatus.FAILED
+        assert task.task_status == TaskStatus.FAILED
+        
+        task.task_status = TaskStatus.CANCELLED
+        assert task.task_status == TaskStatus.CANCELLED
+
+    def test_field_updates_with_task_status(self):
+        """測試欄位更新，包括 task_status"""
+        task = CrawlerTasks(crawler_id=1)
+        
+        # 測試 task_status 更新
+        task.task_status = TaskStatus.RUNNING
+        assert task.task_status == TaskStatus.RUNNING
+        
+        task.task_status = TaskStatus.COMPLETED
+        assert task.task_status == TaskStatus.COMPLETED

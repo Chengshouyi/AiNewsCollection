@@ -1,11 +1,10 @@
 from typing import Annotated, Optional
 from pydantic import BeforeValidator, model_validator
 from datetime import datetime
-from src.utils.model_utils import validate_str, validate_url, validate_datetime, validate_boolean, validate_int, ArticleScrapeStatus,validate_article_scrape_status
+from src.utils.model_utils import validate_str, validate_url, validate_datetime, validate_boolean, validate_int,validate_article_scrape_status
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
 from src.utils.schema_utils import validate_update_schema, validate_required_fields_schema
-from src.error.errors import ValidationError
-
+from src.utils.enum_utils import ArticleScrapeStatus
 
 # 通用字段定義
 Title = Annotated[str, BeforeValidator(validate_str("title", max_length=500, required=True))]
