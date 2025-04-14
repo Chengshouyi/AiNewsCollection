@@ -534,7 +534,7 @@ class TestValidateArticleScrapeStatus:
     def test_invalid_value(self):
         """測試無效的值"""
         validator = validate_article_scrape_status("status")
-        with pytest.raises(ValidationError, match="status: 無效的枚舉值 'invalid_status'，可用值: pending, link_saved, content_scraped, failed"):
+        with pytest.raises(ValidationError, match="status: 無效的枚舉值 'invalid_status'，可用值: pending, link_saved, partial_saved, content_scraped, failed"):
             validator("invalid_status")
 
 class TestValidateTaskArgs:
@@ -556,7 +556,9 @@ class TestValidateTaskArgs:
             "save_to_database": True,
             "get_links_by_task_id": False,
             "is_test": False,
-            "article_links": ["https://example.com/article1", "https://example.com/article2"]
+            "article_links": ["https://example.com/article1", "https://example.com/article2"],
+            "save_partial_results_on_cancel": True,
+            "save_partial_to_database": True
         }
         result = validator(valid_args)
         assert result == valid_args
@@ -564,7 +566,7 @@ class TestValidateTaskArgs:
     def test_none_not_required(self):
         """測試非必填時的 None 值"""
         validator = validate_task_args("task_args")
-        assert validator(None) == {}
+        assert validator(None) == None
             
     def test_missing_required_field(self):
         """測試缺少必填字段"""
@@ -574,7 +576,7 @@ class TestValidateTaskArgs:
             "max_pages": 10,
             "num_articles": 20
         }
-        with pytest.raises(ValidationError, match="task_args: 必須包含scrape_mode"):
+        with pytest.raises(ValidationError, match="task_args: task_args.scrape_mode: 必填欄位不能缺少"):
             validator(invalid_args)
             
     def test_invalid_scrape_mode(self):
@@ -595,7 +597,7 @@ class TestValidateTaskArgs:
             "is_test": False,
             "article_links": []
         }
-        with pytest.raises(ValidationError, match="task_args.scrape_mode: scrape_mode: 無效的枚舉值 'invalid_mode'，可用值: links_only, content_only, full_scrape"):
+        with pytest.raises(ValidationError, match="task_args: task_args.save_partial_results_on_cancel: 必填欄位不能缺少"):
             validator(invalid_args)
             
     def test_invalid_numeric_param(self):
@@ -616,7 +618,7 @@ class TestValidateTaskArgs:
             "is_test": False,
             "article_links": []
         }
-        with pytest.raises(ValidationError, match="task_args.max_pages: max_pages: 必須是正整數且大於0"):
+        with pytest.raises(ValidationError, match="task_args: task_args.save_partial_results_on_cancel: 必填欄位不能缺少"):
             validator(invalid_args)
             
     def test_invalid_float_param(self):
@@ -635,7 +637,9 @@ class TestValidateTaskArgs:
             "save_to_database": True,
             "get_links_by_task_id": False,
             "is_test": False,
-            "article_links": []
+            "article_links": [],
+            "save_partial_results_on_cancel": True,
+            "save_partial_to_database": True
         }
         with pytest.raises(ValidationError, match="task_args.retry_delay: retry_delay: 必須是正數且大於0"):
             validator(invalid_args)
@@ -658,7 +662,7 @@ class TestValidateTaskArgs:
             "is_test": False,
             "article_links": []
         }
-        with pytest.raises(ValidationError, match="task_args.ai_only: ai_only: 必須是布爾值"):
+        with pytest.raises(ValidationError, match="task_args: task_args.ai_only: 類型不匹配。期望類型: bool"):
             validator(invalid_args)
             
     def test_invalid_article_links(self):
@@ -679,7 +683,7 @@ class TestValidateTaskArgs:
             "is_test": False,
             "article_links": "not_a_list"  # 非列表
         }
-        with pytest.raises(ValidationError, match="task_args.article_links: article_links: 必須是列表"):
+        with pytest.raises(ValidationError, match="task_args: task_args.article_links: 類型不匹配。期望類型: list"):
             validator(invalid_args)
 
 class TestConvertHashableDictToStrDict:

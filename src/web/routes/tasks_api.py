@@ -26,7 +26,6 @@ def run_fetch_full_article_task_thread(task_id):
     service = get_task_service()
     service.fetch_full_article(task_id)
 
-
 def run_fetch_content_thread(task_id):
     """執行抓取內容的背景執行緒"""
     service = get_task_service()

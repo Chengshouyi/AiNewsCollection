@@ -4,6 +4,7 @@ from src.crawlers.base_crawler import BaseCrawler
 from src.crawlers.bnext_scraper import BnextScraper
 from src.crawlers.bnext_content_extractor import BnextContentExtractor
 from typing import Optional, List, Dict, Any
+from src.models.crawler_tasks_model import ScrapeMode
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -42,7 +43,7 @@ class BnextCrawler(BaseCrawler):
         self.extractor.update_config(self.site_config)
         
 
-    def _fetch_article_links(self) -> Optional[pd.DataFrame]:
+    def _fetch_article_links(self, task_id: int) -> Optional[pd.DataFrame]:
         """
         抓取文章列表
         
@@ -55,6 +56,10 @@ class BnextCrawler(BaseCrawler):
         Returns:
             pd.DataFrame: 包含文章列表的資料框
         """
+        # 檢查任務是否已取消
+        if task_id and self._check_if_cancelled(task_id):
+            return None
+
         if not self.site_config:
             raise ValueError("網站設定(site_config)未初始化")
 
@@ -78,7 +83,7 @@ class BnextCrawler(BaseCrawler):
 
 
 
-    def _fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
+    def _fetch_articles(self, task_id: int) -> Optional[List[Dict[str, Any]]]:
         """
         抓取文章詳細內容
         
@@ -92,6 +97,10 @@ class BnextCrawler(BaseCrawler):
         Returns:
             List[Dict[str, Any]]: 包含文章詳細內容的列表
         """
+        # 檢查任務是否已取消
+        if task_id and self._check_if_cancelled(task_id):
+            return None
+
         if self.articles_df is None or self.articles_df.empty:
             logger.warning("沒有文章列表可供處理")
             return None

@@ -23,7 +23,12 @@ class TestCrawlerTasksCreateSchema:
             'save_to_database': True,
             'scrape_mode': 'full_scrape',
             'get_links_by_task_id': True,
-            'article_links': []
+            'article_links': [],
+            'max_cancel_wait': 30,
+            'cancel_interrupt_interval': 5,
+            'cancel_timeout': 60,
+            'save_partial_results_on_cancel': True,
+            'save_partial_to_database': True
         }
         
         data = {
@@ -71,6 +76,12 @@ class TestCrawlerTasksCreateSchema:
         assert schema.task_args['scrape_mode'] == 'full_scrape'
         assert schema.task_args['get_links_by_task_id'] is True
         assert schema.task_args['article_links'] == []
+        assert schema.task_args['max_cancel_wait'] == 30
+        assert schema.task_args['cancel_interrupt_interval'] == 5
+        assert schema.task_args['cancel_timeout'] == 60
+        assert schema.task_args['save_partial_results_on_cancel'] is True
+        assert schema.task_args['save_partial_to_database'] is True
+
 
     def test_missing_required_fields(self):
         """測試缺少必要欄位"""
@@ -119,7 +130,12 @@ class TestCrawlerTasksCreateSchema:
             'save_to_database': False,
             'scrape_mode': ScrapeMode.FULL_SCRAPE.value,
             'get_links_by_task_id': False,
-            'article_links': ['http://example.com/1', 'http://example.com/2']
+            'article_links': ['http://example.com/1', 'http://example.com/2'],
+            'max_cancel_wait': 30,
+            'cancel_interrupt_interval': 5,
+            'cancel_timeout': 60,
+            'save_partial_results_on_cancel': True,
+            'save_partial_to_database': True
         }
         
         data = {
@@ -151,6 +167,11 @@ class TestCrawlerTasksCreateSchema:
         assert schema.task_args['ai_only'] is True
         assert schema.task_args['max_pages'] == 5
         assert schema.task_args['article_links'] == ['http://example.com/1', 'http://example.com/2']
+        assert schema.task_args['max_cancel_wait'] == 30
+        assert schema.task_args['cancel_interrupt_interval'] == 5
+        assert schema.task_args['cancel_timeout'] == 60
+        assert schema.task_args['save_partial_results_on_cancel'] is True
+        assert schema.task_args['save_partial_to_database'] is True
 
     def test_crawler_id_validation(self):
         """測試 crawler_id 的驗證"""
@@ -382,7 +403,12 @@ class TestCrawlerTasksUpdateSchema:
             'save_to_database': False,
             'scrape_mode': ScrapeMode.FULL_SCRAPE.value,
             'get_links_by_task_id': False,
-            'article_links': ['http://example.com/1', 'http://example.com/2']
+            'article_links': ['http://example.com/1', 'http://example.com/2'],
+            'max_cancel_wait': 30,
+            'cancel_interrupt_interval': 5,
+            'cancel_timeout': 60,
+            'save_partial_results_on_cancel': True,
+            'save_partial_to_database': True
         }
         
         data = {
@@ -394,7 +420,12 @@ class TestCrawlerTasksUpdateSchema:
             "cron_expression": "* */2 * * *",
             "last_run_message": "更新測試",
             "current_phase": TaskPhase.INIT,
-            "retry_count": 2
+            "retry_count": 2,
+            "max_cancel_wait": 30,
+            "cancel_interrupt_interval": 5,
+            "cancel_timeout": 60,
+            "save_partial_results_on_cancel": True,
+            "save_partial_to_database": True
         }
         
         schema = CrawlerTasksUpdateSchema.model_validate(data)
@@ -418,6 +449,11 @@ class TestCrawlerTasksUpdateSchema:
         assert schema.task_args['ai_only'] is True
         assert schema.task_args['num_articles'] == 15
         assert schema.task_args['article_links'] == ['http://example.com/1', 'http://example.com/2']
+        assert schema.task_args['max_cancel_wait'] == 30
+        assert schema.task_args['cancel_interrupt_interval'] == 5
+        assert schema.task_args['cancel_timeout'] == 60
+        assert schema.task_args['save_partial_results_on_cancel'] is True
+        assert schema.task_args['save_partial_to_database'] is True
 
     def test_invalid_cron_expressions(self):
         """測試無效的 cron 表達式"""

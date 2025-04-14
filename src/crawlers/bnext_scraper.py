@@ -53,6 +53,7 @@ class BnextScraper:
             session = requests.Session()
 
             for current_category_name in self.site_config.categories:
+                
                 logger.debug(f"開始處理類別: {current_category_name}")
                 # 構造類別URL
                 current_category_url = self.site_config.get_category_url(current_category_name)

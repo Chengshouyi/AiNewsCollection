@@ -203,7 +203,7 @@ class TestBnextCrawler:
             extractor=mock_extractor
         )
         
-        articles_df = crawler._fetch_article_links()
+        articles_df = crawler._fetch_article_links(task_id=123)
         assert articles_df is not None
         assert not articles_df.empty
         assert len(articles_df) == 2
@@ -228,7 +228,7 @@ class TestBnextCrawler:
         crawler.articles_df = mock_scraper.scrape_article_list()
         
         # 測試抓取文章內容
-        articles_content = crawler._fetch_articles()
+        articles_content = crawler._fetch_articles(task_id=123)
         
         assert articles_content is not None
         assert len(articles_content) == 2
@@ -295,49 +295,6 @@ class TestBnextCrawler:
             task_id=456
         )
 
-    def test_fetch_article_links_by_filter_with_article_ids(self, mock_config_file, article_service, mock_scraper, mock_extractor):
-        """測試使用文章ID從資料庫獲取文章連結"""
-        crawler = BnextCrawler(
-            config_file_name=mock_config_file,
-            article_service=article_service,
-            scraper=mock_scraper,
-            extractor=mock_extractor
-        )
-        
-        # 模擬 article_service.get_article_by_id 返回文章
-        mock_article = MagicMock()
-        mock_article.id = 123
-        mock_article.title = "根據ID獲取的文章"
-        mock_article.link = "https://www.bnext.com.tw/article/123"
-        mock_article.is_scraped = False
-        mock_article.scrape_status = ArticleScrapeStatus.LINK_SAVED
-        mock_article.scrape_error = None
-        mock_article.last_scrape_attempt = datetime.now(timezone.utc)
-        mock_article.task_id = 456
-        
-        article_service.get_article_by_id = MagicMock(return_value={
-            "success": True,
-            "article": mock_article,
-            "message": "成功獲取文章"
-        })
-        
-        # 使用新的方法名稱並傳入文章ID
-        articles_df = crawler._fetch_article_links_by_filter(
-            article_ids=[123]
-        )
-        
-        # 驗證結果
-        assert articles_df is not None
-        assert not articles_df.empty
-        assert len(articles_df) == 1
-        assert articles_df.iloc[0]['title'] == "根據ID獲取的文章"
-        assert articles_df.iloc[0]['link'] == "https://www.bnext.com.tw/article/123"
-        assert articles_df.iloc[0]['is_scraped'] == False
-        assert articles_df.iloc[0]['scrape_status'] == "link_saved"
-        
-        # 驗證 get_article_by_id 是否被正確調用
-        article_service.get_article_by_id.assert_called_once_with(123)
-
     def test_fetch_article_links_by_filter_with_links(self, mock_config_file, article_service, mock_scraper, mock_extractor):
         """測試使用文章連結從資料庫獲取文章"""
         crawler = BnextCrawler(
@@ -367,7 +324,8 @@ class TestBnextCrawler:
         
         # 使用新的方法名稱並傳入文章連結
         articles_df = crawler._fetch_article_links_by_filter(
-            article_links=[link]
+            article_links=[link],
+            task_id=123
         )
         
         # 驗證結果
@@ -402,7 +360,8 @@ class TestBnextCrawler:
         
         # 使用新的方法名稱並傳入不存在的文章連結
         articles_df = crawler._fetch_article_links_by_filter(
-            article_links=[link]
+            article_links=[link],
+            task_id=123
         )
         
         # 驗證結果 - 應該創建一個簡單的記錄
@@ -431,7 +390,8 @@ class TestBnextCrawler:
         
         # 使用新的方法名稱並檢查錯誤處理
         articles_df = crawler._fetch_article_links_by_filter(
-            is_scraped=False
+            is_scraped=False,
+            task_id=123
         )
         
         # 驗證結果 - 應該返回None
@@ -449,7 +409,7 @@ class TestBnextCrawler:
                 scraper=mock_scraper,
                 extractor=mock_extractor
             )
-            crawler._fetch_article_links()
+            crawler._fetch_article_links(task_id=123)
             
     def test_fetch_articles_no_links(self, mock_config_file, article_service, mock_scraper, mock_extractor):
         """測試沒有文章列表時抓取文章內容"""
@@ -460,7 +420,7 @@ class TestBnextCrawler:
             extractor=mock_extractor
         )
         
-        articles = crawler._fetch_articles()
+        articles = crawler._fetch_articles(task_id=123)
         assert articles is None
 
     def test_update_config(self, mock_config_file, article_service, mock_scraper, mock_extractor):
@@ -496,7 +456,7 @@ class TestBnextCrawler:
         crawler.global_params = custom_params
         
         # 執行抓取
-        crawler._fetch_article_links()
+        crawler._fetch_article_links(task_id=123)
         
         # 驗證使用了正確的參數呼叫 scraper.scrape_article_list
         mock_scraper.scrape_article_list.assert_called_once_with(
@@ -526,7 +486,7 @@ class TestBnextCrawler:
         crawler.global_params = custom_params
         
         # 執行抓取
-        crawler._fetch_articles()
+        crawler._fetch_articles(task_id=123)
         
         # 驗證使用了正確的參數呼叫 extractor.batch_get_articles_content
         mock_extractor.batch_get_articles_content.assert_called_once_with(
@@ -549,7 +509,7 @@ class TestBnextCrawler:
         mock_scraper.scrape_article_list.return_value = pd.DataFrame()
         
         # 執行抓取
-        result = crawler._fetch_article_links()
+        result = crawler._fetch_article_links(task_id=123)
         
         # 驗證結果為 None
         assert result is None
@@ -591,7 +551,7 @@ class TestBnextCrawler:
         ]
         
         # 執行抓取
-        articles = crawler._fetch_articles()
+        articles = crawler._fetch_articles(task_id=123)
         
         # 驗證文章狀態正確更新到 DataFrame
         assert crawler.articles_df.loc[0, 'scrape_status'] == "content_scraped"
@@ -619,7 +579,7 @@ class TestBnextCrawler:
         crawler.retry_operation = mock_retry
         
         # 執行抓取
-        crawler._fetch_article_links()
+        crawler._fetch_article_links(task_id=123)
         
         # 驗證 retry_operation 被調用
         mock_retry.assert_called_once()
@@ -641,7 +601,7 @@ class TestBnextCrawler:
         crawler.retry_operation = mock_retry
         
         # 執行抓取
-        crawler._fetch_articles()
+        crawler._fetch_articles(task_id=123)
         
         # 驗證 retry_operation 被調用
         mock_retry.assert_called_once()

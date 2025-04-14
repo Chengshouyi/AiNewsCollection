@@ -1,10 +1,9 @@
-from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text, VARCHAR, String, Enum
+from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text, VARCHAR, String, Enum, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from typing import Optional
 from datetime import datetime
 from .base_entity import BaseEntity
-from sqlalchemy.dialects.mysql import JSON
 from src.utils.model_utils import TaskPhase, ScrapeMode
 
 TASK_ARGS_DEFAULT = {
@@ -21,7 +20,12 @@ TASK_ARGS_DEFAULT = {
     'save_to_database': True,
     'scrape_mode': ScrapeMode.FULL_SCRAPE.value,
     'get_links_by_task_id': True,
-    'article_links': []
+    'article_links': [],
+    'save_partial_results_on_cancel': False,
+    'save_partial_to_database': False,
+    'max_cancel_wait': 30,
+    'cancel_interrupt_interval': 5,
+    'cancel_timeout': 60
 }
 
 class CrawlerTasks(Base, BaseEntity):
@@ -54,6 +58,11 @@ class CrawlerTasks(Base, BaseEntity):
         - scrape_mode: 抓取模式 (LINKS_ONLY, CONTENT_ONLY, FULL_SCRAPE)
         - get_links_by_task_id: 是否從資料庫根據任務ID獲取要抓取內容的文章(scrape_mode=CONTENT_ONLY時有效)
         - article_links: 要抓取內容的文章連結列表 (scrape_mode=CONTENT_ONLY且get_links_by_task_id=False時有效)
+        - save_partial_results_on_cancel: 是否在取消時保存部分結果
+        - save_partial_to_database: 是否在取消時將部分結果保存到資料庫
+        - max_cancel_wait: 最大取消等待時間
+        - cancel_interrupt_interval: 取消等待間隔
+        - cancel_timeout: 取消超時時間
     """
     __tablename__ = 'crawler_tasks'
 

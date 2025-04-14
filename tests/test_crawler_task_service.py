@@ -69,13 +69,12 @@ def sample_tasks(session):
             crawler_id=crawler.id,
             cron_expression="0 0 * * *",
             is_auto=True,
-            task_args={"max_items": 100},
+            task_args={"max_items": 100, "scrape_mode": ScrapeMode.FULL_SCRAPE.value},
             created_at=datetime(2023, 1, 1, tzinfo=timezone.utc),
             updated_at=datetime(2023, 1, 1, tzinfo=timezone.utc),
             current_phase=TaskPhase.INIT,
             max_retries=3,
             retry_count=0,
-            scrape_mode=ScrapeMode.FULL_SCRAPE,
             ai_only=False
         ),
         CrawlerTasks(
@@ -83,13 +82,12 @@ def sample_tasks(session):
             crawler_id=crawler.id,
             cron_expression="0 0 * * 1-5",
             is_auto=True,
-            task_args={"max_items": 50},
+            task_args={"max_items": 50, "scrape_mode": ScrapeMode.LINKS_ONLY.value},
             created_at=datetime(2023, 1, 2, tzinfo=timezone.utc),
             updated_at=datetime(2023, 1, 2, tzinfo=timezone.utc),
             current_phase=TaskPhase.INIT,
             max_retries=3,
             retry_count=0,
-            scrape_mode=ScrapeMode.LINKS_ONLY,
             ai_only=True
         )
     ]
@@ -123,7 +121,7 @@ class TestCrawlerTaskService:
         update_data = {
             "task_name": "更新後的任務名稱",
             "is_active": False,
-            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_retries": 3, "retry_count": 0, "scrape_mode": "full_scrape"},
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_retries": 3, "retry_count": 0, "scrape_mode": "links_only"},
         }
         
         result = crawler_task_service.update_task(task_id, update_data)
@@ -246,6 +244,7 @@ class TestCrawlerTaskService:
                     'success': True,
                     'message': '測試執行成功',
                     'links_found': 10,
+                    'articles_count': 10,
                     'sample_links': ['https://test.com/1', 'https://test.com/2']
                 }
         
@@ -274,7 +273,7 @@ class TestCrawlerTaskService:
         assert result["success"] is True
         assert "test_results" in result
         assert "links_found" in result["test_results"]
-        assert "sample_links" in result["test_results"]
+        assert "execution_time" in result["test_results"]
 
     def test_cancel_task(self, crawler_task_service, sample_tasks, session):
         """測試取消任務功能"""
@@ -285,29 +284,58 @@ class TestCrawlerTaskService:
             task_id=task_id,
             start_time=datetime.now(timezone.utc),
             success=None,
-            message="正在執行中"
+            message="正在執行中",
+            status="running"
         )
         
-        # 添加status屬性的模擬方法
-        history.status = 'running'
         session.add(history)
         session.commit()
         
-        # 重寫get_latest_history方法以返回帶有status的對象
-        original_get_latest_history = crawler_task_service._get_repositories()[2].get_latest_history
+        # 模擬爬蟲實例
+        class MockCrawler:
+            def __init__(self):
+                self.global_params = {}
+                self.task_status = {
+                    task_id: {
+                        'status': 'running',
+                        'progress': 50,
+                        'message': '正在執行任務',
+                        'start_time': datetime.now(timezone.utc)
+                    }
+                }
+                
+            def cancel_task(self, task_id):
+                self.task_status[task_id]['status'] = 'cancelled'
+                self.task_status[task_id]['message'] = '任務已被使用者取消'
+                return True
+                
+            def get_task_status(self, task_id):
+                return self.task_status[task_id]
         
-        def mocked_get_latest_history(task_id):
-            history = original_get_latest_history(task_id)
-            if history:
-                history.status = 'running'
-            return history
+        # 注入模擬的爬蟲實例到服務中
+        mock_crawler = MockCrawler()
+        crawler_task_service.running_crawlers[task_id] = mock_crawler
         
-        # 替換方法
-        crawler_task_service._get_repositories()[2].get_latest_history = mocked_get_latest_history
+        # 模擬get_task_status方法返回running狀態
+        def mock_get_task_status(task_id):
+            return {'status': 'running', 'progress': 50, 'message': '正在執行任務'}
         
-        result = crawler_task_service.cancel_task(task_id)
-        assert result["success"] is True
-        assert result["message"] == "任務已取消"
+        original_get_task_status = crawler_task_service.get_task_status
+        crawler_task_service.get_task_status = mock_get_task_status
+        
+        try:
+            # 執行取消任務
+            result = crawler_task_service.cancel_task(task_id)
+            
+            # 驗證結果
+            assert result["success"] is True
+            assert "任務 1 已成功取消" in result["message"]
+        finally:
+            # 還原方法
+            crawler_task_service.get_task_status = original_get_task_status
+            # 清理模擬的爬蟲實例
+            if task_id in crawler_task_service.running_crawlers:
+                del crawler_task_service.running_crawlers[task_id]
 
     @pytest.mark.skip("暫時跳過帶過濾條件的歷史記錄測試，需重新設計API")
     def test_get_task_history_with_filters(self, crawler_task_service, sample_tasks, session):
@@ -347,7 +375,7 @@ class TestCrawlerTaskService:
         # 測試按日期範圍過濾 - 此測試需要重新設計，因為API不支持過濾器參數
         # 暫時跳過，待重新設計API後再補充測試
 
-    def test_collect_article_links(self, crawler_task_service, sample_tasks, monkeypatch):
+    def test_collect_links_only(self, crawler_task_service, sample_tasks, monkeypatch):
         """測試收集文章連結功能"""
         task_id = sample_tasks[0].id
         
@@ -383,7 +411,7 @@ class TestCrawlerTaskService:
         monkeypatch.setattr(crawler_task_service, '_get_articles_repository', lambda: MockArticleRepo())
         
         # 執行測試
-        result = crawler_task_service.collect_article_links(task_id)
+        result = crawler_task_service.collect_links_only(task_id)
         
         # 驗證結果
         assert result['success'] is True
@@ -391,7 +419,7 @@ class TestCrawlerTaskService:
         assert len(result['article_ids']) == 10
         assert result['next_step'] in ['content_scraping', 'completed']
 
-    def test_fetch_article_content(self, crawler_task_service, sample_tasks, monkeypatch):
+    def test_fetch_content_only(self, crawler_task_service, sample_tasks, monkeypatch):
         """測試抓取文章內容功能"""
         task_id = sample_tasks[0].id
         link_ids = [1, 2, 3]  # 模擬的文章ID列表
@@ -400,27 +428,32 @@ class TestCrawlerTaskService:
         class MockCrawler:
             def execute_task(self, task_id, task_args):
                 assert task_args['scrape_mode'] == 'content_only'  # 確保使用正確的抓取模式
-                assert 'article_ids' in task_args
-                assert task_args['article_ids'] == link_ids
+                # article_ids現在由fetch_content_only內部設置，不需要從外部傳入
                 return {
                     'success': True,
                     'message': '文章內容抓取完成',
-                    'articles_count': len(link_ids)
+                    'articles_count': 3
                 }
         
         def mock_get_crawler(crawler_name):
             return MockCrawler()
         
+        # 模擬文章存儲庫，返回預設的文章列表
+        class MockArticleRepo:
+            def find_articles_by_task_id(self, **kwargs):
+                return [type('MockArticle', (), {'id': i}) for i in range(1, 4)]  # 返回3篇文章
+        
         # 補丁替換方法
         monkeypatch.setattr('src.crawlers.crawler_factory.CrawlerFactory.get_crawler', mock_get_crawler)
+        monkeypatch.setattr(crawler_task_service, '_get_articles_repository', lambda: MockArticleRepo())
         
         # 執行測試
-        result = crawler_task_service.fetch_article_content(task_id, link_ids)
+        result = crawler_task_service.fetch_content_only(task_id)
         
         # 驗證結果
         assert result['success'] is True
         assert result['message'] == '文章內容抓取完成'
-        assert result['articles_count'] == len(link_ids)
+        assert result['articles_count'] == 3
 
     def test_run_task_with_different_modes(self, crawler_task_service, sample_tasks, monkeypatch):
         """測試不同抓取模式下的任務執行"""
@@ -437,7 +470,7 @@ class TestCrawlerTaskService:
                 from src.models.crawler_tasks_model import TaskPhase
                 crawler = sample_tasks[0].crawler
                 is_auto = True
-                task_args = {**TASK_ARGS_DEFAULT, "ai_only": False, "scrape_mode": mode.value}
+                task_args = {**TASK_ARGS_DEFAULT, "ai_only": False, "get_links_by_task_id": True, "scrape_mode": mode.value}
                 current_phase = TaskPhase.INIT
             
             # 替換獲取任務的方法
@@ -446,16 +479,16 @@ class TestCrawlerTaskService:
             
             # 模擬必要的方法調用
             if mode == ScrapeMode.LINKS_ONLY:
-                # 模擬collect_article_links方法
+                # 模擬collect_links_only方法
                 monkeypatch.setattr(
-                    crawler_task_service, 'collect_article_links', 
+                    crawler_task_service, 'collect_links_only', 
                     lambda task_id: {'success': True, 'message': '連結收集完成', 'links_found': 10}
                 )
             elif mode == ScrapeMode.CONTENT_ONLY:
-                # 模擬fetch_article_content方法和find_articles_by_task_id
+                # 模擬fetch_content_only方法和find_articles_by_task_id
                 monkeypatch.setattr(
-                    crawler_task_service, 'fetch_article_content', 
-                    lambda task_id, link_ids: {'success': True, 'message': '內容抓取完成', 'articles_count': len(link_ids)}
+                    crawler_task_service, 'fetch_content_only', 
+                    lambda task_id: {'success': True, 'message': '內容抓取完成', 'articles_count': 10}
                 )
                 
                 # 模擬文章存儲庫
@@ -465,14 +498,14 @@ class TestCrawlerTaskService:
             
                 monkeypatch.setattr(crawler_task_service, '_get_articles_repository', lambda: MockArticleRepoForContentMode())
             else:  # FULL_SCRAPE
-                # 模擬collect_article_links和fetch_article_content方法
+                # 模擬collect_links_only和fetch_content_only方法
                 monkeypatch.setattr(
-                    crawler_task_service, 'collect_article_links', 
+                    crawler_task_service, 'collect_links_only', 
                     lambda task_id: {'success': True, 'message': '連結收集完成', 'links_found': 10}
                 )
                 monkeypatch.setattr(
-                    crawler_task_service, 'fetch_article_content', 
-                    lambda task_id, link_ids: {'success': True, 'message': '內容抓取完成', 'articles_count': len(link_ids)}
+                    crawler_task_service, 'fetch_content_only', 
+                    lambda task_id: {'success': True, 'message': '內容抓取完成', 'articles_count': 10}
                 )
                 
                 # 模擬文章存儲庫
@@ -518,7 +551,7 @@ class TestCrawlerTaskService:
             "crawler_id": 1,
             "is_auto": True,
             "cron_expression": "0 0 * * *",
-            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "scrape_mode": "links_only", "max_retries": 3, "retry_count": 0},
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_retries": 3, "retry_count": 0, "scrape_mode": "links_only"},
             "current_phase": "init"
         }
         
@@ -539,7 +572,7 @@ class TestCrawlerTaskService:
         
         # 修改任務為僅抓取內容模式
         from src.models.crawler_tasks_model import ScrapeMode
-        crawler_task_service.update_task(task_id, {"task_args": {**TASK_ARGS_DEFAULT, "scrape_mode": "content_only"}})
+        crawler_task_service.update_task(task_id, {"task_args": {**TASK_ARGS_DEFAULT, "scrape_mode": "content_only", "get_links_by_task_id": True}})
         
         # 創建超過100篇的文章模擬對象
         mock_articles = [mocker.Mock(id=i) for i in range(1, 120)]
@@ -549,10 +582,10 @@ class TestCrawlerTaskService:
         mock_article_repo.find_articles_by_task_id.return_value = mock_articles[:100]  # 應該只返回100篇
         mocker.patch.object(crawler_task_service, '_get_articles_repository', return_value=mock_article_repo)
         
-        # Mock fetch_article_content 函數以避免實際執行
+        # Mock fetch_content_only 函數以避免實際執行
         mocker.patch.object(
             crawler_task_service, 
-            'fetch_article_content', 
+            'fetch_content_only', 
             return_value={'success': True, 'articles_count': 100}
         )
         
@@ -563,7 +596,7 @@ class TestCrawlerTaskService:
         
         # 模擬任務對象
         mock_task = mocker.Mock()
-        mock_task.task_args = {"scrape_mode": ScrapeMode.CONTENT_ONLY.value, "ai_only": False}
+        mock_task.task_args = {"scrape_mode": ScrapeMode.CONTENT_ONLY.value, "get_links_by_task_id": True}
         mock_task.crawler = sample_tasks[0].crawler
         mock_task.is_auto = True
         mocker.patch.object(crawler_task_service._get_repositories()[0], 'get_by_id', return_value=mock_task)
@@ -607,6 +640,33 @@ class TestCrawlerTaskService:
         
         with pytest.raises(ValidationError):
             crawler_task_service.validate_task_data(invalid_data)
+            
+        # 測試內容抓取模式邏輯 - 沒有get_links_by_task_id時應自動設為True
+        content_only_data = {
+            "task_name": "內容抓取測試",
+            "crawler_id": 1,
+            "is_auto": False,
+            "task_args": {**TASK_ARGS_DEFAULT, "scrape_mode": "content_only"},
+            "scrape_mode": "content_only",  # 為了兼容舊版本的程式碼，同時提供頂層屬性
+            "current_phase": "init"
+        }
+        
+        result = crawler_task_service.validate_task_data(content_only_data)
+        assert result["task_args"].get("get_links_by_task_id") is True
+        
+        # 測試內容抓取模式邏輯 - 設定get_links_by_task_id為False但沒有提供article_links
+        content_only_no_links_data = {
+            "task_name": "內容抓取測試",
+            "crawler_id": 1,
+            "is_auto": False,
+            "task_args": {**TASK_ARGS_DEFAULT, "scrape_mode": "content_only", "get_links_by_task_id": False},
+            "scrape_mode": "content_only",  # 為了兼容舊版本的程式碼，同時提供頂層屬性
+            "current_phase": "init"
+        }
+        
+        with pytest.raises(ValidationError) as exc_info:
+            crawler_task_service.validate_task_data(content_only_no_links_data)
+        assert "內容抓取模式需要提供 article_links" in str(exc_info.value)
             
     def test_find_tasks_by_multiple_crawlers(self, crawler_task_service, sample_tasks, session):
         """測試根據多個爬蟲ID查詢任務"""

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from src.crawlers.crawler_factory import CrawlerFactory
 from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
 from src.services.base_service import BaseService
+from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -84,7 +85,7 @@ class TaskExecutor:
                 }
                 
             # 準備任務參數
-            task_args = task.task_args or {}
+            task_args = task.task_args or TASK_ARGS_DEFAULT
             
             # 確保scrape_mode參數存在
             if hasattr(task, 'scrape_mode') and task.scrape_mode:

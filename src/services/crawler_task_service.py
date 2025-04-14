@@ -778,8 +778,18 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             
             # 取得爬蟲實例並呼叫取消方法
             crawler = self.running_crawlers[task_id]
-            cancelled = crawler.cancel_task(task_id)
             
+            # 配置任務的取消參數 - 使其支援新的部分數據保存功能
+            # 根據任務的設定決定是否保存部分結果
+            save_partial_results = task.task_args.get('save_partial_results_on_cancel', False)
+            save_partial_to_database = task.task_args.get('save_partial_to_database', False)
+            
+            # 更新全局參數以支持取消時的數據處理
+            crawler.global_params['save_partial_results_on_cancel'] = save_partial_results
+            crawler.global_params['save_partial_to_database'] = save_partial_to_database
+            
+            # 呼叫取消方法
+            cancelled = crawler.cancel_task(task_id)
 
             if not cancelled:
                 # 更新任務歷史記錄
@@ -796,12 +806,22 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
 
                 return {"success": False, "message": f"無法取消任務 {task_id}"}
             
+            # 獲取任務取消後的狀態（包含部分數據保存信息）
+            crawler_task_status = crawler.get_task_status(task_id)
+            
             # 更新任務歷史記錄
             history_update_data = {
                 'end_time': datetime.now(timezone.utc),
                 'status': 'cancelled',
-                'message': '任務已被使用者取消'
+                'message': crawler_task_status.get('message', '任務已被使用者取消')
             }
+            
+            # 如果有部分數據被保存，記錄到歷史記錄中
+            if crawler_task_status.get('cancelled_but_saved_partial', False):
+                partial_saved_count = crawler_task_status.get('partial_saved_count', 0)
+                history_update_data['articles_count'] = partial_saved_count
+                history_update_data['message'] += f"，已保存 {partial_saved_count} 篇部分完成的文章"
+            
             # 驗證歷史記錄更新資料
             validated_history_update = self.validate_data('TaskHistory', history_update_data, SchemaType.UPDATE)
             # 更新歷史記錄
@@ -814,15 +834,32 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             tasks_repo.update_last_run(
                 task_id, 
                 False, 
-                '任務已被使用者取消'
+                crawler_task_status.get('message', '任務已被使用者取消')
             )
+            
+            # 增加延遲，確保資源清理完成
+            time.sleep(0.5)
+            
             # 釋放爬蟲資源
             self.cleanup_crawler_instance(task_id)
-            return {
+            
+            # 構建更豐富的返回結果
+            result = {
                 "success": True,
                 "message": f"任務 {task_id} 已成功取消",
-                "task_status": crawler.get_task_status(task_id)
+                "task_status": crawler_task_status
             }
+            
+            # 如果有部分數據被保存，添加到結果中
+            if 'partial_data_saved' in crawler_task_status and crawler_task_status['partial_data_saved']:
+                result['partial_data_saved'] = True
+                result['partial_saved_info'] = {
+                    'count': crawler_task_status.get('partial_saved_count', 0),
+                    'saved_to_csv': save_partial_results,
+                    'saved_to_database': save_partial_to_database
+                }
+            
+            return result
 
         except Exception as e:
             logger.error(f"取消任務失敗 (ID={task_id}): {str(e)}", exc_info=True)
@@ -844,8 +881,6 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'success': False,
                 'message': f'取消任務失敗: {str(e)}'
             }
-        
-
 
     def test_crawler(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """測試爬蟲任務

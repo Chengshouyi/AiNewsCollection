@@ -24,6 +24,7 @@ class ScrapeMode(enum.Enum):
 class ArticleScrapeStatus(enum.Enum):
     PENDING = "pending"  # 等待爬取
     LINK_SAVED = "link_saved"  # 連結已保存
+    PARTIAL_SAVED = "partial_saved"  # 部分保存
     CONTENT_SCRAPED = "content_scraped"  # 內容已爬取
     FAILED = "failed"  # 爬取失敗
 
@@ -428,64 +429,121 @@ def validate_url(
 
 
 def validate_task_args(field_name: str, required: bool = False):
-    """任務參數驗證"""
-    def validator(value: Any) -> Dict[str, Any]:
-        if value is None:
-            if required:
-                raise ValidationError(f"{field_name}: 不能為空")
-            return {}
+    """
+    任務參數驗證器
+    
+    Args:
+        field_name: 欄位名稱
+        required: 是否為必填
+    
+    Returns:
+        驗證函數
+    """
+    def validator(task_args: Any, is_update: bool = False) -> Optional[Dict[str, Any]]:
         try:
-            validate_dict(field_name, required=required)(value)
-        except Exception as e:
-            raise ValidationError(f"task_args: 必須是字典，{str(e)}")
+            if task_args is None:
+                if required:
+                    raise ValidationError(f"{field_name}: 不能為 None")
+                return None
+                
+            if not isinstance(task_args, dict):
+                raise ValidationError(f"{field_name}: 必須是字典格式")
 
-        # 驗證scrape_mode
-        if 'scrape_mode' not in value:
-            raise ValidationError(f"task_args: 必須包含scrape_mode")
-        try:
-            validate_scrape_mode('scrape_mode', required=True)(value['scrape_mode'])
-        except Exception as e:
-                raise ValidationError(f"task_args.scrape_mode: {str(e)}")
+            # 必要欄位及其類型定義
+            required_fields = {
+                'scrape_mode': str,
+                'max_pages': int,
+                'ai_only': bool,
+                'num_articles': int,
+                'min_keywords': int,
+                'max_retries': int,
+                'retry_delay': (int, float),
+                'timeout': (int, float),
+                'is_test': bool,
+                'save_to_csv': bool,
+                'save_to_database': bool,
+                'get_links_by_task_id': bool,
+                'article_links': list,
+                'save_partial_results_on_cancel': bool,
+                'save_partial_to_database': bool
+            }
 
-        # 驗證數值類型參數
-        numeric_params = ['max_pages', 'num_articles', 'min_keywords', 'timeout', 'max_retries']
-        for param in numeric_params:
-            if param in value:
-                if param not in value:
-                    raise ValidationError(f"task_args.{param}: 不能為空")
+            # 可選欄位及其類型定義
+            optional_fields = {
+                'csv_file_prefix': str,
+                'max_cancel_wait': int,
+                'cancel_interrupt_interval': int,
+                'cancel_timeout': int
+            }
+
+            # 驗證所有必填欄位 (在更新模式下欄位可以不存在)
+            for field, expected_type in required_fields.items():
+                if field in task_args:
+                    if not isinstance(task_args[field], expected_type):
+                        raise ValidationError(f"{field_name}.{field}: 類型不匹配。期望類型: {expected_type.__name__}")
+                elif not is_update:  # 只有在非更新模式下檢查必填欄位
+                    raise ValidationError(f"{field_name}.{field}: 必填欄位不能缺少")
+
+            # 驗證所有可選欄位
+            for field, expected_type in optional_fields.items():
+                if field in task_args and not isinstance(task_args[field], expected_type):
+                    raise ValidationError(f"{field_name}.{field}: 類型不匹配。期望類型: {expected_type.__name__}")
+
+            # 驗證scrape_mode (如果存在)
+            if 'scrape_mode' in task_args:
                 try:
-                    validate_positive_int(param, required=True)(value[param]) 
+                    validate_scrape_mode('scrape_mode', required=True)(task_args['scrape_mode'])
                 except Exception as e:
-                        raise ValidationError(f"task_args.{param}: {str(e)}")
-        
-        # 驗證可為小數的數值類型參數 
-        float_params = ['retry_delay']
-        for param in float_params:
-            if param not in value:
-                raise ValidationError(f"task_args.{param}: 不能為空")
-            try:
-                validate_positive_float(param, is_zero_allowed=False, required=True)(value[param]) 
-            except Exception as e:
-                raise ValidationError(f"task_args.{param}: {str(e)}")
+                    raise ValidationError(f"{field_name}.scrape_mode: {str(e)}")
 
-        # 驗證布爾類型參數
-        bool_params = ['ai_only', 'save_to_csv', 'save_to_database', 'get_links_by_task_id', 'is_test']
-        for param in bool_params:
-            if param not in value:
-                raise ValidationError(f"task_args.{param}: 不能為空")
-            try:
-                validate_boolean(param, required=True)(value[param])
-            except Exception as e:
-                raise ValidationError(f"task_args.{param}: {str(e)}")
-        
-        if 'article_links' not in value:
-            raise ValidationError(f"task_args.article_links: 不能為空")
-        try:
-            validate_list("article_links", min_length=0, type=str)(value['article_links'])
+            # 驗證取消相關參數
+            cancel_params = ['max_cancel_wait', 'cancel_interrupt_interval', 'cancel_timeout']
+            for param in cancel_params:
+                if param in task_args:
+                    try:
+                        validate_positive_int(param, required=False)(task_args[param])
+                    except Exception as e:
+                        raise ValidationError(f"{field_name}.{param}: {str(e)}")
+
+            # 驗證數值參數
+            numeric_params = ['max_pages', 'num_articles', 'min_keywords', 'timeout', 'max_retries']
+            for param in numeric_params:
+                if param in task_args:
+                    try:
+                        validate_positive_int(param, required=True)(task_args[param]) 
+                    except Exception as e:
+                        raise ValidationError(f"{field_name}.{param}: {str(e)}")
+            
+            # 驗證可為小數的數值類型參數 
+            float_params = ['retry_delay']
+            for param in float_params:
+                if param in task_args:
+                    try:
+                        validate_positive_float(param, is_zero_allowed=False, required=True)(task_args[param]) 
+                    except Exception as e:
+                        raise ValidationError(f"{field_name}.{param}: {str(e)}")
+
+            # 驗證布爾類型參數
+            bool_params = ['ai_only', 'save_to_csv', 'save_to_database', 'get_links_by_task_id', 'is_test', 'save_partial_results_on_cancel', 'save_partial_to_database']
+            for param in bool_params:
+                if param in task_args:
+                    try:
+                        validate_boolean(param, required=True)(task_args[param])
+                    except Exception as e:
+                        raise ValidationError(f"{field_name}.{param}: {str(e)}")
+            
+            # 驗證文章連結列表
+            if 'article_links' in task_args:
+                try:
+                    validate_list("article_links", min_length=0, type=str)(task_args['article_links'])
+                except Exception as e:
+                    raise ValidationError(f"{field_name}.article_links: {str(e)}")
+                    
+            return task_args
         except Exception as e:
-            raise ValidationError(f"task_args.article_links: {str(e)}")
-        return value
-    return validator    
+            raise ValidationError(f"{field_name}: {str(e)}")
+    
+    return validator
 
 def validate_positive_float(field_name: str, is_zero_allowed: bool = False, required: bool = False):
     """正浮點數驗證"""

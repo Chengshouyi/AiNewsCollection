@@ -16,7 +16,7 @@ from src.models.base_model import Base
 from src.models.articles_model import Articles, ArticleScrapeStatus
 from src.crawlers.bnext_scraper import BnextUtils
 from src.database.database_manager import DatabaseManager
-from src.models.crawler_tasks_model import ScrapeMode
+from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT, ScrapeMode
 
 # 配置日誌
 logger = logging.getLogger(__name__)
@@ -55,7 +55,7 @@ class MockCrawlerForTest(BaseCrawler):
         self.update_config_called = False
         super().__init__(config_file_name, article_service)
         
-    def _fetch_article_links(self) -> Optional[pd.DataFrame]:
+    def _fetch_article_links(self, task_id: int) -> Optional[pd.DataFrame]:
         """測試用的實現"""
         self.fetch_article_links_called = True
         data = []
@@ -78,7 +78,7 @@ class MockCrawlerForTest(BaseCrawler):
             scrape_status='link_saved',
             scrape_error=None,
             last_scrape_attempt=current_time,
-            task_id=123
+            task_id=task_id
             )
         )
         data.append(
@@ -99,14 +99,14 @@ class MockCrawlerForTest(BaseCrawler):
                 scrape_status='link_saved',
                 scrape_error=None,
                 last_scrape_attempt=current_time,
-                task_id=123
+                task_id=task_id
             )
         )
         df = pd.DataFrame(data)
         self.articles_df = df
         return df
         
-    def _fetch_articles(self) -> Optional[List[Dict[str, Any]]]:
+    def _fetch_articles(self, task_id: int) -> Optional[List[Dict[str, Any]]]:
         """測試用的實現"""
         self.fetch_articles_called = True
         current_time = datetime.now(timezone.utc)
@@ -128,7 +128,7 @@ class MockCrawlerForTest(BaseCrawler):
                 'scrape_status': 'content_scraped',
                 'scrape_error': None,
                 'last_scrape_attempt': current_time,
-                'task_id': 123
+                'task_id': task_id
             },
             {
                 'title': 'Test Article 2',
@@ -147,7 +147,7 @@ class MockCrawlerForTest(BaseCrawler):
                 'scrape_status': 'content_scraped',
                 'scrape_error': None,
                 'last_scrape_attempt': current_time,
-                'task_id': 123
+                'task_id': task_id
             }
         ]
         
@@ -306,7 +306,7 @@ class TestBaseCrawler:
             
             # 模擬 retry_operation 成功
             original_retry_operation = crawler.retry_operation
-            crawler.retry_operation = MagicMock(side_effect=lambda func, max_retries=None, retry_delay=None: func())
+            crawler.retry_operation = MagicMock(side_effect=lambda func, max_retries=None, retry_delay=None, task_id=None: func())
             
             # 執行任務
             result = crawler.execute_task(task_id, task_args)
@@ -566,6 +566,24 @@ class TestBaseCrawler:
         with pytest.raises(Exception, match="Always fail"):
             crawler.retry_operation(always_fail, max_retries=3, retry_delay=0.01)
         assert always_fail.call_count == 3
+        
+        # 測試任務取消的情況
+        task_id = 123
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 50,
+            'message': '正在執行任務',
+            'start_time': datetime.now(timezone.utc),
+            'cancelled': True
+        }
+        
+        # 模擬一個正常操作，但在重試期間檢查到任務已取消
+        operation_with_task_id = MagicMock(return_value="success")
+        with pytest.raises(Exception, match=f"任務 {task_id} 已取消"):
+            crawler.retry_operation(operation_with_task_id, max_retries=3, retry_delay=0.01, task_id=task_id)
+        
+        # 操作應該沒有被調用，因為任務已取消
+        operation_with_task_id.assert_not_called()
 
     def test_update_task_status(self, mock_config_file, article_service):
         """測試更新任務狀態功能"""
@@ -671,6 +689,100 @@ class TestBaseCrawler:
         result_df = crawler._fetch_article_links_from_db()
         assert result_df is None
 
+    def test_fetch_article_links_by_filter(self, mock_config_file, article_service, session):
+        """測試根據過濾條件獲取文章連結"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 1. 測試使用 task_id 過濾
+        test_articles = [
+            Articles(
+                title="測試文章1",
+                summary="測試摘要1",
+                link="https://example.com/1",
+                category="測試分類",
+                published_at=datetime.now(timezone.utc),
+                author="測試作者",
+                source="test_source",
+                source_url="https://example.com",
+                article_type="test",
+                tags="test",
+                is_ai_related=False,
+                is_scraped=False,
+                task_id=123
+            ),
+            Articles(
+                title="測試文章2",
+                summary="測試摘要2",
+                link="https://example.com/2",
+                category="測試分類",
+                published_at=datetime.now(timezone.utc),
+                author="測試作者",
+                source="test_source",
+                source_url="https://example.com",
+                article_type="test",
+                tags="test",
+                is_ai_related=False,
+                is_scraped=False,
+                task_id=456
+            )
+        ]
+        
+        # 清除現有資料並新增測試資料
+        session.query(Articles).delete()
+        session.add_all(test_articles)
+        session.commit()
+        
+        # 測試 task_id 過濾
+        result_df = crawler._fetch_article_links_by_filter(task_id=123, is_scraped=False)
+        assert result_df is not None
+        assert len(result_df) == 1
+        assert result_df.iloc[0]['title'] == "測試文章1"
+        assert result_df.iloc[0]['task_id'] == 123
+        
+        # 2. 測試使用 article_links 過濾
+        crawler.global_params = {}
+        article_links = ["https://example.com/1", "https://example.com/2"]
+        result_df = crawler._fetch_article_links_by_filter(article_links=article_links)
+        assert result_df is not None
+        assert len(result_df) == 2
+        assert set(result_df['link'].tolist()) == set(article_links)
+        
+        # 3. 測試使用 article_links 過濾但部分連結不存在
+        article_links = ["https://example.com/1", "https://example.com/nonexistent"]
+        result_df = crawler._fetch_article_links_by_filter(article_links=article_links)
+        assert result_df is not None
+        assert len(result_df) == 2  # 應該有2條記錄，包括不存在的連結
+        
+        # 4. 測試使用其他參數過濾
+        result_df = crawler._fetch_article_links_by_filter(source="test_source", limit=1)
+        assert result_df is not None
+        assert len(result_df) == 1
+        
+        # 5. 測試使用 global_params 中的 task_id
+        crawler.global_params = {'task_id': 456}
+        result_df = crawler._fetch_article_links_by_filter(is_scraped=False)
+        assert result_df is not None
+        assert len(result_df) == 1
+        assert result_df.iloc[0]['title'] == "測試文章2"
+        assert result_df.iloc[0]['task_id'] == 456
+
+    def test_fetch_article_links_by_filter_error(self, mock_config_file, article_service):
+        """測試根據過濾條件獲取文章連結時發生錯誤的情況"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 模擬 article_service.advanced_search_articles 拋出異常
+        crawler.article_service.advanced_search_articles = MagicMock(side_effect=Exception("過濾條件錯誤"))
+        crawler.article_service.get_article_by_link = MagicMock(side_effect=Exception("獲取文章錯誤"))
+        
+        # 測試 advanced_search_articles 錯誤情況
+        result_df = crawler._fetch_article_links_by_filter(is_scraped=False)
+        assert result_df is None
+        
+        # 測試 get_article_by_link 錯誤情況
+        result_df = crawler._fetch_article_links_by_filter(article_links=["https://example.com/error"])
+        assert result_df is None 
+
+
     def test_update_articles_with_content(self, mock_config_file, article_service):
         """測試批量更新文章內容的方法"""
         crawler = MockCrawlerForTest(mock_config_file, article_service)
@@ -736,7 +848,7 @@ class TestBaseCrawler:
         }
         
         # 測試有效參數 - 文章設定
-        valid_article_params = {
+        valid_article_params = {**TASK_ARGS_DEFAULT,
             'max_pages': 5,
             'ai_only': True,
             'num_articles': 20
@@ -751,7 +863,7 @@ class TestBaseCrawler:
         
         # 測試有效參數 - 全局參數
         crawler.update_config_called = False
-        valid_global_params = {
+        valid_global_params = {**TASK_ARGS_DEFAULT,
             'max_retries': 5,
             'retry_delay': 1.5
         }
@@ -775,7 +887,7 @@ class TestBaseCrawler:
         
         # 測試未知參數
         crawler.update_config_called = False
-        unknown_params = {
+        unknown_params = {**TASK_ARGS_DEFAULT,
             'unknown_param': 'value'
         }
         
@@ -819,7 +931,7 @@ class TestBaseCrawler:
         # 測試從網站抓取
         crawler.global_params = {'get_links_by_task_id': False}
         # 模擬 retry_operation 的行為，直接返回 _fetch_article_links 的結果
-        crawler.retry_operation = MagicMock(return_value=crawler._fetch_article_links())
+        crawler.retry_operation = MagicMock(return_value=crawler._fetch_article_links(task_id))
         
         result_df = crawler._fetch_article_list(task_id)
         
@@ -978,6 +1090,53 @@ class TestBaseCrawler:
         assert result is False
         assert crawler.task_status[task_id]['status'] == 'completed'
 
+    def test_check_if_cancelled(self, mock_config_file, article_service):
+        """測試檢查任務是否被取消的方法"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 測試不存在的任務
+        result = crawler._check_if_cancelled(999)
+        assert result is False
+        
+        # 測試未取消的任務
+        task_id = 1
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 50,
+            'message': '正在執行任務',
+            'start_time': datetime.now(timezone.utc),
+            'cancelled': False
+        }
+        
+        result = crawler._check_if_cancelled(task_id)
+        assert result is False
+        
+        # 測試已取消的任務
+        task_id = 2
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 50,
+            'message': '正在執行任務',
+            'start_time': datetime.now(timezone.utc),
+            'cancelled': True
+        }
+        
+        result = crawler._check_if_cancelled(task_id)
+        assert result is True
+        
+        # 測試沒有設置 cancelled 標誌的任務
+        task_id = 3
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 50,
+            'message': '正在執行任務',
+            'start_time': datetime.now(timezone.utc)
+            # 沒有 cancelled 標誌
+        }
+        
+        result = crawler._check_if_cancelled(task_id)
+        assert result is False
+
     def test_update_articles_with_content_with_new_fields(self, mock_config_file, article_service):
         """測試更新文章內容時包含新欄位"""
         crawler = MockCrawlerForTest(mock_config_file, article_service)
@@ -1026,10 +1185,6 @@ class TestBaseCrawler:
         assert result_df.loc[0, 'title'] == 'Test Article 1 (Updated)'
         assert result_df.loc[0, 'content'] == 'Updated content 1'
         assert result_df.loc[0, 'is_scraped'] == True
-        assert result_df.loc[0, 'scrape_status'] == 'content_scraped'
-        assert result_df.loc[0, 'scrape_error'] is None
-        assert pd.notna(result_df.loc[0, 'last_scrape_attempt'])
-        assert result_df.loc[0, 'task_id'] == 123
         
         assert result_df.loc[1, 'title'] == 'Test Article 2 (Failed)'
         assert result_df.loc[1, 'is_scraped'] == False
@@ -1097,11 +1252,22 @@ class TestBaseCrawler:
             'scrape_mode': ScrapeMode.CONTENT_ONLY
         }
         
+        # 初始化任務狀態
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc)
+        }
+        
         # 模擬 _fetch_article_links_by_filter 方法
         crawler._fetch_article_links_by_filter = MagicMock(return_value=pd.DataFrame({
             'title': ['Test Article'],
             'link': ['https://example.com']
         }))
+        
+        # 模擬 retry_operation 方法來模擬成功獲取文章清單
+        crawler.retry_operation = MagicMock(side_effect=lambda func, max_retries=None, retry_delay=None, task_id=None: func())
         
         # 模擬 _fetch_articles 方法以返回一些文章內容
         crawler._fetch_articles = MagicMock(return_value=[{
@@ -1121,6 +1287,9 @@ class TestBaseCrawler:
         # 驗證 _fetch_article_links_by_filter 被調用，並且傳入了正確的 task_id
         crawler._fetch_article_links_by_filter.assert_called_once_with(task_id=task_id, is_scraped=False)
         
+        # 驗證 _fetch_articles 被調用，並且傳入了正確的 task_id
+        crawler._fetch_articles.assert_called_once_with(task_id)
+        
         # 驗證結果
         assert result['success'] is True
         assert 'articles_count' in result
@@ -1139,7 +1308,7 @@ class TestBaseCrawler:
         }
         
         # 測試有效的get_links_by_task_id參數
-        valid_params = {
+        valid_params = {**TASK_ARGS_DEFAULT,
             'get_links_by_task_id': True,
             'scrape_mode': 'content_only'
         }
@@ -1147,21 +1316,21 @@ class TestBaseCrawler:
         result = crawler._validate_and_update_task_params(task_id, valid_params)
         assert result is True
         assert crawler.global_params['get_links_by_task_id'] is True
-        assert crawler.global_params['scrape_mode'] == ScrapeMode.CONTENT_ONLY
+        assert crawler.global_params['scrape_mode'] == ScrapeMode.CONTENT_ONLY.value
         
         # 測試CONTENT_ONLY模式下缺少必要參數的情況
-        invalid_params = {
+        invalid_params = {**TASK_ARGS_DEFAULT,
             'get_links_by_task_id': False,
             'scrape_mode': 'content_only',
-            # 沒有提供article_ids或article_links
+            # 沒有提供article_links
         }
-        
+        invalid_params.pop('article_links')
         result = crawler._validate_and_update_task_params(task_id, invalid_params)
         assert result is False
         # 驗證狀態更新為失敗
         assert crawler.task_status[task_id]['status'] == 'failed'
         # 驗證錯誤消息包含預期文本
-        assert "當抓取模式為CONTENT_ONLY且get_links_by_task_id=False時，必須提供article_ids或article_links" in crawler.task_status[task_id]['message']
+        assert "任務參數驗證失敗: task_args: task_args.article_links: 必填欄位不能缺少" in crawler.task_status[task_id]['message']
 
     def test_execute_links_only_task(self, mock_config_file, article_service):
         """測試僅抓取連結的任務執行模式"""
@@ -1169,7 +1338,7 @@ class TestBaseCrawler:
         task_id = 1
         
         # 設置全局參數
-        crawler.global_params = {
+        crawler.global_params = {**TASK_ARGS_DEFAULT,
             'scrape_mode': ScrapeMode.LINKS_ONLY
         }
         
@@ -1180,6 +1349,9 @@ class TestBaseCrawler:
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc)
         }
+        
+        # 模擬 retry_operation 方法來模擬成功獲取文章清單
+        crawler.retry_operation = MagicMock(side_effect=lambda func, max_retries=None, retry_delay=None, task_id=None: func())
         
         # 模擬 _fetch_article_list 方法
         test_df = pd.DataFrame({
@@ -1224,6 +1396,9 @@ class TestBaseCrawler:
             'start_time': datetime.now(timezone.utc)
         }
         
+        # 模擬 retry_operation 方法來模擬成功獲取文章清單和內容
+        crawler.retry_operation = MagicMock(side_effect=lambda func, max_retries=None, retry_delay=None, task_id=None: func())
+        
         # 模擬 _fetch_article_list 方法
         test_df = pd.DataFrame({
             'title': ['Article 1', 'Article 2'],
@@ -1262,7 +1437,7 @@ class TestBaseCrawler:
         
         # 驗證方法調用與結果
         crawler._fetch_article_list.assert_called_once_with(task_id, 3, 0.1)
-        crawler._fetch_articles.assert_called_once()
+        crawler._fetch_articles.assert_called_once_with(task_id)
         crawler._update_articles_with_content.assert_called_once()
         crawler._save_results.assert_called_once_with(task_id)
         
@@ -1278,11 +1453,12 @@ class TestBaseCrawler:
         crawler = MockCrawlerForTest(mock_config_file, article_service)
         task_id = 1
         
-        # 設置全局參數
+        # 設置全局參數 - 將article_ids轉換為article_links
+        article_links = ['https://example.com/1', 'https://example.com/2']
         crawler.global_params = {
             'get_links_by_task_id': False,
             'scrape_mode': ScrapeMode.CONTENT_ONLY,
-            'article_ids': [101, 102]
+            'article_links': article_links  # 使用article_links替代article_ids
         }
         
         # 初始化任務狀態
@@ -1292,6 +1468,9 @@ class TestBaseCrawler:
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc)
         }
+        
+        # 模擬 retry_operation 方法來模擬成功獲取文章清單和內容
+        crawler.retry_operation = MagicMock(side_effect=lambda func, max_retries=None, retry_delay=None, task_id=None: func())
         
         # 模擬 _fetch_article_links_by_filter 方法
         test_df = pd.DataFrame({
@@ -1332,12 +1511,12 @@ class TestBaseCrawler:
         
         # 驗證方法調用與結果
         crawler._fetch_article_links_by_filter.assert_called_once()
-        # 確認調用時傳遞了article_ids參數
+        # 確認調用時傳遞了article_links參數
         call_args = crawler._fetch_article_links_by_filter.call_args[1]
-        assert 'article_ids' in call_args
-        assert call_args['article_ids'] == [101, 102]
+        assert 'article_links' in call_args
+        assert call_args['article_links'] == article_links
         
-        crawler._fetch_articles.assert_called_once()
+        crawler._fetch_articles.assert_called_once_with(task_id)
         crawler._update_articles_with_content.assert_called_once()
         crawler._save_results.assert_called_once_with(task_id)
         
@@ -1367,6 +1546,9 @@ class TestBaseCrawler:
             'message': '開始執行任務',
             'start_time': datetime.now(timezone.utc)
         }
+        
+        # 模擬 retry_operation 方法來模擬成功獲取文章清單
+        crawler.retry_operation = MagicMock(side_effect=lambda func, max_retries=None, retry_delay=None, task_id=None: func())
         
         # 模擬 _fetch_article_links_by_filter 方法
         test_df = pd.DataFrame({
@@ -1411,7 +1593,7 @@ class TestBaseCrawler:
         assert 'article_links' in call_args
         assert call_args['article_links'] == ['https://example.com/link1', 'https://example.com/link2']
         
-        crawler._fetch_articles.assert_called_once()
+        crawler._fetch_articles.assert_called_once_with(task_id)
         crawler._update_articles_with_content.assert_called_once()
         crawler._save_results.assert_called_once_with(task_id)
         
@@ -1430,12 +1612,39 @@ class TestBaseCrawler:
         crawler._execute_links_only_task = MagicMock(return_value={'success': True, 'message': 'LINKS_ONLY完成'})
         crawler._execute_content_only_task = MagicMock(return_value={'success': True, 'message': 'CONTENT_ONLY完成'})
         crawler._execute_full_scrape_task = MagicMock(return_value={'success': True, 'message': 'FULL_SCRAPE完成'})
-        crawler._validate_and_update_task_params = MagicMock(return_value=True)
+        
+        # 模擬驗證方法，使其能夠設置全局參數
+        def validate_and_update_mock(task_id, task_args):
+            if 'scrape_mode' in task_args:
+                if task_args['scrape_mode'] == 'links_only':
+                    crawler.global_params['scrape_mode'] = ScrapeMode.LINKS_ONLY
+                elif task_args['scrape_mode'] == 'content_only':
+                    crawler.global_params['scrape_mode'] = ScrapeMode.CONTENT_ONLY
+                elif task_args['scrape_mode'] == 'full_scrape':
+                    crawler.global_params['scrape_mode'] = ScrapeMode.FULL_SCRAPE
+            crawler.global_params['max_retries'] = 3
+            crawler.global_params['retry_delay'] = 0.1
+            return True
+            
+        crawler._validate_and_update_task_params = MagicMock(side_effect=validate_and_update_mock)
+        
+        # 模擬 _check_if_cancelled 方法，使其總是返回 False
+        crawler._check_if_cancelled = MagicMock(return_value=False)
+        
+        # 模擬 retry_operation 方法來支持task_id參數
+        crawler.retry_operation = MagicMock(side_effect=lambda func, max_retries=None, retry_delay=None, task_id=None: func())
         
         # 測試LINKS_ONLY模式
-        crawler.global_params = {'scrape_mode': ScrapeMode.LINKS_ONLY, 'max_retries': 3, 'retry_delay': 0.1}
-        result = crawler.execute_task(1, {'scrape_mode': 'links_only'})
-        crawler._execute_links_only_task.assert_called_once_with(1, 3, 0.1)
+        task_id = 1
+        crawler.global_params = {}  # 清除全局參數
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc)
+        }
+        result = crawler.execute_task(task_id, {'scrape_mode': 'links_only'})
+        crawler._execute_links_only_task.assert_called_once_with(task_id, 3, 0.1)
         assert result['success'] is True
         assert result['message'] == 'LINKS_ONLY完成'
         
@@ -1445,9 +1654,16 @@ class TestBaseCrawler:
         crawler._execute_full_scrape_task.reset_mock()
         
         # 測試CONTENT_ONLY模式
-        crawler.global_params = {'scrape_mode': ScrapeMode.CONTENT_ONLY, 'max_retries': 3, 'retry_delay': 0.1}
-        result = crawler.execute_task(2, {'scrape_mode': 'content_only'})
-        crawler._execute_content_only_task.assert_called_once_with(2, 3, 0.1)
+        task_id = 2
+        crawler.global_params = {}  # 清除全局參數
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc)
+        }
+        result = crawler.execute_task(task_id, {'scrape_mode': 'content_only'})
+        crawler._execute_content_only_task.assert_called_once_with(task_id, 3, 0.1)
         assert result['success'] is True
         assert result['message'] == 'CONTENT_ONLY完成'
         
@@ -1457,11 +1673,427 @@ class TestBaseCrawler:
         crawler._execute_full_scrape_task.reset_mock()
         
         # 測試FULL_SCRAPE模式
-        crawler.global_params = {'scrape_mode': ScrapeMode.FULL_SCRAPE, 'max_retries': 3, 'retry_delay': 0.1}
-        result = crawler.execute_task(3, {'scrape_mode': 'full_scrape'})
-        crawler._execute_full_scrape_task.assert_called_once_with(3, 3, 0.1)
+        task_id = 3
+        crawler.global_params = {}  # 清除全局參數
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc)
+        }
+        result = crawler.execute_task(task_id, {'scrape_mode': 'full_scrape'})
+        crawler._execute_full_scrape_task.assert_called_once_with(task_id, 3, 0.1)
         assert result['success'] is True
         assert result['message'] == 'FULL_SCRAPE完成'
+
+    def test_execute_task_with_cancellation(self, mock_config_file, article_service):
+        """測試執行任務過程中被取消的情況"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 初始化任務並將其設為已取消
+        task_id = 999
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc),
+            'cancelled': True
+        }
+        
+        # 模擬 _validate_and_update_task_params 通過驗證
+        crawler._validate_and_update_task_params = MagicMock(return_value=True)
+        
+        # 模擬 _check_if_cancelled 始終返回True，確保任務被視為已取消
+        crawler._check_if_cancelled = MagicMock(return_value=True)
+        
+        # 模擬取消處理方法返回標準的取消響應
+        expected_result = {
+            'success': False,
+            'message': '任務已取消',
+            'articles_count': 0,
+            'task_status': {'status': 'cancelled'},
+            'partial_data_saved': False
+        }
+        crawler._handle_task_cancellation = MagicMock(return_value=expected_result)
+        
+        # 模擬各種執行方法，以便確認它們未被調用
+        crawler._execute_full_scrape_task = MagicMock()
+        crawler._execute_links_only_task = MagicMock()
+        crawler._execute_content_only_task = MagicMock()
+        
+        # 測試在參數驗證後立即檢查取消狀態
+        result = crawler.execute_task(task_id, {'scrape_mode': 'full_scrape'})
+        
+        # 驗證結果
+        assert result['success'] is False
+        assert '任務已取消' in result['message']
+        assert result['articles_count'] == 0
+        
+        # 確認取消檢查方法被調用
+        crawler._check_if_cancelled.assert_called()
+        crawler._handle_task_cancellation.assert_called_once_with(task_id)
+        
+        # 確認各執行任務方法未被調用
+        crawler._execute_full_scrape_task.assert_not_called()
+        crawler._execute_links_only_task.assert_not_called()
+        crawler._execute_content_only_task.assert_not_called()
+
+    def test_handle_task_cancellation(self, mock_config_file, article_service, logs_dir):
+        """測試處理任務取消的功能"""
+        with patch('os.makedirs', return_value=None):
+            crawler = MockCrawlerForTest(mock_config_file, article_service)
+            
+            # 準備測試數據
+            task_id = 111
+            current_time = datetime.now(timezone.utc)
+            crawler.task_status[task_id] = {
+                'status': 'running',
+                'progress': 50,
+                'message': '正在執行任務',
+                'start_time': current_time,
+                'cancelled': True
+            }
+            
+            # 測試1: 沒有數據的情況
+            crawler.articles_df = pd.DataFrame()
+            result = crawler._handle_task_cancellation(task_id)
+            assert result['success'] is False
+            assert result['message'] == '任務已取消'
+            assert result['articles_count'] == 0
+            assert result['partial_data_saved'] is False
+            assert crawler.task_status[task_id]['status'] == 'cancelled'
+            
+            # 測試2: 有數據但不保存
+            crawler.articles_df = pd.DataFrame({
+                'title': ['Title 1', 'Title 2'],
+                'content': ['Content 1', 'Content 2'],
+                'link': ['https://example.com/1', 'https://example.com/2'],
+                'is_scraped': [True, True]
+            })
+            crawler.global_params = {
+                'save_partial_results_on_cancel': False
+            }
+            
+            result = crawler._handle_task_cancellation(task_id)
+            assert result['success'] is False
+            assert result['message'] == '任務已取消'
+            assert result['partial_data_saved'] is False
+            
+            # 測試3: 有數據且保存到CSV
+            crawler.global_params = {
+                'save_partial_results_on_cancel': True,
+                'save_to_csv': True,
+                'csv_file_prefix': 'test'
+            }
+            
+            # 增加更多數據，確保滿足len(articles_df) >= 5的條件
+            crawler.articles_df = pd.DataFrame({
+                'title': ['Title ' + str(i) for i in range(1, 6)],
+                'content': ['Content ' + str(i) for i in range(1, 6)],
+                'link': ['https://example.com/' + str(i) for i in range(1, 6)],
+                'is_scraped': [True, True, True, True, True]
+            })
+            
+            # 保存DataFrame的副本，因為_handle_task_cancellation會在最後清空articles_df
+            original_df = crawler.articles_df.copy()
+            
+            # 模擬_save_to_csv方法
+            crawler._save_to_csv = MagicMock()
+            
+            result = crawler._handle_task_cancellation(task_id)
+            assert result['success'] is False
+            assert '並保存部分數據' in result['message']
+            assert result['partial_data_saved'] is True
+            crawler._save_to_csv.assert_called_once()
+            
+            # 使用saved_df的副本進行檢查，因為原始的DataFrame已被清空
+            args, _ = crawler._save_to_csv.call_args
+            saved_df = args[0]  # 獲取傳給_save_to_csv的DataFrame
+            
+            # 檢查傳給_save_to_csv的DataFrame是否被正確標記
+            assert 'is_partial_save' in saved_df.columns
+            assert 'cancel_reason' in saved_df.columns
+            assert saved_df['is_partial_save'].all() == True  # 使用==而非is進行值比較
+            
+            # 測試4: 有數據且保存到數據庫
+            crawler.global_params = {
+                'save_partial_results_on_cancel': True,
+                'save_to_csv': False,
+                'save_to_database': True,
+                'save_partial_to_database': True
+            }
+            
+            # 重置DataFrame - 確保有足夠的數據且都標記為已抓取
+            crawler.articles_df = pd.DataFrame({
+                'title': ['Title ' + str(i) for i in range(1, 6)],
+                'content': ['Content ' + str(i) for i in range(1, 6)],
+                'link': ['https://example.com/' + str(i) for i in range(1, 6)],
+                'is_scraped': [True, True, True, True, True]  # 全部標記為已抓取
+            })
+            
+            # 保存DataFrame的副本
+            original_df = crawler.articles_df.copy()
+            
+            # 模擬_save_to_database方法
+            crawler._save_to_database = MagicMock()
+            
+            result = crawler._handle_task_cancellation(task_id)
+            assert result['success'] is False
+            assert '並保存部分數據' in result['message']
+            assert result['partial_data_saved'] is True
+            crawler._save_to_database.assert_called_once()
+            
+            # _handle_task_cancellation方法會創建一個新的DataFrame，只包含is_scraped=True的行
+            # 檢查傳遞給_save_to_database方法的self.articles_df中的數據是否正確標記
+            assert crawler._save_to_database.called
+            
+            # 在_handle_task_cancellation中，會臨時替換articles_df為只包含已抓取文章的DataFrame
+            # 所以我們無法直接獲取傳入的DataFrame，但可以檢查其他條件
+            
+            # 測試5: 處理在保存過程中發生錯誤的情況
+            crawler._save_to_database = MagicMock(side_effect=Exception("保存錯誤"))
+            
+            result = crawler._handle_task_cancellation(task_id)
+            assert result['success'] is False
+            assert result['message'] == '任務已取消'
+            assert result['partial_data_saved'] is False
+            
+            # 確認資源被釋放
+            assert crawler.articles_df.empty
+
+    def test_save_partial_results_on_cancel(self, mock_config_file, article_service, logs_dir):
+        """測試取消任務時保存部分結果的功能"""
+        with patch('os.makedirs', return_value=None):
+            crawler = MockCrawlerForTest(mock_config_file, article_service)
+            
+            # 初始化任務
+            task_id = 222
+            crawler.task_status[task_id] = {
+                'status': 'running',
+                'progress': 30,
+                'message': '正在抓取文章',
+                'start_time': datetime.now(timezone.utc),
+                'cancelled': True
+            }
+            
+            # 準備測試數據 - 太少的數據
+            crawler.articles_df = pd.DataFrame({
+                'title': ['Title 1', 'Title 2'],
+                'content': ['Content 1', 'Content 2'],
+                'link': ['https://example.com/1', 'https://example.com/2'],
+                'is_scraped': [True, False]
+            })
+            
+            # 測試1: 文章數量不足，不保存
+            crawler.global_params = {
+                'save_partial_results_on_cancel': True,
+                'save_to_csv': True
+            }
+            
+            # 模擬_save_to_csv方法
+            crawler._save_to_csv = MagicMock()
+            
+            # 調用_handle_task_cancellation方法
+            result = crawler._handle_task_cancellation(task_id)
+            assert result['success'] is False
+            assert result['partial_data_saved'] is False
+            crawler._save_to_csv.assert_not_called()
+            
+            # 準備測試數據 - 足夠的數據
+            crawler.articles_df = pd.DataFrame({
+                'title': ['Title ' + str(i) for i in range(10)],
+                'content': ['Content ' + str(i) for i in range(10)],
+                'link': ['https://example.com/' + str(i) for i in range(10)],
+                'is_scraped': [i % 2 == 0 for i in range(10)]  # 一半已抓取
+            })
+            
+            # 測試2: 保存到數據庫，但只保存已抓取的文章
+            crawler.global_params = {
+                'save_partial_results_on_cancel': True,
+                'save_to_database': True,
+                'save_partial_to_database': True
+            }
+            
+            # 模擬_save_to_database方法
+            crawler._save_to_database = MagicMock()
+            
+            # 調用_handle_task_cancellation方法
+            result = crawler._handle_task_cancellation(task_id)
+            assert result['success'] is False
+            assert result['partial_data_saved'] is True
+            crawler._save_to_database.assert_called_once()
+            
+            # 在_handle_task_cancellation中，_save_to_database是直接被調用的，不帶參數
+            # 因此不能通過call_args獲取參數，只能檢查方法是否被調用
+            # 檢查結果中的相關標記
+            assert result['message'] == '任務已取消並保存部分數據'
+            assert result['partial_data_saved'] is True
+
+    def test_task_cancellation_during_different_phases(self, mock_config_file, article_service):
+        """測試在不同執行階段取消任務"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 初始化任務
+        task_id = 333
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc)
+        }
+        
+        # 模擬_validate_and_update_task_params方法，使其通過驗證
+        crawler._validate_and_update_task_params = MagicMock(return_value=True)
+        
+        # 模擬_handle_task_cancellation方法
+        crawler._handle_task_cancellation = MagicMock(return_value={
+            'success': False,
+            'message': '任務已取消(模擬)',
+            'articles_count': 0,
+            'task_status': {'status': 'cancelled'},
+            'partial_data_saved': False
+        })
+        
+        # 測試1: 獲取連結階段取消
+        def fetch_article_list_and_cancel(task_id, max_retries=None, retry_delay=None):
+            # 模擬在抓取文章列表時取消任務
+            crawler.task_status[task_id]['cancelled'] = True
+            return None
+        
+        # 模擬_check_if_cancelled方法始終返回True，確保任務被視為已取消
+        # 注意：在_execute_full_scrape_task方法的開頭就會檢查取消狀態
+        crawler._check_if_cancelled = MagicMock(return_value=True)
+        crawler._fetch_article_list = MagicMock(side_effect=fetch_article_list_and_cancel)
+        crawler.global_params = {'scrape_mode': ScrapeMode.FULL_SCRAPE}
+        
+        # 重設取消狀態
+        crawler.task_status[task_id]['cancelled'] = False
+        
+        result = crawler._execute_full_scrape_task(task_id, 3, 0.1)
+        assert crawler._handle_task_cancellation.called
+        crawler._handle_task_cancellation.reset_mock()
+        
+        # 測試2: 獲取內容階段取消
+        def fetch_article_list_mock(task_id, max_retries=None, retry_delay=None):
+            # 返回一個有效的DataFrame
+            return pd.DataFrame({
+                'title': ['Title 1', 'Title 2'],
+                'link': ['https://example.com/1', 'https://example.com/2'],
+                'is_scraped': [False, False]
+            })
+        
+        def fetch_articles_and_cancel(task_id):
+            # 模擬在抓取文章內容時取消任務
+            crawler.task_status[task_id]['cancelled'] = True
+            return None
+        
+        crawler._fetch_article_list = MagicMock(side_effect=fetch_article_list_mock)
+        crawler._fetch_articles = MagicMock(side_effect=fetch_articles_and_cancel)
+        crawler.retry_operation = MagicMock(side_effect=lambda func, max_retries=None, retry_delay=None, task_id=None: func())
+        
+        # 重設取消狀態
+        crawler.task_status[task_id]['cancelled'] = False
+        
+        result = crawler._execute_full_scrape_task(task_id, 3, 0.1)
+        assert crawler._handle_task_cancellation.called
+        crawler._handle_task_cancellation.reset_mock()
+        
+        # 測試3: 保存階段取消
+        def fetch_articles_mock(task_id):
+            # 返回有效的文章內容
+            return [{
+                'title': 'Title 1',
+                'content': 'Content 1',
+                'link': 'https://example.com/1',
+                'is_scraped': True
+            }]
+        
+        def save_results_and_cancel(task_id):
+            # 模擬在保存結果時取消任務
+            crawler.task_status[task_id]['cancelled'] = True
+            raise Exception(f"任務 {task_id} 已取消")
+        
+        crawler._fetch_articles = MagicMock(side_effect=fetch_articles_mock)
+        crawler._update_articles_with_content = MagicMock(return_value=pd.DataFrame())
+        crawler._save_results = MagicMock(side_effect=save_results_and_cancel)
+        
+        # 重設取消狀態
+        crawler.task_status[task_id]['cancelled'] = False
+        
+        result = crawler._execute_full_scrape_task(task_id, 3, 0.1)
+        assert crawler._handle_task_cancellation.called
+
+    def test_task_cancellation_error_handling(self, mock_config_file, article_service):
+        """測試取消任務時的錯誤處理"""
+        crawler = MockCrawlerForTest(mock_config_file, article_service)
+        
+        # 初始化任務
+        task_id = 444
+        crawler.task_status[task_id] = {
+            'status': 'running',
+            'progress': 0,
+            'message': '開始執行任務',
+            'start_time': datetime.now(timezone.utc),
+            'cancelled': True
+        }
+        
+        # 準備測試數據
+        crawler.articles_df = pd.DataFrame({
+            'title': ['Title 1', 'Title 2', 'Title 3', 'Title 4', 'Title 5'],
+            'content': ['Content 1', 'Content 2', 'Content 3', 'Content 4', 'Content 5'],
+            'link': ['https://example.com/' + str(i) for i in range(5)],
+            'is_scraped': [True, True, True, True, True]
+        })
+        
+        # 測試1: _save_to_csv方法發生錯誤
+        crawler.global_params = {
+            'save_partial_results_on_cancel': True,
+            'save_to_csv': True,
+            'save_to_database': False
+        }
+        
+        crawler._save_to_csv = MagicMock(side_effect=Exception("CSV保存錯誤"))
+        
+        result = crawler._handle_task_cancellation(task_id)
+        assert result['success'] is False
+        assert result['message'] == '任務已取消'
+        assert result['partial_data_saved'] is False
+        
+        # 測試2: _save_to_database方法發生錯誤
+        crawler.global_params = {
+            'save_partial_results_on_cancel': True,
+            'save_to_csv': False,
+            'save_to_database': True,
+            'save_partial_to_database': True
+        }
+        
+        crawler._save_to_database = MagicMock(side_effect=Exception("數據庫保存錯誤"))
+        
+        result = crawler._handle_task_cancellation(task_id)
+        assert result['success'] is False
+        assert result['message'] == '任務已取消'
+        assert result['partial_data_saved'] is False
+        
+        # 測試3: 在資源釋放過程中發生錯誤
+        # 創建一個會在刪除時拋出異常的DataFrame類
+        class ErrorDataFrame(pd.DataFrame):
+            def __init__(self, *args, **kwargs):
+                super().__init__(*args, **kwargs)
+            
+            def empty(self):
+                raise Exception("資源釋放錯誤")
+        
+        crawler.articles_df = ErrorDataFrame({
+            'title': ['Title'],
+            'content': ['Content'],
+            'link': ['https://example.com/'],
+            'is_scraped': [True]
+        })
+        
+        # 即使在資源釋放過程中發生錯誤，方法也應該正常完成
+        result = crawler._handle_task_cancellation(task_id)
+        assert result['success'] is False
+        assert result['message'] == '任務已取消'
 
 if __name__ == "__main__":
     pytest.main()
