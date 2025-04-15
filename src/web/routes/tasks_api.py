@@ -168,10 +168,10 @@ def fetch_full_article_manual_task():
         return handle_api_error(e)
 
 @tasks_bp.route('/manual/<int:task_id>/status', methods=['GET'])
-def get_scrape_phase(task_id):
+def get_task_status(task_id):
     try:
         service = get_task_service()
-        result = service.get_scrape_phase(task_id)
+        result = service.get_task_status(task_id)
         if not result['success']:
             return jsonify({"error": result['message']}), 404
         return jsonify(result), 200
