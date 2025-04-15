@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, List, Tuple, Optional, Type, cast
+from typing import Dict, Any, Tuple, Optional, Type, cast
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
@@ -21,6 +21,31 @@ logger = logging.getLogger(__name__)
 
 class SchedulerService(BaseService[CrawlerTasks]):
     """排程服務，使用 Cron 表達式調度爬蟲任務執行"""
+    
+    # 新增全域單體實例變數
+    _instance = None
+    
+    @classmethod
+    def get_instance(cls, crawler_tasks_repo: Optional[CrawlerTasksRepository] = None, 
+                     task_executor_service: Optional[TaskExecutorService] = None, 
+                     db_manager = None):
+        """取得排程服務單體實例
+        
+        Args:
+            crawler_tasks_repo: CrawlerTasksRepository 實例，用於查詢任務
+            task_executor_service: TaskExecutorService 實例，用於執行任務
+            db_manager: 資料庫管理器
+            
+        Returns:
+            SchedulerService: 排程服務單體實例
+        """
+        if cls._instance is None:
+            cls._instance = cls(
+                crawler_tasks_repo=crawler_tasks_repo,
+                task_executor_service=task_executor_service,
+                db_manager=db_manager
+            )
+        return cls._instance
     
     def __init__(self, crawler_tasks_repo: Optional[CrawlerTasksRepository] = None, 
                  task_executor_service: Optional[TaskExecutorService] = None, 
@@ -254,7 +279,7 @@ class SchedulerService(BaseService[CrawlerTasks]):
         except Exception as e:
             logger.error(f"排程任務 {task.id} 失敗: {str(e)}", exc_info=True)
             return False
-    
+
     def _trigger_task(self, task_id: int, task_args: Optional[Dict[str, Any]] = None) -> None:
         """在 cron 調度器觸發時，將該任務交由 TaskExecutor 執行
         

@@ -21,7 +21,8 @@ from src.error.errors import ValidationError
 from src.utils.enum_utils import ScrapeMode, ScrapePhase, TaskStatus
 from src.utils.model_utils import validate_task_args
 from sqlalchemy import desc, asc
-
+from src.services.scheduler_service import SchedulerService
+from src.services.task_executor_service import TaskExecutorService
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -113,10 +114,17 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 # 創建任務
                 task = tasks_repo.create(task_data)
+                # 重新加載排程
+                if task and task.is_auto:
+                    return {
+                        'success': True,
+                        'message': '任務創建成功',
+                        'task': task if task else None
+                    }
                 return {
-                    'success': True,
-                    'message': '任務創建成功',
-                    'task': task if task else None
+                    'success': False,
+                    'message': '任務創建失敗',
+                    'task': None
                 }
         except ValidationError as e:
             error_msg = f"創建任務資料驗證失敗: {str(e)}"
@@ -155,7 +163,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'message': '任務不存在',
                         'task': None
                     }
-                    
+ 
                 return {
                     'success': True,
                     'message': '任務更新成功',
@@ -191,9 +199,14 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     }
                     
                 success = tasks_repo.delete(task_id)
+                if success:
+                    return {
+                        'success': success,
+                        'message': '任務刪除成功' if success else '任務不存在'
+                    }
                 return {
-                    'success': success,
-                    'message': '任務刪除成功' if success else '任務不存在'
+                    'success': False,
+                    'message': '任務刪除失敗'
                 }
         except Exception as e:
             error_msg = f"刪除任務失敗, ID={task_id}: {str(e)}"

@@ -4,6 +4,8 @@ import schedule
 import time
 import logging
 from src.services.article_service import ArticleService
+from src.services.scheduler_service import SchedulerService
+from src.services.task_executor_service import TaskExecutorService
 from src.models.base_model import Base
 from src.config import get_db_manager
 
@@ -22,6 +24,15 @@ def main():
         # 初始化資料庫存取
         db_manager = get_db_manager()
         data_access = ArticleService(db_manager)  
+
+        # 初始化排程服務（使用單體模式）
+        scheduler_service = SchedulerService.get_instance(db_manager=db_manager)
+        
+        # 初始化任務執行服務（使用單體模式）
+        task_executor_service = TaskExecutorService.get_instance(db_manager=db_manager, max_workers=15)
+        
+        # 啟動排程服務
+        scheduler_service.start_scheduler()
         
         # 創建資料庫表格
         db_manager.create_tables(Base)
@@ -29,43 +40,33 @@ def main():
         
         if __debug__:
             # 測試資料庫存取
-            test_data_access(data_access)
-
+            pass
+            # test_data_access(data_access)
+        
         # 可以在這裡添加其他初始化或定期任務
         logging.info("主程序啟動成功")
-
+        
+        scheduler_service.stop_scheduler()
     except Exception as e:
         logging.error(f"初始化失敗: {e}", exc_info=True)
 
-def run_scheduled_tasks():
-    """定義並運行定期任務"""
-    # 範例：每天執行的任務
-    schedule.every().day.at("00:00").do(main)
-
+def run_scheduled_tasks(interval_hr: int = 24):
+    """長期運行，定期執行排程任務"""
     while True:
-        schedule.run_pending()
-        time.sleep(1)
+        try:
+            # 執行排程任務          
+            SchedulerService.get_instance().reload_scheduler()
+            time.sleep(interval_hr * 3600)
+        except Exception as e:
+            logging.error(f"排程任務執行錯誤: {e}", exc_info=True)
+            time.sleep(10)
 
-def test_data_access(data_access):
-    # 測試插入文章
-    article_data = {
-        "title": "測試文章",
-        "link": "https://test.com/article",
-        "content": "這是一篇測試文章",
-        "published_at": datetime.now(),
-        "source": "測試來源"
-    }
-    data_access.insert_article(article_data)
-    logging.info("文章插入完成")
 
-    # 測試抓取所有文章
-    
 
 if __name__ == "__main__":
     logging.info("開始執行")
     try:
         main()
-        # 如果需要長期運行，可以取消下面這行的註釋
-        # run_scheduled_tasks()
+        run_scheduled_tasks(4) # 每4小時執行一次排程任務重新載入
     except Exception as e:
         logging.error(f"程序異常退出: {e}", exc_info=True)

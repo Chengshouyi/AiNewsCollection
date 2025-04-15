@@ -13,20 +13,19 @@ def get_task_service():
     return CrawlerTaskService()
 
 def get_scheduler_service():
-    return SchedulerService()
+    return SchedulerService.get_instance()
 
 def get_article_service():
     return ArticleService()
 
 def get_task_executor_service():
-    return TaskExecutorService()
+    return TaskExecutorService.get_instance()
 
 # 排程任務相關端點
 @tasks_bp.route('/scheduled', methods=['GET'])
 def get_scheduled_tasks():
     try:
         service = get_task_service()
-        # TODO: 需要改成用filters來搜尋-->需實做model的欄位
         result = service.advanced_search_tasks(**{'is_scheduled': True})
         if not result['success']:
             return jsonify({"error": result['message']}), 500
@@ -41,12 +40,12 @@ def create_scheduled_task():
         if len(data) == 0:
             return jsonify({"error": "缺少任務資料"}), 400
         
-        service = get_task_service()
+        task_service = get_task_service()
         # 設置情境有關的參數-排程任務
-        validated_data = _setup_validate_task_data(task_data=data, service=service, scrape_mode=data.get('task_args', TASK_ARGS_DEFAULT).get('scrape_mode', ScrapeMode.FULL_SCRAPE.value), is_auto=True, is_update=False)
+        validated_data = _setup_validate_task_data(task_data=data, service=task_service, scrape_mode=data.get('task_args', TASK_ARGS_DEFAULT).get('scrape_mode', ScrapeMode.FULL_SCRAPE.value), is_auto=True, is_update=False)
 
         scheduler = get_scheduler_service()
-        result = service.create_task(validated_data)
+        result = task_service.create_task(validated_data)
         if not result['success']:
             return jsonify({"error": result['message']}), 5
         task = result['task']
@@ -136,7 +135,7 @@ def fetch_full_article_manual_task():
         task = result['task']
         task_id = task.id
         
-        task_executor = TaskExecutorService()
+        task_executor = get_task_executor_service()
         result = task_executor.fetch_full_article(task_id, is_async=False)
         
         return jsonify({
