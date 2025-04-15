@@ -3,12 +3,10 @@ from src.services.crawler_task_service import CrawlerTaskService
 from src.services.scheduler_service import SchedulerService
 from src.services.article_service import ArticleService
 from src.error.handle_api_error import handle_api_error
-import threading
 from src.models.crawler_tasks_model import ScrapeMode
-from src.error.errors import ValidationError
-from src.utils.model_utils import validate_positive_int, validate_boolean
 from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
 from typing import Dict, Any
+from src.services.task_executor_service import TaskExecutorService
 tasks_bp = Blueprint('tasks_api', __name__, url_prefix='/api/tasks')
 
 def get_task_service():
@@ -20,33 +18,16 @@ def get_scheduler_service():
 def get_article_service():
     return ArticleService()
 
-
-def run_fetch_full_article_task_thread(task_id):
-    """執行完整文章的背景執行緒"""
-    service = get_task_service()
-    service.fetch_full_article(task_id)
-
-def run_fetch_content_thread(task_id):
-    """執行抓取內容的背景執行緒"""
-    service = get_task_service()
-    service.fetch_content_only(task_id)
-
-def run_collect_links_thread(task_id):
-    """執行收集文章連結的背景執行緒"""
-    service = get_task_service()
-    service.collect_links_only(task_id)
-
-def run_test_crawler_thread(task_id):
-    """執行測試爬蟲的背景執行緒"""
-    service = get_task_service()
-    service.test_crawler(task_id)
+def get_task_executor_service():
+    return TaskExecutorService()
 
 # 排程任務相關端點
 @tasks_bp.route('/scheduled', methods=['GET'])
 def get_scheduled_tasks():
     try:
         service = get_task_service()
-        result = service.get_all_tasks({'is_scheduled': True})
+        # TODO: 需要改成用filters來搜尋-->需實做model的欄位
+        result = service.advanced_search_tasks(**{'is_scheduled': True})
         if not result['success']:
             return jsonify({"error": result['message']}), 500
         return jsonify(result['tasks'].to_dict()), 200
@@ -155,9 +136,8 @@ def fetch_full_article_manual_task():
         task = result['task']
         task_id = task.id
         
-        thread = threading.Thread(target=run_fetch_full_article_task_thread, args=(task_id))
-        thread.daemon = True
-        thread.start()
+        task_executor = TaskExecutorService()
+        result = task_executor.fetch_full_article(task_id, is_async=False)
         
         return jsonify({
             "task": task.to_dict(), 
@@ -170,8 +150,8 @@ def fetch_full_article_manual_task():
 @tasks_bp.route('/manual/<int:task_id>/status', methods=['GET'])
 def get_task_status(task_id):
     try:
-        service = get_task_service()
-        result = service.get_task_status(task_id)
+        task_executor = get_task_executor_service()
+        result = task_executor.get_task_status(task_id)
         if not result['success']:
             return jsonify({"error": result['message']}), 404
         return jsonify(result), 200
@@ -203,9 +183,8 @@ def fetch_links_manual_task():
         task_id = task.id
 
             
-        thread = threading.Thread(target=run_collect_links_thread, args=(task_id,))
-        thread.daemon = True
-        thread.start()
+        task_executor = TaskExecutorService()
+        result = task_executor.collect_links_only(task_id, is_async=False)
         
         return jsonify({
             "message": "Link collection initiated", 
@@ -289,9 +268,8 @@ def fetch_content_manual_task(task_id):
         # 更新任務
         service.update_task(task_id, validated_data)
             
-        thread = threading.Thread(target=run_fetch_content_thread, args=(task_id))
-        thread.daemon = True
-        thread.start()
+        task_executor = TaskExecutorService()
+        result = task_executor.fetch_content_only(task_id, is_async=False)
         
         return jsonify({
             "message": "Content fetching initiated", 
@@ -321,6 +299,9 @@ def get_scraped_task_results(task_id):
 def test_crawler():
     """測試爬蟲任務(不會有crawler_data，會直接把Crawler_id當作參數)
         新增一個測試任務，不會實際執行，只會進行驗證
+        data:
+            crawler_name: str
+            task_args: dict
     Returns:
         dict: 包含任務ID、狀態和抓取模式
     """
@@ -335,8 +316,8 @@ def test_crawler():
         #設置情境有關的參數-手動任務+只抓取連結
         validated_data = _setup_validate_task_data(task_data=data, service=service, scrape_mode=ScrapeMode.LINKS_ONLY.value, is_auto=False, is_update=False)
 
-
-        result = service.test_crawler(validated_data)
+        task_executor = TaskExecutorService()
+        result = task_executor.test_crawler(data['crawler_name'], validated_data)
         return jsonify(result), 200
     except Exception as e:
         # 捕獲其他意外錯誤
@@ -346,8 +327,8 @@ def test_crawler():
 @tasks_bp.route('/<int:task_id>/cancel', methods=['POST'])
 def cancel_task(task_id):
     try:
-        service = get_task_service()
-        result = service.toggle_active_status(task_id)
+        task_executor = get_task_executor_service()
+        result = task_executor.cancel_task(task_id)
         if not result['success']:
             return jsonify({"error": result['message']}), 404
         return jsonify({"message": "Cancellation requested"}), 202

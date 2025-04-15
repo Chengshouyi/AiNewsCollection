@@ -14,6 +14,7 @@ CrawlerId = Annotated[int, BeforeValidator(validate_positive_int("crawler_id", i
 TaskArgs = Annotated[dict, BeforeValidator(validate_task_args("task_args", required=True))]
 IsAuto = Annotated[bool, BeforeValidator(validate_boolean("is_auto", required=True))]
 IsActive = Annotated[bool, BeforeValidator(validate_boolean("is_active", required=True))]
+IsScheduled = Annotated[bool, BeforeValidator(validate_boolean("is_scheduled", required=True))]
 RetryCount = Annotated[int, BeforeValidator(validate_positive_int("retry_count", is_zero_allowed=True, required=False))]
 Notes = Annotated[Optional[str], BeforeValidator(validate_str("notes", max_length=65536, required=False))]
 CronExpression = Annotated[Optional[str], BeforeValidator(validate_cron_expression("cron_expression", max_length=255, min_length=5, required=False))]
@@ -26,6 +27,7 @@ class CrawlerTasksCreateSchema(BaseCreateSchema):
     crawler_id: CrawlerId
     is_auto: IsAuto = True
     is_active: IsActive = True
+    is_scheduled: IsScheduled = False
     task_args: TaskArgs = TASK_ARGS_DEFAULT
     notes: Notes = None
     last_run_at: Optional[datetime] = None
@@ -55,6 +57,7 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     task_name: Optional[TaskName] = None
     is_auto: Optional[IsAuto] = None
     is_active: Optional[IsActive] = None
+    is_scheduled: Optional[IsScheduled] = None
     task_args: Optional[TaskArgs] = None
     notes: Optional[Notes] = None
     last_run_at: Optional[datetime] = None
@@ -70,7 +73,7 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     
     @classmethod
     def get_updated_fields(cls):
-        return ['task_name', 'is_auto', 'is_active', 'task_args', 'notes', 'last_run_at', 'last_run_success', 
+        return ['task_name', 'is_auto', 'is_active', 'is_scheduled', 'task_args', 'notes', 'last_run_at', 'last_run_success', 
                 'last_run_message', 'cron_expression', 'scrape_phase', 'retry_count', 'task_status'] + BaseUpdateSchema.get_updated_fields()
     
 

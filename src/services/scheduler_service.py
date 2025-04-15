@@ -12,7 +12,7 @@ from src.database.base_repository import BaseRepository
 from src.models.base_model import Base
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
-from src.services.task_executor import TaskExecutor
+from src.services.task_executor_service import TaskExecutorService
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -23,20 +23,20 @@ class SchedulerService(BaseService[CrawlerTasks]):
     """排程服務，使用 Cron 表達式調度爬蟲任務執行"""
     
     def __init__(self, crawler_tasks_repo: Optional[CrawlerTasksRepository] = None, 
-                 task_executor: Optional[TaskExecutor] = None, 
+                 task_executor_service: Optional[TaskExecutorService] = None, 
                  db_manager = None):
         """初始化排程服務
         
         Args:
             crawler_tasks_repo: CrawlerTasksRepository 實例，用於查詢任務
-            task_executor: TaskExecutor 實例，用於執行任務
+            task_executor: TaskExecutorService 實例，用於執行任務
             db_manager: 資料庫管理器
         """
         super().__init__(db_manager)
         
         # 儲存傳入的參數或創建新實例
         self.crawler_tasks_repo = crawler_tasks_repo or self._get_task_repo()
-        self.task_executor = task_executor or TaskExecutor()
+        self.task_executor_service = task_executor_service or TaskExecutorService()
         
         # 設定 SQLAlchemy 任務存儲
         jobstore = SQLAlchemyJobStore(
@@ -132,7 +132,17 @@ class SchedulerService(BaseService[CrawlerTasks]):
                 else:
                     # 新增任務
                     if self._schedule_task(task):
-                        scheduled_count += 1
+                        logger.info(f"新增任務 {task.id} 到排程")
+                        toggle_scheduled_status_result = self.crawler_tasks_repo.toggle_scheduled_status(task.id)
+                        logger.info(f"切換任務 {task.id} 的排程狀態: {'成功' if toggle_scheduled_status_result else '失敗'}")
+                        if toggle_scheduled_status_result:
+                            scheduled_count += 1
+                        else:
+                            logger.error(f"切換任務排程狀態 {task.id} 失敗")
+                            # 如果切換排程狀態失敗，則不增加計數並且移除任務
+                            self.cron_scheduler.remove_job(job_id)
+                            logger.info(f"從排程移除任務 {task.id} 並且不增加計數")
+
             
             # 移除已不存在於資料庫的持久化任務
             for job_id in [f"task_{task_id}" for task_id in persisted_job_ids if task_id not in db_task_ids]:
@@ -278,7 +288,7 @@ class SchedulerService(BaseService[CrawlerTasks]):
                 return
                 
             # 交由 TaskExecutor 執行
-            self.task_executor.execute_task(task)
+            self.task_executor_service.execute_task(task.id)
             
         except Exception as e:
             error_msg = f"觸發執行任務 {task_id} 時發生錯誤: {str(e)}"
@@ -342,8 +352,16 @@ class SchedulerService(BaseService[CrawlerTasks]):
                     # 新增任務
                     if self._schedule_task(task):
                         logger.info(f"重載時新增任務: {job_id}")
-                        added_count += 1
-            
+                        toggle_scheduled_status_result = self.crawler_tasks_repo.toggle_scheduled_status(task.id)
+                        logger.info(f"切換任務 {task.id} 的排程狀態: {'成功' if toggle_scheduled_status_result else '失敗'}")
+                        if toggle_scheduled_status_result:
+                            added_count += 1
+                        else:
+                            logger.error(f"切換任務排程狀態 {task.id} 失敗")
+                            # 如果切換排程狀態失敗，則不增加計數並且移除任務
+                            self.cron_scheduler.remove_job(job_id)
+                            logger.info(f"從排程移除任務 {task.id} 並且不增加計數")
+
             # 更新狀態
             self.scheduler_status['job_count'] = len(self.cron_scheduler.get_jobs())
             

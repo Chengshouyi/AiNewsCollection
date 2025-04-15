@@ -111,6 +111,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             ).all(),
             err_msg="查詢自動執行任務時發生錯誤"
         )
+    
     def find_ai_only_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
         """查詢 AI 專用任務"""
         return self.execute_query(
@@ -120,6 +121,26 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             ).all(),
             err_msg="查詢 AI 專用任務時發生錯誤"
         )
+    
+    def find_scheduled_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
+        """查詢已排程的任務"""
+        return self.execute_query(
+            lambda: self.session.query(self.model_class).filter_by(is_active=is_active, is_scheduled=True).all(),
+            err_msg="查詢已排程的任務時發生錯誤"
+        )
+    
+    def toggle_scheduled_status(self, task_id: int) -> bool:
+        """切換任務的排程狀態"""
+        task = self.get_by_id(task_id)
+        if not task:
+            return False    
+        
+        return self.execute_query(
+            lambda: self._toggle_status(task, 'is_scheduled'),
+            err_msg=f"切換任務ID {task_id} 的排程狀態時發生錯誤"
+        )
+    
+
     def toggle_auto_status(self, task_id: int) -> bool:
         """切換任務的自動執行狀態"""
         task = self.get_by_id(task_id)

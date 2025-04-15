@@ -72,6 +72,7 @@ def sample_tasks(session, clean_db, sample_crawler):
             task_name="AI任務1",
             crawler_id=sample_crawler.id,
             is_auto=True,
+            is_scheduled=True,
             task_args={**TASK_ARGS_DEFAULT, "ai_only": True}, 
             notes="AI任務1",
             cron_expression="* * * * *",
@@ -83,6 +84,7 @@ def sample_tasks(session, clean_db, sample_crawler):
             task_name="一般任務",
             crawler_id=sample_crawler.id,
             is_auto=True,
+            is_scheduled=True,
             task_args={**TASK_ARGS_DEFAULT, "ai_only": False}, 
             notes="一般任務",
             cron_expression="* * * * *",
@@ -94,6 +96,7 @@ def sample_tasks(session, clean_db, sample_crawler):
             task_name="手動AI任務",
             crawler_id=sample_crawler.id,
             is_auto=False,
+            is_scheduled=False,
             task_args={**TASK_ARGS_DEFAULT, "ai_only": True},  
             notes="手動AI任務",
             cron_expression="* * * * *",
@@ -125,6 +128,12 @@ class TestCrawlerTasksRepository:
         auto_tasks = crawler_tasks_repo.find_auto_tasks()
         assert len(auto_tasks) == 2
         assert all(task.is_auto for task in auto_tasks)
+
+    def test_find_scheduled_tasks(self, crawler_tasks_repo, sample_tasks):
+        """測試查詢已排程的任務"""
+        scheduled_tasks = crawler_tasks_repo.find_scheduled_tasks()
+        assert len(scheduled_tasks) == 2
+        assert all(task.is_scheduled for task in scheduled_tasks)
 
     def test_find_ai_only_tasks(self, crawler_tasks_repo, sample_tasks):
         """測試查詢AI相關的任務"""
@@ -161,6 +170,26 @@ class TestCrawlerTasksRepository:
         updated_task = crawler_tasks_repo.get_by_id(task_id)
         assert updated_task.is_auto != original_status
         assert updated_task.updated_at is not None
+
+    def test_toggle_scheduled_status(self, crawler_tasks_repo, sample_tasks, session):
+        """測試切換排程狀態"""
+        task = sample_tasks[0]
+        original_status = task.is_scheduled
+        task_id = task.id
+        
+        # 切換狀態
+        result = crawler_tasks_repo.toggle_scheduled_status(task_id)
+        assert result is True
+        
+        # 重新獲取任務並驗證狀態
+        session.expire_all()  # 確保重新從數據庫加載
+        updated_task = crawler_tasks_repo.get_by_id(task_id)    
+        assert updated_task.is_scheduled != original_status
+        assert updated_task.updated_at is not None
+
+
+
+
 
     def test_update_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
         """測試更新AI收集狀態"""

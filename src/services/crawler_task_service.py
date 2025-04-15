@@ -20,6 +20,7 @@ from src.models.articles_model import Articles
 from src.error.errors import ValidationError
 from src.utils.enum_utils import ScrapeMode, ScrapePhase, TaskStatus
 from src.utils.model_utils import validate_task_args
+from sqlalchemy import desc, asc
 
 
 # 設定 logger
@@ -177,6 +178,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'task': None
             }
     
+        
     def delete_task(self, task_id: int) -> Dict:
         """刪除任務"""
         try:
@@ -234,33 +236,132 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'task': None
             }
     
-    def get_all_tasks(self, filters=None) -> Dict:
-        """獲取所有任務，可選過濾條件"""
+    def advanced_search_tasks(self, **filters) -> Dict:
+        """進階搜尋任務
+        
+        可用過濾條件：
+        - task_name: 任務名稱 (模糊搜尋)
+        - crawler_id: 爬蟲ID
+        - is_auto: 是否自動執行
+        - is_active: 是否啟用
+        - ai_only: 是否只抓取AI相關文章
+        - last_run_success: 上次執行是否成功
+        - date_range: 上次執行時間範圍，格式為(start_date, end_date)
+        - has_notes: 是否有備註
+        - task_status: 任務狀態
+        - scrape_phase: 爬取階段
+        - cron_expression: cron表達式
+        - retry_count: 重試次數 (可以是整數或範圍字典 {"min": x, "max": y})
+        - max_pages: 最大頁數 (task_args)
+        - save_to_csv: 是否保存到CSV (task_args)
+        - scrape_mode: 抓取模式 (task_args)
+        
+        Returns:
+            Dict: 包含搜尋結果的字典
+        """
         try:
             with self._transaction():
                 tasks_repo, _, _ = self._get_repositories()
-                if not tasks_repo:
+                if not tasks_repo:  
                     return {
                         'success': False,
                         'message': '無法取得資料庫存取器',
                         'tasks': []
-                    }
+                    }       
                     
-                tasks = tasks_repo.get_all(filters)
+                # 構建查詢
+                query = tasks_repo.session.query(tasks_repo.model_class)
+                
+                # 處理各種過濾條件
+                if 'task_name' in filters and filters['task_name']:
+                    query = query.filter(tasks_repo.model_class.task_name.like(f"%{filters['task_name']}%"))
+                    
+                if 'crawler_id' in filters and filters['crawler_id']:
+                    query = query.filter(tasks_repo.model_class.crawler_id == filters['crawler_id'])
+                    
+                if 'is_auto' in filters:
+                    query = query.filter(tasks_repo.model_class.is_auto == filters['is_auto'])
+                    
+                if 'is_active' in filters:
+                    query = query.filter(tasks_repo.model_class.is_active == filters['is_active'])
+                    
+                if 'last_run_success' in filters:
+                    query = query.filter(tasks_repo.model_class.last_run_success == filters['last_run_success'])
+                    
+                if 'date_range' in filters and filters['date_range']:
+                    start_date, end_date = filters['date_range']
+                    if start_date:
+                        query = query.filter(tasks_repo.model_class.last_run_at >= start_date)
+                    if end_date:
+                        query = query.filter(tasks_repo.model_class.last_run_at <= end_date)
+                        
+                if 'has_notes' in filters and filters['has_notes']:
+                    query = query.filter(tasks_repo.model_class.notes.isnot(None))
+                    
+                if 'task_status' in filters and filters['task_status']:
+                    query = query.filter(tasks_repo.model_class.task_status == filters['task_status'])
+                    
+                if 'scrape_phase' in filters and filters['scrape_phase']:
+                    query = query.filter(tasks_repo.model_class.scrape_phase == filters['scrape_phase'])
+                    
+                if 'cron_expression' in filters and filters['cron_expression']:
+                    query = query.filter(tasks_repo.model_class.cron_expression == filters['cron_expression'])
+                    
+                if 'retry_count' in filters:
+                    if isinstance(filters['retry_count'], dict):
+                        if 'min' in filters['retry_count']:
+                            query = query.filter(tasks_repo.model_class.retry_count >= filters['retry_count']['min'])
+                        if 'max' in filters['retry_count']:
+                            query = query.filter(tasks_repo.model_class.retry_count <= filters['retry_count']['max'])
+                    else:
+                        query = query.filter(tasks_repo.model_class.retry_count == filters['retry_count'])
+                
+                # 處理task_args中的過濾條件
+                if 'ai_only' in filters:
+                    query = query.filter(tasks_repo.model_class.task_args.contains({"ai_only": filters['ai_only']}))
+                    
+                if 'max_pages' in filters:
+                    query = query.filter(tasks_repo.model_class.task_args.contains({"max_pages": filters['max_pages']}))
+                    
+                if 'save_to_csv' in filters:
+                    query = query.filter(tasks_repo.model_class.task_args.contains({"save_to_csv": filters['save_to_csv']}))
+                    
+                if 'scrape_mode' in filters:
+                    query = query.filter(tasks_repo.model_class.task_args.contains({"scrape_mode": filters['scrape_mode']}))
+                
+                # 處理排序
+                if 'sort_by' in filters and filters['sort_by']:
+                    sort_attr = getattr(tasks_repo.model_class, filters['sort_by'], None)
+                    if sort_attr:
+                        query = query.order_by(desc(sort_attr) if filters.get('sort_desc', False) else asc(sort_attr))
+                else:
+                    # 預設按建立時間排序
+                    query = query.order_by(desc(tasks_repo.model_class.created_at))
+                
+                # 處理分頁
+                if 'limit' in filters and filters['limit']:
+                    query = query.limit(filters['limit'])
+                    
+                if 'offset' in filters and filters['offset']:
+                    query = query.offset(filters['offset'])
+                
+                # 執行查詢
+                tasks = query.all()
+                
                 return {
                     'success': True,
-                    'message': '任務獲取成功',
+                    'message': '任務搜尋成功',
                     'tasks': tasks
                 }
         except Exception as e:
-            error_msg = f"獲取所有任務失敗: {str(e)}"
+            error_msg = f"進階搜尋任務失敗: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
                 'message': error_msg,
                 'tasks': []
             }
-    
+
     def get_task_history(self, task_id: int) -> Dict:
         """獲取任務的執行歷史記錄"""
         try:

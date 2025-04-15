@@ -36,6 +36,7 @@ class CrawlerTasks(Base, BaseEntity):
     - crawler_id: 外鍵，關聯爬蟲
     - is_auto: 是否自動爬取
     - is_active: 是否啟用
+    - is_scheduled: 是否已排程
     - notes: 備註
     - last_run_at: 上次執行時間
     - last_run_success: 上次執行成功與否
@@ -86,6 +87,11 @@ class CrawlerTasks(Base, BaseEntity):
         default=True, 
         nullable=False
     )
+    is_scheduled: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        nullable=False
+    )
     retry_count: Mapped[int] = mapped_column(
         Integer,
         default=0,
@@ -126,6 +132,8 @@ class CrawlerTasks(Base, BaseEntity):
             kwargs['is_auto'] = True
         if 'is_active' not in kwargs:
             kwargs['is_active'] = True
+        if 'is_scheduled' not in kwargs:
+            kwargs['is_scheduled'] = False
         if 'scrape_phase' not in kwargs:
             kwargs['scrape_phase'] = ScrapePhase.INIT
         if 'task_status' not in kwargs:
@@ -149,6 +157,7 @@ class CrawlerTasks(Base, BaseEntity):
             'crawler_id': self.crawler_id,
             'is_auto': self.is_auto,
             'is_active': self.is_active,
+            'is_scheduled': self.is_scheduled,
             'task_args': self.task_args,
             'notes': self.notes,
             'last_run_at': self.last_run_at,
