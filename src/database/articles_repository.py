@@ -639,7 +639,7 @@ class ArticlesRepository(BaseRepository[Articles]):
             limit: 可選限制返回數量
             
         Returns:
-            符合條件的文章列表
+            符合條件的文章列表 
         """
         def query_func():
             query = self.session.query(self.model_class).filter(self.model_class.task_id == task_id)
@@ -656,7 +656,9 @@ class ArticlesRepository(BaseRepository[Articles]):
                     (self.model_class.scrape_status == ArticleScrapeStatus.FAILED, 2),
                     (self.model_class.scrape_status == ArticleScrapeStatus.CONTENT_SCRAPED, 3),
                     else_=4
-                ).asc()
+                ).asc(),
+                # 依照updated_at降序排列，返回最新更新的記錄
+                self.model_class.updated_at.desc()
             )
             
             # 如果指定了限制數量

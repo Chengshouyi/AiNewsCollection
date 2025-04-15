@@ -40,6 +40,8 @@ class Base(DeclarativeBase):
     def __init__(self, datetime_fields_to_watch=None, **kwargs):
         if 'created_at' not in kwargs:
             kwargs['created_at'] = datetime.now(timezone.utc)
+        if 'updated_at' not in kwargs:
+            kwargs['updated_at'] = datetime.now(timezone.utc)
             
         # 如果子類指定了需要監聽的欄位，記錄下來
         if datetime_fields_to_watch:

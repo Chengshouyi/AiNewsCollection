@@ -5,7 +5,9 @@ class TaskStatus(enum.Enum):
     RUNNING = "running"  # 執行中
     COMPLETED = "completed"  # 完成
     FAILED = "failed"  # 失敗
+    CANCELING = "canceling"  # 取消中
     CANCELLED = "cancelled"  # 取消
+    UNKNOWN = "unknown"  # 未知
 
 class ScrapePhase(enum.Enum):
     """任務階段枚舉"""
