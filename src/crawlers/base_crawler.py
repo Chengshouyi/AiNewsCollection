@@ -478,7 +478,11 @@ class BaseCrawler(ABC):
                 - cancel_timeout: 取消超時時間
                 
         Returns:
-            Dict[str, Any]: 任務狀態
+            Dict[str, Any]: 包含任務執行結果
+                success: 是否成功
+                message: 任務執行結果訊息
+                articles_count: 文章數量
+                scrape_phase: 任務狀態
         """
         if self.site_config is None:
             logger.error("site_config 未初始化")
@@ -534,7 +538,18 @@ class BaseCrawler(ABC):
             }
 
     def _execute_content_only_task(self, task_id: int, max_retries: int, retry_delay: float):
-        """執行僅抓取內容的任務"""
+        """執行僅抓取內容的任務
+        Args:
+            task_id: 任務ID
+            max_retries: 最大重試次數
+            retry_delay: 重試延遲時間
+        Returns:
+            Dict[str, Any]: 包含任務執行結果
+                success: 是否成功
+                message: 任務執行結果訊息
+                articles_count: 文章數量
+                scrape_phase: 任務狀態
+        """
         if self._check_if_cancelled(task_id):
             return self._handle_task_cancellation(task_id)
         # 獲取是否從資料庫根據任務ID獲取文章
@@ -655,7 +670,18 @@ class BaseCrawler(ABC):
         }
 
     def _execute_links_only_task(self, task_id: int, max_retries: int, retry_delay: float):
-        """執行僅抓取連結的任務"""
+        """執行僅抓取連結的任務
+        Args:
+            task_id: 任務ID
+            max_retries: 最大重試次數
+            retry_delay: 重試延遲時間
+        Returns:
+            Dict[str, Any]: 包含任務執行結果
+                success: 是否成功
+                message: 任務執行結果訊息
+                articles_count: 文章數量
+                scrape_phase: 任務狀態
+        """
         if self._check_if_cancelled(task_id):
             return self._handle_task_cancellation(task_id)
         # 步驟1：抓取文章列表
@@ -694,7 +720,18 @@ class BaseCrawler(ABC):
         }
 
     def _execute_full_scrape_task(self, task_id: int, max_retries: int, retry_delay: float):
-        """執行完整爬取任務(連結和內容)"""
+        """執行完整爬取任務(連結和內容)
+        Args:
+            task_id: 任務ID
+            max_retries: 最大重試次數
+            retry_delay: 重試延遲時間
+        Returns:
+            Dict[str, Any]: 包含任務執行結果
+                success: 是否成功
+                message: 任務執行結果訊息
+                articles_count: 文章數量
+                scrape_phase: 任務狀態
+        """
         if self._check_if_cancelled(task_id):
             return self._handle_task_cancellation(task_id)
         # 步驟1：抓取文章列表

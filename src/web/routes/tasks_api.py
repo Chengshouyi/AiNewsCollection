@@ -5,7 +5,7 @@ from src.services.article_service import ArticleService
 from src.error.handle_api_error import handle_api_error
 from src.models.crawler_tasks_model import ScrapeMode
 from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from src.services.task_executor_service import TaskExecutorService
 tasks_bp = Blueprint('tasks_api', __name__, url_prefix='/api/tasks')
 
@@ -26,74 +26,73 @@ def get_task_executor_service():
 def get_scheduled_tasks():
     try:
         service = get_task_service()
-        result = service.advanced_search_tasks(**{'is_scheduled': True})
+        result = service.advanced_search_tasks(**{'is_scheduled': True, 'is_active': True, 'is_auto': True})
         if not result['success']:
-            return jsonify({"error": result['message']}), 500
+            return jsonify(result), 500
         return jsonify(result['tasks'].to_dict()), 200
     except Exception as e:
         return handle_api_error(e)
-
+    
 @tasks_bp.route('/scheduled', methods=['POST'])
 def create_scheduled_task():
     try:
-        data = request.get_json()
+        # 獲取請求數據，可能包含額外參數
+        data = request.get_json() or {}
         if len(data) == 0:
-            return jsonify({"error": "缺少任務資料"}), 400
+            return jsonify({"success": False, "message": "缺少任務資料"}), 400
         
         task_service = get_task_service()
         # 設置情境有關的參數-排程任務
         validated_data = _setup_validate_task_data(task_data=data, service=task_service, scrape_mode=data.get('task_args', TASK_ARGS_DEFAULT).get('scrape_mode', ScrapeMode.FULL_SCRAPE.value), is_auto=True, is_update=False)
 
-        scheduler = get_scheduler_service()
-        result = task_service.create_task(validated_data)
-        if not result['success']:
-            return jsonify({"error": result['message']}), 5
-        task = result['task']
+        
+        create_task_result = task_service.create_task(validated_data)
+        if not create_task_result['success']:
+            return jsonify(create_task_result), 500
+        task = create_task_result['task']
         if task:
-            scheduler._schedule_task(task)
-        return jsonify({"task": task.to_dict()}), 201
+            scheduler = get_scheduler_service()
+            scheduler_result = scheduler.add_or_update_task_to_scheduler(task)
+            if not scheduler_result['success']:
+                return jsonify(scheduler_result), 500
+        return jsonify(create_task_result), 201
     except Exception as e:
         return handle_api_error(e)
 
-@tasks_bp.route('/scheduled/<int:task_id>', methods=['GET'])
-def get_scheduled_task(task_id, is_active: bool = True):
-    try:
-        service = get_task_service()
-        result = service.get_task_by_id(task_id, is_active=is_active)
-        if not result['success']:
-            return jsonify({"error": result['message']}), 404
-        return jsonify(result['task'].to_dict()), 200
-    except Exception as e:
-        return handle_api_error(e)
+
 
 @tasks_bp.route('/scheduled/<int:task_id>', methods=['PUT'])
 def update_scheduled_task(task_id, is_active: bool = True):
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
+        if len(data) == 0:
+            return jsonify({"success": False, "message": "缺少任務資料"}), 400
+        
         service = get_task_service()
         
         # 獲取當前任務資料，以保留未更新的參數
         get_task_result = service.get_task_by_id(task_id, is_active=is_active)
         if not get_task_result['success']:
-            return jsonify({"error": "找不到任務"}), 404
+            return jsonify({"success": False, "message": "找不到任務"}), 404
         
         db_task = get_task_result['task']
         db_task_args = db_task.task_args
 
+        new_task_args = data.get('task_args', {})
+
         # 將現有的 task_args 與新的合併
         for key, value in db_task_args.items():
-            if key not in data.task_args:
+            if key not in new_task_args:
                 data['task_args'][key] = value
         
         validated_data = _setup_validate_task_data(task_data=data, service=service, scrape_mode=data.get('task_args', TASK_ARGS_DEFAULT).get('scrape_mode', ScrapeMode.FULL_SCRAPE.value), is_auto=True, is_update=True)
         
- 
-        scheduler = get_scheduler_service()
         result = service.update_task(task_id, validated_data)
         if not result['success']:
-            return jsonify({"error": result['message']}), 404
-        scheduler._schedule_task(result['task'])
-        return jsonify(result['task'].to_dict()), 200
+            return jsonify(result), 404
+        scheduler = get_scheduler_service()
+        scheduler.add_or_update_task_to_scheduler(result['task'])
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -104,9 +103,11 @@ def delete_scheduled_task(task_id):
         scheduler = get_scheduler_service()
         result = service.delete_task(task_id)
         if not result['success']:
-            return jsonify({"error": result['message']}), 404
-        scheduler.cron_scheduler.remove_job(f"task_{task_id}")
-        return jsonify({"message": "Deleted"}), 200
+            return jsonify(result), 404
+        result = scheduler.remove_task_from_scheduler(task_id)
+        if not result['success']:
+            return jsonify(result), 404
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -117,11 +118,15 @@ def fetch_full_article_manual_task():
         scrape_mode: FULL_SCRAPE
     Returns:
         dict: 包含任務ID、狀態和抓取模式
+            success: 是否成功
+            message: 任務執行結果訊息
+            articles_count: 文章數量
+            scrape_phase: 任務狀態
     """
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         if len(data) == 0:
-            return jsonify({"error": "缺少任務資料"}), 400
+            return jsonify({"success": False, "message": "缺少任務資料"}), 400
         
         task_service = get_task_service()
 
@@ -131,18 +136,16 @@ def fetch_full_article_manual_task():
         #創建任務
         result = task_service.create_task(validated_data)
         if not result['success']:
-            return jsonify({"error": result['message']}), 500
+            return jsonify(result), 500
         task = result['task']
         task_id = task.id
         
         task_executor = get_task_executor_service()
         result = task_executor.fetch_full_article(task_id, is_async=False)
+        if not result['success']:
+            return jsonify(result), 500
         
-        return jsonify({
-            "task": task.to_dict(), 
-            "status": "pending", 
-            "scrape_mode": data['scrape_mode']
-        }), 202
+        return jsonify(result), 202
     except Exception as e:
         return handle_api_error(e)
 
@@ -152,7 +155,7 @@ def get_task_status(task_id):
         task_executor = get_task_executor_service()
         result = task_executor.get_task_status(task_id)
         if not result['success']:
-            return jsonify({"error": result['message']}), 404
+            return jsonify(result), 404
         return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
@@ -170,26 +173,22 @@ def fetch_links_manual_task():
         # 獲取請求數據，可能包含額外參數
         data = request.get_json() or {}
         if len(data) == 0:
-            return jsonify({"error": "缺少任務資料"}), 400
+            return jsonify({"success": False, "message": "缺少任務資料"}), 400
         
         #設置情境有關的參數-手動任務+只抓取連結
         validated_data = _setup_validate_task_data(task_data=data, service=service, scrape_mode=ScrapeMode.LINKS_ONLY.value, is_auto=False, is_update=False)
         #創建任務
         result = service.create_task(validated_data)
         if not result['success']:
-            return jsonify({"error": result['message']}), 500
+            return jsonify(result), 500
         task = result['task']
         task_id = task.id
 
-            
         task_executor = TaskExecutorService()
         result = task_executor.collect_links_only(task_id, is_async=False)
-        
-        return jsonify({
-            "message": "Link collection initiated", 
-            "scrape_mode": ScrapeMode.LINKS_ONLY.value,
-            "task": task.to_dict()
-        }), 202
+        if not result['success']:
+            return jsonify(result), 500
+        return jsonify(result), 202
     except Exception as e:
         return handle_api_error(e)
 
@@ -199,12 +198,15 @@ def get_unscraped_task_links(task_id):
         scrape_mode: LINKS_ONLY
     Returns:
         dict: 包含任務ID、狀態和抓取模式
+            success: 是否成功
+            message: 任務執行結果訊息
+            articles: 文章列表
     """
     try:
         article_service = get_article_service()
         result = article_service.get_articles_by_task({'task_id': task_id, 'scraped': False, 'preview': True})
         if not result['success']:
-            return jsonify({"error": result['message']}), 404
+            return jsonify(result), 404
         return jsonify(result['articles']), 200
     except Exception as e:
         return handle_api_error(e)
@@ -222,27 +224,31 @@ def fetch_content_manual_task(task_id):
             - 直接使用 article_links 參數
     Returns:
         dict: 包含任務ID、狀態和抓取模式
+            success: 是否成功
+            message: 任務執行結果訊息
+            link_count: 文章連結數量
+            task_args: 任務參數
     """
     try:
         data = request.get_json()
         if len(data) == 0:
-            return jsonify({"error": "缺少任務資料"}), 400
+            return jsonify({"success": False, "message": "缺少任務資料"}), 400
         
         task_args = data.get('task_args', TASK_ARGS_DEFAULT)
 
         if not task_args.get('get_links_by_task_id'):
-            return jsonify({"error": "缺少 get_links_by_task_id 參數，無法判定要從資料庫獲取文章連結還是直接使用 article_links"}), 400
+            return jsonify({"success": False, "message": "缺少 get_links_by_task_id 參數，無法判定要從資料庫獲取文章連結還是直接使用 article_links"}), 400
         
         if task_args.get('get_links_by_task_id'):
             # 從資料庫根據任務ID獲取要抓取內容的文章(scrape_mode=CONTENT_ONLY時有效)
             article_links = get_unscraped_task_links(task_id)
             if not article_links:
-                return jsonify({"error": "沒有找到未抓取的文章"}), 404
+                return jsonify({"success": False, "message": "沒有找到未抓取的文章"}), 404
         else:
             # 直接使用 article_links 參數
             article_links = data.get('article_links')
             if not article_links:
-                return jsonify({"error": "沒有提供文章連結"}), 400
+                return jsonify({"success": False, "message": "沒有提供文章連結"}), 400
             
         task_args['article_links'] = article_links
         data['task_args'] = task_args
@@ -251,7 +257,7 @@ def fetch_content_manual_task(task_id):
         # 檢查任務是否存在
         get_task_result = service.get_task_by_id(task_id, is_active=True)
         if not get_task_result['success']:
-            return jsonify({"error": "找不到有效任務" + get_task_result['message']}), 404
+            return jsonify({"success": False, "message": "找不到有效任務" + get_task_result['message']}), 404
         
         # 獲取資料庫中的任務資料
         db_task = get_task_result['task']
@@ -269,13 +275,11 @@ def fetch_content_manual_task(task_id):
             
         task_executor = TaskExecutorService()
         result = task_executor.fetch_content_only(task_id, is_async=False)
+        if not result['success']:
+            return jsonify(result), 500
         
-        return jsonify({
-            "message": "Content fetching initiated", 
-            "scrape_mode": ScrapeMode.CONTENT_ONLY.value,
-            "link_count": len(article_links),
-            "task_args": validated_data.get('task_args') # 返回合併後的 task_args
-        }), 202
+        return jsonify(result), 202
+
     except Exception as e:
         return handle_api_error(e)
 
@@ -284,13 +288,16 @@ def get_scraped_task_results(task_id):
     """獲取已抓取的文章結果
     Returns:
         dict: 包含任務ID、狀態和抓取模式
+            success: 是否成功
+            message: 任務執行結果訊息
+            articles: 文章列表
     """     
     try:
         article_service = get_article_service()
-        result = article_service.get_articles_by_task({'task_id': task_id, 'scraped': True})
+        result = article_service.get_articles_by_task({'task_id': task_id, 'is_scraped': True})
         if not result['success']:
-            return jsonify({"error": result['message']}), 404
-        return jsonify(result['articles']), 200
+            return jsonify(result), 404
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -303,12 +310,15 @@ def test_crawler():
             task_args: dict
     Returns:
         dict: 包含任務ID、狀態和抓取模式
+            success: 是否成功
+            message: 任務執行結果訊息
+            articles: 文章列表
     """
     try:
         data = request.get_json()
 
         if len(data) == 0:
-            return jsonify({"error": "缺少任務資料或爬蟲資料"}), 400
+            return jsonify({"success": False, "message": "缺少任務資料或爬蟲資料"}), 400
 
         service = get_task_service() # 獲取 service 實例
 
@@ -329,8 +339,8 @@ def cancel_task(task_id):
         task_executor = get_task_executor_service()
         result = task_executor.cancel_task(task_id)
         if not result['success']:
-            return jsonify({"error": result['message']}), 404
-        return jsonify({"message": "Cancellation requested"}), 202
+            return jsonify(result), 404
+        return jsonify(result), 202
     except Exception as e:
         return handle_api_error(e)
 
@@ -340,8 +350,8 @@ def get_task_history(task_id):
         service = get_task_service()
         result = service.get_task_history(task_id)
         if not result['success']:
-            return jsonify({"error": result['message']}), 404
-        return jsonify(result['history']), 200
+            return jsonify(result), 404
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e) 
     

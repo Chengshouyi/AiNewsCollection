@@ -253,24 +253,17 @@ class SchedulerService(BaseService[CrawlerTasks]):
             # 設定 cron 觸發器
             trigger = CronTrigger.from_crontab(task.cron_expression, timezone=pytz.UTC)
             
-            # 建立任務執行參數
-            task_args = {
-                'task_id': task.id,
-                'task_name': task.task_name,
-                'crawler_id': task.crawler_id
-            }
-            
             # 排程任務，並設定觸發時調用 _trigger_task 方法
             job_id = f"task_{task.id}"
             self.cron_scheduler.add_job(
                 func=self._trigger_task,
                 trigger=trigger,
-                args=[task.id, task_args],
+                args=[task.id, task.task_args],
                 id=job_id,
                 name=task.task_name,
                 replace_existing=True,
                 misfire_grace_time=3600,  # 允許 1 小時的誤差
-                kwargs={'task_args': task_args},
+                kwargs={'task_args': task.task_args, 'update_at': task.updated_at},
                 jobstore='default'  # 使用默認的 SQLAlchemyJobStore
             )
             
@@ -319,6 +312,65 @@ class SchedulerService(BaseService[CrawlerTasks]):
             error_msg = f"觸發執行任務 {task_id} 時發生錯誤: {str(e)}"
             logger.error(error_msg, exc_info=True)
     
+    def add_or_update_task_to_scheduler(self, task: CrawlerTasks) -> Dict[str, Any]:
+        """新增或更新任務到排程"""
+        job_id = f"task_{task.id}"
+        job = self.cron_scheduler.get_job(job_id)
+        updated_count = 0
+        added_count = 0
+        if job:
+            # 檢查任務是否需要更新 (以更新時間為準)
+            if hasattr(job.kwargs, 'update_at') and job.kwargs.update_at != task.updated_at:
+                try:
+                    self.cron_scheduler.remove_job(job_id)
+                    if self._schedule_task(task):
+                        logger.info(f"更新任務: {job_id}")
+                        updated_count += 1
+                except Exception as e:
+                    logger.warning(f"更新任務 {job_id} 失敗: {str(e)}")
+        else:
+            # 新增任務
+            if self._schedule_task(task):
+                logger.info(f"新增任務: {job_id}")
+                toggle_scheduled_status_result = self.crawler_tasks_repo.toggle_scheduled_status(task.id)
+                logger.info(f"切換任務 {task.id} 的排程狀態: {'成功' if toggle_scheduled_status_result else '失敗'}")
+                if toggle_scheduled_status_result:
+                    added_count += 1
+                else:
+                    logger.error(f"切換任務排程狀態 {task.id} 失敗")
+                    # 如果切換排程狀態失敗，則不增加計數並且移除任務
+                    self.cron_scheduler.remove_job(job_id)
+                    logger.info(f"從排程移除任務 {task.id} 並且不增加計數")
+        return {
+            'success': True,
+            'message': f'新增或更新任務 {task.id} 到排程',
+            'added_count': added_count,
+            'updated_count': updated_count
+        }
+    
+    def remove_task_from_scheduler(self, task_id: int) -> Dict[str, Any]:
+        """移除任務從排程
+        Args:
+            task_id: 任務ID
+        Returns:
+            Dict[str, Any]: 包含移除結果的字典
+            success: 是否成功
+            message: 移除結果訊息
+        """
+        job_id = f"task_{task_id}"
+        try:
+            self.cron_scheduler.remove_job(job_id)
+            return {
+                'success': True,
+                'message': f'從排程移除任務 {task_id} 成功'
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f'從排程移除任務 {task_id} 失敗: {str(e)}'
+            }
+    
+
     def reload_scheduler(self) -> Dict[str, Any]:
         """當任務資料變更（新增、更新或刪除任務）時，重新載入或調整調度任務
         
@@ -338,10 +390,10 @@ class SchedulerService(BaseService[CrawlerTasks]):
             persisted_job_ids = {int(job.id.split('_')[1]) for job in persisted_jobs 
                                if job.id.startswith('task_') and job.id.split('_')[1].isdigit()}
             
-            # 從資料庫獲取最新的自動執行任務
+            # 從資料庫獲取最新的自動執行任務(is_active=True, is_auto=True)
             auto_tasks = self.crawler_tasks_repo.find_auto_tasks()
             db_task_ids = {task.id for task in auto_tasks}
-            db_task_dict = {task.id: task for task in auto_tasks}
+            # db_task_dict = {task.id: task for task in auto_tasks}
             
             # 1. 移除已不存在於資料庫的持久化任務
             removed_count = 0
@@ -360,32 +412,9 @@ class SchedulerService(BaseService[CrawlerTasks]):
             added_count = 0
             
             for task in auto_tasks:
-                job_id = f"task_{task.id}"
-                job = self.cron_scheduler.get_job(job_id)
-                
-                if job:
-                    # 檢查任務是否需要更新 (例如 cron 表達式變更)
-                    if hasattr(job.trigger, 'expression') and job.trigger.expression != task.cron_expression:
-                        try:
-                            self.cron_scheduler.remove_job(job_id)
-                            if self._schedule_task(task):
-                                logger.info(f"重載時更新任務: {job_id}")
-                                updated_count += 1
-                        except Exception as e:
-                            logger.warning(f"重載時更新任務 {job_id} 失敗: {str(e)}")
-                else:
-                    # 新增任務
-                    if self._schedule_task(task):
-                        logger.info(f"重載時新增任務: {job_id}")
-                        toggle_scheduled_status_result = self.crawler_tasks_repo.toggle_scheduled_status(task.id)
-                        logger.info(f"切換任務 {task.id} 的排程狀態: {'成功' if toggle_scheduled_status_result else '失敗'}")
-                        if toggle_scheduled_status_result:
-                            added_count += 1
-                        else:
-                            logger.error(f"切換任務排程狀態 {task.id} 失敗")
-                            # 如果切換排程狀態失敗，則不增加計數並且移除任務
-                            self.cron_scheduler.remove_job(job_id)
-                            logger.info(f"從排程移除任務 {task.id} 並且不增加計數")
+                result = self.add_or_update_task_to_scheduler(task)
+                updated_count += result['updated_count']
+                added_count += result['added_count']
 
             # 更新狀態
             self.scheduler_status['job_count'] = len(self.cron_scheduler.get_jobs())

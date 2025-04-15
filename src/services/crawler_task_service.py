@@ -216,7 +216,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'message': error_msg
             }
     
-    def get_task_by_id(self, task_id: int, is_active: bool = True) -> Dict:
+    def get_task_by_id(self, task_id: int, is_active: Optional[bool] = True) -> Dict:
         """獲取指定ID的任務"""
         try:
             with self._transaction():

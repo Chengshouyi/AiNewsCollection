@@ -649,6 +649,9 @@ class ArticleService(BaseService[Articles]):
                 
         Returns:
             Dict[str, Any]: 包含文章列表的字典
+                success: 是否成功
+                message: 任務執行結果訊息
+                articles: 文章列表
         """
         try:
             with self._transaction():

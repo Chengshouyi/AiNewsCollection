@@ -206,7 +206,9 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
             Dict[str, Any]: 執行結果
         """
         task_id = task.id
-        crawler_name = task.crawler.crawler_name if task.crawler else None
+        _, crawler_repo, _ = self._get_repositories()
+        crawler = crawler_repo.get_by_id(task.crawler_id)
+        crawler_name = crawler.crawler_name if crawler else None
 
         # 記錄開始執行
         logger.info(f"開始執行任務 {task_id} (爬蟲: {crawler_name})")
@@ -232,17 +234,17 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                         history_data = {
                             'end_time': datetime.now(timezone.utc),
                             'task_status': TaskStatus.FAILED.value,
-                            'message': '爬蟲名稱不存在'
+                            'message': '爬蟲名稱不存在，任務執行失敗'
                         }
                         validated_history_data = self.validate_data('TaskHistory', history_data, SchemaType.UPDATE)
                         history_repo.update(history_id, validated_history_data)
                     
                     # 更新任務最後執行狀態
-                    self.update_task_last_run(task_id, False, '爬蟲名稱不存在')
+                    self.update_task_last_run(task_id, False, '爬蟲名稱不存在，任務執行失敗')
                     
                     return {
                         'success': False,
-                        'message': '爬蟲名稱不存在'
+                        'message': '爬蟲名稱不存在，任務執行失敗'
                     }
                 
                 crawler = CrawlerFactory.get_crawler(crawler_name)
@@ -294,6 +296,7 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                     if task_id in self.running_crawlers:
                         del self.running_crawlers[task_id]
 
+                result['task_status'] = task_status
                 return result
         except Exception as e:
             error_msg = f"執行任務 {task_id} 時發生錯誤: {str(e)}"
@@ -572,9 +575,6 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
         Returns:
             Dict[str, Any]: 執行結果
         """
-        # 在執行任務時指定操作類型
-        kwargs['operation_type'] = 'fetch_full_article'
-        kwargs['scrape_mode'] = 'full_scrape'
         return self.execute_task(task_id, is_async, **kwargs)
     
     def collect_links_only(self, task_id: int, is_async: bool = True, **kwargs) -> Dict[str, Any]:
@@ -603,6 +603,9 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
 
         Returns:
             Dict[str, Any]: 執行結果
+                success: 是否成功
+                message: 任務執行結果訊息
+                articles: 文章列表
         """
         # 在執行任務時指定操作類型
         kwargs['operation_type'] = 'fetch_content_only'
