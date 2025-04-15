@@ -150,9 +150,11 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
         """
         with self.task_lock:
             if task_id in self.running_tasks:
+                logger.info(f"清除執行中的任務 {task_id}")
                 del self.running_tasks[task_id]
             # 清除爬蟲實例
             if task_id in self.running_crawlers:
+                logger.info(f"清除爬蟲實例 {task_id}")
                 del self.running_crawlers[task_id]
 
         # 檢查是否有異常
@@ -606,12 +608,6 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 # 獲取爬蟲實例
                 from src.crawlers.crawler_factory import CrawlerFactory
                 
-                # 確保crawler_name不為None
-                if crawler_name is None:
-                    return {
-                        'success': False,
-                        'message': '爬蟲名稱不存在'
-                    }
                 
                 # 預防設置錯誤，強制設定測試參數
                 test_params['scrape_mode'] = 'links_only'
