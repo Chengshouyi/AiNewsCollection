@@ -89,12 +89,21 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             raise DatabaseOperationError(f"更新 CrawlerTask (ID={entity_id}) 時發生未預期錯誤: {e}") from e
 
     def find_tasks_by_id(self, task_id: int, is_active: Optional[bool] = True) -> Optional[CrawlerTasks]:
-        """查詢特定任務"""
+        """查詢特定任務
+        
+        Args:
+            task_id: 任務ID
+            is_active: 是否只返回啟用狀態的任務
+            
+        Returns:
+            CrawlerTasks: 任務實體
+        """
         if is_active is None:
             return self.execute_query(
                 lambda: self.session.query(self.model_class).filter_by(id=task_id).first(),
                 err_msg=f"查詢任務ID {task_id} 時發生錯誤"
             )
+        
         else:
             return self.execute_query(
                 lambda: self.session.query(self.model_class).filter_by(id=task_id, is_active=is_active).first(),

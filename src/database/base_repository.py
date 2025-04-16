@@ -105,7 +105,10 @@ class BaseRepository(Generic[T], ABC):
             schema_type: 決定使用 CreateSchema 還是 UpdateSchema。
 
         Returns:
-            驗證並處理過的字典資料。
+            Dict[str, Any]: 驗證並處理過的字典資料。
+                success: 是否成功
+                message: 消息
+                data: 驗證後的資料
 
         Raises:
             ValidationError: 如果 Pydantic 驗證失敗。
@@ -128,7 +131,11 @@ class BaseRepository(Generic[T], ABC):
                 validated_dict = instance.model_dump()
                 logger.debug(f"創建資料驗證成功 (含預設值): {validated_dict}")
 
-            return validated_dict
+            return {
+                "success": True,
+                "message": "資料驗證成功",
+                "data": validated_dict
+            }
         except ValidationError as e:
             # 包裝 Pydantic 錯誤
             error_msg = f"{schema_type.name} 資料驗證失敗: {e}"

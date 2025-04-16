@@ -73,6 +73,9 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             
         Returns:
             Dict[str, Any]: 驗證後的資料
+                success: 是否成功
+                message: 消息
+                data: 任務資料
         """
 
         if data.get('is_auto') is True:
@@ -217,7 +220,18 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             }
     
     def get_task_by_id(self, task_id: int, is_active: Optional[bool] = True) -> Dict:
-        """獲取指定ID的任務"""
+        """獲取指定ID的任務
+        
+        Args:
+            task_id: 任務ID
+            is_active: 是否只返回啟用狀態的任務
+            
+        Returns:
+            Dict: 包含任務資料的字典
+                success: 是否成功
+                message: 消息
+                task: 任務資料
+        """
         try:
             with self._transaction():
                 tasks_repo, _, _ = self._get_repositories()

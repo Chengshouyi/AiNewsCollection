@@ -39,8 +39,32 @@ class CrawlersService(BaseService[Crawlers]):
         """獲取爬蟲資料庫訪問對象"""
         return cast(CrawlersRepository, super()._get_repository('Crawler'))
 
+
+    def validate_crawler_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
+        """驗證爬蟲資料
+        
+        Args:
+            data: 要驗證的資料
+            is_update: 是否為更新操作
+            
+        Returns:
+            Dict[str, Any]: 驗證後的資料
+        """
+        schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
+        return self.validate_data('Crawler', data, schema_type)
+
     def create_crawler(self, crawler_data: Dict[str, Any]) -> Dict[str, Any]:
-        """創建新爬蟲設定"""
+        """創建新爬蟲設定
+        
+        Args:
+            crawler_data: 要創建的爬蟲設定資料
+            
+        Returns:
+            Dict[str, Any]: 創建結果
+                success: 是否成功
+                message: 訊息
+                crawler: 爬蟲設定
+        """
         try:
             with self._transaction():
                 # 添加必要的欄位
@@ -56,7 +80,8 @@ class CrawlersService(BaseService[Crawlers]):
                 except Exception as e:
                     return {
                         'success': False,
-                        'message': f"爬蟲設定資料驗證失敗: {str(e)}"
+                        'message': f"爬蟲設定資料驗證失敗: {str(e)}",
+                        'crawler': None
                     }
 
                 crawler_repo = self._get_repository()
@@ -223,7 +248,14 @@ class CrawlersService(BaseService[Crawlers]):
             raise e
 
     def get_active_crawlers(self) -> Dict[str, Any]:
-        """獲取所有活動中的爬蟲設定"""
+        """獲取所有活動中的爬蟲設定
+        
+        Returns:
+            Dict[str, Any]: 活動中的爬蟲設定
+                success: 是否成功
+                message: 訊息
+                crawlers: 活動中的爬蟲設定列表
+        """
         try:
             with self._transaction():
                 crawler_repo = self._get_repository()
@@ -637,15 +669,3 @@ class CrawlersService(BaseService[Crawlers]):
             logger.error(f"獲取過濾後的爬蟲設定列表失敗: {str(e)}")
             raise e
 
-    def validate_crawler_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
-        """驗證爬蟲資料
-        
-        Args:
-            data: 要驗證的資料
-            is_update: 是否為更新操作
-            
-        Returns:
-            Dict[str, Any]: 驗證後的資料
-        """
-        schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
-        return self.validate_data('Crawler', data, schema_type)

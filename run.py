@@ -1,13 +1,10 @@
-from datetime import datetime
-import os
-import schedule
 import time
 import logging
 from src.services.article_service import ArticleService
 from src.services.scheduler_service import SchedulerService
-from src.services.task_executor_service import TaskExecutorService
 from src.models.base_model import Base
 from src.config import get_db_manager
+from src.services.service_container import ServiceContainer, get_scheduler_service, get_task_executor_service, get_crawler_task_service, get_article_service
 
 # 配置日誌
 logging.basicConfig(
@@ -23,13 +20,18 @@ def main():
     try:
         # 初始化資料庫存取
         db_manager = get_db_manager()
-        data_access = ArticleService(db_manager)  
 
         # 初始化排程服務（使用單體模式）
-        scheduler_service = SchedulerService.get_instance(db_manager=db_manager)
+        scheduler_service = get_scheduler_service()
         
         # 初始化任務執行服務（使用單體模式）
-        task_executor_service = TaskExecutorService.get_instance(db_manager=db_manager, max_workers=15)
+        task_executor_service = get_task_executor_service()
+
+        # 初始化爬蟲任務服務（使用單體模式）
+        crawler_task_service = get_crawler_task_service()
+
+        # 初始化文章服務（使用單體模式）
+        article_service = get_article_service()
         
         # 啟動排程服務
         scheduler_service.start_scheduler()
@@ -46,8 +48,11 @@ def main():
         # 可以在這裡添加其他初始化或定期任務
         logging.info("主程序啟動成功")
         
-        scheduler_service.stop_scheduler()
+        
     except Exception as e:
+        scheduler_service.stop_scheduler()
+        ServiceContainer.clear_instances()
+        db_manager.cleanup()
         logging.error(f"初始化失敗: {e}", exc_info=True)
 
 def run_scheduled_tasks(interval_hr: int = 24):
@@ -55,9 +60,10 @@ def run_scheduled_tasks(interval_hr: int = 24):
     while True:
         try:
             # 執行排程任務          
-            SchedulerService.get_instance().reload_scheduler()
+            get_scheduler_service().reload_scheduler()
             time.sleep(interval_hr * 3600)
         except Exception as e:
+            get_scheduler_service().stop_scheduler()
             logging.error(f"排程任務執行錯誤: {e}", exc_info=True)
             time.sleep(10)
 
@@ -70,3 +76,7 @@ if __name__ == "__main__":
         run_scheduled_tasks(4) # 每4小時執行一次排程任務重新載入
     except Exception as e:
         logging.error(f"程序異常退出: {e}", exc_info=True)
+        get_scheduler_service().stop_scheduler()
+        ServiceContainer.clear_instances()
+        get_db_manager().cleanup()
+        raise e

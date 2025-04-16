@@ -1,10 +1,10 @@
 from flask import Blueprint, jsonify, request, Response
 from src.services.crawlers_service import CrawlersService
-from src.utils.api_validators import validate_crawler_data_api
+from src.services.service_container import get_crawlers_service
 from src.error.handle_api_error import handle_api_error
 import logging
 from src.error.errors import ValidationError
-
+from typing import Dict, Any
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -12,9 +12,6 @@ logger = logging.getLogger(__name__)
 # 創建藍圖
 crawler_bp = Blueprint('crawlerapi', __name__, url_prefix='/api/crawlers')
 
-def get_crawlers_service():
-    """獲取爬蟲服務實例"""
-    return CrawlersService()
 
 @crawler_bp.route('', methods=['GET'])
 def get_crawlers():
@@ -36,31 +33,33 @@ def create_crawler():
     """新增一個爬蟲設定"""
     service = get_crawlers_service() # 先獲取 Service
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "無效的 JSON"}), 400
+        data = request.get_json() or {}
+        if len(data) == 0:
+            return jsonify({"success": False, "message": "缺少爬蟲資料"}), 400
 
         # --- API 層驗證 ---
         try:
-            validated_data = validate_crawler_data_api(data, service, is_update=False)
+            validated_result = _setup_validate_crawler_data(data, service, is_update=False)
+            if not validated_result['success']:
+                return jsonify(validated_result), 400
         except ValidationError as e:
             # 捕獲驗證錯誤，返回 400
-            return jsonify({"error": "輸入資料驗證失敗", "details": str(e)}), 400
+            return jsonify({"success": False, "message": "輸入資料驗證失敗", "details": str(e)}), 400
         # --- 驗證結束 ---
 
         # 將驗證後的資料傳遞給 service
-        result = service.create_crawler(validated_data) # Service 的 create 現在接收驗證後的資料
+        result = service.create_crawler(validated_result['data']) # Service 的 create 現在接收驗證後的資料
 
         if not result.get('success'):
             # Service 層可能還會拋出其他錯誤 (如資料庫操作錯誤)
-            return jsonify({"error": result.get('message', '創建爬蟲設定失敗')}), 400 # 或 500
+            return jsonify(result), 400 # 或 500
 
         new_crawler = result.get('crawler')
         if new_crawler is None:
             # 雖然 success=True 但沒拿到 crawler 的情況不太可能，但還是處理一下
-            return jsonify({"error": "創建爬蟲後未能獲取結果"}), 500
+            return jsonify({"success": False, "message": "創建爬蟲後未能獲取結果"}), 500
 
-        return jsonify(new_crawler.to_dict()), 201 # 返回 201 Created
+        return jsonify(result), 201 # 返回 201 Created
 
     except Exception as e:
         # 捕獲 Service 層或驗證過程中未處理的其他錯誤
@@ -74,13 +73,13 @@ def get_crawler(crawler_id):
         result = service.get_crawler_by_id(crawler_id)
         
         if not result.get('success'):
-            return jsonify({"error": "Not Found"}), 404
+            return jsonify(result), 404
         
         crawler = result.get('crawler')
         if crawler is None:
-            return jsonify({"error": "Crawler not found"}), 404
+            return jsonify({"success": False, "message": "找不到爬蟲資料"}), 404
             
-        return jsonify(crawler.to_dict()), 200
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -89,31 +88,28 @@ def update_crawler(crawler_id):
     """更新特定爬蟲設定"""
     service = get_crawlers_service()
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "無效的 JSON"}), 400
+        data = request.get_json() or {}
+        if len(data) == 0:
+            return jsonify({"success": False, "message": "缺少爬蟲資料"}), 400
 
         # --- API 層驗證 ---
-        try:
-            validated_payload = validate_crawler_data_api(data, service, is_update=True)
-        except ValidationError as e:
-            return jsonify({"error": "輸入資料驗證失敗", "details": str(e)}), 400
+        validated_result = _setup_validate_crawler_data(data, service, is_update=True)
+        if not validated_result['success']:
+            return jsonify(validated_result), 400
+            
         # --- 驗證結束 ---
 
         # 將驗證後的 payload 傳遞給 service
-        result = service.update_crawler(crawler_id, validated_payload)
+        update_result = service.update_crawler(crawler_id, validated_result['data'])
 
-        if not result.get('success'):
-            # 處理 Service 返回的錯誤 (例如 Not Found 或 DB Error)
-            error_msg = result.get('message', f'更新爬蟲設定 {crawler_id} 失敗')
-            status_code = 404 if "不存在" in error_msg else 400 # 或 500
-            return jsonify({"error": error_msg}), status_code
+        if not update_result.get('success'):
+            return jsonify(update_result), 400
 
-        updated_crawler = result.get('crawler')
+        updated_crawler = update_result.get('crawler')
         if updated_crawler is None:
-            return jsonify({"error": "更新爬蟲後未能獲取結果"}), 500
+            return jsonify({"success": False, "message": "更新爬蟲後未能獲取結果"}), 500
 
-        return jsonify(updated_crawler.to_dict()), 200 # 返回 200 OK
+        return jsonify(update_result), 200 # 返回 200 OK
 
     except Exception as e:
         return handle_api_error(e)
@@ -133,12 +129,14 @@ def delete_crawler(crawler_id):
         return handle_api_error(e)
 
 @crawler_bp.route('/types', methods=['GET'])
-def get_crawler_types():
-    """取得可用的爬蟲類型"""
+def get_available_crawler_types():
+    """取得可用的爬蟲名稱"""
     try:
         from src.crawlers.crawler_factory import CrawlerFactory
-        types = CrawlerFactory.list_available_crawlers()
-        return jsonify(types), 200
+        types = CrawlerFactory.list_available_crawler_types()
+        if len(types) == 0:
+            return jsonify({"success": False, "message": "找不到任何可用的爬蟲名稱"}), 404
+        return jsonify({"success": True, "message": "找到可用的爬蟲名稱清單", "data": types}), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -150,10 +148,12 @@ def get_active_crawlers():
         result = service.get_active_crawlers()
         
         if not result.get('success'):
-            return jsonify({"error": result.get('message')}), 400
+            return jsonify(result), 400
         
         crawlers = result.get('crawlers', [])
-        return jsonify([c.to_dict() for c in crawlers if c is not None]), 200
+        if len(crawlers) == 0:
+            return jsonify({"success": False, "message": "找不到任何活動中的爬蟲設定"}), 404
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -165,12 +165,12 @@ def toggle_crawler_status(crawler_id):
         result = service.toggle_crawler_status(crawler_id)
         
         if not result.get('success'):
-            return jsonify({"error": result.get('message')}), 404
+            return jsonify(result), 404
         
         crawler = result.get('crawler')
         if crawler is None:
-            return jsonify({"error": "Crawler not found"}), 404
-        return jsonify(crawler.to_dict()), 200
+            return jsonify({"success": False, "message": "找不到爬蟲資料"}), 404
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -182,10 +182,12 @@ def get_crawlers_by_name(name):
         result = service.get_crawlers_by_name(name)
         
         if not result.get('success'):
-            return jsonify({"error": result.get('message')}), 400
+            return jsonify(result), 400
         
         crawlers = result.get('crawlers', [])
-        return jsonify([c.to_dict() for c in crawlers if c is not None]), 200
+        if len(crawlers) == 0:
+            return jsonify({"success": False, "message": "找不到任何符合名稱的爬蟲設定"}), 404
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -197,10 +199,12 @@ def get_crawlers_by_type(crawler_type):
         result = service.get_crawlers_by_type(crawler_type)
         
         if not result.get('success'):
-            return jsonify({"error": result.get('message')}), 400
+            return jsonify(result), 400
         
         crawlers = result.get('crawlers', [])
-        return jsonify([c.to_dict() for c in crawlers if c is not None]), 200
+        if len(crawlers) == 0:
+            return jsonify({"success": False, "message": "找不到任何符合類型的爬蟲設定"}), 404
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -212,10 +216,12 @@ def get_crawlers_by_target(target_pattern):
         result = service.get_crawlers_by_target(target_pattern)
         
         if not result.get('success'):
-            return jsonify({"error": result.get('message')}), 400
+            return jsonify(result), 400
         
         crawlers = result.get('crawlers', [])
-        return jsonify([c.to_dict() for c in crawlers if c is not None]), 200
+        if len(crawlers) == 0:
+            return jsonify({"success": False, "message": "找不到任何符合目標的爬蟲設定"}), 404
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -227,9 +233,9 @@ def get_crawler_statistics():
         result = service.get_crawler_statistics()
         
         if not result.get('success'):
-            return jsonify({"error": result.get('message')}), 400
+            return jsonify(result), 400
         
-        return jsonify(result.get('statistics')), 200
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -241,12 +247,12 @@ def get_crawler_by_exact_name(crawler_name):
         result = service.get_crawler_by_exact_name(crawler_name)
         
         if not result.get('success'):
-            return jsonify({"error": result.get('message')}), 404
+            return jsonify(result), 404
         
         crawler = result.get('crawler')
         if crawler is None:
-            return jsonify({"error": "Crawler not found"}), 404
-        return jsonify(crawler.to_dict()), 200
+            return jsonify({"success": False, "message": "找不到爬蟲資料"}), 404
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -257,18 +263,30 @@ def create_or_update_crawler():
     try:
         data = request.get_json()
         if not data:
-            return jsonify({"error": "無效的 JSON"}), 400
+            return jsonify({"success": False, "message": "無效的 JSON"}), 400
 
-        result = service.create_or_update_crawler(data)
+        # 判斷是更新還是創建操作
+        is_update = 'id' in data and data['id']
+        
+        # --- API 層驗證 ---
+ 
+        validated_result = _setup_validate_crawler_data(data, service, is_update=is_update)
+        if not validated_result['success']:
+            return jsonify(validated_result), 400
+
+        # --- 驗證結束 ---
+
+        # 將驗證後的資料傳遞給 service
+        result = service.create_or_update_crawler(validated_result['data'])
 
         if not result.get('success'):
-            return jsonify({"error": result.get('message')}), 400
+            return jsonify(result), 400
 
         crawler = result.get('crawler')
-        status_code = 201 if 'id' not in data or not data['id'] else 200
+        status_code = 201 if not is_update else 200
         if crawler is None:
-            return jsonify({"error": "Crawler not found"}), 404
-        return jsonify(crawler.to_dict()), status_code
+            return jsonify({"success": False, "message": "找不到爬蟲資料"}), 404
+        return jsonify(result), status_code
     except Exception as e:
         return handle_api_error(e)
 
@@ -280,7 +298,7 @@ def batch_toggle_crawler_status():
         data = request.get_json()
         
         if not data or 'crawler_ids' not in data or 'active_status' not in data:
-            return jsonify({"error": "缺少必要參數"}), 400
+            return jsonify({"success": False, "message": "缺少必要參數"}), 400
         
         crawler_ids = data.get('crawler_ids', [])
         active_status = data.get('active_status', False)
@@ -288,9 +306,9 @@ def batch_toggle_crawler_status():
         result = service.batch_toggle_crawler_status(crawler_ids, active_status)
         
         if not result.get('success'):
-            return jsonify({"error": result.get('message')}), 400
+            return jsonify(result), 400
         
-        return jsonify(result.get('result')), 200
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
@@ -319,8 +337,24 @@ def get_filtered_crawlers():
         )
         
         if not result.get('success'):
-            return jsonify({"error": result.get('message')}), 400
+            return jsonify(result), 400
         
-        return jsonify(result.get('data')), 200
+        return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
+    
+def _setup_validate_crawler_data(crawler_data: Dict[str, Any], service: CrawlersService, is_update: bool = False) -> Dict[str, Any]:
+    """設置爬蟲資料並進行驗證
+    Args:
+        crawler_data: 爬蟲的設定資料
+        service: 爬蟲服務實例
+        is_update: 是否為更新操作，預設為False
+    Returns:
+        Dict[str, Any]: 驗證後的爬蟲資料
+            success: 是否成功
+            message: 訊息
+            data: 爬蟲資料
+
+    """
+    # 驗證爬蟲資料
+    return service.validate_crawler_data(crawler_data, is_update=is_update)

@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 logger = logging.getLogger(__name__)
 
 class CrawlerFactory:
-    _crawler_types: Dict[str, Dict[str, Any]] = {}
+    _crawler_names: Dict[str, Dict[str, Any]] = {}
     _db_manager: Optional[DatabaseManager] = None
     
     @classmethod
@@ -40,7 +40,7 @@ class CrawlerFactory:
                         crawler_class = getattr(module, class_name)
                         
                         # 註冊爬蟲
-                        cls._crawler_types[crawler.crawler_name] = {
+                        cls._crawler_names[crawler.crawler_name] = {
                             'class': crawler_class,
                             'config_file_name': crawler.config_file_name
                         }
@@ -72,9 +72,9 @@ class CrawlerFactory:
         if not cls._crawlers_service:
             raise RuntimeError("爬蟲工廠尚未初始化，請先調用 initialize 方法")
             
-        crawler_info = cls._crawler_types.get(name)
+        crawler_info = cls._crawler_names.get(name)
         if not crawler_info:
-            available = ", ".join(cls._crawler_types.keys())
+            available = ", ".join(cls._crawler_names.keys())
             raise ValueError(f"未找到 {name} 爬蟲。可用爬蟲: {available}")
         
         try:
@@ -90,6 +90,6 @@ class CrawlerFactory:
             raise
     
     @classmethod
-    def list_available_crawlers(cls):
+    def list_available_crawler_types(cls):
         """列出所有可用的爬蟲類型"""
-        return list(cls._crawler_types.keys()) 
+        return list(cls._crawler_names.keys()) 

@@ -241,6 +241,10 @@ class DatabaseManager:
             logger.error(f"資料庫健康檢查失敗: {str(e)}")
             return False
 
+    def cleanup(self):
+        """清理資料庫連接"""
+        self.engine.dispose()   
+        
 
 
 def check_session(func):

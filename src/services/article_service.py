@@ -645,7 +645,7 @@ class ArticleService(BaseService[Articles]):
             filters: 過濾條件，包含：
                 - task_id: 任務ID
                 - is_scraped: 是否已抓取內容
-                - preview: 是否只返回預覽資料
+                - is_preview: 是否只返回預覽資料
                 
         Returns:
             Dict[str, Any]: 包含文章列表的字典
@@ -683,7 +683,7 @@ class ArticleService(BaseService[Articles]):
                 logger.debug(f"查詢結果: {[a.id for a in articles]}, is_scraped狀態: {[a.is_scraped for a in articles]}")
                 
                 # 如果需要預覽，只返回部分欄位
-                if filters.get('preview'):
+                if filters.get('is_preview'):
                     preview_articles = []
                     for article in articles:
                         preview_articles.append({

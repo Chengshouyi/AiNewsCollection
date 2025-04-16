@@ -92,7 +92,10 @@ class BaseService(Generic[T]):
             schema_type: Schema類型 (預設為CREATE)
             
         Returns:
-            驗證後的資料
+            Dict[str, Any]: 驗證後的資料
+                success: 是否成功
+                message: 消息
+                data: 驗證後的資料
             
         Raises:
             ValidationError: 資料驗證失敗
