@@ -39,7 +39,7 @@ class TestCrawlerFactory:
     def setup_crawler_factory(self, mock_crawlers_service, sample_crawlers):
         """設置 CrawlerFactory 的測試環境"""
         # 重置爬蟲工廠狀態
-        CrawlerFactory._crawler_types = {}
+        CrawlerFactory._crawler_names = {}
         
         # 模擬 get_active_crawlers 方法返回樣本數據
         mock_crawlers_service.get_active_crawlers.return_value = {
@@ -50,7 +50,7 @@ class TestCrawlerFactory:
         yield mock_crawlers_service
         
         # 測試後清理
-        CrawlerFactory._crawler_types = {}
+        CrawlerFactory._crawler_names = {}
     
     def test_initialize(self, setup_crawler_factory, sample_crawlers, monkeypatch, mock_article_service):
         """測試 CrawlerFactory 的初始化功能"""
@@ -79,10 +79,10 @@ class TestCrawlerFactory:
         mock_service.get_active_crawlers.assert_called_once()
         
         # 驗證爬蟲是否被正確註冊
-        assert "TestCrawler" in CrawlerFactory._crawler_types
-        assert "NewsCrawler" in CrawlerFactory._crawler_types
-        assert CrawlerFactory._crawler_types["TestCrawler"]["class"] == mock_test_crawler
-        assert CrawlerFactory._crawler_types["NewsCrawler"]["class"] == mock_news_crawler
+        assert "TestCrawler" in CrawlerFactory._crawler_names
+        assert "NewsCrawler" in CrawlerFactory._crawler_names
+        assert CrawlerFactory._crawler_names["TestCrawler"]["class"] == mock_test_crawler
+        assert CrawlerFactory._crawler_names["NewsCrawler"]["class"] == mock_news_crawler
     
     def test_initialize_exception(self, setup_crawler_factory, mock_article_service):
         """測試初始化過程中的異常處理"""
@@ -135,7 +135,7 @@ class TestCrawlerFactory:
     def test_get_crawler_not_initialized(self):
         """測試在未初始化的情況下獲取爬蟲實例"""
         # 重置爬蟲工廠狀態
-        CrawlerFactory._crawler_types = {}
+        CrawlerFactory._crawler_names = {}
         
         # 驗證是否拋出正確的異常
         with pytest.raises(ValueError, match="未找到 TestCrawler 爬蟲"):
@@ -172,7 +172,7 @@ class TestCrawlerFactory:
         CrawlerFactory.initialize(mock_service, article_service=mock_article_service)
         
         # 獲取可用爬蟲列表
-        available_crawlers = CrawlerFactory.list_available_crawlers()
+        available_crawlers = CrawlerFactory.list_available_crawler_types()
         
         # 驗證列表是否包含預期的爬蟲
         assert sorted(available_crawlers) == sorted(["TestCrawler", "NewsCrawler"])
