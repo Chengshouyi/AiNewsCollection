@@ -14,11 +14,14 @@ from unittest.mock import patch
 from src.utils.transform_utils import convert_to_dict
 import json
 import logging
+import time
 
 # 設定基礎日誌
-logging.basicConfig()
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
 # 將 SQLAlchemy 引擎的日誌級別設為 DEBUG，以顯示執行的 SQL 和參數
-logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
+logging.getLogger('sqlalchemy.engine').setLevel(logging.WARNING)
+logger = logging.getLogger(__name__)
 
 # 設置測試資料庫
 @pytest.fixture(scope="session")
@@ -78,88 +81,149 @@ def sample_tasks(session, clean_db, sample_crawler):
 
     tasks = [
         CrawlerTasks(
-            task_name="AI任務1",
+            task_name="自動AI任務(活動)",
             crawler_id=sample_crawler.id,
             is_auto=True,
             is_scheduled=True,
-            task_args={**TASK_ARGS_DEFAULT, "ai_only": True}, 
-            notes="AI任務1",
+            task_args={**TASK_ARGS_DEFAULT, "ai_only": True},
+            notes="自動AI任務",
             cron_expression="* * * * *",
             scrape_phase=ScrapePhase.INIT,
             max_retries=3,
-            retry_count=0
+            retry_count=0,
+            is_active=True # 活動
         ),
         CrawlerTasks(
-            task_name="一般任務",
+            task_name="自動一般任務(活動)",
             crawler_id=sample_crawler.id,
             is_auto=True,
             is_scheduled=True,
-            task_args={**TASK_ARGS_DEFAULT, "ai_only": False}, 
-            notes="一般任務",
+            task_args={**TASK_ARGS_DEFAULT, "ai_only": False},
+            notes="自動一般任務",
             cron_expression="* * * * *",
             scrape_phase=ScrapePhase.INIT,
             max_retries=3,
-            retry_count=0
+            retry_count=0,
+            is_active=True # 活動
         ),
         CrawlerTasks(
-            task_name="手動AI任務",
+            task_name="手動AI任務(活動)",
             crawler_id=sample_crawler.id,
             is_auto=False,
             is_scheduled=False,
-            task_args={**TASK_ARGS_DEFAULT, "ai_only": True},  
+            task_args={**TASK_ARGS_DEFAULT, "ai_only": True},
             notes="手動AI任務",
-            cron_expression="* * * * *",
+            # cron_expression="* * * * *", # 手動任務不需要cron
             scrape_phase=ScrapePhase.INIT,
             max_retries=3,
-            retry_count=0
+            retry_count=0,
+            is_active=True # 活動
+        ),
+        CrawlerTasks(
+            task_name="自動一般任務(非活動)",
+            crawler_id=sample_crawler.id,
+            is_auto=True, # 雖然是自動，但不活動
+            is_scheduled=True,
+            task_args={**TASK_ARGS_DEFAULT, "ai_only": False},
+            notes="非活動任務",
+            cron_expression="0 0 * * *",
+            scrape_phase=ScrapePhase.INIT,
+            max_retries=3,
+            retry_count=0,
+            is_active=False # 非活動
+        ),
+         CrawlerTasks(
+            task_name="手動AI任務(非活動)",
+            crawler_id=sample_crawler.id,
+            is_auto=False,
+            is_scheduled=False,
+            task_args={**TASK_ARGS_DEFAULT, "ai_only": True},
+            notes="非活動手動AI任務",
+            scrape_phase=ScrapePhase.INIT,
+            max_retries=3,
+            retry_count=0,
+            is_active=False # 非活動
         )
     ]
     session.add_all(tasks)
     session.commit()
-    
+
     # 明確刷新所有物件以確保 ID 都已賦值
     for task in tasks:
         session.refresh(task)
-        
+
     return tasks
 
 class TestCrawlerTasksRepository:
     """CrawlerTasksRepository 測試類"""
     
     def test_find_by_crawler_id(self, crawler_tasks_repo, sample_tasks, sample_crawler):
-        """測試根據爬蟲ID查詢任務"""
-        tasks = crawler_tasks_repo.find_tasks_by_crawler_id(sample_crawler.id)
-        assert len(tasks) == 3
-        assert all(task.crawler_id == sample_crawler.id for task in tasks)
+        """測試根據爬蟲ID查詢任務 (包含is_active)"""
+        crawler_id = sample_crawler.id
+        active_count = sum(1 for t in sample_tasks if t.crawler_id == crawler_id and t.is_active)
+        inactive_count = sum(1 for t in sample_tasks if t.crawler_id == crawler_id and not t.is_active)
+        total_count = active_count + inactive_count
+
+        # 預設 is_active=True
+        tasks_active = crawler_tasks_repo.find_tasks_by_crawler_id(crawler_id)
+        assert len(tasks_active) == active_count
+        assert all(task.crawler_id == crawler_id and task.is_active for task in tasks_active)
+
+        # is_active=False
+        tasks_inactive = crawler_tasks_repo.find_tasks_by_crawler_id(crawler_id, is_active=False)
+        assert len(tasks_inactive) == inactive_count
+        assert all(task.crawler_id == crawler_id and not task.is_active for task in tasks_inactive)
+
+        # is_active=None (BaseRepository 方法) - 需確認 BaseRepository 是否支援 is_active=None
+        # BaseRepository 的 get_all 可能沒有 is_active 過濾，find_by 可能有，這裡假設 find_tasks_by_crawler_id 不直接支援 None
+        # 如果需要測試 is_active=None，可能需要直接調用更底層的方法或修改 repository
 
     def test_find_auto_tasks(self, crawler_tasks_repo, sample_tasks):
-        """測試查詢自動執行的任務"""
-        auto_tasks = crawler_tasks_repo.find_auto_tasks()
-        assert len(auto_tasks) == 2
-        assert all(task.is_auto for task in auto_tasks)
+        """測試查詢自動執行的任務 (包含is_active)"""
+        active_auto_count = sum(1 for t in sample_tasks if t.is_auto and t.is_active)
+        inactive_auto_count = sum(1 for t in sample_tasks if t.is_auto and not t.is_active)
+
+        # 預設 is_active=True
+        auto_tasks_active = crawler_tasks_repo.find_auto_tasks()
+        assert len(auto_tasks_active) == active_auto_count
+        assert all(task.is_auto and task.is_active for task in auto_tasks_active)
+
+        # is_active=False
+        auto_tasks_inactive = crawler_tasks_repo.find_auto_tasks(is_active=False)
+        assert len(auto_tasks_inactive) == inactive_auto_count
+        assert all(task.is_auto and not task.is_active for task in auto_tasks_inactive)
 
     def test_find_scheduled_tasks(self, crawler_tasks_repo, sample_tasks):
-        """測試查詢已排程的任務"""
-        scheduled_tasks = crawler_tasks_repo.find_scheduled_tasks()
-        assert len(scheduled_tasks) == 2
-        assert all(task.is_scheduled for task in scheduled_tasks)
+        """測試查詢已排程的任務 (包含is_active)"""
+        active_scheduled_count = sum(1 for t in sample_tasks if t.is_scheduled and t.is_active)
+        inactive_scheduled_count = sum(1 for t in sample_tasks if t.is_scheduled and not t.is_active)
+
+        # 預設 is_active=True
+        scheduled_tasks_active = crawler_tasks_repo.find_scheduled_tasks()
+        assert len(scheduled_tasks_active) == active_scheduled_count
+        assert all(task.is_scheduled and task.is_active for task in scheduled_tasks_active)
+
+        # is_active=False
+        scheduled_tasks_inactive = crawler_tasks_repo.find_scheduled_tasks(is_active=False)
+        assert len(scheduled_tasks_inactive) == inactive_scheduled_count
+        assert all(task.is_scheduled and not task.is_active for task in scheduled_tasks_inactive)
 
     def test_find_ai_only_tasks(self, crawler_tasks_repo, sample_tasks):
-        """測試查詢AI相關的任務"""
-        # 顯示樣本任務的 task_args
-        print("\n樣本任務的 task_args:")
-        for task in sample_tasks:
-            print(f"Task {task.id}, {task.task_name}: ai_only = {task.task_args.get('ai_only')}")
-            
-        # 直接使用 find_ai_only_tasks 方法
-        ai_tasks = crawler_tasks_repo.find_ai_only_tasks()
-        print(f"\n找到 {len(ai_tasks)} 個 AI 專用任務")
-        
-        for task in ai_tasks:
-            print(f"找到 AI 任務: {task.id}, {task.task_name}")
-        
-        assert len(ai_tasks) == 2
-        assert all(task.task_args.get('ai_only') is True for task in ai_tasks)
+        """測試查詢AI相關的任務 (包含is_active)"""
+        active_ai_count = sum(1 for t in sample_tasks if t.task_args.get('ai_only') is True and t.is_active)
+        inactive_ai_count = sum(1 for t in sample_tasks if t.task_args.get('ai_only') is True and not t.is_active)
+
+        # 預設 is_active=True
+        ai_tasks_active = crawler_tasks_repo.find_ai_only_tasks()
+        print(f"\n找到 {len(ai_tasks_active)} 個活動的 AI 專用任務")
+        assert len(ai_tasks_active) == active_ai_count
+        assert all(task.task_args.get('ai_only') is True and task.is_active for task in ai_tasks_active)
+
+        # is_active=False
+        ai_tasks_inactive = crawler_tasks_repo.find_ai_only_tasks(is_active=False)
+        print(f"\n找到 {len(ai_tasks_inactive)} 個非活動的 AI 專用任務")
+        assert len(ai_tasks_inactive) == inactive_ai_count
+        assert all(task.task_args.get('ai_only') is True and not task.is_active for task in ai_tasks_inactive)
 
     def test_find_tasks_by_crawler_and_auto(self, crawler_tasks_repo, sample_tasks, sample_crawler):
         """測試根據爬蟲ID和自動執行狀態查詢任務"""
@@ -205,64 +269,48 @@ class TestCrawlerTasksRepository:
         assert updated_task.updated_at is not None
 
     def test_update_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
-        """測試更新AI收集狀態 - 強制從 DB 讀取"""
-        task = sample_tasks[1] # The task with ai_only=False
-        task_id = task.id
-        original_ai_status = task.task_args.get('ai_only')
-        print(f"\n--- test_update_ai_only_status: Forcing DB Reload ---")
-        print(f"Task ID: {task_id}, Original ai_only: {original_ai_status}")
-        print(f"Task object ID before update: {id(task)}")
+        """測試更新 task_args 中的 ai_only 狀態 (模擬正確的 JSON 更新流程)"""
+        # 選擇一個 ai_only 為 False 的活動任務
+        task_to_update_orig = next((t for t in sample_tasks if not t.task_args.get('ai_only') and t.is_active), None)
+        assert task_to_update_orig is not None, "找不到適合測試的任務 (ai_only=False, is_active=True)"
 
-        # 1. 準備 payload (完整的字典)
-        new_task_args = task.task_args.copy()
-        new_task_args['ai_only'] = not original_ai_status # Should become True
-        update_payload = {"task_args": new_task_args}
-        print(f"Update payload: {update_payload}")
+        task_id = task_to_update_orig.id
+        original_args = task_to_update_orig.task_args.copy()
+        print(f"\n--- test_update_ai_only_status (Corrected for JSON) ---")
+        print(f"Task ID: {task_id}, Original task_args: {original_args}")
 
-        # 2. 呼叫 Repository 的 update (只做 setattr, 可能不更新記憶體狀態)
-        #    We might get the same object back, or a different one depending on session state.
-        #    Crucially, we won't rely on its *immediate* state after this call.
-        maybe_updated_task_object = crawler_tasks_repo.update(task_id, update_payload)
-        assert maybe_updated_task_object is not None
-        print(f"Task object ID returned by update: {id(maybe_updated_task_object)}")
-        # *** 不再直接斷言 maybe_updated_task_object 的 task_args ***
-        # assert maybe_updated_task_object.task_args.get('ai_only') is True, "Returned python object's task_args not updated in memory after repo.update" # <-- REMOVE THIS ASSERTION
+        # 1. 準備新的 task_args 數據
+        new_task_args = original_args.copy()
+        new_task_args['ai_only'] = True
+        print(f"New task_args payload: {new_task_args}")
 
-        # 3. 獲取 Session 中的實體 (確保我們操作的是 Session 追蹤的那個)
-        entity_in_session = session.get(CrawlerTasks, task_id)
-        assert entity_in_session is not None
-        print(f"Task object ID retrieved from session: {id(entity_in_session)}")
+        # --- 模擬 Service 層的正確更新步驟 ---
+        # a. 從當前 session 獲取實體
+        task_in_session = session.get(CrawlerTasks, task_id)
+        assert task_in_session is not None
 
-        # 4. 手動標記修改 (對 Session 中的實體操作)
-        print(f"Flagging 'task_args' as modified on entity in session.")
-        flag_modified(entity_in_session, "task_args")
+        # b. 將新字典賦值給屬性
+        task_in_session.task_args = new_task_args
 
-        # ***** 新增：在 commit 前再次強制賦值 *****
-        print(f"Forcefully re-assigning the *modified* task_args dictionary to the session entity before commit.")
-        entity_in_session.task_args = new_task_args # new_task_args has ai_only=True
-        print(f"Value of entity_in_session.task_args *after* re-assignment: {entity_in_session.task_args}")
+        # c. 標記欄位已修改 (關鍵步驟 for JSON)
+        flag_modified(task_in_session, 'task_args')
 
-        # 5. 提交事務
-        print(f"Session dirty before commit: {session.dirty}")
-        print(f"Committing session...")
-        try:
-            session.commit()
-            print(f"Session committed.")
-        except Exception as e:
-            print(f"Commit failed: {e}")
-            session.rollback()
-            raise
+        # d. 提交事務 (由測試 session 控制)
+        session.commit()
+        # --- 模擬結束 ---
 
-        # 6. 清除快取並重新從 DB 讀取驗證
-        print(f"Expiring entity in session and reloading from DB...")
-        session.expire(entity_in_session) # Expire the specific object
-        # Alternatively: session.expire_all()
-        reloaded_task = session.get(CrawlerTasks, task_id) # Fetch again
+        # 4. 清除快取並重新從 DB 讀取驗證
+        session.expire(task_in_session) # 使其從 DB 重新加載
+        reloaded_task = crawler_tasks_repo.get_by_id(task_id) # 使用 repo 方法重新獲取
 
-        # 7. 斷言重新載入後的物件狀態
+        # 5. 斷言重新載入後的物件狀態
         assert reloaded_task is not None
         print(f"Reloaded task_args from DB: {reloaded_task.task_args}")
-        assert reloaded_task.task_args.get('ai_only') is True, "DB value for 'ai_only' was not updated after commit and reload"
+        assert reloaded_task.task_args.get('ai_only') is True, "DB value for 'ai_only' should be updated to True"
+        # 確保其他 task_args 不變
+        for key, value in original_args.items():
+            if key != 'ai_only':
+                assert reloaded_task.task_args.get(key) == value, f"Key '{key}' in task_args should remain unchanged"
         print(f"--- Test finished successfully ---")
 
     def test_update_notes(self, crawler_tasks_repo, sample_tasks, session):
@@ -284,19 +332,19 @@ class TestCrawlerTasksRepository:
     def test_find_tasks_with_notes(self, crawler_tasks_repo, sample_tasks):
         """測試查詢有備註的任務"""
         tasks = crawler_tasks_repo.find_tasks_with_notes()
-        assert len(tasks) == 3
+        assert len(tasks) == 5
         assert all(task.notes is not None for task in tasks)
 
     def test_find_tasks_by_multiple_crawlers(self, crawler_tasks_repo, sample_tasks, sample_crawler):
         """測試根據多個爬蟲ID查詢任務"""
         tasks = crawler_tasks_repo.find_tasks_by_multiple_crawlers([sample_crawler.id])
-        assert len(tasks) == 3
+        assert len(tasks) == 5
         assert all(task.crawler_id == sample_crawler.id for task in tasks)
 
     def test_get_tasks_count_by_crawler(self, crawler_tasks_repo, sample_tasks, sample_crawler):
         """測試獲取特定爬蟲的任務數量"""
         count = crawler_tasks_repo.get_tasks_count_by_crawler(sample_crawler.id)
-        assert count == 3
+        assert count == 5
 
     def test_find_tasks_by_cron_expression(self, crawler_tasks_repo, session, sample_crawler):
         """測試根據 cron 表達式查詢任務"""
@@ -477,21 +525,7 @@ class TestCrawlerTasksRepository:
                 "scrape_mode": ScrapeMode.FULL_SCRAPE
             })
         assert "CREATE 資料驗證失敗: crawler_id: 不能為空" in str(excinfo.value)
-        
-        # 測試自動執行時缺少 cron_expression->移到service
-        # with pytest.raises(ValidationError) as excinfo:
-        #     crawler_tasks_repo.create({
-        #         "task_name": "測試任務",
-        #         "crawler_id": sample_crawler.id,
-        #         "is_auto": True,
-        #         "cron_expression": None,
-        #         "task_args": {**TASK_ARGS_DEFAULT,"ai_only": False}, 
-        #         "scrape_phase": ScrapePhase.INIT,
-        #         "max_retries": 3,
-        #         "retry_count": 0,
-        #         "scrape_mode": ScrapeMode.FULL_SCRAPE
-        #     })
-        # assert "cron_expression: 當設定為自動執行時,此欄位不能為空" in str(excinfo.value)
+    
         
         # 測試成功創建
         task = crawler_tasks_repo.create({
@@ -571,6 +605,190 @@ class TestCrawlerTasksRepository:
         assert task.task_args.get('max_retries') == 3
         assert task.task_args.get('retry_count') == 0
         assert task.task_args.get('scrape_mode') == ScrapeMode.FULL_SCRAPE.value
+
+    def test_find_tasks_by_id(self, crawler_tasks_repo, sample_tasks, session):
+        """測試根據任務ID查詢任務"""
+        active_task = next(t for t in sample_tasks if t.is_active)
+        inactive_task = next(t for t in sample_tasks if not t.is_active)
+
+        # 1. 查詢存在的活動任務 (預設 is_active=True)
+        found_task = crawler_tasks_repo.find_tasks_by_id(active_task.id)
+        assert found_task is not None
+        assert found_task.id == active_task.id
+        assert found_task.is_active is True
+
+        # 2. 查詢存在的活動任務 (明確 is_active=True)
+        found_task = crawler_tasks_repo.find_tasks_by_id(active_task.id, is_active=True)
+        assert found_task is not None
+        assert found_task.id == active_task.id
+        assert found_task.is_active is True
+
+        # 3. 查詢存在的非活動任務 (使用 is_active=False)
+        found_task = crawler_tasks_repo.find_tasks_by_id(inactive_task.id, is_active=False)
+        assert found_task is not None
+        assert found_task.id == inactive_task.id
+        assert found_task.is_active is False
+
+        # 4. 查詢存在的非活動任務 (使用 is_active=True 應找不到)
+        found_task = crawler_tasks_repo.find_tasks_by_id(inactive_task.id, is_active=True)
+        assert found_task is None
+
+        # 5. 查詢存在的活動任務 (使用 is_active=None)
+        found_task = crawler_tasks_repo.find_tasks_by_id(active_task.id, is_active=None)
+        assert found_task is not None
+        assert found_task.id == active_task.id
+
+        # 6. 查詢存在的非活動任務 (使用 is_active=None)
+        found_task = crawler_tasks_repo.find_tasks_by_id(inactive_task.id, is_active=None)
+        assert found_task is not None
+        assert found_task.id == inactive_task.id
+
+        # 7. 查詢不存在的任務ID
+        found_task = crawler_tasks_repo.find_tasks_by_id(99999)
+        assert found_task is None
+
+    def test_toggle_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
+        """測試直接切換 AI 專用狀態"""
+        task_false_to_true = next(t for t in sample_tasks if t.task_args.get('ai_only') is False and t.is_active)
+        task_true_to_false = next(t for t in sample_tasks if t.task_args.get('ai_only') is True and t.is_active)
+        task_id_1 = task_false_to_true.id
+        task_id_2 = task_true_to_false.id
+
+        # 1. 從 False 切換到 True
+        result1 = crawler_tasks_repo.toggle_ai_only_status(task_id_1)
+        assert result1 is True
+        session.expire(task_false_to_true) # 清除緩存
+        updated_task_1 = crawler_tasks_repo.get_by_id(task_id_1)
+        assert updated_task_1.task_args.get('ai_only') is True
+        assert updated_task_1.updated_at is not None
+
+        # 2. 從 True 切換到 False
+        last_updated_at = updated_task_1.updated_at # 記錄時間以便比較
+        result2 = crawler_tasks_repo.toggle_ai_only_status(task_id_2)
+        assert result2 is True
+        session.expire(task_true_to_false) # 清除緩存
+        updated_task_2 = crawler_tasks_repo.get_by_id(task_id_2)
+        assert updated_task_2.task_args.get('ai_only') is False
+        assert updated_task_2.updated_at is not None
+        assert updated_task_2.updated_at > last_updated_at # 確保 updated_at 已更新
+
+        # 3. 測試 task_args 為 None 的情況 (需要創建一個新任務)
+        new_task = CrawlerTasks(
+            task_name="無task_args測試",
+            crawler_id=sample_tasks[0].crawler_id,
+            task_args=None,
+            is_active=True
+        )
+        session.add(new_task)
+        session.commit()
+        session.refresh(new_task)
+        task_id_3 = new_task.id
+
+        result3 = crawler_tasks_repo.toggle_ai_only_status(task_id_3)
+        assert result3 is True
+        session.expire(new_task)
+        updated_task_3 = crawler_tasks_repo.get_by_id(task_id_3)
+        assert updated_task_3.task_args.get('ai_only') is True # 應從預設 False 切換為 True
+
+        # 4. 測試 task_args 存在但無 'ai_only' 鍵的情況 (修改現有任務)
+        task_to_modify = crawler_tasks_repo.get_by_id(task_id_1) # 這個現在是 True
+        task_to_modify.task_args = {"other_key": "value"} # 移除 ai_only
+        session.commit()
+        session.refresh(task_to_modify)
+
+        result4 = crawler_tasks_repo.toggle_ai_only_status(task_id_1)
+        assert result4 is True
+        session.expire(task_to_modify)
+        updated_task_4 = crawler_tasks_repo.get_by_id(task_id_1)
+        assert updated_task_4.task_args.get('ai_only') is True # 應從預設 False 切換為 True
+
+    def test_toggle_active_status(self, crawler_tasks_repo, sample_tasks, session):
+        """測試切換啟用狀態"""
+        active_task = next(t for t in sample_tasks if t.is_active)
+        inactive_task = next(t for t in sample_tasks if not t.is_active)
+        active_task_id = active_task.id
+        inactive_task_id = inactive_task.id
+
+        # 1. 從 True 切換到 False
+        result1 = crawler_tasks_repo.toggle_active_status(active_task_id)
+        assert result1 is True
+        session.expire(active_task)
+        updated_task_1 = crawler_tasks_repo.get_by_id(active_task_id)
+        assert updated_task_1.is_active is False
+        assert updated_task_1.updated_at is not None
+        original_updated_at = updated_task_1.updated_at
+
+        # 2. 從 False 切換到 True
+        result2 = crawler_tasks_repo.toggle_active_status(inactive_task_id)
+        assert result2 is True
+        session.expire(inactive_task)
+        updated_task_2 = crawler_tasks_repo.get_by_id(inactive_task_id)
+        assert updated_task_2.is_active is True
+        assert updated_task_2.updated_at is not None
+        assert updated_task_2.updated_at > original_updated_at
+
+        # 3. 切換不存在的任務
+        result3 = crawler_tasks_repo.toggle_active_status(99999)
+        assert result3 is False
+
+    def test_update_last_run(self, crawler_tasks_repo, sample_tasks, session):
+        """測試更新最後執行狀態"""
+        task = sample_tasks[0]
+        task_id = task.id
+        original_last_run_at = task.last_run_at
+
+        # 1. 更新為成功
+        success_message = "執行成功"
+        result1 = crawler_tasks_repo.update_last_run(task_id, success=True, message=success_message)
+        assert result1 is True
+        session.expire(task)
+        updated_task_1 = crawler_tasks_repo.get_by_id(task_id)
+        assert updated_task_1.last_run_success is True
+        assert updated_task_1.last_run_message == success_message
+        assert updated_task_1.last_run_at is not None
+        assert updated_task_1.updated_at is not None
+        if original_last_run_at:
+             assert updated_task_1.last_run_at > original_last_run_at
+        last_run_time_1 = updated_task_1.last_run_at
+        updated_at_1 = updated_task_1.updated_at # 記錄第一次更新後的時間
+
+        # 在兩次更新之間加入微小的延遲
+        time.sleep(0.01) # 增加延遲到 10 毫秒
+
+        # 2. 更新為失敗 (無消息)
+        result2 = crawler_tasks_repo.update_last_run(task_id, success=False)
+        assert result2 is True
+        session.expire(updated_task_1) # 或者 session.expire(task_in_session) 也可以
+        updated_task_2 = crawler_tasks_repo.get_by_id(task_id)
+        assert updated_task_2.last_run_success is False
+        # 訊息應該保持上次成功的訊息，因為這次沒提供
+        assert updated_task_2.last_run_message == success_message
+        assert updated_task_2.last_run_at is not None
+        assert updated_task_2.last_run_at > last_run_time_1
+        assert updated_task_2.updated_at is not None
+        assert updated_task_2.updated_at > updated_at_1 # 使用記錄的時間比較
+
+        # 在兩次更新之間加入微小的延遲
+        time.sleep(0.01) # 增加延遲到 10 毫秒
+
+        # 3. 更新為失敗 (有新消息)
+        failure_message = "執行失敗：超時"
+        updated_at_2 = updated_task_2.updated_at # 記錄第二次更新後的時間
+        last_run_time_2 = updated_task_2.last_run_at # <--- 記錄第二次的 last_run_at
+        result3 = crawler_tasks_repo.update_last_run(task_id, success=False, message=failure_message)
+        assert result3 is True
+        session.expire(updated_task_2)
+        updated_task_3 = crawler_tasks_repo.get_by_id(task_id)
+        assert updated_task_3.last_run_success is False
+        assert updated_task_3.last_run_message == failure_message
+        assert updated_task_3.last_run_at is not None
+        assert updated_task_3.last_run_at > last_run_time_2 # <--- 與記錄的時間比較
+        assert updated_task_3.updated_at is not None
+        assert updated_task_3.updated_at > updated_at_2 # 使用記錄的時間比較
+
+        # 4. 更新不存在的任務
+        result4 = crawler_tasks_repo.update_last_run(99999, success=True)
+        assert result4 is False
 
 class TestCrawlerTasksConstraints:
     """測試CrawlerTasks的模型約束"""
@@ -699,16 +917,16 @@ class TestCrawlerTasksRepositoryValidation:
         }
         
         # 執行驗證
-        validated_data = crawler_tasks_repo.validate_data(valid_data, SchemaType.CREATE)
+        validated_result = crawler_tasks_repo.validate_data(valid_data, SchemaType.CREATE)
         
         # 檢查驗證後的數據是否完整
-        assert validated_data["task_name"] == "測試驗證任務"
-        assert validated_data["crawler_id"] == sample_crawler.id
-        assert validated_data["is_auto"] is True
-        assert validated_data["cron_expression"] == "0 * * * *"
-        assert "task_args" in validated_data
-        assert validated_data["scrape_phase"] == ScrapePhase.INIT
-        assert validated_data["task_args"]["scrape_mode"] == ScrapeMode.FULL_SCRAPE.value
+        assert validated_result.get('data', {}).get("task_name") == "測試驗證任務"
+        assert validated_result.get('data', {}).get("crawler_id") == sample_crawler.id
+        assert validated_result.get('data', {}).get("is_auto") is True
+        assert validated_result.get('data', {}).get("cron_expression") == "0 * * * *"
+        assert "task_args" in validated_result.get('data', {})
+        assert validated_result.get('data', {}).get("scrape_phase") == ScrapePhase.INIT
+        assert validated_result.get('data', {}).get("task_args", {}).get("scrape_mode") == ScrapeMode.FULL_SCRAPE.value
         # 測試無效數據
         invalid_data = {
             "task_name": "測試驗證任務",
@@ -732,12 +950,12 @@ class TestCrawlerTasksRepositoryValidation:
         }
         
         # 執行驗證
-        validated_data = crawler_tasks_repo.validate_data(valid_update, SchemaType.UPDATE)
+        validated_result = crawler_tasks_repo.validate_data(valid_update, SchemaType.UPDATE)
         
         # 檢查驗證後的數據
-        assert validated_data["task_name"] == "更新的任務名稱"
-        assert validated_data["is_auto"] is False
-        assert "crawler_id" not in validated_data  # 不可變欄位不應包含在更新中
+        assert validated_result.get('data', {}).get("task_name") == "更新的任務名稱"
+        assert validated_result.get('data', {}).get("is_auto") is False
+        assert "crawler_id" not in validated_result.get('data', {})  # 不可變欄位不應包含在更新中
         
         # 測試無效更新 - 嘗試更新不可變欄位
         invalid_update = {

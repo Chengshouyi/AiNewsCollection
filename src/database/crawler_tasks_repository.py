@@ -8,7 +8,7 @@ import logging
 from src.error.errors import ValidationError, DatabaseOperationError
 from src.utils.datetime_utils import enforce_utc_datetime_transform
 from croniter import croniter
-from src.utils.transform_utils import convert_to_dict
+
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -39,10 +39,13 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             # 例如: entity_data.setdefault('is_auto', False)
             
             # 2. 執行 Pydantic 驗證
-            validated_data = self.validate_data(entity_data, SchemaType.CREATE)
+            validated_result = self.validate_data(entity_data, SchemaType.CREATE)
             
             # 3. 將已驗證的資料傳給內部方法
-            return self._create_internal(validated_data)
+            if validated_result.get('success') and validated_result.get('data'):
+                return self._create_internal(validated_result.get('data', {}))
+            else:
+                raise ValidationError(validated_result.get('message'))
         except ValidationError as e:
             logger.error(f"創建 CrawlerTask 驗證失敗: {e}")
             raise # 重新拋出讓 Service 層處理
@@ -78,7 +81,10 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             update_payload = self.validate_data(entity_data, SchemaType.UPDATE)
             
             # 3. 將已驗證的 payload 傳給內部方法
-            return self._update_internal(entity_id, update_payload)
+            if update_payload.get('success') and update_payload.get('data'):
+                return self._update_internal(entity_id, update_payload.get('data', {}))
+            else:
+                raise ValidationError(update_payload.get('message'))
         except ValidationError as e:
             logger.error(f"更新 CrawlerTask (ID={entity_id}) 驗證失敗: {e}")
             raise # 重新拋出

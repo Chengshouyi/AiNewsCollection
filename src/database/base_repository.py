@@ -211,7 +211,13 @@ class BaseRepository(Generic[T], ABC):
         return copied_data
         
     def _create_internal(self, validated_data: Dict[str, Any]) -> Optional[T]:
-        """內部創建，假設 validated_data 已通過 Pydantic Schema 驗證"""
+        """內部創建，假設 validated_data 已通過 Pydantic Schema 驗證
+        Args:
+            validated_data: 已通過 Pydantic Schema 驗證的資料字典。
+
+        Returns:
+            創建的實體或 None
+        """
         try:
             # 1. 執行必填欄位值檢查和補充
             final_data = self._validate_and_supplement_required_fields(validated_data)

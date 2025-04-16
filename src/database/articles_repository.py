@@ -234,10 +234,13 @@ class ArticlesRepository(BaseRepository[Articles]):
             # created_at/updated_at 由 BaseEntity/Schema 處理
 
             # 2. 執行 Pydantic 驗證 (使用基類方法)
-            validated_data = self.validate_data(entity_data, SchemaType.CREATE)
+            validated_result = self.validate_data(entity_data, SchemaType.CREATE)
 
             # 3. 將已驗證的資料傳給內部方法
-            return self._create_internal(validated_data)
+            if validated_result.get('success') and validated_result.get('data'):
+                return self._create_internal(validated_result.get('data', {}))
+            else:
+                raise ValidationError(validated_result.get('message'))
         except ValidationError as e:
             logger.error(f"創建 Article 驗證失敗: {e}")
             raise # 重新拋出讓 Service 層處理
@@ -328,7 +331,10 @@ class ArticlesRepository(BaseRepository[Articles]):
                 update_payload['link'] = original_link
 
              # 2. 將已驗證的 payload 傳給內部方法
-             return self._update_internal(entity_id, update_payload)
+             if update_payload.get('success') and update_payload.get('data'):
+                return self._update_internal(entity_id, update_payload.get('data', {}))
+             else:
+                raise ValidationError(update_payload.get('message'))
         except ValidationError as e:
              logger.error(f"更新 Article (ID={entity_id}) 驗證失敗: {e}")
              raise # 重新拋出

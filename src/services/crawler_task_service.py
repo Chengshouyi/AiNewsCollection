@@ -172,7 +172,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 # 2. 驗證傳入的數據 (使用 repo 的 schema 驗證)
                 #    注意：validate_data 返回的是驗證清理後的字典
                 validation_result = tasks_repo.validate_data(task_data, SchemaType.UPDATE)
-                if not validation_result.get("success"):
+                if not validation_result.get("success") or not validation_result.get("data"):
                      raise ValidationError(validation_result.get("message", "資料驗證失敗"))
                 validated_data = validation_result["data"]
                 

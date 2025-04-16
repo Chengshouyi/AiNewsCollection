@@ -11,7 +11,7 @@ from sqlalchemy import String
 from unittest.mock import patch
 from typing import Optional, Dict, Any, Type
 from pydantic import BaseModel, field_validator
-
+from src.error.errors import ValidationError
 
 # 測試用的 Pydantic Schema 類
 class ModelCreateSchema(BaseModel):
@@ -93,10 +93,13 @@ class ModelRepositoryforTest(BaseRepository[ModelForTest]):
         """實現創建實體的抽象方法"""
         try:
             # 執行 Pydantic 驗證 (使用基類方法)
-            validated_data = self.validate_data(entity_data, SchemaType.CREATE)
+            validated_result = self.validate_data(entity_data, SchemaType.CREATE)
             
             # 將已驗證的資料傳給內部方法
-            return self._create_internal(validated_data)
+            if validated_result.get('success') and validated_result.get('data'):
+                return self._create_internal(validated_result.get('data', {}))
+            else:
+                raise ValidationError(validated_result.get('message'))
         except Exception as e:
             # 簡單處理異常，讓測試能正確捕獲
             raise e
@@ -108,7 +111,10 @@ class ModelRepositoryforTest(BaseRepository[ModelForTest]):
             update_payload = self.validate_data(entity_data, SchemaType.UPDATE)
             
             # 將已驗證的 payload 傳給內部方法
-            return self._update_internal(entity_id, update_payload)
+            if update_payload.get('success') and update_payload.get('data'):
+                return self._update_internal(entity_id, update_payload.get('data', {}))
+            else:
+                raise ValidationError(update_payload.get('message'))
         except Exception as e:
             # 簡單處理異常，讓測試能正確捕獲
             raise e

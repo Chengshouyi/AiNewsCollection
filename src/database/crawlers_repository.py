@@ -41,10 +41,13 @@ class CrawlersRepository(BaseRepository['Crawlers']):
                 entity_data['created_at'] = datetime.now(timezone.utc)
 
             # 3. 執行 Pydantic 驗證
-            validated_data = self.validate_data(entity_data, SchemaType.CREATE)
+            validated_result = self.validate_data(entity_data, SchemaType.CREATE)
 
             # 4. 將已驗證的資料傳給內部方法
-            return self._create_internal(validated_data)
+            if validated_result.get('success') and validated_result.get('data'):
+                return self._create_internal(validated_result.get('data', {}))
+            else:
+                raise ValidationError(validated_result.get('message'))
         except ValidationError as e:
              logger.error(f"創建 Crawler 驗證失敗: {e}")
              raise
@@ -80,7 +83,10 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             update_payload = self.validate_data(entity_data, SchemaType.UPDATE)
 
             # 5. 將已驗證的 payload 傳給內部方法
-            return self._update_internal(entity_id, update_payload)
+            if update_payload.get('success') and update_payload.get('data'):
+                return self._update_internal(entity_id, update_payload.get('data', {}))
+            else:
+                raise ValidationError(update_payload.get('message'))
         except ValidationError as e:
              logger.error(f"更新 Crawler (ID={entity_id}) 驗證失敗: {e}")
              raise

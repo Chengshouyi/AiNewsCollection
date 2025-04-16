@@ -75,15 +75,21 @@ class RepositoryForTest(BaseRepository[ModelForTest]):
     
     def create(self, entity_data: Dict[str, Any]) -> Optional[ModelForTest]:
         # 首先驗證數據
-        validated_data = self.validate_data(entity_data, SchemaType.CREATE)
+        validated_result = self.validate_data(entity_data, SchemaType.CREATE)
         # 然後使用內部創建方法
-        return self._create_internal(validated_data)
+        if validated_result.get('success') and validated_result.get('data'):
+            return self._create_internal(validated_result.get('data', {}))
+        else:
+            raise ValidationError(validated_result.get('message'))
     
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[ModelForTest]:
         # 首先驗證數據
-        validated_data = self.validate_data(entity_data, SchemaType.UPDATE)
+        validated_result = self.validate_data(entity_data, SchemaType.UPDATE)
         # 然後使用內部更新方法
-        return self._update_internal(entity_id, validated_data)
+        if validated_result.get('success') and validated_result.get('data'):
+            return self._update_internal(entity_id, validated_result.get('data', {}))
+        else:
+            raise ValidationError(validated_result.get('message'))
 
 # 測試用 Service 類
 class ServiceForTest(BaseService[ModelForTest]):
