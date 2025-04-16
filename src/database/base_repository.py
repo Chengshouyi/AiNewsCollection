@@ -10,6 +10,10 @@ from src.database.database_manager import check_session
 from abc import ABC, abstractmethod
 from enum import Enum, auto
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
+from sqlalchemy.orm.attributes import flag_modified
+from src.utils.repository_utils import deep_update_dict_field
+import copy
+
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -220,10 +224,6 @@ class BaseRepository(Generic[T], ABC):
                 lambda: self.session.add(entity),
                 err_msg="添加資料庫物件到session時發生錯誤"
             )
-            self.execute_query(
-                lambda: self.session.flush(),
-                err_msg="刷新session以創建實體時發生錯誤"
-            )
             logger.debug(f"實體準備創建 (待提交): {entity}")
             return entity
         except IntegrityError as e:
@@ -258,39 +258,32 @@ class BaseRepository(Generic[T], ABC):
             logger.warning(f"找不到 ID={entity_id} 的實體，無法更新。")
             return None
         try:
-            # 1. 獲取不可變欄位
             update_schema_class = cast(Type[BaseUpdateSchema], self.get_schema_class(SchemaType.UPDATE))
             immutable_fields = update_schema_class.get_immutable_fields()
+            entity_modified = False
 
-            # 2. (可選，如果需要) 執行必填欄位值檢查 (通常更新時不需要，除非有特殊規則)
-            # final_payload = self._validate_and_supplement_required_fields(update_payload, existing_entity=entity)
-            # 這裡使用原始 payload，因為 Pydantic 已確保類型正確
-            final_payload = update_payload
-
-            # 3. 更新屬性
-            has_changes = False
-            for key, value in final_payload.items():
+            for key, value in update_payload.items():
                 if key in immutable_fields:
-                    # 雖然 validate_data 時可能已排除，這裡再檢查一次以防萬一
-                    logger.warning(f"內部更新: 嘗試更新不可變欄位 '{key}'，將被忽略。")
                     continue
                 if hasattr(entity, key):
                     current_value = getattr(entity, key)
+
                     if current_value != value:
-                        setattr(entity, key, value)
-                        has_changes = True
-                        logger.debug(f"更新實體 ID={entity_id} 欄位 '{key}' 從 '{current_value}' 到 '{value}'")
+                        print(f"\n--- Applying standard update for key: {key} ---")
+                        print(f"Old value: {current_value}")
+                        print(f"New value: {value}")
+                        setattr(entity, key, value) # <-- Use setattr for all
+                        print(f"Value after setattr (may be cached for JSON): {getattr(entity, key)}")
+                        print(f"--- Standard update applied for key: {key} ---\n")
+                        entity_modified = True
+                        # NOTE: flag_modified must be handled by the caller for mutable types like JSON
 
-            if not has_changes:
+            if not entity_modified:
                 logger.debug(f"實體 ID={entity_id} 沒有變更，跳過資料庫操作。")
-                return entity # 返回未修改的實體
+                return entity
 
-            # 4. Session 操作 (flush)
-            self.execute_query(
-                lambda: self.session.flush(),
-                err_msg=f"更新ID為{entity_id}的資料庫物件時刷新session時發生錯誤"
-            )
             logger.debug(f"實體準備更新 (待提交): {entity}")
+            print(f"Value of entity.task_args before returning from _update_internal: {entity.task_args}")
             return entity
         except IntegrityError as e:
             self._handle_integrity_error(e, f"更新{self.model_class.__name__} (ID={entity_id}) 時")
@@ -334,10 +327,6 @@ class BaseRepository(Generic[T], ABC):
             self.execute_query(
                 lambda: self.session.delete(entity),
                 err_msg=f"刪除ID為{entity_id}的資料庫物件時發生錯誤"
-            )
-            self.execute_query(
-                lambda: self.session.flush(),
-                err_msg=f"刪除ID為{entity_id}的資料庫物件時刷新session時發生錯誤"
             )
             return True
         except IntegrityError as e:

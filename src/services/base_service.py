@@ -134,7 +134,7 @@ class BaseService(Generic[T]):
             session = self.db_manager.Session()
         
         try:
-            yield
+            yield session
             session.commit()
         except Exception as e:
             session.rollback()

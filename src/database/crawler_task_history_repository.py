@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import logging
 from src.error.errors import ValidationError, DatabaseOperationError
-from src.utils.model_utils import convert_to_dict
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)

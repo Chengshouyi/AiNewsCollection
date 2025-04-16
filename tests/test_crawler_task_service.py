@@ -9,6 +9,7 @@ from src.services.crawler_task_service import CrawlerTaskService
 from src.database.database_manager import DatabaseManager
 from src.error.errors import ValidationError
 from src.models.crawler_tasks_schema import TASK_ARGS_DEFAULT
+
 # 設置測試資料庫
 @pytest.fixture(scope="session")
 def engine():
@@ -839,6 +840,40 @@ class TestCrawlerTaskService:
         assert task_result["success"] is True
         assert task_result["task"].notes == new_notes
         
+    def test_update_max_retries_persists(self, crawler_task_service, sample_tasks, session): 
+        """測試 update_max_retries 方法是否能正確持久化 task_args 的變更"""
+        task_id = sample_tasks[0].id
+        new_max_retries = 10
+        print(f"\n--- Testing update_max_retries persistence for task {task_id} ---")
+
+        # 1. 獲取初始狀態 (確保 task_args 存在)
+        initial_task_result = crawler_task_service.get_task_by_id(task_id)
+        assert initial_task_result["success"] is True
+        initial_task = initial_task_result["task"]
+        assert isinstance(initial_task.task_args, dict), "Initial task_args should be a dict"
+        initial_value = initial_task.task_args.get('max_retries')
+        print(f"Initial max_retries: {initial_value}")
+        assert initial_value != new_max_retries, "Test setup error: new value is same as initial"
+
+        # 2. 調用服務方法更新 max_retries
+        update_result = crawler_task_service.update_max_retries(task_id, new_max_retries)
+        print(f"Update result: {update_result}")
+        assert update_result["success"] is True
+        assert update_result["task"].task_args.get('max_retries') == new_max_retries # 檢查返回物件的記憶體狀態
+
+        # 3. ***關鍵驗證：從資料庫重新獲取並檢查持久化狀態***
+        #    通過再次調用服務方法來獲取最新狀態，而不是直接操作 session
+        # session.expire(initial_task) # <-- 移除這行，避免 InvalidRequestError
+        print(f"Fetching task {task_id} from DB *again* after update...")
+        refetched_task_result = crawler_task_service.get_task_by_id(task_id)
+        assert refetched_task_result["success"] is True
+        refetched_task = refetched_task_result["task"]
+        
+        print(f"Refetched task_args from DB: {refetched_task.task_args}")
+        assert isinstance(refetched_task.task_args, dict), "Refetched task_args should be a dict"
+        assert refetched_task.task_args.get('max_retries') == new_max_retries, "DB value for max_retries was not updated correctly"
+        print(f"--- Test update_max_retries persistence finished successfully ---")
+
     def test_get_failed_tasks(self, crawler_task_service, sample_tasks):
         """測試獲取失敗的任務"""
         # 設置一個任務為失敗狀態
@@ -848,3 +883,62 @@ class TestCrawlerTaskService:
         result = crawler_task_service.get_failed_tasks(days=1)
         assert result["success"] is True
         assert "tasks" in result
+
+    def test_update_task_persists_all_fields(self, crawler_task_service, sample_tasks):
+        """測試 update_task 是否能正確持久化普通欄位和 task_args 的變更"""
+        task_id = sample_tasks[0].id
+        print(f"\n--- Testing update_task persistence for task {task_id} ---")
+
+        # 1. 獲取初始狀態
+        initial_result = crawler_task_service.get_task_by_id(task_id)
+        assert initial_result["success"]
+        initial_task = initial_result["task"]
+        initial_name = initial_task.task_name
+        initial_is_active = initial_task.is_active
+        initial_task_args = initial_task.task_args.copy() if initial_task.task_args else {}
+        print(f"Initial name: {initial_name}, is_active: {initial_is_active}, task_args: {initial_task_args}")
+
+        # 2. 準備更新數據 (包含普通欄位和 task_args)
+        new_name = "更新後的每日新聞"
+        new_is_active = not initial_is_active
+        # ***** 確保包含 schema 要求的必填欄位 *****
+        new_task_args = {**TASK_ARGS_DEFAULT, **initial_task_args} # 合併預設值和初始值
+        new_task_args["max_items"] = 200 # 修改 task_args 內的值
+        new_task_args["new_param"] = "test" # 添加 task_args 內的新鍵
+        # 確保 max_pages 存在 (即使它沒有變化，驗證器也需要它)
+        if 'max_pages' not in new_task_args:
+             new_task_args['max_pages'] = TASK_ARGS_DEFAULT.get('max_pages', 10) # 使用預設值
+
+        update_data = {
+            "task_name": new_name,
+            "is_active": new_is_active,
+            "task_args": new_task_args
+        }
+        print(f"Update data: {update_data}")
+
+        # 3. 調用 update_task
+        update_result = crawler_task_service.update_task(task_id, update_data)
+        print(f"Update result: {update_result}")
+        assert update_result["success"] is True
+        assert update_result["message"] == "任務更新成功"
+
+        # 4. 驗證返回的物件 (記憶體狀態)
+        updated_task_in_memory = update_result["task"]
+        assert updated_task_in_memory.task_name == new_name
+        assert updated_task_in_memory.is_active == new_is_active
+        assert updated_task_in_memory.task_args == new_task_args
+
+        # 5. 從資料庫重新獲取並驗證持久化狀態
+        print(f"Fetching task {task_id} from DB again after update...")
+        refetched_result = crawler_task_service.get_task_by_id(task_id, is_active=None)
+        assert refetched_result["success"]
+        refetched_task = refetched_result["task"]
+
+        print(f"Refetched name: {refetched_task.task_name}, is_active: {refetched_task.is_active}, task_args: {refetched_task.task_args}")
+        assert refetched_task.task_name == new_name, "DB value for task_name was not updated correctly"
+        assert refetched_task.is_active == new_is_active, "DB value for is_active was not updated correctly"
+        assert refetched_task.task_args == new_task_args, "DB value for task_args was not updated correctly"
+        assert refetched_task.task_args.get("max_items") == 200
+        assert refetched_task.task_args.get("new_param") == "test"
+
+        print(f"--- Test update_task persistence finished successfully ---")

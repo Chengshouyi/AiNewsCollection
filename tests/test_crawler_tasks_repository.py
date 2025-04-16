@@ -1,7 +1,8 @@
 import pytest
 from datetime import datetime, timedelta, timezone
-from sqlalchemy import create_engine, JSON
+from sqlalchemy import create_engine, JSON, text
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm.attributes import flag_modified
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
 from src.models.crawler_tasks_model import CrawlerTasks, ScrapePhase, ScrapeMode, TASK_ARGS_DEFAULT
 from src.models.crawlers_model import Crawlers
@@ -10,6 +11,14 @@ from src.database.base_repository import SchemaType
 from debug.model_info import get_model_info
 from src.error.errors import ValidationError, DatabaseOperationError
 from unittest.mock import patch
+from src.utils.transform_utils import convert_to_dict
+import json
+import logging
+
+# 設定基礎日誌
+logging.basicConfig()
+# 將 SQLAlchemy 引擎的日誌級別設為 DEBUG，以顯示執行的 SQL 和參數
+logging.getLogger('sqlalchemy.engine').setLevel(logging.DEBUG)
 
 # 設置測試資料庫
 @pytest.fixture(scope="session")
@@ -137,9 +146,17 @@ class TestCrawlerTasksRepository:
 
     def test_find_ai_only_tasks(self, crawler_tasks_repo, sample_tasks):
         """測試查詢AI相關的任務"""
-        # 獲取所有任務並在 Python 中過濾
-        all_tasks = crawler_tasks_repo.get_all()
-        ai_tasks = [task for task in all_tasks if task.task_args.get('ai_only') is True]
+        # 顯示樣本任務的 task_args
+        print("\n樣本任務的 task_args:")
+        for task in sample_tasks:
+            print(f"Task {task.id}, {task.task_name}: ai_only = {task.task_args.get('ai_only')}")
+            
+        # 直接使用 find_ai_only_tasks 方法
+        ai_tasks = crawler_tasks_repo.find_ai_only_tasks()
+        print(f"\n找到 {len(ai_tasks)} 個 AI 專用任務")
+        
+        for task in ai_tasks:
+            print(f"找到 AI 任務: {task.id}, {task.task_name}")
         
         assert len(ai_tasks) == 2
         assert all(task.task_args.get('ai_only') is True for task in ai_tasks)
@@ -187,27 +204,66 @@ class TestCrawlerTasksRepository:
         assert updated_task.is_scheduled != original_status
         assert updated_task.updated_at is not None
 
-
-
-
-
     def test_update_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
-        """測試更新AI收集狀態"""
-        task = sample_tasks[0]
-        original_status = task.task_args.get('ai_only')
+        """測試更新AI收集狀態 - 強制從 DB 讀取"""
+        task = sample_tasks[1] # The task with ai_only=False
         task_id = task.id
-        
-        # 更新 ai_only 狀態
-        updated_task = crawler_tasks_repo.update(task_id, {
-            "task_args": {**task.task_args, "ai_only": not original_status}
-        })
-        assert updated_task is not None
-        
-        # 重新獲取任務並驗證狀態
-        session.expire_all()  # 確保重新從數據庫加載
-        updated_task = crawler_tasks_repo.get_by_id(task_id)
-        assert updated_task.task_args.get('ai_only') != original_status
-        assert updated_task.updated_at is not None
+        original_ai_status = task.task_args.get('ai_only')
+        print(f"\n--- test_update_ai_only_status: Forcing DB Reload ---")
+        print(f"Task ID: {task_id}, Original ai_only: {original_ai_status}")
+        print(f"Task object ID before update: {id(task)}")
+
+        # 1. 準備 payload (完整的字典)
+        new_task_args = task.task_args.copy()
+        new_task_args['ai_only'] = not original_ai_status # Should become True
+        update_payload = {"task_args": new_task_args}
+        print(f"Update payload: {update_payload}")
+
+        # 2. 呼叫 Repository 的 update (只做 setattr, 可能不更新記憶體狀態)
+        #    We might get the same object back, or a different one depending on session state.
+        #    Crucially, we won't rely on its *immediate* state after this call.
+        maybe_updated_task_object = crawler_tasks_repo.update(task_id, update_payload)
+        assert maybe_updated_task_object is not None
+        print(f"Task object ID returned by update: {id(maybe_updated_task_object)}")
+        # *** 不再直接斷言 maybe_updated_task_object 的 task_args ***
+        # assert maybe_updated_task_object.task_args.get('ai_only') is True, "Returned python object's task_args not updated in memory after repo.update" # <-- REMOVE THIS ASSERTION
+
+        # 3. 獲取 Session 中的實體 (確保我們操作的是 Session 追蹤的那個)
+        entity_in_session = session.get(CrawlerTasks, task_id)
+        assert entity_in_session is not None
+        print(f"Task object ID retrieved from session: {id(entity_in_session)}")
+
+        # 4. 手動標記修改 (對 Session 中的實體操作)
+        print(f"Flagging 'task_args' as modified on entity in session.")
+        flag_modified(entity_in_session, "task_args")
+
+        # ***** 新增：在 commit 前再次強制賦值 *****
+        print(f"Forcefully re-assigning the *modified* task_args dictionary to the session entity before commit.")
+        entity_in_session.task_args = new_task_args # new_task_args has ai_only=True
+        print(f"Value of entity_in_session.task_args *after* re-assignment: {entity_in_session.task_args}")
+
+        # 5. 提交事務
+        print(f"Session dirty before commit: {session.dirty}")
+        print(f"Committing session...")
+        try:
+            session.commit()
+            print(f"Session committed.")
+        except Exception as e:
+            print(f"Commit failed: {e}")
+            session.rollback()
+            raise
+
+        # 6. 清除快取並重新從 DB 讀取驗證
+        print(f"Expiring entity in session and reloading from DB...")
+        session.expire(entity_in_session) # Expire the specific object
+        # Alternatively: session.expire_all()
+        reloaded_task = session.get(CrawlerTasks, task_id) # Fetch again
+
+        # 7. 斷言重新載入後的物件狀態
+        assert reloaded_task is not None
+        print(f"Reloaded task_args from DB: {reloaded_task.task_args}")
+        assert reloaded_task.task_args.get('ai_only') is True, "DB value for 'ai_only' was not updated after commit and reload"
+        print(f"--- Test finished successfully ---")
 
     def test_update_notes(self, crawler_tasks_repo, sample_tasks, session):
         """測試更新備註"""

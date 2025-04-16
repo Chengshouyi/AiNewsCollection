@@ -10,7 +10,7 @@ TASK_ARGS_DEFAULT = {
     'max_pages': 10,
     'ai_only': False,
     'num_articles': 10,
-    'min_keywords': 10,
+    'min_keywords': 3,
     'max_retries': 3,
     'retry_delay': 2.0,
     'timeout': 10,

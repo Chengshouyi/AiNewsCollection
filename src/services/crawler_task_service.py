@@ -23,6 +23,7 @@ from src.utils.model_utils import validate_task_args
 from sqlalchemy import desc, asc
 from src.services.scheduler_service import SchedulerService
 from src.services.task_executor_service import TaskExecutorService
+from sqlalchemy.orm.attributes import flag_modified
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -147,9 +148,10 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             }
     
     def update_task(self, task_id: int, task_data: Dict) -> Dict:
-        """更新任務數據"""
+        """更新任務數據，包含對 task_args 的特殊處理"""
         try:
-            with self._transaction():
+            # ***** 使用新的更新模式 *****
+            with self._transaction() as session:
                 tasks_repo, _, _ = self._get_repositories()
                 if not tasks_repo:
                     return {
@@ -157,20 +159,76 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'message': '無法取得資料庫存取器',
                         'task': None
                     }
-                
-                # 更新任務
-                result = tasks_repo.update(task_id, task_data)
-                if result is None:
+
+                # 1. 從 session 中獲取實體
+                task = session.get(CrawlerTasks, task_id)
+                if not task:
                     return {
                         'success': False,
                         'message': '任務不存在',
                         'task': None
                     }
- 
+
+                # 2. 驗證傳入的數據 (使用 repo 的 schema 驗證)
+                #    注意：validate_data 返回的是驗證清理後的字典
+                validation_result = tasks_repo.validate_data(task_data, SchemaType.UPDATE)
+                if not validation_result.get("success"):
+                     raise ValidationError(validation_result.get("message", "資料驗證失敗"))
+                validated_data = validation_result["data"]
+                
+                entity_modified = False
+                task_args_updated = False
+                new_task_args = None
+
+                # 3. 遍歷驗證後的數據，區分 task_args 和其他欄位
+                for key, value in validated_data.items():
+                    if key == 'task_args':
+                        # --- 特殊處理 task_args --- 
+                        if task.task_args is None:
+                            task.task_args = {}
+                            flag_modified(task, 'task_args') # None -> {} 也是修改
+                        
+                        current_task_args = task.task_args
+                        # 需要比較整個字典是否不同
+                        if current_task_args != value: 
+                            print(f"Task {task_id}: Updating task_args.")
+                            print(f"  Old: {current_task_args}")
+                            print(f"  New: {value}")
+                            new_task_args = value # 保存新的字典，稍後賦值
+                            task_args_updated = True 
+                            entity_modified = True
+                        else:
+                             print(f"Task {task_id}: task_args are the same, skipping update.")
+
+                    elif hasattr(task, key):
+                        # --- 處理其他欄位 --- 
+                        current_value = getattr(task, key)
+                        if current_value != value:
+                            print(f"Task {task_id}: Updating field '{key}' from '{current_value}' to '{value}'.")
+                            setattr(task, key, value)
+                            entity_modified = True
+                
+                # 4. 如果 task_args 有變更，執行標記和重新賦值
+                if task_args_updated and new_task_args is not None:
+                    print(f"Task {task_id}: Applying flag_modified and re-assignment for task_args.")
+                    flag_modified(task, 'task_args')
+                    task.task_args = new_task_args # 賦予新的字典
+
+                # 5. 檢查是否有任何修改發生
+                if not entity_modified:
+                    logger.info(f"任務 {task_id} 無需更新，提供的資料與當前狀態相同。")
+                    return {
+                        'success': True,
+                        'message': '任務無需更新',
+                        'task': task
+                    }
+
+                # _transaction() 會自動處理 commit
+                logger.info(f"任務 {task_id} 已在 Session 中更新，等待提交。")
                 return {
                     'success': True,
                     'message': '任務更新成功',
-                    'task': result
+                    'task': task # 返回從 session 中獲取的、已更新的 task 物件
                 }
         except ValidationError as e:
             error_msg = f"更新任務資料驗證失敗, ID={task_id}: {str(e)}"
@@ -180,16 +238,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'message': error_msg,
                 'task': None
             }
-        except Exception as e:
-            error_msg = f"更新任務失敗, ID={task_id}: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return {
-                'success': False,
-                'message': error_msg,
-                'task': None
-            }
-    
-        
+
     def delete_task(self, task_id: int) -> Dict:
         """刪除任務"""
         try:
@@ -998,7 +1047,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             }
         
         try:
-            with self._transaction():
+            # ***** 使用更新模式 *****
+            with self._transaction() as session: # 獲取 session
                 tasks_repo, _, _ = self._get_repositories()
                 if not tasks_repo:
                     return {
@@ -1007,7 +1057,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'task': None
                     }
                 
-                task = tasks_repo.get_by_id(task_id)
+                # 從 session 中獲取實體
+                task = session.get(CrawlerTasks, task_id)
                 if not task:
                     return {
                         'success': False,
@@ -1015,16 +1066,45 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'task': None
                     }
                 
-                # 更新最大重試次數
-                task_args = task.task_args.copy()
-                task_args['max_retries'] = max_retries
-                task_data = {'task_args': task_args}
-                result = tasks_repo.update(task_id, task_data)
+                # 準備新的 task_args 字典
+                if task.task_args is None:
+                     # 如果 task_args 是 None，初始化為空字典
+                     task.task_args = {}
+                     # 需要標記，因為我們將 None 變成了 {}
+                     flag_modified(task, 'task_args')
+
+                # 此時 task.task_args 保證是字典
+                new_task_args = task.task_args.copy()
+
+                current_max_retries = new_task_args.get('max_retries') # 現在可以安全調用 .get
+                if current_max_retries == max_retries:
+                    logger.info(f"任務 {task_id} 的 max_retries 已是 {max_retries}，無需更新。")
+                    return {
+                        'success': True,
+                        'message': f'最大重試次數無需更新，當前值: {max_retries}',
+                        'task': task
+                    }
                 
+                print(f"Updating max_retries for task {task_id} from {current_max_retries} to {max_retries}")
+                new_task_args['max_retries'] = max_retries
+                
+                # 關鍵步驟：標記修改 和 重新賦值
+                print(f"Flagging 'task_args' as modified for task {task_id}")
+                flag_modified(task, 'task_args')
+                print(f"Re-assigning task_args for task {task_id}")
+                task.task_args = new_task_args
+                
+                # _transaction() 會自動處理 commit
+                # 不再需要呼叫 tasks_repo.update()
+                # result = tasks_repo.update(task_id, task_data)
+                
+                logger.info(f"任務 {task_id} 的最大重試次數已在 Session 中更新為 {max_retries}，等待提交。")
+                
+                # 返回更新後的 task 物件 (來自 session)
                 return {
                     'success': True,
                     'message': f'最大重試次數更新為 {max_retries}',
-                    'task': result
+                    'task': task
                 }
         except Exception as e:
             error_msg = f"更新最大重試次數失敗, ID={task_id}: {str(e)}"

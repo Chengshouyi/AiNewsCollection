@@ -8,7 +8,7 @@ import logging
 from src.error.errors import ValidationError, DatabaseOperationError
 from src.utils.datetime_utils import enforce_utc_datetime_transform
 from croniter import croniter
-from src.utils.model_utils import convert_to_dict
+from src.utils.transform_utils import convert_to_dict
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -129,13 +129,21 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
     
     def find_ai_only_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
         """查詢 AI 專用任務"""
-        return self.execute_query(
+        # 獲取所有活動的任務
+        all_tasks = self.execute_query(
             lambda: self.session.query(self.model_class).filter(
-                self.model_class.is_active == is_active,
-                self.model_class.task_args.contains({"ai_only": True})
+                self.model_class.is_active == is_active
             ).all(),
-            err_msg="查詢 AI 專用任務時發生錯誤"
+            err_msg="查詢所有任務時發生錯誤"
         )
+        
+        # 在Python中過濾ai_only=True的任務
+        result = []
+        for task in all_tasks:
+            if task.task_args and isinstance(task.task_args, dict) and task.task_args.get('ai_only') is True:
+                result.append(task)
+                
+        return result
     
     def find_scheduled_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
         """查詢已排程的任務"""
@@ -173,21 +181,26 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
         if not task:
             return False
         
-        def toggle_ai_only():
+        try:
             # 獲取當前 task_args
-            current_args = task.task_args or {}
-            # 切換 ai_only 值
-            current_args['ai_only'] = not current_args.get('ai_only', False)
+            current_args = task.task_args.copy() if task.task_args else {}
+            
+            # 獲取當前 ai_only 值並切換
+            current_ai_only = current_args.get('ai_only', False)
+            current_args['ai_only'] = not current_ai_only
+            
             # 更新整個 task_args 字典
             task.task_args = current_args
             task.updated_at = datetime.now(timezone.utc)
+            
+            # 直接提交更改
             self.session.commit()
+            logger.info(f"成功切換任務 ID {task_id} 的 AI 專用狀態: {current_ai_only} -> {not current_ai_only}")
             return True
-        
-        return self.execute_query(
-            toggle_ai_only,
-            err_msg=f"切換任務ID {task_id} 的 AI 專用狀態時發生錯誤"
-        )
+        except Exception as e:
+            logger.error(f"切換任務ID {task_id} 的 AI 專用狀態時發生錯誤: {e}")
+            self.session.rollback()
+            raise DatabaseOperationError(f"切換任務ID {task_id} 的 AI 專用狀態時發生錯誤: {e}") from e
             
 
     def toggle_active_status(self, task_id: int) -> bool:

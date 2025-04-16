@@ -4,6 +4,7 @@ from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTas
 from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT, ScrapePhase, ScrapeMode
 from src.utils.enum_utils import TaskStatus
 from src.error.errors import ValidationError
+from src.models.base_schema import BaseUpdateSchema
 
 class TestCrawlerTasksCreateSchema:
     """CrawlerTasksCreateSchema 的測試類"""
@@ -365,10 +366,20 @@ class TestCrawlerTasksCreateSchema:
             ScrapePhase.LINK_COLLECTION,
             ScrapePhase.CONTENT_SCRAPING,
             ScrapePhase.COMPLETED,
+            ScrapePhase.FAILED,
+            ScrapePhase.SAVE_TO_CSV,
+            ScrapePhase.SAVE_TO_DATABASE,
+            ScrapePhase.CANCELLED,
+            ScrapePhase.UNKNOWN,
             "init",
             "link_collection",
             "content_scraping",
             "completed",
+            "failed",
+            "save_to_csv",
+            "save_to_database",
+            "cancelled",
+            "unknown",
             "INIT",  # 測試大寫
             "Link_Collection"  # 測試混合大小寫
         ]
@@ -398,12 +409,16 @@ class TestCrawlerTasksCreateSchema:
             TaskStatus.RUNNING,
             TaskStatus.COMPLETED,
             TaskStatus.FAILED,
+            TaskStatus.CANCELING,
             TaskStatus.CANCELLED,
+            TaskStatus.UNKNOWN,
             "init",
             "running",
             "completed",
             "failed",
+            "canceling",
             "cancelled",
+            "unknown",
             "INIT",  # 測試大寫
             "Running"  # 測試混合大小寫
         ]
@@ -445,6 +460,35 @@ class TestCrawlerTasksCreateSchema:
             with pytest.raises(ValidationError) as exc_info:
                 CrawlerTasksCreateSchema.model_validate(data)
             assert "task_status" in str(exc_info.value)
+
+    def test_is_scheduled_validation(self):
+        """測試is_scheduled字段的驗證"""
+        # 測試is_scheduled為非布林值
+        data_invalid_is_scheduled = {
+            "task_name": "測試任務",
+            "crawler_id": 1,
+            "task_args": TASK_ARGS_DEFAULT,
+            "scrape_phase": ScrapePhase.INIT,
+            "is_scheduled": "invalid_boolean"  # 使用無法轉換為布爾值的字符串
+        }
+        with pytest.raises(ValidationError) as exc_info:
+            CrawlerTasksCreateSchema.model_validate(data_invalid_is_scheduled)
+        assert "is_scheduled: 必須是布爾值" in str(exc_info.value)
+        
+        # 測試is_scheduled默認值
+        data = {
+            "task_name": "測試任務",
+            "crawler_id": 1,
+            "task_args": TASK_ARGS_DEFAULT,
+            "scrape_phase": ScrapePhase.INIT
+        }
+        schema = CrawlerTasksCreateSchema.model_validate(data)
+        assert schema.is_scheduled is False
+        
+        # 測試設置is_scheduled為True
+        data["is_scheduled"] = True
+        schema = CrawlerTasksCreateSchema.model_validate(data)
+        assert schema.is_scheduled is True
 
 class TestCrawlerTasksUpdateSchema:
     """CrawlerTasksUpdateSchema 的測試類"""
@@ -619,6 +663,51 @@ class TestCrawlerTasksUpdateSchema:
                 other_field = other_case["field"]
                 if other_field != field:
                     assert getattr(schema, other_field) is None
+
+    def test_is_scheduled_update(self):
+        """測試is_scheduled更新"""
+        schema = CrawlerTasksUpdateSchema(is_scheduled=True)
+        assert schema.is_scheduled is True
+        
+        schema = CrawlerTasksUpdateSchema(is_scheduled=False)
+        assert schema.is_scheduled is False
+
+    def test_all_updatable_fields(self):
+        """測試所有可更新字段"""
+        fields = CrawlerTasksUpdateSchema.get_updated_fields()
+        
+        # 移除BaseUpdateSchema中的字段
+        base_fields = BaseUpdateSchema.get_updated_fields()
+        updatable_fields = [f for f in fields if f not in base_fields]
+        
+        for field in updatable_fields:
+            # 測試每個可更新字段都能成功更新
+            if field == 'task_name':
+                value = "新任務名稱"
+            elif field in ['is_auto', 'is_active', 'is_scheduled', 'last_run_success']:
+                value = False
+            elif field == 'task_args':
+                value = TASK_ARGS_DEFAULT
+            elif field == 'notes':
+                value = "新備註"
+            elif field == 'last_run_at':
+                value = datetime.now(timezone.utc)
+            elif field == 'last_run_message':
+                value = "新運行消息"
+            elif field == 'cron_expression':
+                value = "0 0 * * *"
+            elif field == 'scrape_phase':
+                value = ScrapePhase.CONTENT_SCRAPING
+            elif field == 'task_status':
+                value = TaskStatus.RUNNING
+            elif field == 'retry_count':
+                value = 5
+            else:
+                continue  # 跳過無法測試的字段
+            
+            data = {field: value}
+            schema = CrawlerTasksUpdateSchema.model_validate(data)
+            assert getattr(schema, field) == value
 
 
 

@@ -6,7 +6,6 @@ from sqlalchemy import func
 from pydantic import BaseModel
 from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
 from src.error.errors import ValidationError, DatabaseOperationError
-from src.utils.model_utils import convert_to_dict
 import logging
 
 # 設定 logger

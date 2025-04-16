@@ -10,7 +10,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from src.crawlers.bnext_utils import BnextUtils
 from src.crawlers.configs.site_config import SiteConfig
 from src.services.article_service import ArticleService
-from src.utils.model_utils import convert_hashable_dict_to_str_dict, validate_positive_int, validate_boolean, validate_str, validate_task_args
+from src.utils.model_utils import validate_positive_int, validate_boolean, validate_str, validate_task_args
+from src.utils.transform_utils import convert_hashable_dict_to_str_dict
 from src.error.errors import ValidationError
 from src.utils.enum_utils import ScrapePhase, ScrapeMode
 
