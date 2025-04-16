@@ -191,26 +191,26 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         current_task_args = task.task_args
                         # 需要比較整個字典是否不同
                         if current_task_args != value: 
-                            print(f"Task {task_id}: Updating task_args.")
-                            print(f"  Old: {current_task_args}")
-                            print(f"  New: {value}")
+                            logger.info(f"Task {task_id}: Updating task_args.")
+                            logger.info(f"  Old: {current_task_args}")
+                            logger.info(f"  New: {value}")
                             new_task_args = value # 保存新的字典，稍後賦值
                             task_args_updated = True 
                             entity_modified = True
                         else:
-                             print(f"Task {task_id}: task_args are the same, skipping update.")
+                            logger.info(f"Task {task_id}: task_args are the same, skipping update.")
 
                     elif hasattr(task, key):
                         # --- 處理其他欄位 --- 
                         current_value = getattr(task, key)
                         if current_value != value:
-                            print(f"Task {task_id}: Updating field '{key}' from '{current_value}' to '{value}'.")
+                            logger.info(f"Task {task_id}: Updating field '{key}' from '{current_value}' to '{value}'.")
                             setattr(task, key, value)
                             entity_modified = True
                 
                 # 4. 如果 task_args 有變更，執行標記和重新賦值
                 if task_args_updated and new_task_args is not None:
-                    print(f"Task {task_id}: Applying flag_modified and re-assignment for task_args.")
+                    logger.info(f"Task {task_id}: Applying flag_modified and re-assignment for task_args.")
                     flag_modified(task, 'task_args')
                     task.task_args = new_task_args # 賦予新的字典
 

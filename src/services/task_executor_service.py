@@ -22,27 +22,6 @@ logger = logging.getLogger(__name__)
 
 class TaskExecutorService(BaseService[CrawlerTasks]):
     """統一的任務執行服務，處理所有類型的任務執行"""
-    
-    # 新增全域單體實例變數
-    _instance = None
-    
-    @classmethod
-    def get_instance(cls, db_manager=None, max_workers=10):
-        """取得任務執行服務單體實例
-        
-        Args:
-            db_manager: 資料庫管理器
-            max_workers: 最大工作執行緒數量
-            
-        Returns:
-            TaskExecutorService: 任務執行服務單體實例
-        """
-        if cls._instance is None:
-            cls._instance = cls(
-                db_manager=db_manager,
-                max_workers=max_workers
-            )
-        return cls._instance
 
     def __init__(self, db_manager=None, max_workers=10):
         """初始化任務執行服務

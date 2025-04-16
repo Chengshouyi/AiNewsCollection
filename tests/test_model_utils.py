@@ -14,8 +14,7 @@ from src.utils.model_utils import (
     validate_scrape_phase,
     validate_scrape_mode,
     validate_article_scrape_status,
-    validate_task_args,
-    convert_hashable_dict_to_str_dict,
+    validate_task_args
 )
 from src.utils.enum_utils import (
     ScrapePhase,
@@ -687,50 +686,3 @@ class TestValidateTaskArgs:
         }
         with pytest.raises(ValidationError, match="task_args: task_args.article_links: 類型不匹配。期望類型: list"):
             validator(invalid_args)
-
-class TestConvertHashableDictToStrDict:
-    """測試字典轉換功能"""
-    
-    def test_valid_str_dict(self):
-        """測試已經是字符串鍵的字典"""
-        input_dict = {"a": 1, "b": 2}
-        result = convert_hashable_dict_to_str_dict(input_dict)
-        assert result == {"a": 1, "b": 2}
-
-    def test_mixed_key_types(self):
-        """測試混合鍵類型的字典"""
-        input_dict = {"a": 1, 2: "b"}
-        with pytest.raises(ValueError, match="字典的所有鍵必須是字符串類型"):
-            convert_hashable_dict_to_str_dict(input_dict)
-
-    def test_empty_dict(self):
-        """測試空字典"""
-        input_dict = {}
-        result = convert_hashable_dict_to_str_dict(input_dict)
-        assert result == {}
-
-    def test_nested_dict(self):
-        """測試嵌套字典"""
-        input_dict = {
-            "a": {"b": 1},
-            "c": {"d": 2}
-        }
-        result = convert_hashable_dict_to_str_dict(input_dict)
-        assert result == {
-            "a": {"b": 1},
-            "c": {"d": 2}
-        }
-
-    def test_complex_values(self):
-        """測試複雜值類型"""
-        input_dict = {
-            "a": [1, 2, 3],
-            "b": {"x": 1},
-            "c": (4, 5, 6)
-        }
-        result = convert_hashable_dict_to_str_dict(input_dict)
-        assert result == {
-            "a": [1, 2, 3],
-            "b": {"x": 1},
-            "c": (4, 5, 6)
-        }

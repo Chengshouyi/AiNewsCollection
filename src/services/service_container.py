@@ -20,24 +20,26 @@ class ServiceContainer:
 def get_crawler_task_service():
     """獲取任務服務實例"""
     from src.services.crawler_task_service import CrawlerTaskService
-    return ServiceContainer.get_instance(CrawlerTaskService)
+    return CrawlerTaskService()
 
+# singleton
 def get_task_executor_service():
     """獲取任務執行器實例"""
     from src.services.task_executor_service import TaskExecutorService
-    return ServiceContainer.get_instance(TaskExecutorService)
+    return ServiceContainer.get_instance(TaskExecutorService, max_workers=15)
 
+# singleton
 def get_scheduler_service():
     """獲取排程服務實例"""
     from src.services.scheduler_service import SchedulerService
-    return ServiceContainer.get_instance(SchedulerService)
+    return ServiceContainer.get_instance(SchedulerService, task_executor_service=get_task_executor_service())
 
 def get_article_service():
     """獲取文章服務實例"""
     from src.services.article_service import ArticleService
-    return ServiceContainer.get_instance(ArticleService)
+    return ArticleService()
 
 def get_crawlers_service():
     """獲取爬蟲服務實例"""
     from src.services.crawlers_service import CrawlersService
-    return ServiceContainer.get_instance(CrawlersService)
+    return CrawlersService()
