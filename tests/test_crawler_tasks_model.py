@@ -78,6 +78,7 @@ class TestCrawlerTasksModel:
         # 測試布林欄位預設值
         assert task.is_auto is True
         assert task.is_active is True
+        assert task.is_scheduled is False
         
         # 測試默認的 task_args
         assert task.task_args['max_pages'] == 10
@@ -121,7 +122,10 @@ class TestCrawlerTasksModel:
     
     def test_field_updates(self):
         """測試欄位更新"""
-        task = CrawlerTasks(crawler_id=1)
+        task = CrawlerTasks(
+            crawler_id=1, 
+            task_name="測試欄位更新"
+        )
         
         # 測試布林欄位更新
         task.is_auto = False
@@ -129,6 +133,9 @@ class TestCrawlerTasksModel:
         
         task.is_active = False
         assert task.is_active is False
+        
+        task.is_scheduled = True
+        assert task.is_scheduled is True
         
         # 測試 task_args 更新
         task.task_args = {
@@ -141,24 +148,22 @@ class TestCrawlerTasksModel:
         # 測試文字欄位更新
         task.task_name = "更新後的任務名稱"
         task.notes = "更新的備註"
-        task.cron_expression = "hourly"
+        task.cron_expression = "*/5 * * * *"
         task.last_run_message = "執行成功"
         assert task.task_name == "更新後的任務名稱"
         assert task.notes == "更新的備註"
         assert task.last_run_message == "執行成功"
+        assert task.cron_expression == "*/5 * * * *"
         
         # 測試新增欄位更新
         task.scrape_phase = ScrapePhase.CONTENT_SCRAPING
         assert task.scrape_phase == ScrapePhase.CONTENT_SCRAPING
         
-        task.max_retries = 5
-        assert task.max_retries == 5
+        task.task_args['max_retries'] = 5
+        assert task.task_args['max_retries'] == 5
         
         task.retry_count = 2
         assert task.retry_count == 2
-        
-        task.cron_expression = "*/5 * * * *"
-        assert task.cron_expression == "*/5 * * * *"
 
     def test_to_dict(self):
         """測試 to_dict 方法"""
@@ -178,8 +183,8 @@ class TestCrawlerTasksModel:
         
         # 驗證所有欄位都在字典中
         expected_keys = {
-            'id', 'task_name', 'crawler_id', 'is_auto', 'is_active',  'task_args', 
-            'notes', 'created_at', 'updated_at', 'last_run_at', 
+            'id', 'task_name', 'crawler_id', 'is_auto', 'is_active',  
+            'task_args', 'notes', 'created_at', 'updated_at', 'last_run_at', 
             'last_run_success', 'last_run_message', 'cron_expression',
             'scrape_phase', 'task_status', 'retry_count', 'is_scheduled'
         }
@@ -213,10 +218,13 @@ class TestCrawlerTasksModel:
     
     def test_retry_mechanism(self):
         """測試重試機制相關欄位"""
-        task = CrawlerTasks(crawler_id=1, max_retries=5)
+        task = CrawlerTasks(
+            crawler_id=1,
+            task_args={"max_retries": 5}
+        )
         
         # 測試初始值
-        assert task.max_retries == 5
+        assert task.task_args['max_retries'] == 5
         assert task.retry_count == 0
         
         # 測試重試計數更新
@@ -300,20 +308,6 @@ class TestCrawlerTasksModel:
         assert task.articles == []
         assert task.crawler is None
         assert task.history == []
-    
-    def test_field_updates_with_scrape_mode(self):
-        """測試欄位更新，包括 scrape_mode"""
-        task = CrawlerTasks(crawler_id=1)
-        
-        # 測試 scrape_mode 更新
-        task.scrape_mode = ScrapeMode.LINKS_ONLY
-        assert task.scrape_mode == ScrapeMode.LINKS_ONLY
-        
-        task.scrape_mode = ScrapeMode.CONTENT_ONLY
-        assert task.scrape_mode == ScrapeMode.CONTENT_ONLY
-        
-        task.scrape_mode = ScrapeMode.FULL_SCRAPE
-        assert task.scrape_mode == ScrapeMode.FULL_SCRAPE
 
     def test_task_args_default(self):
         """測試 task_args 的預設值"""
@@ -321,7 +315,11 @@ class TestCrawlerTasksModel:
         
         task = CrawlerTasks(crawler_id=1)
         
-        # 測試 task_args 預設值
+        # 測試 task_args 所有預設值
+        for key, value in TASK_ARGS_DEFAULT.items():
+            assert task.task_args[key] == value
+            
+        # 測試特定欄位
         assert task.task_args['max_pages'] == TASK_ARGS_DEFAULT['max_pages']
         assert task.task_args['ai_only'] == TASK_ARGS_DEFAULT['ai_only']
         assert task.task_args['num_articles'] == TASK_ARGS_DEFAULT['num_articles']
@@ -337,6 +335,13 @@ class TestCrawlerTasksModel:
         assert task.task_args['get_links_by_task_id'] == TASK_ARGS_DEFAULT['get_links_by_task_id']
         assert isinstance(task.task_args['article_links'], list)
         assert len(task.task_args['article_links']) == 0
+        
+        # 測試取消相關參數
+        assert task.task_args['save_partial_results_on_cancel'] == TASK_ARGS_DEFAULT['save_partial_results_on_cancel']
+        assert task.task_args['save_partial_to_database'] == TASK_ARGS_DEFAULT['save_partial_to_database']
+        assert task.task_args['max_cancel_wait'] == TASK_ARGS_DEFAULT['max_cancel_wait']
+        assert task.task_args['cancel_interrupt_interval'] == TASK_ARGS_DEFAULT['cancel_interrupt_interval'] 
+        assert task.task_args['cancel_timeout'] == TASK_ARGS_DEFAULT['cancel_timeout']
 
     def test_task_status_transitions(self):
         """測試任務狀態轉換"""
@@ -357,14 +362,30 @@ class TestCrawlerTasksModel:
         
         task.task_status = TaskStatus.CANCELLED
         assert task.task_status == TaskStatus.CANCELLED
-
-    def test_field_updates_with_task_status(self):
-        """測試欄位更新，包括 task_status"""
-        task = CrawlerTasks(crawler_id=1)
         
-        # 測試 task_status 更新
-        task.task_status = TaskStatus.RUNNING
-        assert task.task_status == TaskStatus.RUNNING
+    def test_cancel_related_settings(self):
+        """測試取消相關設置"""
+        task = CrawlerTasks(
+            crawler_id=1,
+            task_args={
+                "save_partial_results_on_cancel": True,
+                "save_partial_to_database": True,
+                "max_cancel_wait": 60,
+                "cancel_interrupt_interval": 10,
+                "cancel_timeout": 120
+            }
+        )
         
-        task.task_status = TaskStatus.COMPLETED
-        assert task.task_status == TaskStatus.COMPLETED
+        # 測試自定義的取消相關設置
+        assert task.task_args['save_partial_results_on_cancel'] is True
+        assert task.task_args['save_partial_to_database'] is True
+        assert task.task_args['max_cancel_wait'] == 60
+        assert task.task_args['cancel_interrupt_interval'] == 10
+        assert task.task_args['cancel_timeout'] == 120
+        
+        # 測試更新取消相關設置
+        task.task_args['save_partial_results_on_cancel'] = False
+        assert task.task_args['save_partial_results_on_cancel'] is False
+        
+        task.task_args['max_cancel_wait'] = 45
+        assert task.task_args['max_cancel_wait'] == 45
