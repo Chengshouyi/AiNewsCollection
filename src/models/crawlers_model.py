@@ -42,7 +42,11 @@ class Crawlers(Base, BaseEntity):
         String(100), 
         nullable=False
     )
+
     crawler_tasks = relationship("CrawlerTasks", back_populates="crawler", lazy="joined")
+
+    # 定義需要監聽的 datetime 欄位
+    _datetime_fields_to_watch = {'updated_at'}
 
     def __init__(self, **kwargs):
         # 設置默認值

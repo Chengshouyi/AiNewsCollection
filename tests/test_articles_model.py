@@ -248,7 +248,8 @@ class TestArticleModel:
         
         assert isinstance(article.created_at, datetime)
         assert article.created_at.tzinfo == timezone.utc
-        assert article.updated_at is None
+        assert article.updated_at is not None
+        assert article.updated_at.tzinfo == timezone.utc
         
         # 模擬更新操作
         article.title = "新標題"

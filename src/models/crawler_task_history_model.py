@@ -40,7 +40,7 @@ class CrawlerTaskHistory(Base, BaseEntity):
     task = relationship("CrawlerTasks", back_populates="history", lazy="joined")
 
     # 定義需要監聽的 datetime 欄位  
-    _datetime_fields_to_watch = {'start_time', 'end_time'}
+    _datetime_fields_to_watch = {'updated_at','start_time', 'end_time'}
 
     def __init__(self, **kwargs):
         if 'task_status' not in kwargs:

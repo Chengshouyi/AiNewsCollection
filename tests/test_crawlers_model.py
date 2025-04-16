@@ -21,7 +21,8 @@ class TestCrawlersModel:
         assert crawler.crawler_type == "web"
         assert crawler.config_file_name == "test_config.json"
         assert isinstance(crawler.created_at, datetime)
-        assert crawler.updated_at is None
+        assert crawler.updated_at is not None
+        assert crawler.updated_at.tzinfo == timezone.utc
         assert crawler.crawler_tasks == []  # 測試關聯關係
     
     def test_timestamps_behavior(self):
@@ -35,9 +36,8 @@ class TestCrawlersModel:
         
         # 只測試創建時間是 UTC
         assert crawler.created_at.tzinfo == timezone.utc
-        
-        # 確認 updated_at 初始為 None
-        assert crawler.updated_at is None
+        assert crawler.updated_at is not None
+        assert crawler.updated_at.tzinfo == timezone.utc
     
     def test_to_dict_method(self):
         """測試 to_dict 方法"""

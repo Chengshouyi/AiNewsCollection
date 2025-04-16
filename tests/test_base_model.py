@@ -88,7 +88,8 @@ def test_task_creation_defaults(db_session):
     assert start_time <= fetched_task.created_at <= datetime.now(timezone.utc)
 
     # Check updated_at is None initially
-    assert fetched_task.updated_at is None
+    assert fetched_task.updated_at is not None
+    assert fetched_task.updated_at.tzinfo == timezone.utc
 
 def test_task_creation_explicit_created_at_utc(db_session):
     """Test creating a Task with an explicit UTC created_at."""
@@ -153,7 +154,8 @@ def test_task_update_sets_updated_at(db_session):
 
     # Fetch by ID before update
     task_to_update = db_session.get(Task, task_id)
-    assert task_to_update.updated_at is None # Verify initial state
+    assert task_to_update.updated_at is not None # Verify initial state
+    assert task_to_update.updated_at.tzinfo == timezone.utc
 
     # Perform update
     task_to_update.title = "Updated Title"

@@ -52,7 +52,8 @@ class TestCrawlerTasksModel:
         
         # 測試自動生成的欄位
         assert task.created_at is not None
-        assert task.updated_at is None
+        assert task.updated_at is not None
+        assert task.updated_at.tzinfo == timezone.utc
         
         # 測試可選欄位預設值
         assert task.last_run_at is None
@@ -180,7 +181,7 @@ class TestCrawlerTasksModel:
             'id', 'task_name', 'crawler_id', 'is_auto', 'is_active',  'task_args', 
             'notes', 'created_at', 'updated_at', 'last_run_at', 
             'last_run_success', 'last_run_message', 'cron_expression',
-            'scrape_phase', 'task_status', 'retry_count'
+            'scrape_phase', 'task_status', 'retry_count', 'is_scheduled'
         }
         
         assert set(task_dict.keys()) == expected_keys

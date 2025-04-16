@@ -124,7 +124,7 @@ class CrawlerTasks(Base, BaseEntity):
 
         
     # 定義需要監聽的 datetime 欄位
-    _datetime_fields_to_watch = {'last_run_at'}
+    _datetime_fields_to_watch = {'updated_at','last_run_at'}
 
     def __init__(self, **kwargs):
         # 設置預設值
