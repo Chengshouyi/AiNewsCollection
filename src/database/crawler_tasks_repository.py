@@ -48,13 +48,15 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             # 例如: entity_data.setdefault('is_auto', False)
             
             # 2. 執行 Pydantic 驗證
-            validated_result = self.validate_data(entity_data, SchemaType.CREATE)
+            validated_data = self.validate_data(entity_data, SchemaType.CREATE)
             
             # 3. 將已驗證的資料傳給內部方法
-            if validated_result.get('success') and validated_result.get('data'):
-                return self._create_internal(validated_result.get('data', {}))
+            if validated_data is None:
+                error_msg = "創建 CrawlerTask 時驗證步驟返回意外的 None 值"
+                logger.error(error_msg)
+                raise ValidationError(error_msg)
             else:
-                raise ValidationError(validated_result.get('message'))
+                return self._create_internal(validated_data)
         except ValidationError as e:
             logger.error(f"創建 CrawlerTask 驗證失敗: {e}")
             raise # 重新拋出讓 Service 層處理
@@ -90,10 +92,12 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             update_payload = self.validate_data(entity_data, SchemaType.UPDATE)
             
             # 3. 將已驗證的 payload 傳給內部方法
-            if update_payload.get('success') and update_payload.get('data'):
-                return self._update_internal(entity_id, update_payload.get('data', {}))
+            if update_payload is None:
+                error_msg = f"更新 CrawlerTask (ID={entity_id}) 時驗證步驟失敗"
+                logger.error(error_msg)
+                raise ValidationError(error_msg)
             else:
-                raise ValidationError(update_payload.get('message'))
+                return self._update_internal(entity_id, update_payload)
         except ValidationError as e:
             logger.error(f"更新 CrawlerTask (ID={entity_id}) 驗證失敗: {e}")
             raise # 重新拋出

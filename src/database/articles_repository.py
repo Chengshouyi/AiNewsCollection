@@ -342,11 +342,10 @@ class ArticlesRepository(BaseRepository[Articles]):
             
             # 檢查 validate_data 的返回值，它返回 Optional[Dict[str, Any]]
             if validated_data is None:
-                # 這種情況理論上不應發生，除非基類 validate_data 內部邏輯有誤
-                # 或者 get_schema_class 返回了意外的類型
                 # Pydantic 驗證失敗應該拋出 ValidationError
-                logger.error(f"創建 Article 時 validate_data 返回 None，原始資料: {entity_data}")
-                raise DatabaseOperationError("創建文章時驗證步驟返回意外的 None 值")
+                error_msg = "創建 Article 時驗證步驟失敗"
+                logger.error(error_msg)
+                raise ValidationError(error_msg)
             
             # 3. 將已驗證的資料傳給內部方法 (_create_internal 失敗會拋出異常)
             #    _create_internal 返回 Optional[Articles]
@@ -510,8 +509,9 @@ class ArticlesRepository(BaseRepository[Articles]):
             # validated_payload 現在是 Optional[Dict[str, Any]]
             if validated_payload is None:
                  # 這種情況不應發生，因為 validate_data 在失敗時會拋出 ValidationError
-                 logger.error(f"更新 Article (ID={entity_id}) 時 validate_data 返回 None，驗證前 Payload={payload_for_validation}")
-                 raise DatabaseOperationError(f"更新驗證時發生內部錯誤，ID={entity_id}")
+                 error_msg = f"更新 Article (ID={entity_id}) 時驗證步驟失敗"
+                 logger.error(error_msg)
+                 raise ValidationError(error_msg)
                  
             # 如果 Pydantic 驗證後的 payload 為空 (例如，所有欄位都是 None 且被 exclude_unset 排除)
             # _update_internal 應該能處理空字典，並返回 None (無變更)
