@@ -106,6 +106,8 @@ class ArticlesRepository(BaseRepository[Articles]):
             total_count = self.count()
             ai_related_count = self.count({"is_ai_related": True})
             category_distribution = self.get_category_distribution()
+            source_distribution = self.get_source_distribution()
+            scrape_status_distribution = self.get_scrape_status_distribution()
             week_ago = datetime.now(timezone.utc) - timedelta(days=7)
             recent_count = self.count({"published_at": {"$gte": week_ago}})
             
@@ -113,14 +115,56 @@ class ArticlesRepository(BaseRepository[Articles]):
                 'total_count': total_count,
                 'ai_related_count': ai_related_count,
                 'category_distribution': category_distribution, 
-                'recent_count': recent_count
+                'recent_count': recent_count,
+                'source_distribution': source_distribution,
+                'scrape_status_distribution': scrape_status_distribution
             }
         
         return self.execute_query(
             stats_func,
             err_msg="獲取文章統計信息時發生錯誤"
         )
-
+    def get_scrape_status_distribution(self) -> Dict[str, int]:
+        """獲取各爬取狀態的統計 (返回字典)"""
+        def stats_func():
+            # 查詢返回 (status_enum, count) 的元組列表
+            result = self.session.query(
+                self.model_class.scrape_status,
+                func.count(self.model_class.id)
+            ).group_by(self.model_class.scrape_status).all()
+            # 將結果轉換為字典 {status_name: count}
+            return {
+                # 使用 status.name 將 Enum 成員轉為字串鍵
+                status.value if isinstance(status, ArticleScrapeStatus) else str(status): count 
+                for status, count in result
+            }
+        
+        return self.execute_query(
+            stats_func,
+            err_msg="獲取爬取狀態統計時發生錯誤"
+        )
+    
+    def get_source_distribution(self) -> Dict[str, int]:
+        """獲取各來源的統計 (返回字典)"""
+        def stats_func():
+             # 查詢返回 (source_string, count) 的元組列表
+            result = self.session.query(
+                self.model_class.source,
+                func.count(self.model_class.id)
+            ).group_by(self.model_class.source).all()
+            # 將結果轉換為字典 {source_name: count}
+            return {
+                # 確保來源是字串，處理 None 的情況
+                str(source) if source else "未知來源": count 
+                for source, count in result
+            }
+        
+        return self.execute_query(
+            stats_func,
+            err_msg="獲取來源統計時發生錯誤"
+        )
+    
+    
     def get_source_statistics(self) -> Dict[str, Dict[str, int]]:
         """獲取各來源的爬取統計"""
         def stats_func():
@@ -159,7 +203,7 @@ class ArticlesRepository(BaseRepository[Articles]):
         )
 
     def search_by_keywords(self, keywords: str, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Articles]:
-        """根據關鍵字搜索文章（標題和內容）
+        """根據關鍵字搜索文章（標題、內容和摘要）
         
         Args:
             keywords: 搜索關鍵字
@@ -167,8 +211,11 @@ class ArticlesRepository(BaseRepository[Articles]):
         Returns:
             符合條件的文章列表
         """
-
-        return self.get_by_filter(filter_criteria={"title": keywords, "content": keywords}, limit=limit, offset=offset)
+        if not keywords or not isinstance(keywords, str):
+             logger.warning("search_by_keywords 需要一個非空字串關鍵字。")
+             return []
+             
+        return self.get_by_filter(filter_criteria={"search_text": keywords}, limit=limit, offset=offset)
 
     def get_category_distribution(self) -> Dict[str, int]:
         """獲取各分類的文章數量分布"""

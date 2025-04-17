@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 
 class CrawlersRepository(BaseRepository['Crawlers']):
     """Crawlers 特定的Repository"""
-    
-    def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
+
+    @classmethod
+    def get_schema_class(cls, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
         """根據操作類型返回對應的schema類"""
         if schema_type == SchemaType.CREATE:
             return CrawlersCreateSchema

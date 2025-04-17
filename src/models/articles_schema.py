@@ -1,5 +1,5 @@
-from typing import Annotated, Optional
-from pydantic import BeforeValidator, model_validator
+from typing import Annotated, Optional, List
+from pydantic import BeforeValidator, model_validator, BaseModel, ConfigDict
 from datetime import datetime
 from src.utils.model_utils import validate_str, validate_url, validate_datetime, validate_boolean, validate_int,validate_article_scrape_status
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
@@ -92,5 +92,46 @@ class ArticleUpdateSchema(BaseUpdateSchema):
     def get_updated_fields(cls):
         return ['title', 'summary', 'content', 'source', 'source_url', 'published_at', 'category', 'author', 'article_type', 'tags', 'is_ai_related', 'is_scraped', 'scrape_status', 'scrape_error', 'last_scrape_attempt', 'task_id'] + BaseUpdateSchema.get_updated_fields()
     
+
+# --- 新增用於讀取/響應的 Schema ---
+
+class ArticleReadSchema(BaseModel):
+    """用於 API 響應的文章數據模型"""
+    id: int
+    title: str
+    link: str
+    summary: Optional[str] = None
+    content: Optional[str] = None
+    source: str
+    source_url: str
+    published_at: Optional[datetime] = None
+    category: Optional[str] = None
+    author: Optional[str] = None
+    article_type: Optional[str] = None
+    tags: Optional[str] = None # 或者考慮解析成 List[str]
+    is_ai_related: bool
+    is_scraped: bool
+    scrape_status: Optional[ArticleScrapeStatus] = None
+    scrape_error: Optional[str] = None
+    last_scrape_attempt: Optional[datetime] = None
+    task_id: Optional[int] = None # 根據需要決定是否返回 task_id
+    created_at: datetime 
+    updated_at: datetime 
+
+    # Pydantic V2 配置: 允許從 ORM 屬性創建模型
+    model_config = ConfigDict(from_attributes=True)
+
+class PaginatedArticleResponse(BaseModel):
+    """用於分頁響應的結構化數據模型"""
+    items: List[ArticleReadSchema]
+    page: int
+    per_page: int
+    total: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+    # Pydantic V2 配置: 如果輸入數據是對象而非字典，這也可能有用
+    model_config = ConfigDict(from_attributes=True)
 
 

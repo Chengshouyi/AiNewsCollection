@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, Optional, TypeVar, Generic, List
+from typing import Dict, Any, Optional, TypeVar, Generic, List, Type, Tuple, cast
 from contextlib import contextmanager
 
 from sqlalchemy.orm import Session
@@ -29,7 +29,7 @@ class BaseService(Generic[T]):
         """
         self.db_manager = db_manager or DatabaseManager()
     
-    def _get_repository_mapping(self) -> Dict[str, tuple]:
+    def _get_repository_mapping(self) -> Dict[str, Tuple[Type[BaseRepository], Type[Base]]]:
         """
         獲取儲存庫映射表，需要被子類重寫
         
@@ -98,6 +98,48 @@ class BaseService(Generic[T]):
             # 確保 session 在事務結束後關閉
             session.close()
     
+    def validate_data(self, repository_name: str, entity_data: Dict[str, Any], schema_type: SchemaType) -> Dict[str, Any]:
+        """
+        公開方法：根據 repository_name 呼叫對應 Repository 的類別驗證方法。
+
+        Args:
+            repository_name: 儲存庫的名稱 (對應 _get_repository_mapping 中的鍵)。
+            entity_data: 待驗證的原始字典資料。
+            schema_type: 決定使用 CreateSchema 還是 UpdateSchema。
+
+        Returns:
+            Dict[str, Any]: 驗證並處理過的字典資料。
+
+        Raises:
+            DatabaseOperationError: 如果找不到對應的儲存庫類。
+            ValidationError: 如果資料驗證失敗。
+            Exception: 其他非預期錯誤。
+        """
+        try:
+            repository_mapping = self._get_repository_mapping()
+            if repository_name not in repository_mapping:
+                error_msg = f"未知的儲存庫名稱: {repository_name}"
+                logger.error(error_msg)
+                raise DatabaseOperationError(error_msg)
+
+            # 直接獲取 Repository 類別，而不是實例
+            repository_class, _ = repository_mapping[repository_name]
+
+            # 調用 Repository 類別上的 validate_data 方法
+            # 這裡不需要 session 或 self (因為 validate_data 是 @classmethod)
+            validated_data = repository_class.validate_data(entity_data, schema_type)
+            return validated_data
+
+        except (DatabaseOperationError, ValidationError) as e:
+            # 直接重新拋出已知錯誤
+            raise e
+        except Exception as e:
+            # 包裝其他未知錯誤
+            error_msg = f"在 Service 層執行 {repository_name} 的 validate_data 時發生錯誤: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            # 可以選擇拋出 ValidationError 或更通用的 ServiceError
+            raise ValidationError(error_msg) from e
+
     def cleanup(self):
         """
         清理服務使用的資源 (此版本無需特別操作)

@@ -97,15 +97,17 @@ class BaseRepository(Generic[T], ABC):
     
     
     # --- 抽象方法 (子類必須實現) ---
+    @classmethod
     @abstractmethod
-    def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[Union[BaseCreateSchema, BaseUpdateSchema]]:
+    def get_schema_class(cls, schema_type: SchemaType = SchemaType.CREATE) -> Type[Union[BaseCreateSchema, BaseUpdateSchema]]:
         """子類必須實現此方法提供用於驗證的 Pydantic schema 類"""
         raise NotImplementedError("子類必須實現此方法提供用於驗證的schema類")
     
         # --- 公開驗證方法 (供 API 層和內部使用) ---
-    def validate_data(self, entity_data: Dict[str, Any], schema_type: SchemaType) -> Dict[str, Any]:
+    @classmethod
+    def validate_data(cls, entity_data: Dict[str, Any], schema_type: SchemaType) -> Dict[str, Any]:
         """
-        公開方法：使用 Pydantic Schema 驗證資料。
+        公開的類別方法：使用 Pydantic Schema 驗證資料。
         根據 schema_type 返回包含預設值 (CREATE) 或僅包含傳入欄位 (UPDATE) 的字典。
 
         Args:
@@ -118,7 +120,7 @@ class BaseRepository(Generic[T], ABC):
             ValidationError: 如果資料驗證失敗
             Exception: 其他非預期錯誤
         """
-        schema_class_untyped = self.get_schema_class(schema_type)
+        schema_class_untyped = cls.get_schema_class(schema_type)
         # 使用 cast 解決型別檢查問題
         schema_class = cast(Type[BaseModel], schema_class_untyped)
         logger.debug(f"使用 Schema '{schema_class.__name__}' 驗證資料 ({schema_type.name})")
@@ -280,7 +282,7 @@ class BaseRepository(Generic[T], ABC):
                 err_msg="添加資料庫物件到session時發生錯誤"
             )
             logger.debug(f"實體準備創建 (待提交): {entity}")
-            # 4. 刷新 Session
+            # 4. 刷新 Session-->移到service層
             # self.execute_query(
             #     lambda: self.session.flush(),
             #     err_msg=f"創建實體時刷新 session 失敗"
@@ -340,14 +342,8 @@ class BaseRepository(Generic[T], ABC):
                     current_value = getattr(entity, key)
 
                     if current_value != value:
-                        # print(f"\n--- Applying standard update for key: {key} ---")
-                        # print(f"Old value: {current_value}")
-                        # print(f"New value: {value}")
-                        setattr(entity, key, value) # <-- Use setattr for all
-                        # print(f"Value after setattr (may be cached for JSON): {getattr(entity, key)}")
-                        # print(f"--- Standard update applied for key: {key} ---\n")
+                        setattr(entity, key, value) 
                         entity_modified = True
-                        # NOTE: flag_modified must be handled by the caller for mutable types like JSON
 
             if not entity_modified:
                 msg = f"實體 ID={entity_id} 沒有變更，跳過資料庫操作。"
@@ -362,7 +358,6 @@ class BaseRepository(Generic[T], ABC):
             
             msg = f"實體準備更新 (待提交): {entity}"
             logger.debug(msg)
-            # print(f"Value of entity.task_args before returning from _update_internal: {entity.task_args}")
             return entity
         except IntegrityError as e:
             error_msg = f"更新{self.model_class.__name__} (ID={entity_id}) 時發生完整性錯誤: {str(e)}"

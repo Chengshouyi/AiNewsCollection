@@ -34,11 +34,6 @@ class CrawlersService(BaseService[Crawlers]):
         return {
             'Crawler': (CrawlersRepository, Crawlers)
         }
-    
-    def _get_repository(self) -> CrawlersRepository:
-        """獲取爬蟲資料庫訪問對象"""
-        return cast(CrawlersRepository, super()._get_repository('Crawler'))
-
 
     def validate_crawler_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
         """驗證爬蟲資料
