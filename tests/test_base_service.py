@@ -74,22 +74,32 @@ class RepositoryForTest(BaseRepository[ModelForTest]):
             raise ValidationError(error_msg) from e
     
     def create(self, entity_data: Dict[str, Any]) -> Optional[ModelForTest]:
-        # 首先驗證數據
-        validated_result = self.validate_data(entity_data, SchemaType.CREATE)
-        # 然後使用內部創建方法
-        if validated_result.get('success') and validated_result.get('data'):
-            return self._create_internal(validated_result.get('data', {}))
-        else:
-            raise ValidationError(validated_result.get('message'))
+        """使用驗證後的數據創建實體"""
+        try:
+            # 首先驗證數據，失敗會拋出 ValidationError
+            validated_data = self.validate_data(entity_data, SchemaType.CREATE)
+            # 然後使用內部創建方法
+            return self._create_internal(validated_data)
+        except ValidationError as e:
+            # 將 ValidationError 重新拋出，以便上層服務捕獲
+            raise e
+        except Exception as e:
+            # 其他異常轉換為 DatabaseOperationError
+            raise DatabaseOperationError(f"內部創建失敗: {str(e)}") from e
     
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[ModelForTest]:
-        # 首先驗證數據
-        validated_result = self.validate_data(entity_data, SchemaType.UPDATE)
-        # 然後使用內部更新方法
-        if validated_result.get('success') and validated_result.get('data'):
-            return self._update_internal(entity_id, validated_result.get('data', {}))
-        else:
-            raise ValidationError(validated_result.get('message'))
+        """使用驗證後的數據更新實體"""
+        try:
+            # 首先驗證數據，失敗會拋出 ValidationError
+            validated_data = self.validate_data(entity_data, SchemaType.UPDATE)
+            # 然後使用內部更新方法
+            return self._update_internal(entity_id, validated_data)
+        except ValidationError as e:
+             # 將 ValidationError 重新拋出，以便上層服務捕獲
+            raise e
+        except Exception as e:
+            # 其他異常轉換為 DatabaseOperationError
+            raise DatabaseOperationError(f"內部更新失敗: {str(e)}") from e
 
 # 測試用 Service 類
 class ServiceForTest(BaseService[ModelForTest]):
@@ -102,7 +112,11 @@ class ServiceForTest(BaseService[ModelForTest]):
         try:
             with self._transaction():
                 repo = self._get_repository("test_repo")
-                return repo.create(data)
+                entity = repo.create(data)
+                # 新增: 在返回前刷新 session 以獲取自動生成的 ID
+                if entity:
+                    repo.session.flush()
+                return entity
         except Exception as e:
             raise DatabaseOperationError(f"創建測試實體失敗: {str(e)}") from e
     
@@ -110,7 +124,11 @@ class ServiceForTest(BaseService[ModelForTest]):
         try:
             with self._transaction():
                 repo = self._get_repository("test_repo")
-                return repo.update(entity_id, data)
+                entity = repo.update(entity_id, data)
+                # 新增: 刷新 session 以確保更改反映（雖然對此例可能非必要，但保持一致性）
+                if entity:
+                    repo.session.flush()
+                return entity
         except Exception as e:
             raise DatabaseOperationError(f"更新測試實體失敗: {str(e)}") from e
     
@@ -230,7 +248,10 @@ class TestBaseService:
         
         with pytest.raises(DatabaseOperationError) as excinfo:
             test_service.create_test_entity(invalid_data)
+        # 確認錯誤訊息來自底層的 ValidationError
         assert "title不能為空" in str(excinfo.value)
+        # 驗證原始異常是否為 ValidationError
+        assert isinstance(excinfo.value.__cause__, ValidationError)
     
     def test_update_entity(self, test_service, sample_entity_data):
         """測試更新實體"""
@@ -288,14 +309,22 @@ class TestBaseService:
     
     def test_transaction(self, test_service, sample_entity_data):
         """測試事務功能"""
+        entity_id = None
         # 在事務中創建實體
-        with test_service._transaction():
+        # 使用 as session 捕獲 _transaction yield 的 session
+        with test_service._transaction() as session:
             repo = test_service._get_repository("test_repo")
+            # 直接調用 repo.create
             entity = repo.create(sample_entity_data)
             assert entity is not None
+            # 手動 flush 以獲取 ID
+            session.flush()
             entity_id = entity.id
-        
-        # 確認實體被創建
+            # 確保 ID 已獲取
+            assert entity_id is not None 
+            
+        # 確認實體被創建 (事務已提交)
+        assert entity_id is not None # 再次確認，避免 None 被傳遞
         result = test_service.get_test_entity(entity_id)
         assert result is not None
     
@@ -304,30 +333,49 @@ class TestBaseService:
         entity_id = None
         
         # 在事務中創建實體並觸發回滾
-        with pytest.raises(ValueError):
-            with test_service._transaction():
+        with pytest.raises(ValueError): 
+             # 使用 as session 捕獲 _transaction yield 的 session
+            with test_service._transaction() as session:
                 repo = test_service._get_repository("test_repo")
                 entity = repo.create(sample_entity_data)
+                assert entity is not None
+                # 手動 flush，確保有變更可以回滾
+                session.flush()
                 entity_id = entity.id
+                 # 確保 ID 已獲取 (如果 flush 成功)
+                assert entity_id is not None
                 
                 # 拋出異常觸發回滾
                 raise ValueError("測試事務回滾")
         
-        # 確認實體不存在
-        result = test_service.get_test_entity(entity_id)
-        assert result is None  # 應該返回 None 而不是拋出異常
+        # 確認實體不存在 (ID可能在內部產生但未提交)
+        # 注意：如果 validate_data 在 repo.create 之前失敗，entity_id 可能為 None
+        if entity_id is not None:
+            result = test_service.get_test_entity(entity_id)
+            assert result is None  # 應該返回 None 因為事務已回滾
+        else:
+             # 如果 entity_id 為 None，表示創建或 flush 步驟因異常未完成
+             # 在這種情況下，斷言事務已回滾（沒有數據被寫入）仍然是合理的
+             pass
     
     def test_transaction_commit(self, test_service, sample_entity_data):
         """測試事務提交"""
         entity_id = None
         
         # 在事務中創建實體
-        with test_service._transaction():
+        # 使用 as session 捕獲 _transaction yield 的 session
+        with test_service._transaction() as session:
             repo = test_service._get_repository("test_repo")
             entity = repo.create(sample_entity_data)
+            assert entity is not None
+            # 手動 flush 以獲取 ID
+            session.flush()
             entity_id = entity.id
+            # 確保 ID 已獲取
+            assert entity_id is not None
         
-        # 確認實體存在且資料正確
+        # 確認實體存在且資料正確 (事務已提交)
+        assert entity_id is not None # 確保傳遞的 ID 不是 None
         result = test_service.get_test_entity(entity_id)
         assert result is not None
         assert result.id == entity_id

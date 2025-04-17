@@ -103,7 +103,7 @@ class BaseRepository(Generic[T], ABC):
         raise NotImplementedError("子類必須實現此方法提供用於驗證的schema類")
     
         # --- 公開驗證方法 (供 API 層和內部使用) ---
-    def validate_data(self, entity_data: Dict[str, Any], schema_type: SchemaType) -> Optional[Dict[str, Any]]:
+    def validate_data(self, entity_data: Dict[str, Any], schema_type: SchemaType) -> Dict[str, Any]:
         """
         公開方法：使用 Pydantic Schema 驗證資料。
         根據 schema_type 返回包含預設值 (CREATE) 或僅包含傳入欄位 (UPDATE) 的字典。
