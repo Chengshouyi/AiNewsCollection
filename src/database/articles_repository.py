@@ -17,14 +17,17 @@ logger = logging.getLogger(__name__)
 
 class ArticlesRepository(BaseRepository[Articles]):
     """Article 的Repository"""
-    
+
+    @classmethod
     @overload
-    def get_schema_class(self, schema_type: Literal[SchemaType.UPDATE]) -> Type[ArticleUpdateSchema]: ...
-    
+    def get_schema_class(cls, schema_type: Literal[SchemaType.UPDATE]) -> Type[ArticleUpdateSchema]: ...
+
+    @classmethod
     @overload
-    def get_schema_class(self, schema_type: Literal[SchemaType.CREATE]) -> Type[ArticleCreateSchema]: ...
+    def get_schema_class(cls, schema_type: Literal[SchemaType.CREATE]) -> Type[ArticleCreateSchema]: ...
     
-    def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[Union[ArticleCreateSchema, ArticleUpdateSchema]]:
+    @classmethod
+    def get_schema_class(cls, schema_type: SchemaType = SchemaType.CREATE) -> Type[Union[ArticleCreateSchema, ArticleUpdateSchema]]:
         """根據操作類型返回對應的schema類"""
         if schema_type == SchemaType.CREATE:
             return ArticleCreateSchema

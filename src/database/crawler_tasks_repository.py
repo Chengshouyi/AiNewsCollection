@@ -1,7 +1,7 @@
 from .base_repository import BaseRepository, SchemaType
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
-from typing import List, Optional, Type, Any, Dict
+from typing import List, Optional, Type, Any, Dict, Literal, overload
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import logging
@@ -16,7 +16,16 @@ logger = logging.getLogger(__name__)
 class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
     """CrawlerTasks 特定的Repository"""
     
-    def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
+    @classmethod
+    @overload
+    def get_schema_class(cls, schema_type: Literal[SchemaType.CREATE]) -> Type[CrawlerTasksCreateSchema]: ...
+    
+    @classmethod
+    @overload
+    def get_schema_class(cls, schema_type: Literal[SchemaType.UPDATE]) -> Type[CrawlerTasksUpdateSchema]: ...
+    
+    @classmethod
+    def get_schema_class(cls, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
         """提供對應的 schema class"""
         if schema_type == SchemaType.CREATE:
             return CrawlerTasksCreateSchema

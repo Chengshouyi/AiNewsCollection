@@ -76,17 +76,18 @@ class ModelForTest(Base):
 class ModelRepositoryforTest(BaseRepository[ModelForTest]):
     """實現 BaseRepository 抽象類以便測試"""
     
-    def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
+    @classmethod
+    def get_schema_class(cls, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
         """實現獲取schema類的抽象方法"""
         if schema_type == SchemaType.CREATE:
             return ModelCreateSchema
         elif schema_type == SchemaType.UPDATE:
             return ModelUpdateSchema
         elif schema_type == SchemaType.LIST:
-            return ModelCreateSchema  # 測試用，實際上可能會有不同的 ListSchema
+            return ModelCreateSchema
         elif schema_type == SchemaType.DETAIL:
-            return ModelCreateSchema  # 測試用，實際上可能會有不同的 DetailSchema
-        return ModelCreateSchema  # 默認返回創建schema
+            return ModelCreateSchema
+        return ModelCreateSchema
     
     def create(self, entity_data: Dict[str, Any]) -> Optional[ModelForTest]:
         """實現創建實體的抽象方法"""
@@ -533,3 +534,295 @@ class TestBaseRepository:
         
         assert "不能為空" in str(excinfo.value)
         assert "CREATE 資料驗證失敗" in str(excinfo.value)
+
+    def test_get_by_filter_equality(self, repo, sample_model_data, session):
+        # 創建符合條件的測試數據
+        data1 = sample_model_data.copy()
+        data1["source"] = "特定來源"
+        data1["link"] = "https://test.com/filter/1" # 確保 link 唯一
+        repo.create(data1)
+
+        # 創建不符合條件的測試數據 (可選，用於驗證過濾的準確性)
+        data2 = sample_model_data.copy()
+        data2["source"] = "其他來源"
+        data2["link"] = "https://test.com/filter/2" # 確保 link 唯一
+        repo.create(data2)
+        session.commit() # 提交創建操作
+
+        session.expire_all() # 確保從 DB 讀取
+
+        # 執行過濾查詢
+        results = repo.get_by_filter({"source": "特定來源"})
+
+        # 斷言
+        assert len(results) > 0 # 應該至少找到一個
+        assert len(results) == 1 # 如果只創建了一個符合條件的數據
+        assert all(item.source == "特定來源" for item in results) # 驗證找到的數據都符合條件
+
+    def test_get_by_filter_operators(self, repo, sample_model_data, session):
+        # 創建 name 為 test1, test2, test3 的數據
+        names_to_create = ["test1", "test2", "test3"]
+        for i, name in enumerate(names_to_create):
+            data = sample_model_data.copy()
+            data["name"] = name
+            data["link"] = f"https://test.com/filter-op/{i}" # 確保 link 唯一
+            data["title"] = f"Title for {name}" # 提供 title
+            data["source"] = f"Source for {name}" # 提供 source
+            data["published_at"] = f"2023-08-{i+1:02d}" # 提供 published_at
+            repo.create(data)
+        session.commit() # 提交創建操作
+
+        session.expire_all() # 確保從 DB 讀取
+
+        # 測試 $in 操作符
+        results_in = repo.get_by_filter({"name": {"$in": ["test1", "test3"]}})
+        assert len(results_in) == 2 # 應該找到 name 為 test1 和 test3 的記錄
+        assert all(item.name in ["test1", "test3"] for item in results_in) # 驗證找到的數據都符合條件
+        # 可以按 name 排序後斷言具體內容
+        results_in.sort(key=lambda x: x.name)
+        assert results_in[0].name == "test1"
+        assert results_in[1].name == "test3"
+
+        # ... (繼續添加其他操作符的測試和數據創建) ...
+        # 例如: 創建一些 published_at 數據用於測試 $gte
+        # data_gte1 = sample_model_data.copy()
+        # data_gte1["name"] = "gte_test1"
+        # data_gte1["link"] = "https://test.com/filter-op/gte1"
+        # data_gte1["published_at"] = "2023-08-15"
+        # repo.create(data_gte1)
+        # data_gte2 = sample_model_data.copy()
+        # data_gte2["name"] = "gte_test2"
+        # data_gte2["link"] = "https://test.com/filter-op/gte2"
+        # data_gte2["published_at"] = "2023-07-31"
+        # repo.create(data_gte2)
+        # session.commit()
+        # session.expire_all()
+
+        # results_gte = repo.get_by_filter({"published_at": {"$gte": "2023-08-01"}})
+        # assert len(results_gte) >= 1 # 至少找到 gte_test1 和之前創建的 test1, test2, test3 (假設日期符合)
+        # assert all(item.published_at >= "2023-08-01" for item in results_gte)
+
+        # ... (測試 $ne, $nin, $gt, $lt, $lte) ...
+
+    def test_get_by_filter_non_existent_field(self, repo, sample_model_data, session):
+        # ... (創建數據) ...
+        # 預期不會報錯，且能返回所有數據 (因為無效過濾被忽略)
+        # 理想情況下可以 mock logger 來驗證警告，但較複雜
+        all_items = repo.get_all()
+        results = repo.get_by_filter({"non_existent_field": "some_value"})
+        assert len(results) == len(all_items)
+
+    def test_get_by_filter_with_sort_and_limit(self, repo, sample_model_data, session):
+        # 創建多個符合條件的數據，以便測試排序和限制
+        data1 = sample_model_data.copy()
+        data1["source"] = "特定來源"
+        data1["title"] = "文章 Z" # 用於降序排序
+        data1["link"] = "https://test.com/filter-sort/1"
+        repo.create(data1)
+
+        data2 = sample_model_data.copy()
+        data2["source"] = "特定來源"
+        data2["title"] = "文章 A" # 用於降序排序
+        data2["link"] = "https://test.com/filter-sort/2"
+        repo.create(data2)
+
+        # 創建不符合條件的數據 (可選)
+        data3 = sample_model_data.copy()
+        data3["source"] = "其他來源"
+        data3["title"] = "文章 X"
+        data3["link"] = "https://test.com/filter-sort/3"
+        repo.create(data3)
+        session.commit() # 提交創建
+
+        session.expire_all() # 確保從 DB 讀取
+
+        # 執行查詢：過濾 source="特定來源"，按 title 降序，取第一個
+        results = repo.get_by_filter(
+            {"source": "特定來源"},
+            sort_by="title",
+            sort_desc=True,
+            limit=1
+        )
+        assert len(results) == 1 # 斷言只返回了一個結果
+        assert results[0].title == "文章 Z" # 斷言返回的是 title 降序排列的第一個
+        assert results[0].source == "特定來源" # 斷言返回的結果符合過濾條件
+
+    def test_get_all_invalid_sort_key(self, repo, session):
+        with pytest.raises(InvalidOperationError) as excinfo:
+            repo.get_all(sort_by="invalid_column")
+        assert "無效的排序欄位: invalid_column" in str(excinfo.value)
+
+    def test_get_paginated_with_sorting(self, repo, sample_model_data, session):
+        # 創建數據 (例如創建 7 條，以便測試分頁)
+        titles = ["文章 C", "文章 A", "文章 E", "文章 B", "文章 D", "文章 G", "文章 F"]
+        for i, title in enumerate(titles):
+            data = sample_model_data.copy()
+            data["title"] = title
+            data["link"] = f"https://test.com/paginate-sort/{i}" # 確保 link 唯一
+            data["name"] = f"name_{i}" # 提供其他必要欄位
+            data["source"] = f"source_{i}"
+            data["published_at"] = f"2023-09-{i+1:02d}"
+            repo.create(data)
+        session.commit() # 提交創建
+
+        session.expire_all() # 確保從 DB 讀取
+
+        # 獲取第一頁，每頁 5 個，按 title 降序
+        page_data = repo.get_paginated(page=1, per_page=5, sort_by="title", sort_desc=True)
+
+        # 斷言
+        assert len(page_data["items"]) == 5 # 驗證第一頁有 5 條記錄
+        # 驗證排序結果 (預期 G, F, E, D, C)
+        actual_titles = [item.title for item in page_data["items"]]
+        expected_titles = ["文章 G", "文章 F", "文章 E", "文章 D", "文章 C"]
+        assert actual_titles == expected_titles
+        assert page_data["page"] == 1
+        assert page_data["per_page"] == 5
+        assert page_data["total"] == 7
+        assert page_data["total_pages"] == 2
+        assert page_data["has_next"] is True
+        assert page_data["has_prev"] is False
+
+    def test_validate_and_supplement_create_success(self, repo, sample_model_data):
+        # 測試創建時，所有 Pydantic 驗證過的必填欄位都有有效值
+        validated_data = repo.validate_data(sample_model_data, SchemaType.CREATE)
+        final_data = repo._validate_and_supplement_required_fields(validated_data)
+        assert final_data is not None
+        # 確保必填欄位都有值 (如果 create schema 有預設值，這裡也會包含)
+
+    def test_validate_and_supplement_create_error(self, repo, sample_model_data):
+        # 測試創建時，如果 Pydantic 驗證後某必填欄位值為 None 或空
+        validated_data = repo.validate_data(sample_model_data, SchemaType.CREATE)
+        validated_data["title"] = "" # 手動設為空字串
+        with pytest.raises(ValidationError) as excinfo:
+            repo._validate_and_supplement_required_fields(validated_data)
+        assert "必填欄位值無效" in str(excinfo.value)
+        assert "title" in str(excinfo.value)
+
+    def test_validate_and_supplement_update_supplement(self, repo, sample_model_data, session):
+        # 測試更新時，從現有實體補充數據
+        # 1. 創建實體
+        created_entity = repo.create(sample_model_data)
+        session.commit()
+        entity_id = created_entity.id
+        session.expire(created_entity) # 從 session 移除，確保下次讀取是從 DB
+
+        # 2. 準備更新 payload，缺少某些必填欄位 (例如 title)
+        update_payload = {"summary": "New Summary"}
+        validated_payload = repo.validate_data(update_payload, SchemaType.UPDATE)
+
+        # 3. 獲取現有實體
+        existing_entity = repo.get_by_id(entity_id)
+
+        # 4. 調用驗證與補充
+        final_data = repo._validate_and_supplement_required_fields(validated_payload, existing_entity)
+
+        # 5. 斷言：必填欄位 title 應該從 existing_entity 補充進來
+        assert "title" in final_data
+        assert final_data["title"] == sample_model_data["title"] # 應為原始值
+        assert final_data["summary"] == "New Summary"
+
+    def test_validate_and_supplement_update_error(self, repo, sample_model_data, session):
+        # 測試更新時，即使補充後，某必填欄位的值仍然無效
+        # 1. **直接使用 session 創建一個 title 為空的實體，繞過 repo.create 的驗證**
+        invalid_initial_data = {
+            "name": sample_model_data["name"],
+            "title": "", # 直接設置為空字串
+            "link": "https://test.com/invalid_update", # 確保 link 唯一
+            "source": sample_model_data["source"],
+            "published_at": sample_model_data["published_at"],
+            # created_at 會自動生成
+        }
+        initial_entity = ModelForTest(**invalid_initial_data)
+        session.add(initial_entity)
+        try:
+            session.commit() # 提交這個 "無效" 狀態
+            entity_id = initial_entity.id
+            assert entity_id is not None # 確保 ID 已生成
+            # logger.debug(f"已直接創建 ID={entity_id} 的無效標題實體用於測試") # <--- 移除或註釋掉此行
+            # 或者使用 print 進行簡單的測試輸出
+            print(f"DEBUG: 已直接創建 ID={entity_id} 的無效標題實體用於測試")
+        except Exception as e:
+            session.rollback()
+            pytest.fail(f"直接創建無效實體失敗: {e}")
+
+        session.expire(initial_entity) # 從 session 移除，確保下次讀取是從 DB
+
+        # 2. 準備空的更新 payload
+        update_payload = {}
+        validated_payload = repo.validate_data(update_payload, SchemaType.UPDATE) # 這步應該能通過
+
+        # 3. 獲取現有實體 (現在它應該是 title="" 的那個)
+        existing_entity = repo.get_by_id(entity_id)
+        assert existing_entity is not None
+        assert existing_entity.title == "" # 確認讀取到的確實是空標題
+
+        # 4. **執行被測邏輯：** 調用驗證與補充，預期失敗，因為從現有實體補充的 title 是空
+        with pytest.raises(ValidationError) as excinfo:
+            repo._validate_and_supplement_required_fields(validated_payload, existing_entity)
+
+        # 5. 斷言錯誤訊息
+        assert "必填欄位值無效" in str(excinfo.value)
+        assert "title" in str(excinfo.value)
+
+    def test_create_internal_validation_error(self, repo, sample_model_data):
+        # Mock _validate_and_supplement_required_fields 使其拋出錯誤
+        with patch.object(repo, '_validate_and_supplement_required_fields', side_effect=ValidationError("模擬必填欄位錯誤")):
+            validated_data = repo.validate_data(sample_model_data, SchemaType.CREATE)
+            with pytest.raises(ValidationError) as excinfo:
+                repo._create_internal(validated_data)
+            assert "模擬必填欄位錯誤" in str(excinfo.value)
+
+    def test_update_internal_immutable_field(self, repo, sample_model_data, session):
+        # 1. 創建實體
+        created = repo.create(sample_model_data)
+        session.commit()
+        entity_id = created.id
+        original_name = created.name # 假設 name 是 immutable
+
+        # 2. Mock get_immutable_fields 返回 ['name']
+        with patch.object(ModelUpdateSchema, 'get_immutable_fields', return_value=['name']):
+            update_payload = {"name": "New Name", "title": "New Title"}
+            validated_payload = repo.validate_data(update_payload, SchemaType.UPDATE) # 驗證本身會通過
+
+            updated_entity = repo._update_internal(entity_id, validated_payload)
+            session.commit()
+
+            # 3. 檢查結果
+            result = repo.get_by_id(entity_id)
+            assert result.title == "New Title" # 可變欄位應更新
+            assert result.name == original_name # 不可變欄位不應更新
+
+    def test_execute_query_wraps_exception(self, repo, session):
+        def faulty_query():
+            raise ValueError("Something went wrong")
+
+        with pytest.raises(DatabaseOperationError) as excinfo:
+            repo.execute_query(faulty_query, err_msg="Test Error")
+        assert "Test Error: Something went wrong" in str(excinfo.value)
+        assert isinstance(excinfo.value.__cause__, ValueError)
+
+    def test_execute_query_preserves_exception(self, repo, session):
+        def integrity_error_query():
+            # 模擬一個 IntegrityError (這裡用子類 ValueError 模擬)
+            # 實際測試中可能需要 mock session 操作來觸發真正的 IntegrityError
+            raise IntegrityError("Mock IntegrityError", params=None, orig=ValueError("orig"))
+
+        # IntegrityError 默認在 preserve_exceptions 中
+        with pytest.raises(IntegrityError):
+             repo.execute_query(integrity_error_query)
+
+        # 測試不 preserve 的情況
+        with pytest.raises(DatabaseOperationError): # 應該被包裝
+            repo.execute_query(integrity_error_query, preserve_exceptions=[])
+
+    def test_validate_data_as_classmethod(self, sample_model_data):
+        """測試可以直接通過類調用 validate_data"""
+        validated_create = ModelRepositoryforTest.validate_data(sample_model_data, SchemaType.CREATE)
+        assert validated_create is not None
+        assert validated_create["title"] == "測試文章"
+
+        invalid_data = sample_model_data.copy()
+        invalid_data["title"] = ""
+        with pytest.raises(ValidationError):
+            ModelRepositoryforTest.validate_data(invalid_data, SchemaType.CREATE)

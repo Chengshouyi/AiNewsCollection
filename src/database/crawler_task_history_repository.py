@@ -1,7 +1,7 @@
 from .base_repository import BaseRepository, SchemaType
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.crawler_task_history_schema import CrawlerTaskHistoryCreateSchema, CrawlerTaskHistoryUpdateSchema
-from typing import List, Optional, Dict, Any, Type
+from typing import List, Optional, Dict, Any, Type, Literal, overload
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import logging
@@ -13,7 +13,18 @@ logger = logging.getLogger(__name__)
 class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
     """CrawlerTaskHistory 特定的Repository"""
     
-    def get_schema_class(self, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
+
+    @classmethod
+    @overload
+    def get_schema_class(cls, schema_type: Literal[SchemaType.CREATE]) -> Type[CrawlerTaskHistoryCreateSchema]: ...
+    
+    @classmethod
+    @overload
+    def get_schema_class(cls, schema_type: Literal[SchemaType.UPDATE]) -> Type[CrawlerTaskHistoryUpdateSchema]: ...
+
+
+    @classmethod
+    def get_schema_class(cls, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:
         """獲取對應的schema類別"""
         if schema_type == SchemaType.UPDATE:
             return CrawlerTaskHistoryUpdateSchema

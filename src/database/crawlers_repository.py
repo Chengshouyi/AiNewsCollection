@@ -1,6 +1,6 @@
 from .base_repository import BaseRepository, SchemaType
 from src.models.crawlers_model import Crawlers
-from typing import List, Optional, Dict, Any, Type
+from typing import List, Optional, Dict, Any, Type, Literal, overload
 from datetime import datetime, timezone
 from sqlalchemy import func
 from pydantic import BaseModel
@@ -14,6 +14,16 @@ logger = logging.getLogger(__name__)
 
 class CrawlersRepository(BaseRepository['Crawlers']):
     """Crawlers 特定的Repository"""
+
+    @classmethod
+    @overload
+    def get_schema_class(cls, schema_type: Literal[SchemaType.CREATE]) -> Type[CrawlersCreateSchema]: ...
+
+
+    @classmethod
+    @overload
+    def get_schema_class(cls, schema_type: Literal[SchemaType.UPDATE]) -> Type[CrawlersUpdateSchema]: ...
+    
 
     @classmethod
     def get_schema_class(cls, schema_type: SchemaType = SchemaType.CREATE) -> Type[BaseModel]:

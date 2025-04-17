@@ -49,17 +49,22 @@ class BaseRepository(Generic[T], ABC):
             err_msg: 自定義錯誤訊息
             preserve_exceptions: 需要保留原始異常的異常類型列表
         """
-        preserve_exceptions = preserve_exceptions or [IntegrityError, ValidationError]
+        default_preserve = [IntegrityError, ValidationError, InvalidOperationError]
+        # 明確檢查 preserve_exceptions 是否為 None
+        if preserve_exceptions is None:
+            preserve_exceptions = default_preserve
+        # 現在，如果調用者傳入 []，preserve_exceptions 就會是 []
+
         try:
             return query_func()
         except Exception as e:
             error_msg = f"{err_msg if err_msg else '資料庫操作錯誤'}: {e}"
             logger.error(error_msg)
-            
+
             # 如果是需要保留的異常類型，直接重新拋出
             if any(isinstance(e, exc) for exc in preserve_exceptions):
                 raise
-            
+
             raise exception_class(error_msg) from e
         
     def _handle_integrity_error(self, e: IntegrityError, context: str) -> None:
@@ -156,10 +161,10 @@ class BaseRepository(Generic[T], ABC):
         
     
     # --- 受保護的輔助和內部方法 ---
-    def _apply_filters(self, query, filter_criteria: Dict[str, Any], limit: Optional[int] = None, offset: Optional[int] = None):
+    def _apply_filters(self, query, filter_criteria: Dict[str, Any]):
         """將過濾條件應用到 SQLAlchemy 查詢對象"""
         if not filter_criteria:
-            return query.limit(limit).offset(offset)
+            return query
 
         conditions = []
         for field, value in filter_criteria.items():
@@ -199,9 +204,9 @@ class BaseRepository(Generic[T], ABC):
                 conditions.append(column == value)
 
         if conditions:
-            return query.filter(and_(*conditions)).limit(limit).offset(offset)
+            return query.filter(and_(*conditions))
         else:
-            return query.limit(limit).offset(offset)
+            return query
 
     def _validate_and_supplement_required_fields(
         self,
@@ -550,7 +555,7 @@ class BaseRepository(Generic[T], ABC):
 
     def get_by_filter(self, filter_criteria: Dict[str, Any], sort_by: Optional[str] = None, sort_desc: bool = False, limit: Optional[int] = None, offset: Optional[int] = None) -> List[T]:
         """根據過濾條件查找實體列表
-        
+
         Args:
             filter_criteria: 過濾條件字典
             sort_by: 排序欄位名稱
@@ -562,11 +567,11 @@ class BaseRepository(Generic[T], ABC):
         """
         def query_builder():
             query = self.session.query(self.model_class)
-            
-            # 應用過濾
-            query = self._apply_filters(query, filter_criteria or {}, limit, offset)
-            
-            # 處理排序
+
+            # 1. 應用過濾 (使用修改後的 _apply_filters)
+            query = self._apply_filters(query, filter_criteria or {})
+
+            # 2. 處理排序
             if sort_by:
                 if not hasattr(self.model_class, sort_by):
                     raise InvalidOperationError(f"無效的排序欄位: {sort_by}")
@@ -587,10 +592,15 @@ class BaseRepository(Generic[T], ABC):
                             query = query.order_by(desc(id_attr))
                 except (AttributeError, TypeError):
                     pass
-            if limit is not None:
-                query = query.limit(limit)
+
+            # 3. 應用偏移 (Offset)
             if offset is not None:
                 query = query.offset(offset)
+
+            # 4. 應用限制 (Limit)
+            if limit is not None:
+                query = query.limit(limit)
+
             return query.all()
 
         return self.execute_query(
