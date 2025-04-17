@@ -100,7 +100,7 @@ class Articles(Base, BaseEntity):
     task = relationship("CrawlerTasks", back_populates="articles")
     
     # 定義需要監聽的 datetime 欄位
-    _datetime_fields_to_watch = {'updated_at','published_at', 'last_scrape_attempt'}
+    _child_datetime_fields_to_watch = {'published_at', 'last_scrape_attempt'}
 
     def __init__(self, **kwargs):
         # 設置默認值
@@ -111,7 +111,7 @@ class Articles(Base, BaseEntity):
             kwargs['is_scraped'] = False
         # 告知父類需要監聽的 datetime 欄位
         super().__init__(datetime_fields_to_watch=
-                         self._datetime_fields_to_watch, **kwargs)
+                         self._child_datetime_fields_to_watch, **kwargs)
 
     # 文章資料repr
     def __repr__(self):

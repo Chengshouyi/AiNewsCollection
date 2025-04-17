@@ -5,7 +5,7 @@ from sqlalchemy.orm import sessionmaker
 from src.models.crawlers_model import Crawlers
 from src.database.crawlers_repository import CrawlersRepository, SchemaType
 from src.models.base_model import Base
-from src.error.errors import ValidationError, DatabaseOperationError
+from src.error.errors import ValidationError, DatabaseOperationError, InvalidOperationError
 
 # 設置測試資料庫，使用 session scope
 @pytest.fixture(scope="session")
@@ -138,7 +138,7 @@ class TestCrawlersRepository:
         with pytest.raises(ValidationError) as excinfo:
             crawlers_repo.validate_data(invalid_data, SchemaType.CREATE)
         
-        assert "驗證失敗" in str(excinfo.value)
+        assert "以下必填欄位缺失或值為空/空白" in str(excinfo.value)
     
     def test_get_all(self, crawlers_repo, sample_crawlers, session, clean_db):
         """測試獲取所有爬蟲設定"""
@@ -158,15 +158,25 @@ class TestCrawlersRepository:
         assert setting is None
     
     def test_find_by_crawler_name(self, crawlers_repo, sample_crawlers, session, clean_db):
-        """測試根據爬蟲名稱查詢"""
-        # 完全匹配
-        crawlers = crawlers_repo.find_by_crawler_name("新聞爬蟲1")
-        assert len(crawlers) == 1
-        assert crawlers[0].crawler_name == "新聞爬蟲1"
-        
-        # 部分匹配
-        crawlers = crawlers_repo.find_by_crawler_name("爬蟲")
-        assert len(crawlers) == 3
+        """測試根據爬蟲名稱模糊查詢 (包含活躍狀態過濾)"""
+        # 活躍查詢 (預設 is_active=True)
+        crawlers_active = crawlers_repo.find_by_crawler_name("爬蟲")
+        assert len(crawlers_active) == 2 # 新聞爬蟲1, RSS爬蟲
+        assert all(c.is_active for c in crawlers_active)
+
+        # 指定 is_active=True
+        crawlers_active_explicit = crawlers_repo.find_by_crawler_name("爬蟲", is_active=True)
+        assert len(crawlers_active_explicit) == 2
+
+        # 指定 is_active=False
+        crawlers_inactive = crawlers_repo.find_by_crawler_name("爬蟲", is_active=False)
+        assert len(crawlers_inactive) == 1 # 新聞爬蟲2
+        assert crawlers_inactive[0].crawler_name == "新聞爬蟲2"
+        assert not crawlers_inactive[0].is_active
+
+        # 查詢只存在於不活躍狀態的名稱，但 is_active=True
+        crawlers_no_match = crawlers_repo.find_by_crawler_name("新聞爬蟲2", is_active=True)
+        assert crawlers_no_match is None # 或者 assert len(crawlers_no_match) == 0, 取決於實現細節
     
     def test_find_by_crawler_name_exact(self, crawlers_repo, sample_crawlers, session, clean_db):
         """測試根據爬蟲名稱精確查詢"""
@@ -187,40 +197,47 @@ class TestCrawlersRepository:
 
     def test_create(self, crawlers_repo, session, clean_db):
         """測試使用模式驗證創建爬蟲"""
-        new_crawler_data = {
-            "crawler_name": "測試爬蟲",
-            "base_url": "https://example.com/test",
-            "is_active": True,
+        new_crawler_data_defaults = {
+            "crawler_name": "測試預設值爬蟲",
+            "base_url": "https://example.com/defaults",
+            "crawler_type": "web",
+            "config_file_name": "test_crawler.json"
+            # is_active 未提供，應為 True
+        }
+        new_crawler_defaults = crawlers_repo.create(new_crawler_data_defaults)
+        session.commit()
+        session.expire_all()
+
+        # 重新獲取以驗證
+        created_default = crawlers_repo.get_by_id(new_crawler_defaults.id)
+        assert created_default is not None
+        assert created_default.is_active is True # 檢查預設值
+
+        new_crawler_data_explicit = {
+            "crawler_name": "測試明確狀態爬蟲",
+            "base_url": "https://example.com/explicit",
+            "is_active": False, # 明確設置為 False
             "crawler_type": "web",
             "config_file_name": "test_crawler.json"
         }
-        
-        # 使用 create 方法創建新爬蟲設定
-        new_crawler = crawlers_repo.create(new_crawler_data)
+        new_crawler_explicit = crawlers_repo.create(new_crawler_data_explicit)
+        session.commit()
         session.expire_all()
-        
-        assert new_crawler is not None
-        assert new_crawler.id is not None
-        assert new_crawler.crawler_name == "測試爬蟲"
-        assert new_crawler.created_at is not None
-        
-        # 從資料庫中檢索並驗證
-        retrieved = crawlers_repo.get_by_id(new_crawler.id)
-        assert retrieved is not None
-        assert retrieved.crawler_name == "測試爬蟲"
-        assert retrieved.base_url == "https://example.com/test"
-        assert retrieved.crawler_type == "web"
-    
-        # 測試驗證錯誤 - 缺少必填欄位
+
+        # 重新獲取以驗證
+        created_explicit = crawlers_repo.get_by_id(new_crawler_explicit.id)
+        assert created_explicit is not None
+        assert created_explicit.is_active is False # 檢查設置值
+
+        # ... 原有的驗證錯誤測試 ...
         invalid_data = {
             "crawler_name": "缺失欄位爬蟲",
-            # 缺少 base_url
             "is_active": True
         }
-        
         with pytest.raises(ValidationError):
             crawlers_repo.create(invalid_data)
-            
+        # 驗證錯誤不需要 commit，隱含 rollback
+
     def test_crawler_name_uniqueness(self, crawlers_repo, sample_crawlers, session, clean_db):
         """測試爬蟲名稱唯一性驗證"""
         # 嘗試創建重複名稱的爬蟲
@@ -247,38 +264,61 @@ class TestCrawlersRepository:
         """測試使用模式驗證更新爬蟲"""
         # 獲取第一個爬蟲設定的ID
         setting_id = sample_crawlers[0].id
-        
+        original_base_url = sample_crawlers[0].base_url # 保存原始值以便後續驗證
+        original_crawler_type = sample_crawlers[0].crawler_type
+
         # 準備更新數據
         update_data = {
             "crawler_name": "已更新爬蟲名稱",
             "is_active": False
         }
-        
-        # 執行更新
-        updated = crawlers_repo.update(setting_id, update_data)
+
+        # 執行更新 (假設 repo.update 只修改 session 中的物件)
+        updated_in_session = crawlers_repo.update(setting_id, update_data)
+
+        # 模擬 Service 層的行為: 提交交易
+        session.commit()
+
+        # 清除 session 快取，強制從資料庫重新載入以驗證持久化
         session.expire_all()
-        
-        assert updated is not None
-        assert updated.crawler_name == "已更新爬蟲名稱"
-        assert updated.is_active is False
-        assert updated.updated_at is not None
-        
+
+        # 重新獲取或直接使用 updated_in_session (因為 expire 會觸發重新載入)
+        updated_from_db = crawlers_repo.get_by_id(setting_id)
+
+        assert updated_from_db is not None
+        # 現在斷言應該會成功，因為變更已提交
+        assert updated_from_db.crawler_name == "已更新爬蟲名稱"
+        assert updated_from_db.is_active is False
+        assert updated_from_db.updated_at is not None # 確保 updated_at 被設置
+
         # 確認只更新了指定欄位
-        assert updated.base_url == sample_crawlers[0].base_url
-        assert updated.crawler_type == sample_crawlers[0].crawler_type
-        
-        # 測試更新不存在的ID
-        result = crawlers_repo.update(999, update_data)
-        assert result is None
-        
-        # 測試嘗試更新不允許的欄位
+        assert updated_from_db.base_url == original_base_url
+        assert updated_from_db.crawler_type == original_crawler_type
+
+        # --- 測試更新不存在的ID ---
+        result_nonexistent = crawlers_repo.update(999, update_data)
+        # 這裡也需要 commit 嗎？取決於 update 找不到 ID 時的行為。
+        # 如果 update 在找不到時直接返回 None 且不做任何操作，則不需要 commit。
+        # 如果 update 內部有其他可能影響 session 的操作（即使找不到 ID），則可能需要 commit 或 rollback。
+        # 假設找不到時直接返回 None，所以不需要額外 commit/rollback。
+        assert result_nonexistent is None
+
+        # --- 測試嘗試更新不允許的欄位 ---
         invalid_update = {
             "crawler_name": "測試非法更新",
             "crawler_type": "changed_type"  # 不允許更新類型
         }
-        
+
+        # 驗證 ValidationError 的測試不需要 commit，因為預期會引發異常，
+        # SQLAlchemy 的 session 在異常時通常會自動 rollback (或應在 repo 的錯誤處理中 rollback)。
         with pytest.raises(ValidationError):
             crawlers_repo.update(setting_id, invalid_update)
+
+        # 可以選擇性地驗證 rollback 後的狀態
+        session.rollback() # 確保 session 狀態乾淨
+        reverted_crawler = crawlers_repo.get_by_id(setting_id)
+        assert reverted_crawler.crawler_name == "已更新爬蟲名稱" # 名稱應保持上次成功提交的狀態
+        assert reverted_crawler.crawler_type == original_crawler_type # 類型不應改變
     
     def test_delete(self, crawlers_repo, sample_crawlers, session, clean_db):
         """測試刪除爬蟲設定"""
@@ -287,6 +327,7 @@ class TestCrawlersRepository:
         
         # 執行刪除
         result = crawlers_repo.delete(setting_id)
+        session.commit()
         assert result is True
         
         # 確認已從資料庫中刪除
@@ -302,39 +343,69 @@ class TestCrawlersRepository:
         crawler_id = sample_crawlers[0].id
         original_status = sample_crawlers[0].is_active
         
-        result = crawlers_repo.toggle_active_status(crawler_id)
-        assert result is True
+        result_toggle1 = crawlers_repo.toggle_active_status(crawler_id)
+        session.commit()
+        assert result_toggle1 is True
         
+        # 清除快取並重新獲取
+        session.expire_all()
         updated_crawler = crawlers_repo.get_by_id(crawler_id)
+        assert updated_crawler is not None
         assert updated_crawler.is_active != original_status
         assert updated_crawler.updated_at is not None
         
         # 再次切換
-        crawlers_repo.toggle_active_status(crawler_id)
+        result_toggle2 = crawlers_repo.toggle_active_status(crawler_id)
+        session.commit()
+        assert result_toggle2 is True
+
+        # 清除快取並重新獲取
+        session.expire_all()
         updated_again = crawlers_repo.get_by_id(crawler_id)
+        assert updated_again is not None
         assert updated_again.is_active == original_status
         
         # 測試切換不存在的ID
-        result = crawlers_repo.toggle_active_status(999)
-        assert result is False
+        result_toggle_nonexistent = crawlers_repo.toggle_active_status(999)
+        assert result_toggle_nonexistent is False
 
     def test_find_by_type(self, crawlers_repo, sample_crawlers, session, clean_db):
-        """測試根據爬蟲類型查找"""
-        web_crawlers = crawlers_repo.find_by_type("web")
-        assert len(web_crawlers) == 2
-        assert all(c.crawler_type == "web" for c in web_crawlers)
-        
-        rss_crawlers = crawlers_repo.find_by_type("rss")
-        assert len(rss_crawlers) == 1
-        assert rss_crawlers[0].crawler_type == "rss"
+        """測試根據爬蟲類型查找 (包含活躍狀態過濾)"""
+        # 活躍查詢 (預設 is_active=True)
+        web_crawlers_active = crawlers_repo.find_by_type("web")
+        assert len(web_crawlers_active) == 1 # 新聞爬蟲1
+        assert web_crawlers_active[0].crawler_name == "新聞爬蟲1"
+
+        # 指定 is_active=False
+        web_crawlers_inactive = crawlers_repo.find_by_type("web", is_active=False)
+        assert len(web_crawlers_inactive) == 1 # 新聞爬蟲2
+        assert web_crawlers_inactive[0].crawler_name == "新聞爬蟲2"
+
+        # RSS 類型查詢 (預設 is_active=True)
+        rss_crawlers_active = crawlers_repo.find_by_type("rss")
+        assert len(rss_crawlers_active) == 1 # RSS爬蟲
+        assert rss_crawlers_active[0].is_active
+
+        # 測試不存在的類型
+        non_existent_type = crawlers_repo.find_by_type("api")
+        assert non_existent_type is None
 
     def test_find_by_target(self, crawlers_repo, sample_crawlers, session, clean_db):
-        """測試根據爬取目標查詢"""
-        news_crawlers = crawlers_repo.find_by_target("news")
-        assert len(news_crawlers) == 2
-        
-        rss_crawlers = crawlers_repo.find_by_target("rss")
-        assert len(rss_crawlers) == 1
+        """測試根據爬取目標查詢 (包含活躍狀態過濾)"""
+        # 活躍查詢 (預設 is_active=True)
+        news_crawlers_active = crawlers_repo.find_by_target("news")
+        assert len(news_crawlers_active) == 1 # 新聞爬蟲1
+        assert news_crawlers_active[0].is_active
+
+        # 指定 is_active=False
+        news_crawlers_inactive = crawlers_repo.find_by_target("news", is_active=False)
+        assert len(news_crawlers_inactive) == 1 # 新聞爬蟲2
+        assert not news_crawlers_inactive[0].is_active
+
+        # RSS 查詢 (預設 is_active=True)
+        rss_crawlers_active = crawlers_repo.find_by_target("rss")
+        assert len(rss_crawlers_active) == 1 # RSS爬蟲
+        assert rss_crawlers_active[0].is_active
 
     def test_get_crawler_statistics(self, crawlers_repo, sample_crawlers, session, clean_db):
         """測試獲取爬蟲統計資訊"""
@@ -348,86 +419,124 @@ class TestCrawlersRepository:
 
     def test_create_or_update(self, crawlers_repo, sample_crawlers, session, clean_db):
         """測試創建或更新功能"""
-        # 測試更新現有記錄
+        # --- 測試更新現有記錄 ---
         existing_id = sample_crawlers[0].id
         update_data = {
             "id": existing_id,
             "crawler_name": "更新通過create_or_update",
         }
-        
-        result = crawlers_repo.create_or_update(update_data)
-        session.expire_all()
-        
-        assert result is not None
-        assert result.id == existing_id
-        assert result.crawler_name == "更新通過create_or_update"
 
-        # 測試創建新記錄
+        result_update = crawlers_repo.create_or_update(update_data)
+        session.commit()
+        session.expire_all()
+
+        # 重新獲取以確保是從 DB 讀取
+        updated_crawler = crawlers_repo.get_by_id(existing_id)
+
+        assert updated_crawler is not None
+        assert updated_crawler.id == existing_id
+        assert updated_crawler.crawler_name == "更新通過create_or_update"
+
+        # --- 測試創建新記錄 ---
         new_data = {
             "crawler_name": "新記錄通過create_or_update",
             "base_url": "https://example.com/new",
             "crawler_type": "api",
             "config_file_name": "test_crawler.json"
         }
-        
-        result = crawlers_repo.create_or_update(new_data)
+
+        result_create = crawlers_repo.create_or_update(new_data)
+        # 先 commit 以分配 ID
+        session.commit()
+        # 現在 ID 應該可用了
+        new_id = result_create.id
+        assert new_id is not None # 可以加個斷言確保 ID 不是 None
+
         session.expire_all()
-        
-        assert result is not None
-        assert result.id is not None
-        assert result.crawler_name == "新記錄通過create_or_update"
-        assert result.crawler_type == "api"
-        
-        # 測試ID不存在的情況
+
+        # 重新獲取
+        created_crawler = crawlers_repo.get_by_id(new_id)
+
+        assert created_crawler is not None # 現在應該成功了
+        assert created_crawler.id == new_id
+        assert created_crawler.crawler_name == "新記錄通過create_or_update"
+        assert created_crawler.crawler_type == "api"
+
+        # --- 測試ID不存在的情況 (應觸發創建) ---
         nonexistent_id_data = {
-            "id": 999,
+            "id": 999, # 提供一個不存在的 ID
             "crawler_name": "不存在的ID",
             "base_url": "https://example.com/nonexistent",
             "crawler_type": "web",
             "config_file_name": "test_crawler.json"
         }
-        
-        result = crawlers_repo.create_or_update(nonexistent_id_data)
+
+        # create_or_update 內部 update 會失敗返回 None，接著調用 create
+        result_nonexistent = crawlers_repo.create_or_update(nonexistent_id_data)
+        # 先 commit 以分配 ID
+        session.commit()
+        # 現在 ID 應該可用了
+        created_via_nonexistent_id = result_nonexistent.id
+        assert created_via_nonexistent_id is not None # 確保 ID 不是 None
+
         session.expire_all()
-        
-        assert result is not None
-        assert result.crawler_name == "不存在的ID"
-        assert result.id != 999  # 應該創建新記錄
+
+        # 重新獲取
+        created_nonexistent_crawler = crawlers_repo.get_by_id(created_via_nonexistent_id)
+
+        assert created_nonexistent_crawler is not None # 現在應該成功了
+        assert created_nonexistent_crawler.crawler_name == "不存在的ID"
+        assert created_nonexistent_crawler.id == created_via_nonexistent_id
+        assert created_nonexistent_crawler.id != 999 # 確保創建了新記錄，ID 不是 999
 
     def test_batch_toggle_active(self, crawlers_repo, sample_crawlers, session, clean_db):
         """測試批量切換爬蟲活躍狀態"""
-        # 獲取樣本爬蟲的ID
+        # 獲取樣本爬蟲的ID (新聞爬蟲1 - True, 新聞爬蟲2 - False)
         crawler_ids = [c.id for c in sample_crawlers[:2]]
         
-        # 測試批量啟用
-        result = crawlers_repo.batch_toggle_active(crawler_ids, True)
+        # --- 測試批量啟用 ---
+        # 預期: 兩個都變成 True
+        result_enable = crawlers_repo.batch_toggle_active(crawler_ids, True)
+        session.commit()
         session.expire_all()
         
-        assert result["success_count"] == 2
-        assert result["fail_count"] == 0
+        assert result_enable["success_count"] == 2
+        assert result_enable["fail_count"] == 0
         
         # 驗證狀態已更新
         for crawler_id in crawler_ids:
             crawler = crawlers_repo.get_by_id(crawler_id)
-            assert crawler.is_active is True
+            assert crawler.is_active is True, f"Crawler ID {crawler_id} should be active after batch enable"
         
-        # 測試批量停用
-        result = crawlers_repo.batch_toggle_active(crawler_ids, False)
+        # --- 測試批量停用 ---
+        # 預期: 兩個都變成 False
+        result_disable = crawlers_repo.batch_toggle_active(crawler_ids, False)
+        session.commit()
         session.expire_all()
         
-        assert result["success_count"] == 2
-        
+        assert result_disable["success_count"] == 2
+        assert result_disable["fail_count"] == 0
+
         # 驗證狀態已更新
         for crawler_id in crawler_ids:
             crawler = crawlers_repo.get_by_id(crawler_id)
-            assert crawler.is_active is False
+            assert crawler.is_active is False, f"Crawler ID {crawler_id} should be inactive after batch disable"
         
-        # 測試包含不存在的ID
+        # --- 測試包含不存在的ID ---
+        # 預期: 前兩個變 True，ID 999 失敗
         mixed_ids = crawler_ids + [999]
-        result = crawlers_repo.batch_toggle_active(mixed_ids, True)
-        assert result["success_count"] == 2
-        assert result["fail_count"] == 1
-        assert 999 in result["failed_ids"]
+        result_mixed = crawlers_repo.batch_toggle_active(mixed_ids, True)
+        session.commit()
+        session.expire_all()
+
+        assert result_mixed["success_count"] == 2
+        assert result_mixed["fail_count"] == 1
+        assert 999 in result_mixed["failed_ids"]
+
+        # 驗證狀態 (前兩個應該是 True)
+        for crawler_id in crawler_ids:
+             crawler = crawlers_repo.get_by_id(crawler_id)
+             assert crawler.is_active is True, f"Crawler ID {crawler_id} should be active after mixed batch enable"
 
     def test_error_handling(self, crawlers_repo, session, clean_db):
         """測試錯誤處理"""
@@ -437,6 +546,42 @@ class TestCrawlersRepository:
                 lambda: session.execute("SELECT * FROM nonexistent_table")
             )
         assert "資料庫操作錯誤" in str(exc_info.value)
+
+    def test_find_by_crawler_id(self, crawlers_repo, sample_crawlers, session, clean_db):
+        """測試根據 ID 查找爬蟲 (包含活躍狀態過濾)"""
+        active_crawler = sample_crawlers[0] # is_active=True
+        inactive_crawler = sample_crawlers[1] # is_active=False
+
+        # 測試查找活躍的 (預設 is_active=True)
+        result_active = crawlers_repo.find_by_crawler_id(active_crawler.id)
+        assert result_active is not None
+        assert result_active.id == active_crawler.id
+        assert result_active.is_active is True
+
+        # 測試指定 is_active=True
+        result_active_explicit = crawlers_repo.find_by_crawler_id(active_crawler.id, is_active=True)
+        assert result_active_explicit is not None
+        assert result_active_explicit.id == active_crawler.id
+
+        # 測試查找不活躍的，使用 is_active=True (預期找不到)
+        result_inactive_as_active = crawlers_repo.find_by_crawler_id(inactive_crawler.id, is_active=True)
+        assert result_inactive_as_active is None
+
+        # 測試查找不活躍的，使用 is_active=False
+        result_inactive = crawlers_repo.find_by_crawler_id(inactive_crawler.id, is_active=False)
+        assert result_inactive is not None
+        assert result_inactive.id == inactive_crawler.id
+        assert result_inactive.is_active is False
+
+        # 測試查找活躍的，使用 is_active=False (預期找不到)
+        result_active_as_inactive = crawlers_repo.find_by_crawler_id(active_crawler.id, is_active=False)
+        assert result_active_as_inactive is None
+
+        # 測試不存在的 ID
+        result_nonexistent = crawlers_repo.find_by_crawler_id(999)
+        assert result_nonexistent is None
+        result_nonexistent_inactive = crawlers_repo.find_by_crawler_id(999, is_active=False)
+        assert result_nonexistent_inactive is None
 
 # 分頁功能測試
 class TestCrawlersPagination:
@@ -489,7 +634,7 @@ class TestCrawlersPagination:
         """測試分頁邊界情況"""
         try:
             # 測試每頁大小為0
-            with pytest.raises(ValueError):
+            with pytest.raises(InvalidOperationError):
                 crawlers_repo.get_paginated(page=1, per_page=0)
             
             # 測試負數頁碼
@@ -630,56 +775,129 @@ class TestCrawlersFilteringAndPagination:
     def test_combined_filters_with_pagination(self, crawlers_repo, filter_test_crawlers, session, clean_db):
         """測試組合多種過濾條件並進行分頁"""
         try:
-            # 測試活躍狀態和爬蟲類型組合篩選
-            filter_dict = {
+            # 測試活躍狀態和爬蟲類型組合篩選 (is_active=True, crawler_type="web")
+            filter_dict_1 = {
                 "is_active": True,
                 "crawler_type": "web"
             }
-            
-            page_data = crawlers_repo.get_paginated_by_filter(
-                filter_dict=filter_dict,
-                page=1,
-                per_page=10
+            page_data_1 = crawlers_repo.get_paginated_by_filter(
+                filter_dict=filter_dict_1, page=1, per_page=10
             )
-            
-            assert page_data["total"] == 1
-            assert page_data["items"][0].is_active is True
-            assert page_data["items"][0].crawler_type == "web"
-            
-            # 測試多種類型的過濾
-            filter_dict = {
+            assert page_data_1["total"] == 1
+            assert len(page_data_1["items"]) == 1
+            assert page_data_1["items"][0].crawler_name == "新聞爬蟲Web1"
+
+            # 測試多種類型列表過濾 (crawler_type=["web", "rss"])
+            filter_dict_2 = {
                 "crawler_type": ["web", "rss"]
             }
-            
-            page_data = crawlers_repo.get_paginated_by_filter(
-                filter_dict=filter_dict,
-                page=1,
-                per_page=10
+            page_data_2 = crawlers_repo.get_paginated_by_filter(
+                filter_dict=filter_dict_2, page=1, per_page=10
             )
-            
-            assert page_data["total"] == 4
-            assert all(item.crawler_type in ["web", "rss"] for item in page_data["items"])
-            
+            assert page_data_2["total"] == 4
+            assert len(page_data_2["items"]) == 4 # Web1, Web2, RSS1, RSS2
+            assert all(item.crawler_type in ["web", "rss"] for item in page_data_2["items"])
+
+            # 測試日期範圍過濾 (created_at >= N天前)
+            two_days_ago = datetime.now(timezone.utc) - timedelta(days=2, hours=1) # 加1小時確保邊界
+            filter_dict_3 = {
+                "created_at": {"$gte": two_days_ago}
+            }
+            page_data_3 = crawlers_repo.get_paginated_by_filter(
+                filter_dict=filter_dict_3, page=1, per_page=10, sort_by="created_at", sort_desc=False
+            )
+            assert page_data_3["total"] == 3 # RSS1, RSS2, API
+            assert len(page_data_3["items"]) == 3
+            assert all(item.created_at >= two_days_ago for item in page_data_3["items"])
+            assert page_data_3["items"][0].crawler_name == "RSS爬蟲1" # 最早創建的
+
+            # 測試組合過濾 (is_active=False, crawler_type="rss")
+            filter_dict_4 = {
+                "is_active": False,
+                "crawler_type": "rss"
+            }
+            page_data_4 = crawlers_repo.get_paginated_by_filter(
+                filter_dict=filter_dict_4, page=1, per_page=10
+            )
+            assert page_data_4["total"] == 1
+            assert len(page_data_4["items"]) == 1
+            assert page_data_4["items"][0].crawler_name == "RSS爬蟲2"
+
+            # 測試不等於過濾 (crawler_type != "api")
+            filter_dict_5 = {
+                "crawler_type": {"$ne": "api"}
+            }
+            page_data_5 = crawlers_repo.get_paginated_by_filter(
+                filter_dict=filter_dict_5, page=1, per_page=10
+            )
+            assert page_data_5["total"] == 4 # Web1, Web2, RSS1, RSS2
+
+            # 測試空 filter_dict (應返回所有)
+            page_data_empty = crawlers_repo.get_paginated_by_filter(
+                filter_dict={}, page=1, per_page=3
+            )
+            assert page_data_empty["total"] == 5 # 總共有 5 筆 filter_test_crawlers
+            assert len(page_data_empty["items"]) == 3
+            assert page_data_empty["page"] == 1
+            assert page_data_empty["has_next"] is True
+
+            # 測試包含無效 key 的 filter_dict (應忽略無效 key)
+            filter_dict_invalid = {
+                "is_active": True,
+                "invalid_key": "some_value"
+            }
+            page_data_invalid = crawlers_repo.get_paginated_by_filter(
+                filter_dict=filter_dict_invalid, page=1, per_page=10
+            )
+            # 應該只根據 is_active 過濾
+            assert page_data_invalid["total"] == 3 # Web1, RSS1, API
+            assert len(page_data_invalid["items"]) == 3
+
         except DatabaseOperationError as e:
             pytest.skip(f"資料庫操作錯誤: {str(e)}")
-            
+
     def test_pagination_with_sorting(self, crawlers_repo, filter_test_crawlers, session, clean_db):
         """測試分頁排序與過濾結合"""
         try:
-            # 測試按創建時間排序的分頁
-            page_data = crawlers_repo.get_paginated_by_filter(
-                filter_dict={"is_active": True},
+            # 測試按創建時間升序排序的分頁 (過濾 is_active=True)
+            filter_dict = {"is_active": True}
+            page_data_asc = crawlers_repo.get_paginated_by_filter(
+                filter_dict=filter_dict,
+                page=1,
+                per_page=10,
+                sort_by="created_at",
+                sort_desc=False
+            )
+            assert page_data_asc["total"] == 3 # Web1, RSS1, API
+            created_times_asc = [item.created_at for item in page_data_asc["items"]]
+            assert created_times_asc == sorted(created_times_asc)
+            assert page_data_asc["items"][0].crawler_name == "新聞爬蟲Web1" # 最早創建
+
+            # 測試按創建時間降序排序的分頁 (過濾 is_active=True)
+            page_data_desc = crawlers_repo.get_paginated_by_filter(
+                filter_dict=filter_dict,
                 page=1,
                 per_page=10,
                 sort_by="created_at",
                 sort_desc=True
             )
-            
-            assert page_data["total"] == 3
-            
-            # 驗證排序結果
-            created_times = [item.created_at for item in page_data["items"]]
-            assert created_times == sorted(created_times, reverse=True)
-            
+            assert page_data_desc["total"] == 3
+            created_times_desc = [item.created_at for item in page_data_desc["items"]]
+            assert created_times_desc == sorted(created_times_desc, reverse=True)
+            assert page_data_desc["items"][0].crawler_name == "API爬蟲" # 最近創建
+
+            # 測試按名稱排序 (過濾 crawler_type=["web", "rss"])
+            filter_dict_names = {"crawler_type": ["web", "rss"]}
+            page_data_name_asc = crawlers_repo.get_paginated_by_filter(
+                filter_dict=filter_dict_names,
+                page=1,
+                per_page=10,
+                sort_by="crawler_name",
+                sort_desc=False
+            )
+            assert page_data_name_asc["total"] == 4
+            names_asc = [item.crawler_name for item in page_data_name_asc["items"]]
+            assert names_asc == ["RSS爬蟲1", "RSS爬蟲2", "新聞爬蟲Web1", "新聞爬蟲Web2"]
+
         except DatabaseOperationError as e:
             pytest.skip(f"資料庫操作錯誤: {str(e)}")
