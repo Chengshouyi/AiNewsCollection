@@ -294,7 +294,7 @@ class TestBaseService:
         """創建測試用的資料庫引擎 (使用文件型 SQLite)"""
         # Use a file-based SQLite DB for better transaction persistence testing
         db_file = "./test_db_base_service.sqlite"
-        engine = create_engine(f'sqlite:///{db_file}')
+        engine = create_engine('sqlite:///:memory:')
         # Ensure the file is cleaned up before tests run (optional, if needed)
         # import os
         # if os.path.exists(db_file): os.remove(db_file)
