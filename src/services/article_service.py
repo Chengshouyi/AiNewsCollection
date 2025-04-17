@@ -29,10 +29,10 @@ class ArticleService(BaseService[Articles]):
             'Article': (ArticlesRepository, Articles)
         }
     
-    def _get_repository(self) -> ArticlesRepository:
+    def _get_repositories(self) -> ArticlesRepository:
         """獲取文章資料庫訪問對象"""
-        repo = super()._get_repository('Article')
-        return cast(ArticlesRepository, repo)
+        repo = cast(ArticlesRepository, super()._get_repository('Article'))
+        return repo
     
     def validate_article_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
         """驗證文章資料
@@ -50,8 +50,8 @@ class ArticleService(BaseService[Articles]):
     def create_article(self, article_data: Dict[str, Any]) -> Dict[str, Any]:
         """創建新文章，若連結已存在則更新"""
         try:
-            with self._transaction():
-                article_repo = self._get_repository()
+            with self._transaction() as session:
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -71,6 +71,7 @@ class ArticleService(BaseService[Articles]):
                     validated_data = self.validate_article_data(article_data, is_update=True)
                     updated_article = article_repo.update(existing_article.id, validated_data)
                     if updated_article:
+                        session.flush()
                         return {
                             'success': True,
                             'message': '文章已存在，更新成功',
@@ -86,6 +87,7 @@ class ArticleService(BaseService[Articles]):
                     validated_data = self.validate_article_data(article_data, is_update=False)
                     new_article = article_repo.create(validated_data)
                     if new_article:
+                        session.flush()
                         return {
                             'success': True,
                             'message': '文章創建成功',
@@ -114,8 +116,8 @@ class ArticleService(BaseService[Articles]):
     def batch_create_articles(self, articles_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """批量創建新文章 (儲存庫應處理創建或更新邏輯)"""
         try:
-            with self._transaction():
-                article_repo = self._get_repository()
+            with self._transaction() as session:
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -129,6 +131,8 @@ class ArticleService(BaseService[Articles]):
                     f"更新 {result['update_count']} 筆，"
                     f"失敗 {result['fail_count']} 筆"
                 )
+                if result['success_count'] > 0:
+                    session.flush()
                 return {
                     'success': True,
                     'message': message,
@@ -151,7 +155,7 @@ class ArticleService(BaseService[Articles]):
         """獲取所有文章"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -178,7 +182,7 @@ class ArticleService(BaseService[Articles]):
         """根據ID獲取文章"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -210,8 +214,8 @@ class ArticleService(BaseService[Articles]):
     def update_article(self, article_id: int, article_data: Dict[str, Any]) -> Dict[str, Any]:
         """更新文章"""
         try:
-            with self._transaction():
-                article_repo = self._get_repository()
+            with self._transaction() as session:
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -231,6 +235,7 @@ class ArticleService(BaseService[Articles]):
                             'article': None
                         }
                     else:
+                        session.flush()
                         return {
                             'success': True,
                             'message': '文章更新成功 (或無變更)',
@@ -259,8 +264,8 @@ class ArticleService(BaseService[Articles]):
     def delete_article(self, article_id: int) -> Dict[str, Any]:
         """刪除文章"""
         try:
-            with self._transaction():
-                article_repo = self._get_repository()
+            with self._transaction() as session:
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -268,6 +273,8 @@ class ArticleService(BaseService[Articles]):
                     }
                 
                 success = article_repo.delete(article_id)
+                if success:
+                    session.flush()
                 return {
                     'success': success,
                     'message': '文章刪除成功' if success else '文章不存在或刪除失敗',
@@ -284,7 +291,7 @@ class ArticleService(BaseService[Articles]):
         """根據連結獲取文章"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -316,7 +323,7 @@ class ArticleService(BaseService[Articles]):
         """分頁獲取文章"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -349,7 +356,7 @@ class ArticleService(BaseService[Articles]):
         """獲取所有AI相關的文章"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -375,7 +382,7 @@ class ArticleService(BaseService[Articles]):
         """根據分類獲取文章"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -401,7 +408,7 @@ class ArticleService(BaseService[Articles]):
         """根據標籤獲取文章"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -438,8 +445,8 @@ class ArticleService(BaseService[Articles]):
     def batch_update_articles_by_link(self, article_data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """批量更新文章 (依連結)"""
         try:
-            with self._transaction():
-                article_repo = self._get_repository()
+            with self._transaction() as session:
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -453,9 +460,11 @@ class ArticleService(BaseService[Articles]):
                         'message': '批量更新文章失敗 (內部錯誤)',
                         'resultMsg': None
                     }
+                if result['success_count'] > 0:
+                    session.flush()
                 return {
                     'success': True,
-                    'message': f"批量更新文章成功: {result.get('success_count', 'N/A')} 筆成功, {result.get('fail_count', 'N/A')} 筆失敗",
+                    'message': f"批量更新文章成功: {result.get('success_count', 0)} 筆成功, {result.get('fail_count', 0)} 筆失敗",
                     'resultMsg': result
                 }
         except ValidationError as e:
@@ -475,8 +484,8 @@ class ArticleService(BaseService[Articles]):
     def batch_update_articles_by_ids(self, article_ids: List[int], article_data: Dict[str, Any]) -> Dict[str, Any]:
         """批量更新文章 (依ID列表，使用相同資料)"""
         try:
-            with self._transaction():
-                article_repo = self._get_repository()
+            with self._transaction() as session:
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -491,9 +500,11 @@ class ArticleService(BaseService[Articles]):
                         'message': '批量更新文章失敗 (內部錯誤)',
                         'resultMsg': None
                     }
+                if result['success_count'] > 0:
+                    session.flush()
                 return {
                     'success': True,
-                    'message': f"批量更新文章成功: {result.get('success_count', 'N/A')} 筆成功, {result.get('fail_count', 'N/A')} 筆失敗",
+                    'message': f"批量更新文章成功: {result.get('success_count', 0)} 筆成功, {result.get('fail_count', 0)} 筆失敗",
                     'resultMsg': result
                 }
         except ValidationError as e:
@@ -512,14 +523,16 @@ class ArticleService(BaseService[Articles]):
     def delete_article_by_link(self, link: str) -> Dict[str, Any]:
         """根據連結刪除文章"""
         try:
-            with self._transaction():
-                article_repo = self._get_repository()
+            with self._transaction() as session:
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
                         'message': '無法取得資料庫存取器',
                     }
                 success = article_repo.delete_by_link(link)
+                if success:
+                    session.flush()
                 return {
                     'success': success,
                     'message': '刪除文章成功' if success else '刪除文章失敗 (可能不存在)'
@@ -542,8 +555,8 @@ class ArticleService(BaseService[Articles]):
             }
         
         try:
-            with self._transaction():
-                article_repo = self._get_repository()
+            with self._transaction() as session:
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -566,7 +579,8 @@ class ArticleService(BaseService[Articles]):
 
                 fail_count = len(missing_ids) + len(failed_ids)
                 success = fail_count == 0
-
+                if success:
+                    session.flush()
                 return {
                     'success': success,
                     'message': f'批量刪除文章完成: {deleted_count} 成功, {fail_count} 失敗 (不存在: {len(missing_ids)}, 錯誤: {len(failed_ids)})',
@@ -589,8 +603,8 @@ class ArticleService(BaseService[Articles]):
     def update_article_tags(self, article_id: int, tags: List[str]) -> Dict[str, Any]:
         """更新文章標籤"""
         try:
-            with self._transaction():
-                article_repo = self._get_repository()
+            with self._transaction() as session:
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -616,6 +630,8 @@ class ArticleService(BaseService[Articles]):
                             'message': '文章標籤更新成功 (或無變更)',
                             'article': existing_check
                         }
+                if updated_article:
+                    session.flush()
                 return {
                     'success': True,
                     'message': '更新文章標籤成功',
@@ -634,7 +650,7 @@ class ArticleService(BaseService[Articles]):
         """獲取文章統計資訊"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -684,7 +700,7 @@ class ArticleService(BaseService[Articles]):
         """進階搜尋文章"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -759,7 +775,7 @@ class ArticleService(BaseService[Articles]):
         """
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -820,7 +836,7 @@ class ArticleService(BaseService[Articles]):
         """根據標題搜索文章"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -854,7 +870,7 @@ class ArticleService(BaseService[Articles]):
         """根據關鍵字搜索文章 (標題或內容)"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -888,7 +904,7 @@ class ArticleService(BaseService[Articles]):
         """獲取各來源的爬取統計"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -914,8 +930,8 @@ class ArticleService(BaseService[Articles]):
     def update_article_scrape_status(self, link: str, is_scraped: bool = True) -> Dict[str, Any]:
         """更新文章爬取狀態 (依連結)"""
         try:
-            with self._transaction():
-                article_repo = self._get_repository()
+            with self._transaction() as session:
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -924,6 +940,7 @@ class ArticleService(BaseService[Articles]):
 
                 success = article_repo.update_scrape_status(link, is_scraped)
                 if success:
+                    session.flush()
                     return {
                         'success': True,
                         'message': '更新文章爬取狀態成功'
@@ -949,8 +966,8 @@ class ArticleService(BaseService[Articles]):
                 'resultMsg': {'success_count': 0, 'fail_count': 0}
             }
         try:
-            with self._transaction():
-                article_repo = self._get_repository()
+            with self._transaction() as session:
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -961,7 +978,8 @@ class ArticleService(BaseService[Articles]):
                 result = article_repo.batch_mark_as_scraped(links)
                 success_count = result.get('success_count', 0)
                 fail_count = result.get('fail_count', 0)
-
+                if success_count > 0:
+                    session.flush()
                 return {
                     'success': fail_count == 0,
                     'message': f"批量標記文章為已爬取完成: {success_count} 成功, {fail_count} 失敗",
@@ -980,7 +998,7 @@ class ArticleService(BaseService[Articles]):
         """獲取未爬取的文章"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -1017,7 +1035,7 @@ class ArticleService(BaseService[Articles]):
         """獲取已爬取的文章"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -1054,7 +1072,7 @@ class ArticleService(BaseService[Articles]):
         """計算未爬取的文章數量"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,
@@ -1085,7 +1103,7 @@ class ArticleService(BaseService[Articles]):
         """計算已爬取的文章數量"""
         try:
             with self._transaction():
-                article_repo = self._get_repository()
+                article_repo = self._get_repositories()
                 if not article_repo:
                     return {
                         'success': False,

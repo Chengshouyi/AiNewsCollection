@@ -404,6 +404,12 @@ class BaseRepository(Generic[T], ABC):
                 lambda: self.session.delete(entity),
                 err_msg=f"刪除ID為{entity_id}的資料庫物件時發生錯誤"
             )
+            # 將實體從 Session 的 Identity Map 中移除，避免快取問題
+            self.execute_query(
+                lambda: self.session.expunge(entity),
+                err_msg=f"刪除ID為{entity_id}的資料庫物件時從session中移除時發生錯誤"
+            )
+            logger.debug(f"已從 session 中移除 (expunge) ID 為 {entity_id} 的物件")
             return True
         except IntegrityError as e:
             self.execute_query(
