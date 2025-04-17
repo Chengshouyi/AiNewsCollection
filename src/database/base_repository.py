@@ -1,10 +1,11 @@
+from os import error
 from typing import List, Optional, TypeVar, Generic, Type, Dict, Any, Union, Callable, cast
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 from src.models.base_model import Base
 from src.error.errors import ValidationError, InvalidOperationError, DatabaseOperationError, IntegrityValidationError
-from sqlalchemy import desc, asc
+from sqlalchemy import desc, asc, and_, or_, not_
 import logging
 from src.database.database_manager import check_session
 from abc import ABC, abstractmethod
@@ -13,6 +14,9 @@ from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
 from sqlalchemy.orm.attributes import flag_modified
 from src.utils.repository_utils import deep_update_dict_field
 import copy
+# 導入 Pydantic 的 ValidationError
+from pydantic_core import ValidationError as PydanticValidationError
+from datetime import datetime, timezone # 確保導入 datetime 和 timezone
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -99,7 +103,7 @@ class BaseRepository(Generic[T], ABC):
         raise NotImplementedError("子類必須實現此方法提供用於驗證的schema類")
     
         # --- 公開驗證方法 (供 API 層和內部使用) ---
-    def validate_data(self, entity_data: Dict[str, Any], schema_type: SchemaType) -> Dict[str, Any]:
+    def validate_data(self, entity_data: Dict[str, Any], schema_type: SchemaType) -> Optional[Dict[str, Any]]:
         """
         公開方法：使用 Pydantic Schema 驗證資料。
         根據 schema_type 返回包含預設值 (CREATE) 或僅包含傳入欄位 (UPDATE) 的字典。
@@ -110,12 +114,9 @@ class BaseRepository(Generic[T], ABC):
 
         Returns:
             Dict[str, Any]: 驗證並處理過的字典資料。
-                success: 是否成功
-                message: 消息
-                data: 驗證後的資料
-
         Raises:
-            ValidationError: 如果 Pydantic 驗證失敗。
+            ValidationError: 如果資料驗證失敗
+            Exception: 其他非預期錯誤
         """
         schema_class_untyped = self.get_schema_class(schema_type)
         # 使用 cast 解決型別檢查問題
@@ -135,23 +136,71 @@ class BaseRepository(Generic[T], ABC):
                 validated_dict = instance.model_dump()
                 logger.debug(f"創建資料驗證成功 (含預設值): {validated_dict}")
 
-            return {
-                "success": True,
-                "message": "資料驗證成功",
-                "data": validated_dict
-            }
-        except ValidationError as e:
-            # 包裝 Pydantic 錯誤
-            error_msg = f"{schema_type.name} 資料驗證失敗: {e}"
+            return validated_dict
+        except PydanticValidationError as e: # 明確捕獲 Pydantic 的 ValidationError
+            # 包裝 Pydantic 錯誤為自定義的 ValidationError
+            error_msg = f"{schema_type.name} 資料驗證失敗: {str(e)}"
             logger.error(error_msg)
-            raise ValidationError(error_msg) from e
+            raise ValidationError(error_msg) from e # 拋出自定義 ValidationError
+        except ValidationError as e:
+            error_msg = f"{schema_type.name} 資料驗證失敗: {str(e)}"
+            logger.error(error_msg)
+            raise e
         except Exception as e:
-             error_msg = f"執行 validate_data 時發生非預期錯誤: {str(e)}"
-             logger.error(error_msg, exc_info=True)
-             raise DatabaseOperationError(error_msg) from e
+            # 將其他未預期錯誤也包裝為自定義 ValidationError
+            error_msg = f"執行 validate_data 時發生非預期錯誤: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            raise ValidationError(error_msg) from e # 拋出自定義 ValidationError
         
     
     # --- 受保護的輔助和內部方法 ---
+    def _apply_filters(self, query, filter_criteria: Dict[str, Any]):
+        """將過濾條件應用到 SQLAlchemy 查詢對象"""
+        if not filter_criteria:
+            return query
+
+        conditions = []
+        for field, value in filter_criteria.items():
+            if not hasattr(self.model_class, field):
+                logger.warning(f"過濾條件中的欄位 '{field}' 在模型 {self.model_class.__name__} 中不存在，將忽略此條件。")
+                continue
+
+            column = getattr(self.model_class, field)
+
+            if isinstance(value, dict):
+                # 處理 MongoDB 風格的操作符
+                for operator, operand in value.items():
+                    if operator == "$in":
+                        if isinstance(operand, list):
+                            conditions.append(column.in_(operand))
+                        else:
+                            logger.warning(f"欄位 '{field}' 的 $in 操作符需要一個列表作為操作數，收到 {type(operand)}，忽略。")
+                    elif operator == "$nin":
+                        if isinstance(operand, list):
+                            conditions.append(not_(column.in_(operand)))
+                        else:
+                            logger.warning(f"欄位 '{field}' 的 $nin 操作符需要一個列表作為操作數，收到 {type(operand)}，忽略。")
+                    elif operator == "$ne":
+                        conditions.append(column != operand)
+                    elif operator == "$gt":
+                        conditions.append(column > operand)
+                    elif operator == "$gte":
+                        conditions.append(column >= operand)
+                    elif operator == "$lt":
+                        conditions.append(column < operand)
+                    elif operator == "$lte":
+                        conditions.append(column <= operand)
+                    else:
+                        logger.warning(f"欄位 '{field}' 的操作符 '{operator}' 不支援，忽略。")
+            else:
+                # 默認相等比較
+                conditions.append(column == value)
+
+        if conditions:
+            return query.filter(and_(*conditions))
+        else:
+            return query
+
     def _validate_and_supplement_required_fields(
         self,
         pydantic_validated_data: Dict[str, Any], # 接收已通過 Pydantic 的資料
@@ -233,12 +282,13 @@ class BaseRepository(Generic[T], ABC):
             logger.debug(f"實體準備創建 (待提交): {entity}")
             return entity
         except IntegrityError as e:
+            error_msg = f"Repository._create_internal: 完整性錯誤: {str(e)}"
+            logger.error(error_msg)
             self._handle_integrity_error(e, f"創建{self.model_class.__name__}時")
-            # 注意：Rollback 應該由 Service 層的 _transaction 處理
-            return None
-        except ValidationError as e: # 捕捉 _validate_and_supplement 的錯誤
-            logger.error(f"Repository._create_internal: 必填欄位值驗證失敗: {str(e)}")
-            raise # 重新拋出
+        except ValidationError as e: 
+            error_msg = f"Repository._create_internal: 必填欄位值驗證失敗: {str(e)}"
+            logger.error(error_msg)
+            raise e
         except Exception as e:
             error_msg = f"Repository._create_internal: 未預期錯誤: {str(e)}"
             logger.error(error_msg, exc_info=True)
@@ -258,11 +308,21 @@ class BaseRepository(Generic[T], ABC):
     
     
     def _update_internal(self, entity_id: Any, update_payload: Dict[str, Any]) -> Optional[T]:
-        """內部更新，假設 update_payload 已通過 Pydantic Update Schema 驗證"""
+        """內部更新，假設 update_payload 已通過 Pydantic Update Schema 驗證
+        
+        Args:
+            entity_id: 實體ID
+            update_payload: 更新資料
+            
+        Returns:
+            更新的實體或 None
+        """
         entity = self.get_by_id(entity_id)
         if not entity:
-            logger.warning(f"找不到 ID={entity_id} 的實體，無法更新。")
-            return None
+            error_msg = f"找不到ID為{entity_id}的實體，無法更新"
+            logger.warning(error_msg)
+            raise DatabaseOperationError(error_msg)
+        
         try:
             update_schema_class = cast(Type[BaseUpdateSchema], self.get_schema_class(SchemaType.UPDATE))
             immutable_fields = update_schema_class.get_immutable_fields()
@@ -275,33 +335,43 @@ class BaseRepository(Generic[T], ABC):
                     current_value = getattr(entity, key)
 
                     if current_value != value:
-                        print(f"\n--- Applying standard update for key: {key} ---")
-                        print(f"Old value: {current_value}")
-                        print(f"New value: {value}")
+                        # print(f"\n--- Applying standard update for key: {key} ---")
+                        # print(f"Old value: {current_value}")
+                        # print(f"New value: {value}")
                         setattr(entity, key, value) # <-- Use setattr for all
-                        print(f"Value after setattr (may be cached for JSON): {getattr(entity, key)}")
-                        print(f"--- Standard update applied for key: {key} ---\n")
+                        # print(f"Value after setattr (may be cached for JSON): {getattr(entity, key)}")
+                        # print(f"--- Standard update applied for key: {key} ---\n")
                         entity_modified = True
                         # NOTE: flag_modified must be handled by the caller for mutable types like JSON
 
             if not entity_modified:
-                logger.debug(f"實體 ID={entity_id} 沒有變更，跳過資料庫操作。")
-                return entity
-
-            logger.debug(f"實體準備更新 (待提交): {entity}")
-            print(f"Value of entity.task_args before returning from _update_internal: {entity.task_args}")
+                msg = f"實體 ID={entity_id} 沒有變更，跳過資料庫操作。"
+                logger.debug(msg)
+                return None # 返回 None 表示沒有更新發生
+            
+            # --- 手動更新 updated_at ---
+            if hasattr(entity, 'updated_at'):
+                entity.updated_at = datetime.now(timezone.utc)
+                logger.debug(f"手動更新 updated_at 為 {entity.updated_at}")
+            # --- 手動更新結束 ---
+            
+            msg = f"實體準備更新 (待提交): {entity}"
+            logger.debug(msg)
+            # print(f"Value of entity.task_args before returning from _update_internal: {entity.task_args}")
             return entity
         except IntegrityError as e:
+            error_msg = f"更新{self.model_class.__name__} (ID={entity_id}) 時發生完整性錯誤: {str(e)}"
+            logger.error(error_msg)
             self._handle_integrity_error(e, f"更新{self.model_class.__name__} (ID={entity_id}) 時")
-            # 注意：Rollback 應該由 Service 層的 _transaction 處理
-            return None
+
         except ValidationError as e: # 捕捉 _validate_and_supplement 的錯誤 (如果使用)
-            logger.error(f"Repository._update_internal: 必填欄位值驗證失敗 (ID={entity_id}): {str(e)}")
-            raise # 重新拋出
+            error_msg = f"Repository._update_internal: 必填欄位值驗證失敗 (ID={entity_id}): {str(e)}"
+            logger.error(error_msg)
+            raise e
         except Exception as e:
             error_msg = f"Repository._update_internal: 未預期錯誤 (ID={entity_id}): {str(e)}"
             logger.error(error_msg, exc_info=True)
-            raise DatabaseOperationError(error_msg) from e
+            raise DatabaseOperationError(error_msg)
     
     @abstractmethod
     def update(self, entity_id: Any, entity_data: Dict[str, Any]) -> Optional[T]:
@@ -354,10 +424,11 @@ class BaseRepository(Generic[T], ABC):
         
         return False
         
-    def get_all(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List[T]:
-        """獲取所有實體，支援分頁和排序
+    def get_all(self, filter_criteria: Optional[Dict[str, Any]] = None, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List[T]:
+        """獲取所有實體，支援過濾、分頁和排序
 
         Args:
+            filter_criteria: 過濾條件字典
             limit: 限制返回結果數量
             offset: 跳過結果數量
             sort_by: 排序欄位名稱
@@ -368,6 +439,9 @@ class BaseRepository(Generic[T], ABC):
         """
         def query_builder():
             query = self.session.query(self.model_class)
+            
+            # 應用過濾
+            query = self._apply_filters(query, filter_criteria or {})
             
             # 處理排序
             if sort_by:
@@ -408,11 +482,12 @@ class BaseRepository(Generic[T], ABC):
             exception_class=DatabaseOperationError
         )
     
-    def get_paginated(self, page: int = 1, per_page: int = 10, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
-        """獲取分頁數據"""
+    def get_paginated(self, filter_criteria: Optional[Dict[str, Any]] = None, page: int = 1, per_page: int = 10, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
+        """獲取分頁數據，支援過濾和排序"""
         # 驗證分頁參數
         if per_page <= 0:
-            raise ValueError("每頁記錄數必須大於0")
+            # 使用 InvalidOperationError 替換 ValueError
+            raise InvalidOperationError("每頁記錄數必須大於0")
         if page <= 0:
             page = 1
         
@@ -422,6 +497,9 @@ class BaseRepository(Generic[T], ABC):
         # 構建查詢
         query = self.session.query(self.model_class)
         
+        # 應用過濾
+        query = self._apply_filters(query, filter_criteria or {})
+
         # 添加排序
         if sort_by:
             if not hasattr(self.model_class, sort_by):
@@ -457,4 +535,51 @@ class BaseRepository(Generic[T], ABC):
         """找出所有實體的別名方法"""
         # 避免嵌套使用 execute_query
         return self.get_all(*args, **kwargs)
+
+    def get_by_filter(self, filter_criteria: Dict[str, Any], sort_by: Optional[str] = None, sort_desc: bool = False) -> List[T]:
+        """根據過濾條件查找實體列表
+        
+        Args:
+            filter_criteria: 過濾條件字典
+            sort_by: 排序欄位名稱
+            sort_desc: 是否降序排列
+            
+        Returns:
+            符合條件的實體列表
+        """
+        def query_builder():
+            query = self.session.query(self.model_class)
+            
+            # 應用過濾
+            query = self._apply_filters(query, filter_criteria or {})
+            
+            # 處理排序
+            if sort_by:
+                if not hasattr(self.model_class, sort_by):
+                    raise InvalidOperationError(f"無效的排序欄位: {sort_by}")
+                order_column = getattr(self.model_class, sort_by)
+                if sort_desc:
+                    query = query.order_by(desc(order_column))
+                else:
+                    query = query.order_by(asc(order_column))
+            else:
+                # 預設排序 (如果需要)
+                try:
+                    created_at_attr = getattr(self.model_class, 'created_at', None)
+                    if created_at_attr is not None:
+                        query = query.order_by(desc(created_at_attr))
+                    else:
+                        id_attr = getattr(self.model_class, 'id', None)
+                        if id_attr is not None:
+                            query = query.order_by(desc(id_attr))
+                except (AttributeError, TypeError):
+                    pass
+            
+            return query.all()
+
+        return self.execute_query(
+            query_builder,
+            err_msg=f"根據過濾條件 {filter_criteria} 查找資料時發生錯誤",
+            exception_class=DatabaseOperationError
+        )
 

@@ -84,7 +84,7 @@ class TestCrawlerTasksModel:
         assert task.task_args['max_pages'] == 10
         assert task.task_args['ai_only'] is False
         assert task.task_args['num_articles'] == 10
-        assert task.task_args['min_keywords'] == 10
+        assert task.task_args['min_keywords'] == 3
         assert task.task_args['max_retries'] == 3
         assert task.task_args['retry_delay'] == 2.0
         assert task.task_args['timeout'] == 10

@@ -118,9 +118,8 @@ class Articles(Base, BaseEntity):
         return f"<Article(id={self.id}, title='{self.title[:30]}{'...' if len(self.title) > 30 else ''}', link='{self.link}')>"
     
     def to_dict(self):
-        article_dict = super().to_dict()
-
-        article_dict.update({
+        return {
+            **super().to_dict(),
             'title': self.title,
             'summary': self.summary,
             'content': self.content,
@@ -138,6 +137,4 @@ class Articles(Base, BaseEntity):
             'scrape_error': self.scrape_error,
             'last_scrape_attempt': self.last_scrape_attempt,
             'task_id': self.task_id
-        })
-
-        return article_dict
+        }
