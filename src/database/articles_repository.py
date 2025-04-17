@@ -1,14 +1,14 @@
 from src.database.base_repository import BaseRepository, SchemaType
 from src.models.articles_model import Articles
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
-from typing import Optional, List, Dict, Any, Type, Union, overload, Literal
-from sqlalchemy import func, or_, case
+from typing import Optional, List, Dict, Any, Type, Union, overload, Literal, Tuple
+from sqlalchemy import func, or_, case, desc, asc
 from sqlalchemy.orm import Query
 from src.error.errors import ValidationError, DatabaseOperationError, InvalidOperationError
 from sqlalchemy.exc import IntegrityError
 import logging
 from src.models.articles_model import ArticleScrapeStatus
-
+from datetime import datetime, timezone, timedelta
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -43,7 +43,7 @@ class ArticlesRepository(BaseRepository[Articles]):
         """根據分類查詢文章"""
         return self.execute_query(lambda: self.session.query(self.model_class).filter_by(category=category).all())
 
-    def search_by_title(self, keyword: str, exact_match: bool = False) -> List[Articles]:
+    def search_by_title(self, keyword: str, exact_match: bool = False, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Articles]:
         """根據標題搜索文章
         
         Args:
@@ -57,13 +57,13 @@ class ArticlesRepository(BaseRepository[Articles]):
             # 精確匹配（區分大小寫）
             return self.execute_query(lambda: self.session.query(self.model_class).filter(
                 self.model_class.title == keyword
-            ).all())
+            ).limit(limit).offset(offset).all())
         else:
             # 模糊匹配
             return self.execute_query(lambda: self.session.query(self.model_class).filter(
                 self.model_class.title.like(f'%{keyword}%')
-            ).all())
-
+            ).limit(limit).offset(offset).all())
+            
     
     def _build_filter_query(self, query: Query, filter_dict: Dict[str, Any]) -> Query:
         """構建過濾查詢"""
@@ -100,6 +100,26 @@ class ArticlesRepository(BaseRepository[Articles]):
         
         return query
     
+    def get_statistics(self) -> Dict[str, Any]:
+        """獲取文章統計信息"""
+        def stats_func():
+            total_count = self.count()
+            ai_related_count = self.count({"is_ai_related": True})
+            category_distribution = self.get_category_distribution()
+            week_ago = datetime.now(timezone.utc) - timedelta(days=7)
+            recent_count = self.count({"published_at": {"$gte": week_ago}})
+            
+            return {
+                'total_count': total_count,
+                'ai_related_count': ai_related_count,
+                'category_distribution': category_distribution, 
+                'recent_count': recent_count
+            }
+        
+        return self.execute_query(
+            stats_func,
+            err_msg="獲取文章統計信息時發生錯誤"
+        )
 
     def get_source_statistics(self) -> Dict[str, Dict[str, int]]:
         """獲取各來源的爬取統計"""
@@ -138,7 +158,7 @@ class ArticlesRepository(BaseRepository[Articles]):
             err_msg="計算符合條件的文章數量時發生錯誤"
         )
 
-    def search_by_keywords(self, keywords: str) -> List[Articles]:
+    def search_by_keywords(self, keywords: str, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Articles]:
         """根據關鍵字搜索文章（標題和內容）
         
         Args:
@@ -147,7 +167,8 @@ class ArticlesRepository(BaseRepository[Articles]):
         Returns:
             符合條件的文章列表
         """
-        return self.get_by_filter({"search_text": keywords})
+
+        return self.get_by_filter(filter_criteria={"title": keywords, "content": keywords}, limit=limit, offset=offset)
 
     def get_category_distribution(self) -> Dict[str, int]:
         """獲取各分類的文章數量分布"""

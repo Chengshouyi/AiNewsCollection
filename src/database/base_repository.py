@@ -154,10 +154,10 @@ class BaseRepository(Generic[T], ABC):
         
     
     # --- 受保護的輔助和內部方法 ---
-    def _apply_filters(self, query, filter_criteria: Dict[str, Any]):
+    def _apply_filters(self, query, filter_criteria: Dict[str, Any], limit: Optional[int] = None, offset: Optional[int] = None):
         """將過濾條件應用到 SQLAlchemy 查詢對象"""
         if not filter_criteria:
-            return query
+            return query.limit(limit).offset(offset)
 
         conditions = []
         for field, value in filter_criteria.items():
@@ -197,9 +197,9 @@ class BaseRepository(Generic[T], ABC):
                 conditions.append(column == value)
 
         if conditions:
-            return query.filter(and_(*conditions))
+            return query.filter(and_(*conditions)).limit(limit).offset(offset)
         else:
-            return query
+            return query.limit(limit).offset(offset)
 
     def _validate_and_supplement_required_fields(
         self,
@@ -280,6 +280,11 @@ class BaseRepository(Generic[T], ABC):
                 err_msg="添加資料庫物件到session時發生錯誤"
             )
             logger.debug(f"實體準備創建 (待提交): {entity}")
+            # 4. 刷新 Session
+            # self.execute_query(
+            #     lambda: self.session.flush(),
+            #     err_msg=f"創建實體時刷新 session 失敗"
+            # )
             return entity
         except IntegrityError as e:
             error_msg = f"Repository._create_internal: 完整性錯誤: {str(e)}"
@@ -400,11 +405,17 @@ class BaseRepository(Generic[T], ABC):
             return False
         
         try:
+            # Mark for deletion
             self.execute_query(
                 lambda: self.session.delete(entity),
                 err_msg=f"刪除ID為{entity_id}的資料庫物件時發生錯誤"
             )
-            # 將實體從 Session 的 Identity Map 中移除，避免快取問題
+
+            self.execute_query(
+                lambda: self.session.flush(),
+                err_msg=f"刪除ID為{entity_id}的資料庫物件時刷新 session 失敗"
+            )
+
             self.execute_query(
                 lambda: self.session.expunge(entity),
                 err_msg=f"刪除ID為{entity_id}的資料庫物件時從session中移除時發生錯誤"
@@ -542,14 +553,15 @@ class BaseRepository(Generic[T], ABC):
         # 避免嵌套使用 execute_query
         return self.get_all(*args, **kwargs)
 
-    def get_by_filter(self, filter_criteria: Dict[str, Any], sort_by: Optional[str] = None, sort_desc: bool = False) -> List[T]:
+    def get_by_filter(self, filter_criteria: Dict[str, Any], sort_by: Optional[str] = None, sort_desc: bool = False, limit: Optional[int] = None, offset: Optional[int] = None) -> List[T]:
         """根據過濾條件查找實體列表
         
         Args:
             filter_criteria: 過濾條件字典
             sort_by: 排序欄位名稱
             sort_desc: 是否降序排列
-            
+            limit: 限制返回結果數量
+            offset: 跳過結果數量
         Returns:
             符合條件的實體列表
         """
@@ -557,7 +569,7 @@ class BaseRepository(Generic[T], ABC):
             query = self.session.query(self.model_class)
             
             # 應用過濾
-            query = self._apply_filters(query, filter_criteria or {})
+            query = self._apply_filters(query, filter_criteria or {}, limit, offset)
             
             # 處理排序
             if sort_by:
@@ -580,7 +592,10 @@ class BaseRepository(Generic[T], ABC):
                             query = query.order_by(desc(id_attr))
                 except (AttributeError, TypeError):
                     pass
-            
+            if limit is not None:
+                query = query.limit(limit)
+            if offset is not None:
+                query = query.offset(offset)
             return query.all()
 
         return self.execute_query(
