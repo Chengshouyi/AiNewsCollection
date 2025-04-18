@@ -132,6 +132,7 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
             # total_count = total_count_query.count()
 
             # 再獲取分頁後的列表
+            print(f"task_history_repo.find_by_task_id() before query ：Session ID: {id(self.session)}")
             query = self.session.query(self.model_class).filter_by(
                 task_id=task_id
             ).order_by(
@@ -144,15 +145,16 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
                  query = query.limit(limit)
                  
             histories = query.all()
-            
+            print(f"task_history_repo.find_by_task_id() after query ：Session ID: {id(self.session)}")
             return histories # , total_count
 
         # 使用 execute_query 包裹查詢邏輯
+        print(f"task_history_repo.find_by_task_id() before execute_query ：Session ID: {id(self.session)}")
         result = self.execute_query(
             query_logic,
             err_msg=f"查詢任務ID為{task_id}的歷史記錄時發生錯誤"
         )
-        
+        print(f"task_history_repo.find_by_task_id() after execute_query ：Session ID: {id(self.session)}")
         # 如果 execute_query 返回 None (查詢失敗)，則返回空列表和 0
         if result is None:
              return []#, 0

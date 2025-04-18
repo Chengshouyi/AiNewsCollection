@@ -21,6 +21,7 @@ from src.models.crawler_tasks_schema import CrawlerTaskReadSchema, PaginatedCraw
 from src.error.errors import ValidationError
 from src.utils.enum_utils import ScrapeMode, ScrapePhase, TaskStatus
 from src.utils.model_utils import validate_task_args
+from src.utils.datetime_utils import enforce_utc_datetime_transform
 from sqlalchemy import desc, asc
 from src.services.scheduler_service import SchedulerService
 from src.services.task_executor_service import TaskExecutorService
@@ -405,6 +406,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         """獲取任務的執行歷史記錄 (可選分頁和排序)"""
         try:
             with self._transaction() as session:
+                print(f"task_service.get_task_history() before get_repository ：Session ID: {id(session)}")
                 history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('TaskHistory', session))
                 if not history_repo:
                     return {
@@ -414,13 +416,14 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'total_count': 0
                     }
                 
-                
+                print(f"task_service.get_task_history() before find_by_task_id ：Session ID: {id(session)}")
                 histories = history_repo.find_by_task_id(
                     task_id=task_id,
                     limit=limit,
                     offset=offset,
                     sort_desc=sort_desc
                 )
+                print(f"task_service.get_task_history() after find_by_task_id ：Session ID: {id(session)}")
                 return {
                     'success': True,
                     'message': '任務歷史獲取成功',
@@ -446,8 +449,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 if not tasks_repo or not history_repo:
                     return {
-                        'task_status': TaskStatus.UNKNOWN.value,
-                        'scrape_phase': ScrapePhase.UNKNOWN.value,
+                        'task_status': TaskStatus.UNKNOWN,
+                        'scrape_phase': ScrapePhase.UNKNOWN,
                         'progress': 0,
                         'message': '無法取得資料庫存取器',
                         'task': None,
@@ -458,8 +461,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 task = tasks_repo.get_by_id(task_id)
                 if not task:
                     return {
-                        'task_status': TaskStatus.UNKNOWN.value, # Or FAILED if preferred
-                        'scrape_phase': ScrapePhase.UNKNOWN.value, # Or FAILED
+                        'task_status': TaskStatus.UNKNOWN, 
+                        'scrape_phase': ScrapePhase.UNKNOWN, 
                         'progress': 0,
                         'message': '任務不存在',
                         'task': None,
@@ -479,20 +482,20 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     message = latest_history.message or '狀態來自最新歷史記錄'
                     # 如果歷史記錄指示任務已結束 (完成/失敗/取消)
                     if latest_history.end_time and latest_history.task_status in [
-                        TaskStatus.COMPLETED.value, 
-                        TaskStatus.FAILED.value, 
-                        TaskStatus.CANCELLED.value
+                        TaskStatus.COMPLETED, 
+                        TaskStatus.FAILED, 
+                        TaskStatus.CANCELLED
                     ]:
                         task_status = latest_history.task_status
-                        scrape_phase = ScrapePhase.COMPLETED.value # 強制設為 FINISHED
+                        scrape_phase = ScrapePhase.COMPLETED
                         progress = 100
                     # 如果歷史記錄指示任務正在運行 (有開始時間但無結束時間)
                     elif latest_history.start_time and not latest_history.end_time:
-                        task_status = TaskStatus.RUNNING.value 
+                        task_status = TaskStatus.RUNNING
                         # 強制設為 RUNNING
                         # 階段可能需要更精確的判斷，暫時維持任務表中的值或設為 RUNNING
                         current_time = datetime.now(timezone.utc)
-                        elapsed = current_time - latest_history.start_time
+                        elapsed = current_time - enforce_utc_datetime_transform(latest_history.start_time)
                         # 這裡的進度計算非常粗略，僅作示意
                         progress = min(95, int((elapsed.total_seconds() / 300) * 100))
                         message = f"任務運行中 ({progress}%)" 
@@ -504,7 +507,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     # 沒有歷史記錄，狀態完全來自任務表
                     message = '無執行歷史，狀態來自任務表'
                     # 如果任務狀態是 IDLE/PENDING 等，進度為 0
-                    if task_status not in [TaskStatus.RUNNING.value]:
+                    if task_status not in [TaskStatus.RUNNING]:
                         progress = 0
                     # 否則，可能表示任務从未運行或狀態異常
                 
@@ -524,8 +527,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             error_msg = f"獲取任務狀態失敗, ID={task_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {
-                'task_status': TaskStatus.UNKNOWN.value,
-                'scrape_phase': ScrapePhase.UNKNOWN.value,
+                'task_status': TaskStatus.UNKNOWN,
+                'scrape_phase': ScrapePhase.UNKNOWN,
                 'progress': 0,
                 'message': f'獲取狀態時發生錯誤: {str(e)}',
                 'task': None,
