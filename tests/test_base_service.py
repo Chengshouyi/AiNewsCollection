@@ -291,13 +291,9 @@ class ServiceForTest(BaseService[ModelForTest]):
 class TestBaseService:
     @pytest.fixture(scope="session")
     def engine(self):
-        """創建測試用的資料庫引擎 (使用文件型 SQLite)"""
-        # Use a file-based SQLite DB for better transaction persistence testing
+        """創建測試用的資料庫引擎"""
         db_file = "./test_db_base_service.sqlite"
         engine = create_engine('sqlite:///:memory:')
-        # Ensure the file is cleaned up before tests run (optional, if needed)
-        # import os
-        # if os.path.exists(db_file): os.remove(db_file)
         yield engine
         # Cleanup after tests run
         # import os
