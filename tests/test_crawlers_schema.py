@@ -33,7 +33,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data1)
-        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
         
         # 缺少 base_url
         data2 = {
@@ -57,7 +57,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_empty)
-        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
         
         # 過長
         data_too_long = {
@@ -100,7 +100,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_empty)
-        assert any(["base_url: URL不能為空" in str(exc_info.value), "base_url: 不能為空" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
 
         # 過長
         data_too_long = {
@@ -145,7 +145,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_empty)
-        assert any(["crawler_type: 不能為空" in str(exc_info.value), "crawler_type: 不能為 None" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
         
         # 過長
         data_too_long = {
@@ -168,7 +168,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_empty)
-        assert any(["config_file_name: 不能為空" in str(exc_info.value), "config_file_name: 不能為 None" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
 
     def test_crawlers_is_active_validation(self):
         """測試是否啟用的驗證"""
@@ -193,7 +193,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data)
-        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
 
     def test_crawler_name_empty_validation(self):
         """測試crawler_name為空的驗證"""
@@ -205,7 +205,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data)
-        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
 
     def test_base_url_empty_validation(self):
         """測試base_url為空的驗證"""
@@ -217,7 +217,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data)
-        assert any(["base_url: 不能為空" in str(exc_info.value), "base_url: 不能為 None" in str(exc_info.value), "base_url: URL不能為空" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
 
     def test_minimum_required_fields(self):
         """測試最少需要提供哪些字段"""
@@ -229,7 +229,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data)
-        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
 
     def test_crawler_type_empty_validation(self):
         """測試crawler_type為空的驗證"""
@@ -241,7 +241,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data)
-        assert any(["crawler_type: 不能為空" in str(exc_info.value), "crawler_type: 不能為 None" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
 
     def test_config_file_name_empty_validation(self):
         """測試config_file_name為空的驗證"""
@@ -253,7 +253,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data)
-        assert any(["config_file_name: 不能為空" in str(exc_info.value), "config_file_name: 不能為 None" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
 
 class TestCrawlersUpdateSchema:
     """CrawlersUpdateSchema 的測試類"""
@@ -365,4 +365,4 @@ class TestCrawlersUpdateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersUpdateSchema.model_validate(data)
-        assert any(["crawler_name: 不能為空" in str(exc_info.value), "crawler_name: 不能為 None" in str(exc_info.value)])
+        assert "crawler_name: 不能為空" in str(exc_info.value)

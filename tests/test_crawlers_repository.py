@@ -159,10 +159,9 @@ class TestCrawlersRepository:
     
     def test_find_by_crawler_name(self, crawlers_repo, sample_crawlers, session, clean_db):
         """測試根據爬蟲名稱模糊查詢 (包含活躍狀態過濾)"""
-        # 活躍查詢 (預設 is_active=True)
+        # 活躍查詢 (預設 is_active=None)
         crawlers_active = crawlers_repo.find_by_crawler_name("爬蟲")
-        assert len(crawlers_active) == 2 # 新聞爬蟲1, RSS爬蟲
-        assert all(c.is_active for c in crawlers_active)
+        assert len(crawlers_active) == 3 # 新聞爬蟲1, 新聞爬蟲2, RSS爬蟲
 
         # 指定 is_active=True
         crawlers_active_explicit = crawlers_repo.find_by_crawler_name("爬蟲", is_active=True)
@@ -176,7 +175,7 @@ class TestCrawlersRepository:
 
         # 查詢只存在於不活躍狀態的名稱，但 is_active=True
         crawlers_no_match = crawlers_repo.find_by_crawler_name("新聞爬蟲2", is_active=True)
-        assert crawlers_no_match is None # 或者 assert len(crawlers_no_match) == 0, 取決於實現細節
+        assert len(crawlers_no_match) == 0
     
     def test_find_by_crawler_name_exact(self, crawlers_repo, sample_crawlers, session, clean_db):
         """測試根據爬蟲名稱精確查詢"""

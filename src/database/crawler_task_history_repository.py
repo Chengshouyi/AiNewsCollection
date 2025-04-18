@@ -124,12 +124,12 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
             logger.error(f"更新 CrawlerTaskHistory (ID={entity_id}) 時發生未預期錯誤: {e}", exc_info=True)
             raise DatabaseOperationError(f"更新 CrawlerTaskHistory (ID={entity_id}) 時發生未預期錯誤: {e}") from e
 
-    def find_by_task_id(self, task_id: int, limit: Optional[int] = None, offset: Optional[int] = None, sort_desc: bool = False) -> Tuple[List['CrawlerTaskHistory'], int]:
+    def find_by_task_id(self, task_id: int, limit: Optional[int] = None, offset: Optional[int] = None, sort_desc: bool = False) -> List['CrawlerTaskHistory']:
         """根據任務ID查詢相關的歷史記錄，返回列表和總數"""
         def query_logic():
             # 先計算總數
-            total_count_query = self.session.query(self.model_class).filter_by(task_id=task_id)
-            total_count = total_count_query.count()
+            # total_count_query = self.session.query(self.model_class).filter_by(task_id=task_id)
+            # total_count = total_count_query.count()
 
             # 再獲取分頁後的列表
             query = self.session.query(self.model_class).filter_by(
@@ -145,7 +145,7 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
                  
             histories = query.all()
             
-            return histories, total_count
+            return histories # , total_count
 
         # 使用 execute_query 包裹查詢邏輯
         result = self.execute_query(
@@ -155,9 +155,9 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         
         # 如果 execute_query 返回 None (查詢失敗)，則返回空列表和 0
         if result is None:
-             return [], 0
+             return []#, 0
              
-        return result # result 已經是 (histories, total_count)
+        return result 
     
     def find_successful_histories(self, limit: Optional[int] = None, offset: Optional[int] = None) -> List['CrawlerTaskHistory']:
         """查詢所有成功的任務歷史記錄 (支援分頁)"""

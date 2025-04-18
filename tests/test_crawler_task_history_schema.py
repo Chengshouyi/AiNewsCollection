@@ -54,7 +54,7 @@ class TestCrawlerTaskHistoryCreateSchema:
             ({"task_id": 0}, "task_id: 必須是正整數且大於0"),
             ({"task_id": -1}, "task_id: 必須是正整數且大於0"),
             ({"task_id": "abc"}, "task_id: 必須是整數"),
-            ({}, "task_id: 不能為空")
+            ({}, "以下必填欄位缺失或值為空/空白: task_id")
         ]
         
         for data, expected_error in invalid_cases:

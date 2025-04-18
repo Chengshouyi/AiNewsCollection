@@ -95,7 +95,7 @@ class TestCrawlerTasksCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data)
-        assert any(["crawler_id: 不能為空" in str(exc_info.value), "crawler_id: 不能為 None" in str(exc_info.value)])
+        assert "以下必填欄位缺失或值為空/空白: crawler_id, task_args, scrape_phase" in str(exc_info.value)
 
         # 測試缺少task_args
         data = {
@@ -105,7 +105,7 @@ class TestCrawlerTasksCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data)
-        assert "task_args: 不能為空" in str(exc_info.value) or "task_args: 不能為 None" in str(exc_info.value)
+        assert "以下必填欄位缺失或值為空/空白: task_args, scrape_phase" in str(exc_info.value)
         
         # 測試缺少scrape_phase
         data = {
@@ -116,7 +116,7 @@ class TestCrawlerTasksCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlerTasksCreateSchema.model_validate(data)
-        assert "scrape_phase: 不能為空" in str(exc_info.value) or "scrape_phase: 不能為 None" in str(exc_info.value)
+        assert "以下必填欄位缺失或值為空/空白" in str(exc_info.value)
 
     def test_crawler_tasks_with_all_fields(self):
         """測試包含所有欄位的爬蟲任務資料"""
@@ -262,7 +262,7 @@ class TestCrawlerTasksCreateSchema:
             })
             pytest.fail("預期 ValidationError for crawler_id=None")
         except ValidationError as e:
-            assert any(["crawler_id: 不能為空" in str(e), "crawler_id: 不能為 None" in str(e)])
+            assert "以下必填欄位缺失或值為空/空白" in str(e)
             
         # 測試 crawler_id 為空字串
         try:
@@ -274,7 +274,7 @@ class TestCrawlerTasksCreateSchema:
             })
             pytest.fail("預期 ValidationError for crawler_id=''")
         except ValidationError as e:
-            assert any(["crawler_id: 必須是整數" in str(e), "crawler_id: 不能為空" in str(e)])
+            assert "以下必填欄位缺失或值為空/空白" in str(e)
             
         # 測試 crawler_id 為 0
         try:

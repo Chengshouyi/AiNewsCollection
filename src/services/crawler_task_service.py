@@ -415,7 +415,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     }
                 
                 
-                histories, total_count = history_repo.find_by_task_id(
+                histories = history_repo.find_by_task_id(
                     task_id=task_id,
                     limit=limit,
                     offset=offset,
@@ -425,7 +425,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     'success': True,
                     'message': '任務歷史獲取成功',
                     'histories': histories,
-                    'total_count': total_count
+                    'total_count': len(histories)
                 }
         except Exception as e:
             error_msg = f"獲取任務歷史失敗, ID={task_id}: {str(e)}"

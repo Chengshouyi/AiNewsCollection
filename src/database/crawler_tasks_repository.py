@@ -408,16 +408,15 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
                     # Log the comparison values
                     logger.debug(f"[find_pending_tasks] Task ID {task.id} ({task.task_name}): last_run={last_run.isoformat()}, previous_scheduled_run={previous_scheduled_run.isoformat()}, now={now.isoformat()}")
 
-                    # If the last run occurred *after* the most recent scheduled time,
-                    # it means the task ran successfully for that slot. It's not pending.
-                    if last_run > previous_scheduled_run:
-                        logger.debug(f"[find_pending_tasks] Task ID {task.id} skipped. Condition not met: last_run ({last_run.isoformat()}) > previous_scheduled_run ({previous_scheduled_run.isoformat()})")
-                        continue
-                    else:
-                        # If the last run was before or exactly at the previous scheduled time,
-                        # it means the task is due to run now (or is overdue).
-                        logger.debug(f"[find_pending_tasks] Task ID {task.id} added. Condition met: last_run ({last_run.isoformat()}) <= previous_scheduled_run ({previous_scheduled_run.isoformat()})")
+                    # If the last run occurred *before* the most recent scheduled time slot,
+                    # it means the task is pending (it missed that slot or hasn't run since).
+                    if last_run < previous_scheduled_run:
+                        logger.debug(f"[find_pending_tasks] Task ID {task.id} added. Condition met: last_run ({last_run.isoformat()}) < previous_scheduled_run ({previous_scheduled_run.isoformat()})")
                         result_tasks.append(task)
+                    else:
+                        # If the last run was at or after the most recent scheduled time, it's not pending for that slot.
+                        logger.debug(f"[find_pending_tasks] Task ID {task.id} skipped. Condition not met: last_run ({last_run.isoformat()}) >= previous_scheduled_run ({previous_scheduled_run.isoformat()})")
+                        continue
 
                 except Exception as e:
                     # 防止 croniter 計算出錯導致整個查詢失敗
