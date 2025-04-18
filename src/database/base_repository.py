@@ -411,16 +411,6 @@ class BaseRepository(Generic[T], ABC):
                 err_msg=f"刪除ID為{entity_id}的資料庫物件時發生錯誤"
             )
 
-            self.execute_query(
-                lambda: self.session.flush(),
-                err_msg=f"刪除ID為{entity_id}的資料庫物件時刷新 session 失敗"
-            )
-
-            self.execute_query(
-                lambda: self.session.expunge(entity),
-                err_msg=f"刪除ID為{entity_id}的資料庫物件時從session中移除時發生錯誤"
-            )
-            logger.debug(f"已從 session 中移除 (expunge) ID 為 {entity_id} 的物件")
             return True
         except IntegrityError as e:
             self.execute_query(
@@ -431,10 +421,6 @@ class BaseRepository(Generic[T], ABC):
             # 使用新的處理方法
             self._handle_integrity_error(e, f"刪除{self.model_class.__name__}時")
         except Exception as e:
-            self.execute_query(
-                lambda: self.session.rollback(),
-                err_msg="刪除ID為{entity_id}的資料庫物件時未預期錯誤時回滾session時發生錯誤"
-            )
             error_msg = f"Repository.delete: 未預期錯誤: {str(e)}"
             logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e

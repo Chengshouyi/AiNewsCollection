@@ -567,7 +567,6 @@ class ArticlesRepository(BaseRepository[Articles]):
                  logger.warning(f"更新連結 '{link}' 的 scrape_status 時提供了無效的類型: {type(target_status)}, 已忽略。")
 
             if entity_changed:
-                self.session.flush()
                 logger.debug(f"更新連結 '{link}' 爬取狀態為 is_scraped={is_scraped_bool}, status={link_entity.scrape_status.name}")
                 return True
             else:

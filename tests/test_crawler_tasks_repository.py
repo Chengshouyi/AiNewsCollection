@@ -239,35 +239,41 @@ class TestCrawlerTasksRepository:
         """測試切換自動執行狀態"""
         task = sample_tasks[0]
         original_status = task.is_auto
-        
+
         # 確保任務存在於數據庫
         task_id = task.id
-        
+
         # 切換狀態
         result = crawler_tasks_repo.toggle_auto_status(task_id)
-        assert result is True
-        
+        assert result is not None, "切換應返回更新後的任務物件"
+        assert result.id == task_id, "返回的任務ID應與輸入一致"
+        session.commit() # 提交變更
+
         # 重新獲取任務並驗證狀態
         session.expire_all()  # 確保重新從數據庫加載
         updated_task = crawler_tasks_repo.get_by_id(task_id)
-        assert updated_task.is_auto != original_status
-        assert updated_task.updated_at is not None
+        assert updated_task is not None, "更新後的任務應能從DB獲取"
+        assert updated_task.is_auto != original_status, "任務的自動執行狀態應已切換"
+        assert updated_task.updated_at is not None, "updated_at 應已更新"
 
     def test_toggle_scheduled_status(self, crawler_tasks_repo, sample_tasks, session):
         """測試切換排程狀態"""
         task = sample_tasks[0]
         original_status = task.is_scheduled
         task_id = task.id
-        
+
         # 切換狀態
         result = crawler_tasks_repo.toggle_scheduled_status(task_id)
-        assert result is True
-        
+        assert result is not None, "切換應返回更新後的任務物件"
+        assert result.id == task_id, "返回的任務ID應與輸入一致"
+        session.commit() # 提交變更
+
         # 重新獲取任務並驗證狀態
         session.expire_all()  # 確保重新從數據庫加載
-        updated_task = crawler_tasks_repo.get_by_id(task_id)    
-        assert updated_task.is_scheduled != original_status
-        assert updated_task.updated_at is not None
+        updated_task = crawler_tasks_repo.get_by_id(task_id)
+        assert updated_task is not None, "更新後的任務應能從DB獲取"
+        assert updated_task.is_scheduled != original_status, "任務的排程狀態應已切換"
+        assert updated_task.updated_at is not None, "updated_at 應已更新"
 
     def test_update_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
         """測試更新 task_args 中的 ai_only 狀態 (模擬正確的 JSON 更新流程)"""
@@ -319,16 +325,19 @@ class TestCrawlerTasksRepository:
         task = sample_tasks[0]
         task_id = task.id
         new_notes = "更新的備註"
-        
+
         # 更新備註
         result = crawler_tasks_repo.update_notes(task_id, new_notes)
-        assert result is True
-        
+        assert result is not None, "更新應返回更新後的任務物件"
+        assert result.id == task_id, "返回的任務ID應與輸入一致"
+        session.commit() # 提交變更
+
         # 重新獲取任務並驗證備註
         session.expire_all()  # 確保重新從數據庫加載
         updated_task = crawler_tasks_repo.get_by_id(task_id)
-        assert updated_task.notes == new_notes
-        assert updated_task.updated_at is not None
+        assert updated_task is not None, "更新後的任務應能從DB獲取"
+        assert updated_task.notes == new_notes, "任務的備註應已更新"
+        assert updated_task.updated_at is not None, "updated_at 應已更新"
 
     def test_find_tasks_with_notes(self, crawler_tasks_repo, sample_tasks):
         """測試查詢有備註的任務"""
@@ -649,11 +658,11 @@ class TestCrawlerTasksRepository:
         assert found_task is None
 
     def test_toggle_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
-        """測試直接切換 AI 專用狀態 (Repo 內部 Commit)"""
+        """測試直接切換 AI 專用狀態 (需要手動 Commit)"""
         task_false_to_true = next((t for t in sample_tasks if isinstance(t.task_args, dict) and t.task_args.get('ai_only') is False and t.is_active), None)
         task_true_to_false = next((t for t in sample_tasks if isinstance(t.task_args, dict) and t.task_args.get('ai_only') is True and t.is_active), None)
-        assert task_false_to_true is not None
-        assert task_true_to_false is not None
+        assert task_false_to_true is not None, "找不到 is_active=True, ai_only=False 的任務"
+        assert task_true_to_false is not None, "找不到 is_active=True, ai_only=True 的任務"
         task_id_1 = task_false_to_true.id
         task_id_2 = task_true_to_false.id
         original_updated_at_1 = task_false_to_true.updated_at
@@ -661,21 +670,31 @@ class TestCrawlerTasksRepository:
 
         # 1. 從 False 切換到 True
         result1 = crawler_tasks_repo.toggle_ai_only_status(task_id_1)
-        assert result1 is True
-        session.expire(task_false_to_true) # 清除緩存
+        assert result1 is not None, "切換 False->True 應返回更新後的任務物件"
+        assert result1.id == task_id_1, "返回的任務ID應正確 (False->True)"
+        assert result1.task_args.get('ai_only') is True, "記憶體中的物件狀態應立即更新 (False->True)"
+        session.commit() # 提交變更
+        session.expire(result1) # 清除緩存
         updated_task_1 = crawler_tasks_repo.get_by_id(task_id_1)
-        assert updated_task_1.task_args.get('ai_only') is True
-        assert updated_task_1.updated_at is not None
+        assert updated_task_1 is not None, "更新後的任務1應能從DB獲取"
+        assert updated_task_1.task_args.get('ai_only') is True, "DB 中的 ai_only 狀態應為 True"
+        assert updated_task_1.updated_at is not None, "updated_at 應已更新 (False->True)"
+        # assert updated_at_1 > original_updated_at_1 if original_updated_at_1 else True # 確保時間戳更新
 
         # 2. 從 True 切換到 False
         last_updated_at = updated_task_1.updated_at # 記錄時間以便比較
+        time.sleep(0.01) # 確保時間不同
         result2 = crawler_tasks_repo.toggle_ai_only_status(task_id_2)
-        assert result2 is True
-        session.expire(task_true_to_false) # 清除緩存
+        assert result2 is not None, "切換 True->False 應返回更新後的任務物件"
+        assert result2.id == task_id_2, "返回的任務ID應正確 (True->False)"
+        assert result2.task_args.get('ai_only') is False, "記憶體中的物件狀態應立即更新 (True->False)"
+        session.commit() # 提交變更
+        session.expire(result2) # 清除緩存
         updated_task_2 = crawler_tasks_repo.get_by_id(task_id_2)
-        assert updated_task_2.task_args.get('ai_only') is False
-        assert updated_task_2.updated_at is not None
-        assert updated_task_2.updated_at > last_updated_at
+        assert updated_task_2 is not None, "更新後的任務2應能從DB獲取"
+        assert updated_task_2.task_args.get('ai_only') is False, "DB 中的 ai_only 狀態應為 False"
+        assert updated_task_2.updated_at is not None, "updated_at 應已更新 (True->False)"
+        assert updated_task_2.updated_at > last_updated_at, "第二次更新的 updated_at 應晚於第一次"
 
         # 3. 測試 task_args 為 None 的情況 (需要創建一個新任務)
         new_task = CrawlerTasks(
@@ -685,56 +704,80 @@ class TestCrawlerTasksRepository:
             is_active=True
         )
         session.add(new_task)
-        session.commit()
+        session.commit() # 先提交新任務
         session.refresh(new_task)
         task_id_3 = new_task.id
 
         result3 = crawler_tasks_repo.toggle_ai_only_status(task_id_3)
-        assert result3 is True
-        session.expire(new_task)
+        assert result3 is not None, "切換 None task_args 應返回更新後的任務物件"
+        assert result3.id == task_id_3, "返回的任務ID應正確 (None task_args)"
+        assert result3.task_args.get('ai_only') is True, "記憶體中的 ai_only 應從預設 False 切換為 True"
+        session.commit() # 提交切換狀態的變更
+        session.expire(result3)
         updated_task_3 = crawler_tasks_repo.get_by_id(task_id_3)
-        assert updated_task_3.task_args.get('ai_only') is True # 應從預設 False 切換為 True
+        assert updated_task_3 is not None, "更新後的任務3應能從DB獲取"
+        assert updated_task_3.task_args.get('ai_only') is True # DB 中的狀態應為 True
 
         # 4. 測試 task_args 存在但無 'ai_only' 鍵的情況 (修改現有任務)
         task_to_modify = crawler_tasks_repo.get_by_id(task_id_1) # 這個現在是 True
         task_to_modify.task_args = {"other_key": "value"} # 移除 ai_only
-        session.commit()
+        session.commit() # 提交移除了 ai_only 的更改
         session.refresh(task_to_modify)
 
         result4 = crawler_tasks_repo.toggle_ai_only_status(task_id_1)
-        assert result4 is True
-        session.expire(task_to_modify)
+        assert result4 is not None, "切換無 ai_only key 應返回更新後的任務物件"
+        assert result4.id == task_id_1, "返回的任務ID應正確 (無 ai_only key)"
+        assert result4.task_args.get('ai_only') is True, "記憶體中的 ai_only 應從預設 False 切換為 True"
+        session.commit() # 提交切換狀態的變更
+        session.expire(result4)
         updated_task_4 = crawler_tasks_repo.get_by_id(task_id_1)
-        assert updated_task_4.task_args.get('ai_only') is True # 應從預設 False 切換為 True
+        assert updated_task_4 is not None, "更新後的任務4應能從DB獲取"
+        assert updated_task_4.task_args.get('ai_only') is True # DB 中的狀態應為 True
+        assert updated_task_4.task_args.get('other_key') == "value", "其他鍵值應保留"
+
+        # 5. 測試切換不存在的任務
+        result_nonexistent = crawler_tasks_repo.toggle_ai_only_status(99999)
+        assert result_nonexistent is None, "切換不存在的任務應返回 None"
 
     def test_toggle_active_status(self, crawler_tasks_repo, sample_tasks, session):
         """測試切換啟用狀態"""
-        active_task = next(t for t in sample_tasks if t.is_active)
-        inactive_task = next(t for t in sample_tasks if not t.is_active)
+        active_task = next((t for t in sample_tasks if t.is_active), None)
+        inactive_task = next((t for t in sample_tasks if not t.is_active), None)
+        assert active_task is not None, "找不到活動任務"
+        assert inactive_task is not None, "找不到非活動任務"
         active_task_id = active_task.id
         inactive_task_id = inactive_task.id
 
         # 1. 從 True 切換到 False
         result1 = crawler_tasks_repo.toggle_active_status(active_task_id)
-        assert result1 is True
-        session.expire(active_task)
+        assert result1 is not None, "切換 True->False 應返回更新後的任務物件"
+        assert result1.id == active_task_id, "返回的任務ID應正確 (True->False)"
+        assert result1.is_active is False, "記憶體中的 is_active 應為 False"
+        session.commit() # 提交變更
+        session.expire(result1)
         updated_task_1 = crawler_tasks_repo.get_by_id(active_task_id)
-        assert updated_task_1.is_active is False
-        assert updated_task_1.updated_at is not None
+        assert updated_task_1 is not None, "更新後的任務1應能從DB獲取"
+        assert updated_task_1.is_active is False, "DB 中的 is_active 應為 False"
+        assert updated_task_1.updated_at is not None, "updated_at 應已更新 (True->False)"
         original_updated_at = updated_task_1.updated_at
 
         # 2. 從 False 切換到 True
+        time.sleep(0.01) # 確保時間不同
         result2 = crawler_tasks_repo.toggle_active_status(inactive_task_id)
-        assert result2 is True
-        session.expire(inactive_task)
+        assert result2 is not None, "切換 False->True 應返回更新後的任務物件"
+        assert result2.id == inactive_task_id, "返回的任務ID應正確 (False->True)"
+        assert result2.is_active is True, "記憶體中的 is_active 應為 True"
+        session.commit() # 提交變更
+        session.expire(result2)
         updated_task_2 = crawler_tasks_repo.get_by_id(inactive_task_id)
-        assert updated_task_2.is_active is True
-        assert updated_task_2.updated_at is not None
-        assert updated_task_2.updated_at > original_updated_at
+        assert updated_task_2 is not None, "更新後的任務2應能從DB獲取"
+        assert updated_task_2.is_active is True, "DB 中的 is_active 應為 True"
+        assert updated_task_2.updated_at is not None, "updated_at 應已更新 (False->True)"
+        assert updated_task_2.updated_at > original_updated_at, "第二次更新的 updated_at 應晚於第一次"
 
         # 3. 切換不存在的任務
         result3 = crawler_tasks_repo.toggle_active_status(99999)
-        assert result3 is False
+        assert result3 is None, "切換不存在的任務應返回 None"
 
     def test_update_last_run(self, crawler_tasks_repo, sample_tasks, session):
         """測試更新最後執行狀態"""
@@ -745,15 +788,20 @@ class TestCrawlerTasksRepository:
         # 1. 更新為成功
         success_message = "執行成功"
         result1 = crawler_tasks_repo.update_last_run(task_id, success=True, message=success_message)
-        assert result1 is True
-        session.expire(task)
+        assert result1 is not None, "更新成功狀態應返回更新後的任務物件"
+        assert result1.id == task_id, "返回的任務ID應正確 (成功)"
+        assert result1.last_run_success is True, "記憶體中的 success 應為 True"
+        assert result1.last_run_message == success_message, "記憶體中的 message 應更新"
+        session.commit() # 提交變更
+        session.expire(result1)
         updated_task_1 = crawler_tasks_repo.get_by_id(task_id)
-        assert updated_task_1.last_run_success is True
-        assert updated_task_1.last_run_message == success_message
-        assert updated_task_1.last_run_at is not None
-        assert updated_task_1.updated_at is not None
+        assert updated_task_1 is not None, "更新後的任務1應能從DB獲取"
+        assert updated_task_1.last_run_success is True, "DB 中的 success 應為 True"
+        assert updated_task_1.last_run_message == success_message, "DB 中的 message 應更新"
+        assert updated_task_1.last_run_at is not None, "last_run_at 應已更新 (成功)"
+        assert updated_task_1.updated_at is not None, "updated_at 應已更新 (成功)"
         if original_last_run_at:
-             assert updated_task_1.last_run_at > original_last_run_at
+             assert updated_task_1.last_run_at > original_last_run_at, "新的 last_run_at 應晚於原始時間"
         last_run_time_1 = updated_task_1.last_run_at
         updated_at_1 = updated_task_1.updated_at # 記錄第一次更新後的時間
 
@@ -762,20 +810,41 @@ class TestCrawlerTasksRepository:
 
         # 2. 更新為失敗 (無消息)
         result2 = crawler_tasks_repo.update_last_run(task_id, success=False)
-        assert result2 is True
-        session.expire(updated_task_1) # 或者 session.expire(task_in_session) 也可以
+        assert result2 is not None, "更新失敗狀態應返回更新後的任務物件"
+        assert result2.id == task_id, "返回的任務ID應正確 (失敗)"
+        assert result2.last_run_success is False, "記憶體中的 success 應為 False"
+        # message 應該保持上次成功的訊息，因為這次沒提供
+        assert result2.last_run_message == success_message, "記憶體中的 message 應保持不變"
+        session.commit() # 提交變更
+        session.expire(result2) # 或者 session.expire(task_in_session) 也可以
         updated_task_2 = crawler_tasks_repo.get_by_id(task_id)
-        assert updated_task_2.last_run_success is False
+        assert updated_task_2 is not None, "更新後的任務2應能從DB獲取"
+        assert updated_task_2.last_run_success is False, "DB 中的 success 應為 False"
         # 訊息應該保持上次成功的訊息，因為這次沒提供
-        assert updated_task_2.last_run_message == success_message
-        assert updated_task_2.last_run_at is not None
-        assert updated_task_2.last_run_at > last_run_time_1
-        assert updated_task_2.updated_at is not None
-        assert updated_task_2.updated_at > updated_at_1 # 使用記錄的時間比較
+        assert updated_task_2.last_run_message == success_message, "DB 中的 message 應保持上次的值"
+        assert updated_task_2.last_run_at is not None, "last_run_at 應已更新 (失敗)"
+        assert updated_task_2.last_run_at > last_run_time_1, "第二次的 last_run_at 應晚於第一次"
+        assert updated_task_2.updated_at is not None, "updated_at 應已更新 (失敗)"
+        assert updated_task_2.updated_at > updated_at_1, "第二次更新的 updated_at 應晚於第一次" # 使用記錄的時間比較
+
+        # 3. 更新為失敗，並提供新消息
+        time.sleep(0.01)
+        fail_message = "執行失敗"
+        result3 = crawler_tasks_repo.update_last_run(task_id, success=False, message=fail_message)
+        assert result3 is not None
+        assert result3.last_run_success is False
+        assert result3.last_run_message == fail_message
+        session.commit()
+        session.expire(result3)
+        updated_task_3 = crawler_tasks_repo.get_by_id(task_id)
+        assert updated_task_3.last_run_success is False
+        assert updated_task_3.last_run_message == fail_message
+        assert updated_task_3.last_run_at >= updated_task_2.last_run_at
+        assert updated_task_3.updated_at >= updated_task_2.updated_at
 
         # 4. 更新不存在的任務
         result4 = crawler_tasks_repo.update_last_run(99999, success=True)
-        assert result4 is False
+        assert result4 is None, "更新不存在的任務應返回 None"
 
 class TestCrawlerTasksConstraints:
     """測試CrawlerTasks的模型約束"""
@@ -846,9 +915,12 @@ class TestSpecialCases:
     def test_invalid_operations(self, crawler_tasks_repo):
         """測試無效操作"""
         # 測試不存在的任務ID
-        assert crawler_tasks_repo.toggle_auto_status(999) is False
-        assert crawler_tasks_repo.toggle_ai_only_status(999) is False
-        assert crawler_tasks_repo.update_notes(999, "test") is False
+        assert crawler_tasks_repo.toggle_auto_status(999) is None, "toggle_auto_status on non-existent ID should return None"
+        assert crawler_tasks_repo.toggle_ai_only_status(999) is None, "toggle_ai_only_status on non-existent ID should return None"
+        assert crawler_tasks_repo.update_notes(999, "test") is None, "update_notes on non-existent ID should return None"
+        assert crawler_tasks_repo.toggle_active_status(999) is None, "toggle_active_status on non-existent ID should return None"
+        assert crawler_tasks_repo.toggle_scheduled_status(999) is None, "toggle_scheduled_status on non-existent ID should return None"
+        assert crawler_tasks_repo.update_last_run(999, True) is None, "update_last_run on non-existent ID should return None"
 
     def test_invalid_cron_operations(self, crawler_tasks_repo):
         """測試無效的 cron 操作"""
