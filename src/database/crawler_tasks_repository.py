@@ -396,23 +396,27 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
                 # 對於所有 cron 表達式，使用 croniter 計算下次執行時間
                 try:
-                    cron = croniter(cron_expression, last_run)
-                    next_run = cron.get_next(datetime)
-                    # 確保 next_run 也有時區
-                    if next_run.tzinfo is None:
-                        next_run = enforce_utc_datetime_transform(next_run)
-                        logger.debug(f"[find_pending_tasks] Task ID {task.id}: Forced next_run to UTC: {next_run.isoformat()}")
+                    # Find the *most recent* scheduled time slot that should have occurred before or at 'now'
+                    cron_now = croniter(cron_expression, now)
+                    previous_scheduled_run = cron_now.get_prev(datetime)
+                    # 確保 previous_scheduled_run 也有時區
+                    if previous_scheduled_run.tzinfo is None:
+                        previous_scheduled_run = enforce_utc_datetime_transform(previous_scheduled_run)
+                        logger.debug(f"[find_pending_tasks] Task ID {task.id}: Forced previous_scheduled_run to UTC: {previous_scheduled_run.isoformat()}")
 
                     # Log the comparison values
-                    logger.debug(f"[find_pending_tasks] Task ID {task.id} ({task.task_name}): last_run={last_run.isoformat()}, next_run={next_run.isoformat()}, now={now.isoformat()}, tolerance_window=1s")
+                    logger.debug(f"[find_pending_tasks] Task ID {task.id} ({task.task_name}): last_run={last_run.isoformat()}, previous_scheduled_run={previous_scheduled_run.isoformat()}, now={now.isoformat()}")
 
-                    # 只有下次執行時間已經過了（包含1秒容錯），才加入待執行列表
-                    time_threshold = now + timedelta(seconds=1)
-                    if next_run <= time_threshold:
-                        logger.debug(f"[find_pending_tasks] Task ID {task.id} added. Condition met: next_run ({next_run.isoformat()}) <= now + 1s ({time_threshold.isoformat()})")
-                        result_tasks.append(task)
+                    # If the last run occurred *after* the most recent scheduled time,
+                    # it means the task ran successfully for that slot. It's not pending.
+                    if last_run > previous_scheduled_run:
+                        logger.debug(f"[find_pending_tasks] Task ID {task.id} skipped. Condition not met: last_run ({last_run.isoformat()}) > previous_scheduled_run ({previous_scheduled_run.isoformat()})")
+                        continue
                     else:
-                        logger.debug(f"[find_pending_tasks] Task ID {task.id} skipped. Condition not met: next_run ({next_run.isoformat()}) > now + 1s ({time_threshold.isoformat()})")
+                        # If the last run was before or exactly at the previous scheduled time,
+                        # it means the task is due to run now (or is overdue).
+                        logger.debug(f"[find_pending_tasks] Task ID {task.id} added. Condition met: last_run ({last_run.isoformat()}) <= previous_scheduled_run ({previous_scheduled_run.isoformat()})")
+                        result_tasks.append(task)
 
                 except Exception as e:
                     # 防止 croniter 計算出錯導致整個查詢失敗
