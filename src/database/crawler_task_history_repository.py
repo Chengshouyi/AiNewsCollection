@@ -267,21 +267,9 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
                 
             # 使用更新方法
             updated_entity = self.update(history_id, update_data)
-            
-            # 提交事務
-            self.execute_query(
-                lambda: self.session.commit(),
-                err_msg=f"提交更新歷史記錄ID為{history_id}的狀態時發生錯誤"
-            )
-            
+            logger.debug(f"更新歷史記錄狀態已完成，等待提交: {updated_entity}")
             return updated_entity is not None
         except Exception as e:
-            # 這裡不需要嵌套 execute_query，因為可能發生的異常已經在 update 方法中處理
-            self.execute_query(
-                lambda: self.session.rollback(),
-                err_msg="回滾更新歷史記錄狀態事務時發生錯誤",
-                preserve_exceptions=[]
-            )
             logger.error(f"更新歷史記錄狀態時發生錯誤: {e}")
             return False
 

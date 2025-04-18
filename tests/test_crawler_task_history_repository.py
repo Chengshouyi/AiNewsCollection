@@ -195,7 +195,7 @@ class TestCrawlerTaskHistoryRepository:
         for history in histories_older_than_2_days:
             assert (datetime.now(timezone.utc) - history.start_time).days >= 2
 
-    def test_update_history_status(self, crawler_task_history_repo, sample_histories):
+    def test_update_history_status(self, crawler_task_history_repo, sample_histories, session):
         """測試更新歷史記錄狀態"""
         history = sample_histories[1]
         
@@ -206,9 +206,17 @@ class TestCrawlerTaskHistoryRepository:
         )
         assert partial_update_result is True
         
-        updated_history = crawler_task_history_repo.get_by_id(history.id)
-        assert updated_history.success is True
-        assert updated_history.end_time is not None
+        # 在 repo 不再 commit 後，測試需要自行 commit
+        session.commit()
+        
+        # 重新獲取實體以驗證持久化
+        updated_history_partial = crawler_task_history_repo.get_by_id(history.id)
+        assert updated_history_partial is not None
+        assert updated_history_partial.success is True
+        assert updated_history_partial.end_time is not None
+        # 確保其他欄位未意外更改
+        assert updated_history_partial.message == history.message
+        assert updated_history_partial.articles_count == history.articles_count
         
         # 測試完整更新
         complete_update_result = crawler_task_history_repo.update_history_status(
@@ -220,14 +228,21 @@ class TestCrawlerTaskHistoryRepository:
         
         assert complete_update_result is True
         
-        updated_history = crawler_task_history_repo.get_by_id(history.id)
-        assert updated_history.success is True
-        assert updated_history.message == "重試成功"
-        assert updated_history.articles_count == 5
-        assert updated_history.end_time is not None
+        # 再次 commit
+        session.commit()
+        
+        # 再次重新獲取實體以驗證持久化
+        updated_history_complete = crawler_task_history_repo.get_by_id(history.id)
+        assert updated_history_complete is not None
+        assert updated_history_complete.success is True
+        assert updated_history_complete.message == "重試成功"
+        assert updated_history_complete.articles_count == 5
+        assert updated_history_complete.end_time is not None
+        # 可以選擇性地斷言 end_time 已更新 (可能因執行速度而不穩定)
+        # assert updated_history_complete.end_time > updated_history_partial.end_time
 
     # 新增測試：測試預設值設定
-    def test_create_with_default_values(self, crawler_task_history_repo, sample_task):
+    def test_create_with_default_values(self, crawler_task_history_repo, sample_task, session):
         """測試創建時設定預設值的邏輯"""
         # 只提供最小必填欄位
         min_data = {
@@ -241,12 +256,22 @@ class TestCrawlerTaskHistoryRepository:
         assert history.start_time is not None  # 預期設置為當前時間
         assert history.success is False  # 預期預設為 False
         assert history.articles_count == 0  # 預期預設為 0
-        
-        # 驗證存入資料庫
+
+        # !! 加入 commit 才能將 history 寫入資料庫 !!
+        session.commit()
+
+        # 驗證存入資料庫 (現在 history.id 應該有值了)
+        # 在 commit 後重新獲取，確保是從資料庫讀取的
         db_history = crawler_task_history_repo.get_by_id(history.id)
         assert db_history is not None
+        assert db_history.task_id == sample_task.id
+        # 可以添加更多對 db_history 的斷言，例如檢查時間戳等，但基本驗證是 not None
         assert db_history.success is False
         assert db_history.articles_count == 0
+
+        # 清理創建的數據 (如果需要)
+        # session.delete(history)
+        # session.commit()
 
     # 新增測試：測試創建時的驗證錯誤
     def test_create_validation_error(self, crawler_task_history_repo):
@@ -260,18 +285,21 @@ class TestCrawlerTaskHistoryRepository:
         # 應該拋出 ValidationError
         with pytest.raises(ValidationError) as excinfo:
             crawler_task_history_repo.create(invalid_data)
-        
-        assert "驗證失敗" in str(excinfo.value)
+
+        # 檢查異常訊息中是否包含關鍵的欄位名稱
+        assert 'task_id' in str(excinfo.value)
     
     # 新增測試：測試更新不可變欄位
-    def test_update_immutable_fields(self, crawler_task_history_repo, sample_histories):
+    def test_update_immutable_fields(self, crawler_task_history_repo, sample_histories, session):
         """測試更新不可變欄位的處理邏輯"""
         history = sample_histories[0]
+        original_task_id = history.task_id
+        original_start_time = history.start_time
         
         # 嘗試更新不可變欄位
         update_data = {
             'task_id': 999,  # 不可變欄位
-            'start_time': datetime.now(),  # 不可變欄位
+            'start_time': datetime.now(timezone.utc),  # 不可變欄位
             'message': "新訊息"  # 可變欄位
         }
         
@@ -279,15 +307,23 @@ class TestCrawlerTaskHistoryRepository:
         updated = crawler_task_history_repo.update(history.id, update_data)
         assert updated is not None
         
+        # Commit a session to persist changes
+        session.commit()
+        
+        # 重新獲取以驗證
+        refetched_history = crawler_task_history_repo.get_by_id(history.id)
+        assert refetched_history is not None
+        
         # 驗證不可變欄位沒有被更新，但可變欄位有被更新
-        assert updated.task_id == history.task_id  # task_id 應保持不變
-        assert updated.start_time == history.start_time  # start_time 應保持不變
-        assert updated.message == "新訊息"  # message 應被更新
+        assert refetched_history.task_id == original_task_id  # task_id 應保持不變
+        assert refetched_history.start_time == original_start_time  # start_time 應保持不變
+        assert refetched_history.message == "新訊息"  # message 應被更新
     
     # 新增測試：測試更新空資料
-    def test_update_empty_data(self, crawler_task_history_repo, sample_histories):
+    def test_update_empty_data(self, crawler_task_history_repo, sample_histories, session):
         """測試更新空資料的處理邏輯"""
         history = sample_histories[0]
+        original_message = history.message # Store original value
         
         # 更新空資料
         updated = crawler_task_history_repo.update(history.id, {})
@@ -295,8 +331,17 @@ class TestCrawlerTaskHistoryRepository:
         # 應該返回原實體，不做任何更改
         assert updated is not None
         assert updated.id == history.id
-        assert updated.message == history.message
+        assert updated.message == original_message # Check against original stored value
         assert updated.success == history.success
+        
+        # Commit is technically not needed here as no changes should happen,
+        # but adding it doesn't hurt and ensures consistency if update logic changes.
+        session.commit()
+        
+        # Re-fetch to be absolutely sure state didn't change in DB
+        refetched_history = crawler_task_history_repo.get_by_id(history.id)
+        assert refetched_history is not None
+        assert refetched_history.message == original_message
 
 class TestModelStructure:
     """測試模型結構"""
