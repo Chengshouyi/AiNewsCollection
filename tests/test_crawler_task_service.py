@@ -185,13 +185,13 @@ class TestCrawlerTaskService:
         
         print(f"test_get_task_history() before query ：Session ID: {id(session)}")
         # 直接查詢
-        try:
-            print(f"test_get_task_history() before direct query ：Session ID: {id(session)}")
-            histories_direct = session.query(CrawlerTaskHistory).filter(CrawlerTaskHistory.task_id == task_id).all()
-            print("Direct query successful:", histories_direct) 
-            print(f"test_get_task_history() after direct query ：Session ID: {id(session)}")
-        except Exception as e:
-            print("Direct query failed:", e)
+        # try:
+        #     print(f"test_get_task_history() before direct query ：Session ID: {id(session)}")
+        #     histories_direct = session.query(CrawlerTaskHistory).filter(CrawlerTaskHistory.task_id == task_id).all()
+        #     print("Direct query successful:", histories_direct) 
+        #     print(f"test_get_task_history() after direct query ：Session ID: {id(session)}")
+        # except Exception as e:
+        #     print("Direct query failed:", e)
 
         print(f"test_get_task_history() befor task_service.get_task_history query ：Session ID: {id(session)}")
         result = crawler_task_service.get_task_history(task_id)

@@ -406,7 +406,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         """獲取任務的執行歷史記錄 (可選分頁和排序)"""
         try:
             with self._transaction() as session:
-                print(f"task_service.get_task_history() before get_repository ：Session ID: {id(session)}")
+                logger.debug(f"task_service.get_task_history() before get_repository ：Session ID: {id(session)}")
                 history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('TaskHistory', session))
                 if not history_repo:
                     return {
@@ -416,14 +416,14 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'total_count': 0
                     }
                 
-                print(f"task_service.get_task_history() before find_by_task_id ：Session ID: {id(session)}")
+                logger.debug(f"task_service.get_task_history() before find_by_task_id ：Session ID: {id(session)}")
                 histories = history_repo.find_by_task_id(
                     task_id=task_id,
                     limit=limit,
                     offset=offset,
                     sort_desc=sort_desc
                 )
-                print(f"task_service.get_task_history() after find_by_task_id ：Session ID: {id(session)}")
+                logger.debug(f"task_service.get_task_history() after find_by_task_id ：Session ID: {id(session)}")
                 return {
                     'success': True,
                     'message': '任務歷史獲取成功',
