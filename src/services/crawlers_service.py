@@ -20,7 +20,7 @@ T = TypeVar('T', bound=Base)
 # 添加 DatetimeProvider 輔助類，用於在測試中替換
 class DatetimeProvider:
     @staticmethod
-    def now(tz=None):
+    def now(tz=timezone.utc):
         return datetime.now(tz)
 
 class CrawlersService(BaseService[Crawlers]):
@@ -178,7 +178,8 @@ class CrawlersService(BaseService[Crawlers]):
                 
                 # 使用 Pydantic 驗證資料
                 try:
-                    validated_data = CrawlersUpdateSchema.model_validate(crawler_data).model_dump()
+                    
+                    validated_data = self.validate_crawler_data(crawler_data, is_update=True)
                 except Exception as e:
                     return {
                         'success': False,
@@ -333,7 +334,7 @@ class CrawlersService(BaseService[Crawlers]):
             logger.error(f"切換爬蟲狀態失敗，ID={crawler_id}: {str(e)}")
             raise e
     
-    def get_crawlers_by_name(self, name: str) -> Dict[str, Any]:
+    def get_crawlers_by_name(self, name: str, is_active: Optional[bool] = None) -> Dict[str, Any]:
         """根據名稱模糊查詢爬蟲設定"""
         try:
             with self._transaction() as session:
@@ -344,7 +345,7 @@ class CrawlersService(BaseService[Crawlers]):
                         'message': '無法取得資料庫存取器',
                         'crawlers': []
                     }
-                crawlers = crawler_repo.find_by_crawler_name(name)
+                crawlers = crawler_repo.find_by_crawler_name(name, is_active=is_active)
                 crawlers_orm = crawlers or [] # 確保是列表
                 crawlers_schema = [CrawlerReadSchema.model_validate(c) for c in crawlers_orm] # 轉換為 Schema 列表
                 if not crawlers_schema:
@@ -674,18 +675,20 @@ class CrawlersService(BaseService[Crawlers]):
                 )
                 
                 if not result or not result.get('items'):
+                    # 即使找不到結果，也返回空的 PaginatedCrawlerResponse 對象
+                    empty_response = PaginatedCrawlerResponse(
+                        items=[],
+                        page=page,
+                        per_page=per_page,
+                        total=0,
+                        total_pages=0,
+                        has_next=False,
+                        has_prev=False
+                    )
                     return {
-                        'success': False,
+                        'success': False, # 維持 False 表示未找到
                         'message': "找不到符合條件的爬蟲設定",
-                        'data': {
-                            'items': [],
-                            'page': page,
-                            'per_page': per_page,
-                            'total': 0,
-                            'total_pages': 0,
-                            'has_next': False,
-                            'has_prev': False
-                        }
+                        'data': empty_response
                     }
                 
                 # 確保 repo 返回的 result 是字典

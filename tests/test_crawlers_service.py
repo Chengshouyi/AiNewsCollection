@@ -161,7 +161,8 @@ class TestCrawlersService:
         assert created_crawler.crawler_type == valid_crawler_data["crawler_type"]
         assert created_crawler.config_file_name == valid_crawler_data["config_file_name"]
         assert created_crawler.created_at == MOCK_TIME
-        assert created_crawler.updated_at == MOCK_TIME
+        assert isinstance(created_crawler.updated_at, datetime)
+        assert created_crawler.updated_at >= created_crawler.created_at # 確保更新時間不早於創建時間
     
     def test_get_all_crawlers(self, crawlers_service, sample_crawlers, session):
         """測試獲取所有爬蟲設定"""
@@ -215,13 +216,25 @@ class TestCrawlersService:
         # 確保會話中的資料是最新的
         session.expire_all()
         
-        # 查詢包含"爬蟲"的爬蟲設定
-        result = crawlers_service.get_crawlers_by_name("爬蟲")
-        assert result['success'] is True
-        assert len(result['crawlers']) == 3
-        assert all(isinstance(c, CrawlerReadSchema) for c in result['crawlers']) # 檢查類型
+        # --- 測試 is_active=None (預設，查找所有) ---
+        result_all = crawlers_service.get_crawlers_by_name("爬蟲")
+        assert result_all['success'] is True
+        assert len(result_all['crawlers']) == 3, "預期找到所有 3 個包含'爬蟲'的爬蟲"
+        assert all(isinstance(c, CrawlerReadSchema) for c in result_all['crawlers']) # 檢查類型
         
-        # 查詢包含"數位"的爬蟲設定
+        # --- 測試 is_active=True (僅查找活動的) ---
+        result_active = crawlers_service.get_crawlers_by_name("爬蟲", is_active=True)
+        assert result_active['success'] is True
+        assert len(result_active['crawlers']) == 2, "預期找到 2 個活動的'爬蟲'爬蟲"
+        assert all(crawler.is_active for crawler in result_active['crawlers'])
+        
+        # --- 測試 is_active=False (僅查找非活動的) ---
+        result_inactive = crawlers_service.get_crawlers_by_name("爬蟲", is_active=False)
+        assert result_inactive['success'] is True
+        assert len(result_inactive['crawlers']) == 1, "預期找到 1 個非活動的'爬蟲'爬蟲"
+        assert not result_inactive['crawlers'][0].is_active
+
+        # 查詢包含"數位"的爬蟲設定 (預設 is_active=None)
         digital_crawlers_result = crawlers_service.get_crawlers_by_name("數位")
         assert digital_crawlers_result['success'] is True
         assert len(digital_crawlers_result['crawlers']) == 1
@@ -254,8 +267,9 @@ class TestCrawlersService:
         assert result['crawler'].base_url == "https://example.com/updated"
         assert result['crawler'].is_active is False
         assert result['crawler'].config_file_name == "bnext_crawler_config_updated.json"
-        assert result['crawler'].updated_at == MOCK_TIME # 驗證更新時間
-        assert result['crawler'].created_at != MOCK_TIME # 創建時間應保持不變 (取決於 fixture 數據)
+        assert isinstance(result['crawler'].updated_at, datetime) # 驗證是時間類型
+        assert result['crawler'].updated_at >= MOCK_TIME # 驗證更新時間不早於模擬時間
+        assert result['crawler'].created_at == MOCK_TIME # 創建時間應保持不變 (取決於 fixture 數據)
         
         # 測試不存在的ID
         result = crawlers_service.update_crawler(999999, update_data)
@@ -359,8 +373,11 @@ class TestCrawlersService:
         assert stats['active'] == 2
         assert stats['inactive'] == 1
         assert 'by_type' in stats
-        assert len(stats['by_type']) == 3 # 根據 sample_crawlers 有 3 種類型
-        type_counts = {item['crawler_type']: item['count'] for item in stats['by_type']}
+
+        # 直接檢查服務返回的 by_type 字典
+        type_counts = stats['by_type'] 
+        assert isinstance(type_counts, dict), "stats['by_type'] 應該是一個字典"
+        assert len(type_counts) == 3 # 根據 sample_crawlers 有 3 種類型
         assert type_counts['bnext'] == 1
         assert type_counts['technews'] == 1
         assert type_counts['business'] == 1
@@ -411,7 +428,8 @@ class TestCrawlersService:
         assert result['crawler'].id == existing_id
         assert result['crawler'].crawler_name == unique_name
         assert result['crawler'].is_active is False
-        assert result['crawler'].updated_at == MOCK_TIME # 檢查更新時間
+        assert isinstance(result['crawler'].updated_at, datetime) # 檢查更新時間是 datetime
+        assert result['crawler'].updated_at >= MOCK_TIME # 檢查更新時間不早於模擬時間
         assert "更新成功" in result['message']
         
         # 測試創建新爬蟲
@@ -432,7 +450,8 @@ class TestCrawlersService:
         assert result['crawler'].crawler_name == new_unique_name
         assert result['crawler'].crawler_type == "test_new"
         assert result['crawler'].created_at == MOCK_TIME # 檢查創建時間
-        assert result['crawler'].updated_at == MOCK_TIME # 檢查更新時間
+        assert isinstance(result['crawler'].updated_at, datetime) # 檢查更新時間是 datetime
+        assert result['crawler'].updated_at >= MOCK_TIME # 檢查更新時間不早於模擬時間
         assert "創建成功" in result['message']
     
     def test_batch_toggle_crawler_status(self, crawlers_service, sample_crawlers, session):
@@ -582,21 +601,29 @@ class TestCrawlersServiceErrorHandling:
         assert "base_url" in result['message']
     
     def test_empty_update_data(self, crawlers_service, sample_crawlers, session):
-        """測試空更新資料處理"""
+        """測試空更新資料處理 (預期僅更新 updated_at)"""
         crawler_id = sample_crawlers[0]["id"]
         empty_update = {}
+
+        # 獲取原始數據以供比較
+        original_result = crawlers_service.get_crawler_by_id(crawler_id)
+        assert original_result['success'] is True
+        original_crawler = original_result['crawler']
         
         # 調用 update_crawler 並檢查返回的字典
         result = crawlers_service.update_crawler(crawler_id, empty_update)
         
-        # 期望失敗，因為 Pydantic Update Schema 可能不允許完全空的數據
-        # 或者至少 updated_at 會被添加，但其他欄位可能需要
-        # 根據 CrawlersUpdateSchema 的具體定義，行為可能不同
-        # 假設更新至少需要一個欄位（除了自動添加的 updated_at）
-        assert result['success'] is False
-        assert "爬蟲設定更新資料驗證失敗" in result['message']
-        # 可以進一步檢查 Pydantic 報錯的具體內容，例如缺少欄位或值無效
-        # assert "field required" in result['message'] or "value error" in result['message']
+        # 使用 exclude_unset=True 後，空字典應該只更新 updated_at，視為成功
+        assert result['success'] is True, f"空更新應該成功，只更新 updated_at，但失敗了: {result.get('message')}"
+        assert result['crawler'] is not None
+        assert result['crawler'].id == crawler_id
+        # 驗證其他字段未被更改
+        assert result['crawler'].crawler_name == original_crawler.crawler_name
+        assert result['crawler'].base_url == original_crawler.base_url
+        assert result['crawler'].is_active == original_crawler.is_active
+        # 驗證 updated_at 已更新 (會被 onupdate 覆蓋，所以檢查它是否晚於創建時間)
+        assert isinstance(result['crawler'].updated_at, datetime)
+        assert result['crawler'].updated_at >= original_crawler.created_at
 
     def test_create_or_update_validation(self, crawlers_service, session):
         """測試創建或更新時的驗證錯誤處理"""

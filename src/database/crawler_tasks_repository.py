@@ -16,6 +16,7 @@ from sqlalchemy.orm.attributes import flag_modified # 導入 flag_modified
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
 class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
     """CrawlerTasks 特定的Repository"""
 

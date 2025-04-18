@@ -367,7 +367,7 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
                     update_data['articles_count'] = articles_count
 
                 try:
-                    validated_data = history_repo.validate_data(update_data, SchemaType.UPDATE)
+                    validated_data = self.validate_data('CrawlerTaskHistory', update_data, SchemaType.UPDATE)
                 except ValidationError as e:
                     error_msg = f"更新歷史記錄狀態時資料驗證失敗, ID={history_id}: {str(e)}"
                     logger.error(error_msg, exc_info=True)
@@ -571,7 +571,7 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
             with self._transaction() as session:
                 history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 
-                validated_data = history_repo.validate_data(history_data, SchemaType.CREATE)
+                validated_data = self.validate_data('CrawlerTaskHistory', history_data, SchemaType.CREATE)
                 new_history_orm = history_repo.create(validated_data)
                 
                 if new_history_orm:
@@ -621,7 +621,7 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
                         'history': None
                     }
 
-                validated_data = history_repo.validate_data(history_data, SchemaType.UPDATE)
+                validated_data = self.validate_data('CrawlerTaskHistory', history_data, SchemaType.UPDATE)
                 updated_history_orm = history_repo.update(history_id, validated_data)
                 
                 if updated_history_orm:

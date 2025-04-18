@@ -1,16 +1,18 @@
 from .base_repository import BaseRepository, SchemaType
 from src.models.crawlers_model import Crawlers
-from typing import List, Optional, Dict, Any, Type, Literal, overload
+from typing import List, Optional, Dict, Any, Type, Literal, overload, TypeVar
 from datetime import datetime, timezone
 from sqlalchemy import func
 from pydantic import BaseModel
 from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
 from src.error.errors import ValidationError, DatabaseOperationError
 import logging
+from sqlalchemy.orm.attributes import instance_state
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
 
 class CrawlersRepository(BaseRepository['Crawlers']):
     """Crawlers 特定的Repository"""
@@ -132,16 +134,32 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             return None
         return result
     
-    def find_by_crawler_name(self, crawler_name: str, is_active: bool = True) -> Optional[List['Crawlers']]:
-        """根據爬蟲名稱模糊查詢，回傳匹配的列表"""
-        result = self.execute_query(
-            lambda: self.session.query(self.model_class)
-                .filter(self.model_class.crawler_name.like(f"%{crawler_name}%"), self.model_class.is_active == is_active)
-                .all()
+    def find_by_crawler_name(self, crawler_name: str, is_active: Optional[bool] = None) -> Optional[List['Crawlers']]:
+        """根據爬蟲名稱模糊查詢，可選擇根據 is_active 過濾
+        
+        Args:
+            crawler_name: 爬蟲名稱
+            is_active: 是否過濾活躍狀態
+                None:抓全部
+                True:只抓活躍的
+                False:只抓非活躍的
+            
+        Returns:
+            爬蟲列表    
+            
+        """
+        query = self.session.query(self.model_class).filter(
+            self.model_class.crawler_name.like(f"%{crawler_name}%")
         )
-        if not result:
-            return None
-        return result
+
+        # 如果 is_active 不是 None，則添加 is_active 過濾條件
+        if is_active is not None:
+            query = query.filter(self.model_class.is_active == is_active)
+
+        result = self.execute_query(lambda: query.all())
+
+        # 注意：即使找不到結果，也返回空列表而不是 None，以保持一致性
+        return result if result else []
 
     def toggle_active_status(self, crawler_id: int) -> bool:
         """切換爬蟲活躍狀態"""

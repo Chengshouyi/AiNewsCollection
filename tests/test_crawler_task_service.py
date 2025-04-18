@@ -139,10 +139,10 @@ class TestCrawlerTaskService:
         # 確認任務已被刪除
         result = crawler_task_service.get_task_by_id(task_id)
         assert result["success"] is False
-        assert result["message"] == "任務不存在"
+        assert result["message"] == "任務不存在或不符合條件"
 
     def test_get_task_by_id(self, crawler_task_service, sample_tasks):
-        """測試根據ID獲取任務"""
+        """測試根據ID獲取爬蟲任務"""
         task_id = sample_tasks[0].id
         result = crawler_task_service.get_task_by_id(task_id)
         
@@ -185,9 +185,9 @@ class TestCrawlerTaskService:
         
         result = crawler_task_service.get_task_history(task_id)
         assert result["success"] is True
-        assert len(result["history"]) == 2
+        assert len(result["histories"]) == 2
 
-    def test_get_scrape_phase(self, crawler_task_service, sample_tasks, session):
+    def test_get_task_status(self, crawler_task_service, sample_tasks, session):
         """測試獲取任務狀態"""
         task_id = sample_tasks[0].id
         
@@ -201,8 +201,8 @@ class TestCrawlerTaskService:
         session.add(history)
         session.commit()
         
-        result = crawler_task_service.get_scrape_phase(task_id)
-        assert result["status"] == "running"
+        result = crawler_task_service.get_task_status(task_id)
+        assert result["task_status"] == "running"
         assert 0 <= result["progress"] <= 95
         assert result["message"] == "正在執行中"
 

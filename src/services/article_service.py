@@ -65,7 +65,7 @@ class ArticleService(BaseService[Articles]):
                     else:
                         article_data_for_validation = article_data
                         
-                    validated_data = article_repo.validate_data(article_data_for_validation, SchemaType.UPDATE)
+                    validated_data = self.validate_article_data(article_data_for_validation, is_update=True)
                     
                     updated_article = article_repo.update(existing_article.id, validated_data)
                     # commit 由 _transaction 處理
@@ -87,7 +87,7 @@ class ArticleService(BaseService[Articles]):
                             'article': article_schema # 返回 Schema
                         }
                 else:
-                    validated_data = article_repo.validate_data(article_data, SchemaType.CREATE)
+                    validated_data = self.validate_article_data(article_data, is_update=False)
                     new_article = article_repo.create(validated_data)
                     
                     if new_article:
@@ -258,7 +258,7 @@ class ArticleService(BaseService[Articles]):
                         'article': None
                     }
 
-                validated_data = article_repo.validate_data(article_data, SchemaType.UPDATE)
+                validated_data = self.validate_article_data(article_data, is_update=True)
                 updated_article = article_repo.update(article_id, validated_data)
                 
                 if updated_article:
@@ -569,7 +569,7 @@ class ArticleService(BaseService[Articles]):
                         'resultMsg': None
                     }
                 
-                validated_data = article_repo.validate_data(article_data, SchemaType.UPDATE)
+                validated_data = self.validate_article_data(article_data, is_update=True)
                 repo_result = article_repo.batch_update_by_ids(article_ids, validated_data)
                 
                 if not repo_result:

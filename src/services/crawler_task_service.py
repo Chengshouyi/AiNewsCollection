@@ -55,7 +55,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         if task_id not in self.running_crawlers:
             self.running_crawlers[task_id] = CrawlerFactory.get_crawler(crawler_name)
         return self.running_crawlers[task_id]
-
+    
+    
     def validate_task_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
         """驗證任務資料
         
@@ -97,10 +98,11 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         
     def create_task(self, task_data: Dict) -> Dict:
         """創建新任務"""
+        validated_data = self.validate_task_data(task_data, is_update=False)
         try:
             with self._transaction() as session:
                 # 1. 驗證資料 (必須在事務內)
-                validated_data = self.validate_task_data(task_data, is_update=False)
+
                 
                 # 2. 獲取儲存庫
                 tasks_repo = cast(CrawlerTasksRepository, self._get_repository('CrawlerTask', session))
@@ -113,13 +115,19 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 # 3. 創建任務 (使用驗證後的資料)
                 task = tasks_repo.create(validated_data)
-                # 重新加載排程 (這裡的邏輯可能需要調整，取決於 SchedulerService 如何運作)
-                if task and task.is_auto:
-                    # scheduler_service = SchedulerService() # 假設可以這樣獲取實例
-                    # scheduler_service.reload_schedule() # 觸發排程重新加載
-                    logger.info(f"自動任務 {task.id} 已創建，排程可能需要重新加載。")
                 
                 if task:
+                    # --- Add flush and refresh here ---
+                    session.flush()  # Ensure the task is flushed to DB to get the ID
+                    session.refresh(task) # Refresh the task object with the generated ID
+                    # --- End of addition ---
+
+                    # 重新加載排程 (這裡的邏輯可能需要調整，取決於 SchedulerService 如何運作)
+                    if task.is_auto:
+                        # scheduler_service = SchedulerService() # 假設可以這樣獲取實例
+                        # scheduler_service.reload_schedule() # 觸發排程重新加載
+                        logger.info(f"自動任務 {task.id} 已創建，排程可能需要重新加載。")
+
                     task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換
                     return {
                         'success': True,
@@ -175,7 +183,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 # 2. 驗證傳入的數據 (使用 repo 的 schema 驗證)
                 #    注意：validate_data 返回的是驗證清理後的字典
                 #    ** BaseService.validate_data 需要在事務內，這裡已經是
-                validated_data = self.validate_data('CrawlerTask', task_data, SchemaType.UPDATE)
+                validated_data = self.validate_task_data(task_data, is_update=True)
                 
                 entity_modified = False
                 task_args_updated = False
@@ -402,12 +410,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     return {
                         'success': False,
                         'message': '無法取得資料庫存取器',
-                        'history': [],
+                        'histories': [],
                         'total_count': 0
                     }
                 
-                # 使用 Repository 的 find_by_task_id，假設它支持分頁和排序
-                history, total_count = history_repo.find_by_task_id(
+                
+                histories, total_count = history_repo.find_by_task_id(
                     task_id=task_id,
                     limit=limit,
                     offset=offset,
@@ -416,7 +424,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 return {
                     'success': True,
                     'message': '任務歷史獲取成功',
-                    'history': history,
+                    'histories': histories,
                     'total_count': total_count
                 }
         except Exception as e:
@@ -425,7 +433,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             return {
                 'success': False,
                 'message': error_msg,
-                'history': [],
+                'histories': [],
                 'total_count': 0
             }
 
@@ -480,9 +488,9 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         progress = 100
                     # 如果歷史記錄指示任務正在運行 (有開始時間但無結束時間)
                     elif latest_history.start_time and not latest_history.end_time:
-                        task_status = TaskStatus.RUNNING.value # 強制設為 RUNNING
+                        task_status = TaskStatus.RUNNING.value 
+                        # 強制設為 RUNNING
                         # 階段可能需要更精確的判斷，暫時維持任務表中的值或設為 RUNNING
-                        # scrape_phase = ScrapePhase.RUNNING.value # 或者維持 task.scrape_phase
                         current_time = datetime.now(timezone.utc)
                         elapsed = current_time - latest_history.start_time
                         # 這裡的進度計算非常粗略，僅作示意
@@ -673,6 +681,35 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'success': False,
                 'message': error_msg,
                 'task': None
+            }
+
+    def get_all_tasks(self) -> Dict:
+        """獲取所有任務"""
+        try:
+            with self._transaction() as session:
+                tasks_repo = cast(CrawlerTasksRepository, self._get_repository('CrawlerTask', session))
+                if not tasks_repo:
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器',
+                        'tasks': []
+                    }   
+                    
+                tasks = tasks_repo.get_all()
+                tasks_orm = tasks or [] # 確保是列表
+                tasks_schema = [CrawlerTaskReadSchema.model_validate(t) for t in tasks_orm] # 轉換
+                return {
+                    'success': True,
+                    'message': '任務查詢成功',
+                    'tasks': tasks_schema # 返回 Schema 列表
+                }
+        except Exception as e:
+            error_msg = f"獲取所有任務失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'tasks': []
             }
 
     def find_tasks_by_multiple_crawlers(self, crawler_ids: List[int]) -> Dict:
