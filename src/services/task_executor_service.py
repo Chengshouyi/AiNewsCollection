@@ -15,6 +15,7 @@ from src.models.crawlers_model import Crawlers
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.database.base_repository import SchemaType
 from src.utils.enum_utils import TaskStatus
+from src.models.crawler_tasks_schema import CrawlerTaskReadSchema
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -517,7 +518,7 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                     'scrape_phase': scrape_phase,
                     'progress': progress,
                     'message': latest_history.message if latest_history and latest_history.message else '',
-                    'task': task.to_dict()
+                    'task': CrawlerTaskReadSchema.model_validate(task) if task else None
                 }
         except Exception as e:
             error_msg = f"獲取任務狀態失敗, ID={task_id}: {str(e)}"
@@ -690,7 +691,7 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 return {
                     'success': True,
                     'message': '任務最後執行狀態更新成功',
-                    'task': updated_task.to_dict() if updated_task else None # Return updated task data
+                    'task': CrawlerTaskReadSchema.model_validate(updated_task) if updated_task else None
                 }
         except Exception as e:
             error_msg = f"更新任務最後執行狀態失敗, ID={task_id}: {str(e)}"

@@ -1,5 +1,6 @@
-from typing import Annotated, Optional
-from pydantic import  BeforeValidator, model_validator
+from typing import Annotated, Optional, List
+from pydantic import  BeforeValidator, model_validator, BaseModel, ConfigDict
+from datetime import datetime
 from src.utils.model_utils import validate_url, validate_str, validate_boolean
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
 from src.utils.schema_utils import validate_update_schema, validate_required_fields_schema
@@ -53,6 +54,35 @@ class CrawlersUpdateSchema(BaseUpdateSchema):
     def get_updated_fields(cls):
         return ['crawler_name', 'base_url', 'is_active', 'config_file_name'] + BaseUpdateSchema.get_updated_fields()
     
+
+# --- 新增用於讀取/響應的 Schema ---
+
+class CrawlerReadSchema(BaseModel):
+    """用於 API 響應的爬蟲數據模型"""
+    id: int
+    crawler_name: str
+    base_url: str
+    crawler_type: str
+    config_file_name: str
+    is_active: bool
+    created_at: datetime 
+    updated_at: datetime 
+
+    # Pydantic V2 配置: 允許從 ORM 屬性創建模型
+    model_config = ConfigDict(from_attributes=True)
+
+class PaginatedCrawlerResponse(BaseModel):
+    """用於分頁響應的結構化數據模型"""
+    items: List[CrawlerReadSchema]
+    page: int
+    per_page: int
+    total: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+    # Pydantic V2 配置: 如果輸入數據是對象而非字典，這也可能有用
+    model_config = ConfigDict(from_attributes=True)
 
 
 

@@ -2,7 +2,7 @@ import logging
 from typing import Optional, Dict, Any, List, TypeVar, Tuple, Type, cast
 from src.models.crawlers_model import Base, Crawlers
 from datetime import datetime, timezone
-from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
+from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema, CrawlerReadSchema, PaginatedCrawlerResponse
 from src.database.crawlers_repository import CrawlersRepository
 from src.services.base_service import BaseService
 from src.database.base_repository import BaseRepository
@@ -92,10 +92,11 @@ class CrawlersService(BaseService[Crawlers]):
                 if result and not instance_state(result).detached:
                     session.flush()
                     session.refresh(result)
+                    crawler_schema = CrawlerReadSchema.model_validate(result)
                     return {
                         'success': True,
                         'message': "爬蟲設定創建成功",
-                        'crawler': result
+                        'crawler': crawler_schema
                     }
                 else:
                     return {
@@ -127,10 +128,12 @@ class CrawlersService(BaseService[Crawlers]):
                     sort_desc=sort_desc
                 )
                 
+                crawlers_orm = crawlers or [] # 確保是列表
+                crawlers_schema = [CrawlerReadSchema.model_validate(c) for c in crawlers_orm] # 轉換為 Schema 列表
                 return {
                     'success': True,
                     'message': "獲取爬蟲設定列表成功",
-                    'crawlers': crawlers or []
+                    'crawlers': crawlers_schema or []
                 }
         except Exception as e:
             logger.error(f"獲取所有爬蟲設定失敗: {str(e)}")
@@ -156,10 +159,11 @@ class CrawlersService(BaseService[Crawlers]):
                         'crawler': None
                     }
                 
+                crawler_schema = CrawlerReadSchema.model_validate(crawler)
                 return {
                     'success': True,
                     'message': "獲取爬蟲設定成功",
-                    'crawler': crawler
+                    'crawler': crawler_schema
                 }
         except Exception as e:
             logger.error(f"獲取爬蟲設定失敗，ID={crawler_id}: {str(e)}")
@@ -204,18 +208,20 @@ class CrawlersService(BaseService[Crawlers]):
                 if result and not instance_state(result).detached:
                     session.flush()
                     session.refresh(result)
+                    crawler_schema = CrawlerReadSchema.model_validate(result)
                     return {
                         'success': True,
                         'message': "爬蟲設定更新成功",
-                        'crawler': result
+                        'crawler': crawler_schema
                     }
                 else:
                     logger.warning(f"更新爬蟲 ID={crawler_id} 時 repo.update 返回 None 或 False，可能無變更或更新失敗。")
                     session.refresh(original_crawler)
+                    crawler_schema = CrawlerReadSchema.model_validate(original_crawler)
                     return {
                         'success': True,
                         'message': f"爬蟲設定更新操作完成 (可能無實際變更), ID={crawler_id}",
-                        'crawler': original_crawler
+                        'crawler': crawler_schema
                     }
                 
         except Exception as e:
@@ -268,16 +274,18 @@ class CrawlersService(BaseService[Crawlers]):
                         'crawlers': []
                     }
                 crawlers = crawler_repo.find_active_crawlers()
-                if not crawlers:
+                crawlers_orm = crawlers or [] # 確保是列表
+                crawlers_schema = [CrawlerReadSchema.model_validate(c) for c in crawlers_orm] # 轉換為 Schema 列表
+                if not crawlers_schema:
                     return {
-                        'success': False,
+                        'success': True, # 找不到不算失敗
                         'message': "找不到任何活動中的爬蟲設定",
                         'crawlers': []
                     }
                 return {
                     'success': True,
                     'message': "獲取活動中的爬蟲設定成功",
-                    'crawlers': crawlers or []
+                    'crawlers': crawlers_schema
                 }
         except Exception as e:
             logger.error(f"獲取活動中的爬蟲設定失敗: {str(e)}")
@@ -314,10 +322,11 @@ class CrawlersService(BaseService[Crawlers]):
                 session.flush()
                 session.refresh(crawler_to_toggle)
                 
+                crawler_schema = CrawlerReadSchema.model_validate(crawler_to_toggle)
                 return {
                     'success': True,
                     'message': f"成功切換爬蟲狀態，新狀態={new_status}",
-                    'crawler': crawler_to_toggle,
+                    'crawler': crawler_schema,
                 }
                 
         except Exception as e:
@@ -336,16 +345,18 @@ class CrawlersService(BaseService[Crawlers]):
                         'crawlers': []
                     }
                 crawlers = crawler_repo.find_by_crawler_name(name)
-                if not crawlers:
+                crawlers_orm = crawlers or [] # 確保是列表
+                crawlers_schema = [CrawlerReadSchema.model_validate(c) for c in crawlers_orm] # 轉換為 Schema 列表
+                if not crawlers_schema:
                     return {
-                        'success': False,
+                        'success': True, # 找不到不算失敗
                         'message': "找不到任何符合條件的爬蟲設定",
                         'crawlers': []
                     }
                 return {
                     'success': True,
                     'message': "獲取爬蟲設定列表成功",
-                    'crawlers': crawlers or []
+                    'crawlers': crawlers_schema
                 }   
         except Exception as e:
             logger.error(f"獲取爬蟲設定列表失敗: {str(e)}")
@@ -363,16 +374,18 @@ class CrawlersService(BaseService[Crawlers]):
                         'crawlers': []
                     }
                 crawlers = crawler_repo.find_by_type(crawler_type)
-                if not crawlers:
+                crawlers_orm = crawlers or [] # 確保是列表
+                crawlers_schema = [CrawlerReadSchema.model_validate(c) for c in crawlers_orm] # 轉換為 Schema 列表
+                if not crawlers_schema:
                     return {
-                        'success': False,
+                        'success': True, # 找不到不算失敗
                         'message': f"找不到類型為 {crawler_type} 的爬蟲設定",
                         'crawlers': []
                     }
                 return {
                     'success': True,
                     'message': f"獲取類型為 {crawler_type} 的爬蟲設定列表成功",
-                    'crawlers': crawlers
+                    'crawlers': crawlers_schema
                 }
         except Exception as e:
             logger.error(f"獲取類型為 {crawler_type} 的爬蟲設定列表失敗: {str(e)}")
@@ -390,16 +403,18 @@ class CrawlersService(BaseService[Crawlers]):
                         'crawlers': []
                     }
                 crawlers = crawler_repo.find_by_target(target_pattern)
-                if not crawlers:
+                crawlers_orm = crawlers or [] # 確保是列表
+                crawlers_schema = [CrawlerReadSchema.model_validate(c) for c in crawlers_orm] # 轉換為 Schema 列表
+                if not crawlers_schema:
                     return {
-                        'success': False,
+                        'success': True, # 找不到不算失敗
                         'message': f"找不到目標包含 {target_pattern} 的爬蟲設定",
                         'crawlers': []
                     }
                 return {
                     'success': True,
                     'message': f"獲取目標包含 {target_pattern} 的爬蟲設定列表成功",
-                    'crawlers': crawlers
+                    'crawlers': crawlers_schema
                 }
         except Exception as e:
             logger.error(f"獲取目標包含 {target_pattern} 的爬蟲設定列表失敗: {str(e)}")
@@ -438,7 +453,8 @@ class CrawlersService(BaseService[Crawlers]):
                         'crawler': None
                     }
                 crawler = crawler_repo.find_by_crawler_name_exact(crawler_name)
-                if not crawler:
+                crawler_schema = CrawlerReadSchema.model_validate(crawler) if crawler else None
+                if not crawler_schema:
                     return {
                         'success': False,
                         'message': f"找不到名稱為 {crawler_name} 的爬蟲設定",
@@ -447,7 +463,7 @@ class CrawlersService(BaseService[Crawlers]):
                 return {
                     'success': True,
                     'message': "獲取爬蟲設定成功",
-                    'crawler': crawler
+                    'crawler': crawler_schema
                 }
         except Exception as e:
             logger.error(f"獲取名稱為 {crawler_name} 的爬蟲設定失敗: {str(e)}")
@@ -586,11 +602,12 @@ class CrawlersService(BaseService[Crawlers]):
                         'crawler': None
                     }
                 
-                logger.info(f"爬蟲設定{operation}成功: {result}")
+                crawler_schema = CrawlerReadSchema.model_validate(result)
+                logger.info(f"爬蟲設定{operation}成功: {crawler_schema}")
                 return {
                     'success': True,
                     'message': f"爬蟲設定{operation}成功",
-                    'crawler': result
+                    'crawler': crawler_schema
                 }
         except Exception as e:
             logger.error(f"創建或更新爬蟲設定失敗: {str(e)}")
@@ -671,10 +688,37 @@ class CrawlersService(BaseService[Crawlers]):
                         }
                     }
                 
+                # 確保 repo 返回的 result 是字典
+                repo_result = result if isinstance(result, dict) else {}
+                
+                # 轉換 items 為 Schema 列表
+                items_orm = repo_result.get('items', []) or [] # 確保是列表
+                items_schema = [CrawlerReadSchema.model_validate(item) for item in items_orm]
+                
+                # 創建 PaginatedCrawlerResponse 實例
+                try:
+                    paginated_response = PaginatedCrawlerResponse(
+                        items=items_schema,
+                        page=repo_result.get("page", 1),
+                        per_page=repo_result.get("per_page", per_page),
+                        total=repo_result.get("total", 0),
+                        total_pages=repo_result.get("total_pages", 0),
+                        has_next=repo_result.get("has_next", False),
+                        has_prev=repo_result.get("has_prev", False)
+                    )
+                except Exception as pydantic_error: # 捕捉可能的 Pydantic 驗證錯誤
+                    logger.error(f"創建 PaginatedCrawlerResponse 時出錯: {pydantic_error}", exc_info=True)
+                    return {'success': False, 'message': f'分頁結果格式錯誤: {pydantic_error}', 'data': None}
+
+                if not paginated_response.items: # 即使成功，也檢查是否有數據
+                    message = "找不到符合條件的爬蟲設定"
+                else:
+                    message = "獲取爬蟲設定列表成功"
+                    
                 return {
                     'success': True,
-                    'message': "獲取爬蟲設定列表成功",
-                    'data': result
+                    'message': message,
+                    'data': paginated_response # 返回 Schema 實例
                 }
         except Exception as e:
             logger.error(f"獲取過濾後的爬蟲設定列表失敗: {str(e)}")

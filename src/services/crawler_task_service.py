@@ -17,6 +17,7 @@ from src.models.crawler_tasks_model import CrawlerTasks, TASK_ARGS_DEFAULT
 from src.models.crawlers_model import Crawlers
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.articles_model import Articles
+from src.models.crawler_tasks_schema import CrawlerTaskReadSchema, PaginatedCrawlerTaskResponse
 from src.error.errors import ValidationError
 from src.utils.enum_utils import ScrapeMode, ScrapePhase, TaskStatus
 from src.utils.model_utils import validate_task_args
@@ -119,10 +120,11 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     logger.info(f"自動任務 {task.id} 已創建，排程可能需要重新加載。")
                 
                 if task:
+                    task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換
                     return {
                         'success': True,
                         'message': '任務創建成功',
-                        'task': task
+                        'task': task_schema # 返回 Schema
                     }
                 else:
                      return {
@@ -217,20 +219,22 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not entity_modified:
                     logger.info(f"任務 {task_id} 無需更新，提供的資料與當前狀態相同。")
                     session.refresh(task) # 確保返回的是最新狀態
+                    task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換
                     return {
                         'success': True,
                         'message': '任務無需更新',
-                        'task': task
+                        'task': task_schema # 返回 Schema
                     }
 
                 # _transaction() 會自動處理 commit
                 logger.info(f"任務 {task_id} 已在 Session 中更新，等待提交。")
                 session.flush() # 確保更新寫入
                 session.refresh(task) # 獲取 DB 最新狀態 (可能包含觸發器等)
+                task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換
                 return {
                     'success': True,
                     'message': '任務更新成功',
-                    'task': task # 返回從 session 中獲取的、已更新的 task 物件
+                    'task': task_schema # 返回更新後的 Schema
                 }
         except ValidationError as e:
             error_msg = f"更新任務資料驗證失敗, ID={task_id}: {str(e)}"
@@ -298,11 +302,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     }
                     
                 task = tasks_repo.find_tasks_by_id(task_id, is_active)
-                if task:
+                task_schema = CrawlerTaskReadSchema.model_validate(task) if task else None # 轉換
+                if task_schema:
                     return {
                         'success': True,
                         'message': '任務獲取成功',
-                        'task': task
+                        'task': task_schema # 返回 Schema
                     }
                 return {
                     'success': False,
@@ -369,10 +374,13 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'total_count': 0
                     }
 
+                tasks_orm = search_result.get('tasks', []) or [] # 確保是列表
+                tasks_schema = [CrawlerTaskReadSchema.model_validate(t) for t in tasks_orm] # 轉換
+
                 return {
                     'success': True,
                     'message': '任務搜尋成功',
-                    'tasks': search_result.get('tasks', []),
+                    'tasks': tasks_schema, # 返回 Schema 列表
                     'total_count': search_result.get('total_count', 0)
                 }
         except Exception as e:
@@ -492,13 +500,16 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         progress = 0
                     # 否則，可能表示任務从未運行或狀態異常
                 
+                task_schema = CrawlerTaskReadSchema.model_validate(task) if task else None # 轉換 task
+                # history_schema = CrawlerTaskHistoryReadSchema.model_validate(latest_history) if latest_history else None # 假設有 History Schema
+
                 return {
                     'task_status': task_status,
                     'scrape_phase': scrape_phase,
                     'progress': progress,
                     'message': message,
-                    'task': task, # 返回從 DB 獲取的 task 對象
-                    'history': latest_history # 返回從 DB 獲取的 history 對象
+                    'task': task_schema, # 返回 Task Schema
+                    'history': latest_history # 暫時仍返回 ORM 或 None
                 }
                 
         except Exception as e:
@@ -527,10 +538,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     }
                     
                 failed_tasks = tasks_repo.get_failed_tasks(days)
+                tasks_orm = failed_tasks or [] # 確保是列表
+                tasks_schema = [CrawlerTaskReadSchema.model_validate(t) for t in tasks_orm] # 轉換
                 return {
                     'success': True,
                     'message': f'成功獲取最近 {days} 天失敗的任務',
-                    'tasks': failed_tasks
+                    'tasks': tasks_schema # 返回 Schema 列表
                 }
         except Exception as e:
             error_msg = f"獲取失敗任務時發生錯誤: {str(e)}"
@@ -560,11 +573,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                      # 可能需要重新加載排程
                     # scheduler_service = SchedulerService()
                     # scheduler_service.reload_schedule()
-                    logger.info(f"任務 {task_id} 自動狀態切換為 {task.is_auto}，排程可能需要重新加載。")
+                    logger.info(f"自動任務 {task.id} 已創建，排程可能需要重新加載。")
+                    task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換
                     return {
                         'success': True,
                         'message': f'自動執行狀態切換為 {task.is_auto}',
-                        'task': task
+                        'task': task_schema # 返回 Schema
                     }
                 else:
                     return {
@@ -602,10 +616,11 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     #     scheduler_service = SchedulerService()
                     #     scheduler_service.reload_schedule()
                     logger.info(f"任務 {task_id} 啟用狀態切換為 {task.is_active}。")
+                    task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換
                     return {
                         'success': True,
                         'message': f'啟用狀態切換為 {task.is_active}',
-                        'task': task
+                        'task': task_schema # 返回 Schema
                     }
                 else:
                      return {
@@ -637,12 +652,13 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 # 使用 Repository 的 update_notes 方法
                 task = tasks_repo.update_notes(task_id, notes)
+                task_schema = CrawlerTaskReadSchema.model_validate(task) if task else None # 轉換
                 
-                if task:
+                if task_schema:
                     return {
                         'success': True,
                         'message': '備註更新成功',
-                        'task': task
+                        'task': task_schema # 返回 Schema
                     }
                 else:
                     return {
@@ -672,10 +688,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     }
                     
                 tasks = tasks_repo.find_tasks_by_multiple_crawlers(crawler_ids)
+                tasks_orm = tasks or [] # 確保是列表
+                tasks_schema = [CrawlerTaskReadSchema.model_validate(t) for t in tasks_orm] # 轉換
                 return {
                     'success': True,
                     'message': '任務查詢成功',
-                    'tasks': tasks
+                    'tasks': tasks_schema # 返回 Schema 列表
                 }
         except Exception as e:
             error_msg = f"根據多個爬蟲ID查詢任務失敗: {str(e)}"
@@ -699,10 +717,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     }
                     
                 tasks = tasks_repo.find_tasks_by_cron_expression(cron_expression)
+                tasks_orm = tasks or [] # 確保是列表
+                tasks_schema = [CrawlerTaskReadSchema.model_validate(t) for t in tasks_orm] # 轉換
                 return {
                     'success': True,
                     'message': '任務查詢成功',
-                    'tasks': tasks
+                    'tasks': tasks_schema # 返回 Schema 列表
                 }
         except ValidationError as e: # Cron 表達式驗證可能在 Repo 層完成
             error_msg = f"cron 表達式驗證失敗: {str(e)}"
@@ -733,10 +753,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'tasks': []
                     }
                 tasks = tasks_repo.find_pending_tasks(cron_expression)
+                tasks_orm = tasks or [] # 確保是列表
+                tasks_schema = [CrawlerTaskReadSchema.model_validate(t) for t in tasks_orm] # 轉換
                 return {
                     'success': True,
                     'message': '待執行任務查詢成功',
-                    'tasks': tasks
+                    'tasks': tasks_schema # 返回 Schema 列表
                 }
         except ValidationError as e: # Cron 驗證
             error_msg = f"cron 表達式驗證失敗: {str(e)}"
@@ -769,12 +791,13 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 # 使用 Repository 的 update_last_run 方法，假設它返回更新後的 task
                 task = tasks_repo.update_last_run(task_id, success, message)
+                task_schema = CrawlerTaskReadSchema.model_validate(task) if task else None # 轉換
                 
-                if task:
+                if task_schema:
                     return {
                         'success': True,
                         'message': '任務執行狀態更新成功',
-                        'task': task
+                        'task': task_schema # 返回 Schema
                     }
                 else:
                     return {
@@ -897,7 +920,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 return {
                     'success': True, # 操作嘗試成功，即使內部可能有部分失敗
                     'message': final_message,
-                    'task': task_result, # 返回更新後 (或原始) 的 task 對象
+                    'task': CrawlerTaskReadSchema.model_validate(task_result) if task_result else None, # 返回更新後 (或原始) 的 task Schema
                     'history': history_result, # 返回創建/更新後 (或 None) 的 history 對象
                     'updated': task_updated or history_created or history_updated # 是否有任何實際變更
                 }
@@ -984,16 +1007,18 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 current_retry = task.retry_count + 1
                 task_data = {'retry_count': current_retry}
                 result_task = tasks_repo.update(task_id, task_data) # 假設 update 返回更新後的 task
+                result_task_schema = CrawlerTaskReadSchema.model_validate(result_task) if result_task else None # 轉換
                 
-                if not result_task:
+                if not result_task_schema:
                      # 更新失敗的處理
+                     task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換原始 task
                      return {
                         'success': False,
                         'message': '增加重試次數失敗 (repo.update 返回 None)',
                         'exceeded_max_retries': None,
                         'retry_count': task.retry_count, # 返回原始值
                         'max_retries': max_retries,
-                        'task': task # 返回原始 task
+                        'task': task_schema # 返回原始 Schema
                     }
 
                 # 檢查是否達到最大重試次數
@@ -1005,7 +1030,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     'retry_count': current_retry,
                     'max_retries': max_retries,
                     'exceeded_max_retries': has_reached_max,
-                    'task': result_task
+                    'task': result_task_schema # 返回更新後的 Schema
                 }
         except Exception as e:
             error_msg = f"更新重試次數失敗, ID={task_id}: {str(e)}"
@@ -1057,18 +1082,20 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 # 重置重試次數
                 task_data = {'retry_count': 0}
                 result_task = tasks_repo.update(task_id, task_data)
+                result_task_schema = CrawlerTaskReadSchema.model_validate(result_task) if result_task else None # 轉換
                 
-                if not result_task:
+                if not result_task_schema:
+                    task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換原始 task
                     return {
                         'success': False,
                         'message': '重置重試次數失敗 (repo.update 返回 None)',
-                        'task': task # 返回原始 task
+                        'task': task_schema # 返回原始 Schema
                     }
 
                 return {
                     'success': True,
                     'message': '重試次數已重置為 0',
-                    'task': result_task
+                    'task': result_task_schema # 返回更新後的 Schema
                 }
         except Exception as e:
             error_msg = f"重置重試次數失敗, ID={task_id}: {str(e)}"
@@ -1136,10 +1163,11 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if current_max_retries == max_retries:
                     logger.info(f"任務 {task_id} 的 max_retries 已是 {max_retries}，無需更新。")
                     session.refresh(task) # 確保返回的是最新狀態
+                    task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換
                     return {
                         'success': True,
                         'message': f'最大重試次數無需更新，當前值: {max_retries}',
-                        'task': task
+                        'task': task_schema # 返回 Schema
                     }
                 
                 # 更新 task_args 字典
@@ -1158,10 +1186,11 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 session.flush() # 確保更新寫入 DB
                 session.refresh(task) # 從 DB 讀取最新狀態 (包括 task_args)
                 
+                task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換
                 return {
                     'success': True,
                     'message': f'最大重試次數更新為 {max_retries}',
-                    'task': task # 返回更新後的 task 對象
+                    'task': task_schema # 返回更新後的 Schema
                 }
         except Exception as e:
             error_msg = f"更新最大重試次數失敗, ID={task_id}: {str(e)}"

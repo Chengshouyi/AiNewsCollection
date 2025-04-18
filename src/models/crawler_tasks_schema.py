@@ -1,5 +1,5 @@
-from typing import Annotated, Optional, Any
-from pydantic import BeforeValidator, model_validator
+from typing import Annotated, Optional, Any, List
+from pydantic import BeforeValidator, model_validator, BaseModel, ConfigDict
 from datetime import datetime
 from src.error.errors import ValidationError
 from src.utils.model_utils import validate_str, validate_boolean, validate_positive_int, validate_cron_expression, validate_scrape_phase, validate_task_args, validate_task_status
@@ -85,4 +85,43 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
             return validate_update_schema(cls.get_immutable_fields(), cls.get_updated_fields(), data)
         else:
             raise ValidationError("無效的資料格式，需要字典")
+    
+
+# --- 新增用於讀取/響應的 Schema ---
+
+class CrawlerTaskReadSchema(BaseModel):
+    """用於 API 響應的爬蟲任務數據模型"""
+    id: int
+    task_name: str
+    crawler_id: int
+    is_auto: bool
+    is_active: bool
+    is_scheduled: bool
+    task_args: dict
+    notes: Optional[str] = None
+    last_run_at: Optional[datetime] = None
+    last_run_success: Optional[bool] = None
+    last_run_message: Optional[str] = None
+    cron_expression: Optional[str] = None
+    scrape_phase: Optional[ScrapePhase] = None
+    task_status: TaskStatus
+    retry_count: int
+    created_at: datetime
+    updated_at: datetime
+
+    # Pydantic V2 配置: 允許從 ORM 屬性創建模型
+    model_config = ConfigDict(from_attributes=True)
+
+class PaginatedCrawlerTaskResponse(BaseModel):
+    """用於分頁響應的結構化數據模型"""
+    items: List[CrawlerTaskReadSchema]
+    page: int
+    per_page: int
+    total: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+    # Pydantic V2 配置: 如果輸入數據是對象而非字典，這也可能有用
+    model_config = ConfigDict(from_attributes=True)
     

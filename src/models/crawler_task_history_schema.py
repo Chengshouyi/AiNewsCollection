@@ -1,5 +1,5 @@
-from typing import Annotated, Optional, Any
-from pydantic import BaseModel, BeforeValidator, model_validator
+from typing import Annotated, Optional, Any, List
+from pydantic import BaseModel, BeforeValidator, model_validator, ConfigDict
 from datetime import datetime
 from src.utils.model_utils import validate_str, validate_datetime, validate_boolean, validate_positive_int,validate_task_status
 from src.utils.schema_utils import validate_required_fields_schema, validate_update_schema
@@ -61,5 +61,34 @@ class CrawlerTaskHistoryUpdateSchema(BaseUpdateSchema):
     def get_updated_fields(cls):
         return ['end_time', 'start_time', 'success', 'message', 'articles_count', 'task_status'] + BaseUpdateSchema.get_updated_fields()
     
+# --- 新增用於讀取/響應的 Schema ---
 
+class CrawlerTaskHistoryReadSchema(BaseModel):
+    """用於 API 響應的爬蟲任務歷史數據模型"""
+    id: int
+    task_id: int
+    start_time: Optional[datetime] = None
+    end_time: Optional[datetime] = None
+    success: Optional[bool] = None
+    message: Optional[str] = None
+    articles_count: Optional[int] = None
+    task_status: TaskStatus
+    created_at: datetime
+    updated_at: datetime
+
+    # Pydantic V2 配置: 允許從 ORM 屬性創建模型
+    model_config = ConfigDict(from_attributes=True)
+
+class PaginatedCrawlerTaskHistoryResponse(BaseModel):
+    """用於分頁響應的結構化數據模型"""
+    items: List[CrawlerTaskHistoryReadSchema]
+    page: int
+    per_page: int
+    total: int
+    total_pages: int
+    has_next: bool
+    has_prev: bool
+
+    # Pydantic V2 配置: 如果輸入數據是對象而非字典，這也可能有用
+    model_config = ConfigDict(from_attributes=True)
             
