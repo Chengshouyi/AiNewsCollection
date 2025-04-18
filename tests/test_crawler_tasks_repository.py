@@ -4,7 +4,7 @@ from sqlalchemy import create_engine, JSON, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.orm.attributes import flag_modified
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
-from src.models.crawler_tasks_model import CrawlerTasks, ScrapePhase, ScrapeMode, TASK_ARGS_DEFAULT
+from src.models.crawler_tasks_model import CrawlerTasks, ScrapePhase, ScrapeMode, TASK_ARGS_DEFAULT, TaskStatus
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
 from src.database.base_repository import SchemaType
@@ -76,84 +76,71 @@ def sample_crawler(session, clean_db):
 
 @pytest.fixture(scope="function")
 def sample_tasks(session, clean_db, sample_crawler):
+    """修改後的 fixture，包含更多樣化的測試數據"""
     # 先清理表
     session.query(CrawlerTasks).delete()
     session.commit()
 
-    tasks = [
-        CrawlerTasks(
-            task_name="自動AI任務(活動)",
-            crawler_id=sample_crawler.id,
-            is_auto=True,
-            is_scheduled=True,
-            task_args={**TASK_ARGS_DEFAULT, "ai_only": True},
-            notes="自動AI任務",
-            cron_expression="* * * * *",
-            scrape_phase=ScrapePhase.INIT,
-            max_retries=3,
-            retry_count=0,
-            is_active=True # 活動
-        ),
-        CrawlerTasks(
-            task_name="自動一般任務(活動)",
-            crawler_id=sample_crawler.id,
-            is_auto=True,
-            is_scheduled=True,
-            task_args={**TASK_ARGS_DEFAULT, "ai_only": False},
-            notes="自動一般任務",
-            cron_expression="* * * * *",
-            scrape_phase=ScrapePhase.INIT,
-            max_retries=3,
-            retry_count=0,
-            is_active=True # 活動
-        ),
-        CrawlerTasks(
-            task_name="手動AI任務(活動)",
-            crawler_id=sample_crawler.id,
-            is_auto=False,
-            is_scheduled=False,
-            task_args={**TASK_ARGS_DEFAULT, "ai_only": True},
-            notes="手動AI任務",
-            # cron_expression="* * * * *", # 手動任務不需要cron
-            scrape_phase=ScrapePhase.INIT,
-            max_retries=3,
-            retry_count=0,
-            is_active=True # 活動
-        ),
-        CrawlerTasks(
-            task_name="自動一般任務(非活動)",
-            crawler_id=sample_crawler.id,
-            is_auto=True, # 雖然是自動，但不活動
-            is_scheduled=True,
-            task_args={**TASK_ARGS_DEFAULT, "ai_only": False},
-            notes="非活動任務",
-            cron_expression="0 0 * * *",
-            scrape_phase=ScrapePhase.INIT,
-            max_retries=3,
-            retry_count=0,
-            is_active=False # 非活動
-        ),
-         CrawlerTasks(
-            task_name="手動AI任務(非活動)",
-            crawler_id=sample_crawler.id,
-            is_auto=False,
-            is_scheduled=False,
-            task_args={**TASK_ARGS_DEFAULT, "ai_only": True},
-            notes="非活動手動AI任務",
-            scrape_phase=ScrapePhase.INIT,
-            max_retries=3,
-            retry_count=0,
-            is_active=False # 非活動
-        )
+    now = datetime.now(timezone.utc)
+    yesterday = now - timedelta(days=1)
+    two_days_ago = now - timedelta(days=2)
+
+    tasks_data = [
+        {
+            "task_name": "自動AI任務(活動)", "crawler_id": sample_crawler.id, "is_auto": True,
+            "is_scheduled": True, "is_active": True, "cron_expression": "0 * * * *",
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": True, "max_pages": 10, "save_to_csv": False, "scrape_mode": ScrapeMode.FULL_SCRAPE.value},
+            "notes": "自動AI任務", "scrape_phase": ScrapePhase.COMPLETED, "task_status": TaskStatus.COMPLETED,
+            "last_run_at": yesterday, "last_run_success": True, "retry_count": 0, "max_retries": 3
+        },
+        {
+            "task_name": "自動一般任務(活動)", "crawler_id": sample_crawler.id, "is_auto": True,
+            "is_scheduled": True, "is_active": True, "cron_expression": "30 * * * *",
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_pages": 5, "save_to_csv": True, "scrape_mode": ScrapeMode.LINKS_ONLY.value},
+            "notes": "有Notes的失敗任務", "scrape_phase": ScrapePhase.FAILED, "task_status": TaskStatus.FAILED,
+            "last_run_at": now - timedelta(hours=1), "last_run_success": False, "retry_count": 1, "max_retries": 3
+        },
+        {
+            "task_name": "手動AI任務(活動)", "crawler_id": sample_crawler.id, "is_auto": False,
+            "is_scheduled": False, "is_active": True, "cron_expression": None,
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": True, "max_pages": 100, "save_to_csv": False, "scrape_mode": ScrapeMode.CONTENT_ONLY.value},
+            "notes": "手動AI任務", "scrape_phase": ScrapePhase.INIT, "task_status": TaskStatus.INIT,
+            "last_run_at": None, "last_run_success": None, "retry_count": 0, "max_retries": 0 # 不可重試
+        },
+        {
+            "task_name": "自動一般任務(非活動)", "crawler_id": sample_crawler.id, "is_auto": True,
+            "is_scheduled": True, "is_active": False, "cron_expression": "0 0 * * *",
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_pages": 20, "save_to_csv": False, "scrape_mode": ScrapeMode.FULL_SCRAPE.value},
+            "notes": "非活動任務", "scrape_phase": ScrapePhase.COMPLETED, "task_status": TaskStatus.COMPLETED,
+            "last_run_at": two_days_ago, "last_run_success": True, "retry_count": 3, "max_retries": 5
+        },
+        {
+            "task_name": "手動AI任務(非活動)", "crawler_id": sample_crawler.id, "is_auto": False,
+            "is_scheduled": False, "is_active": False, "cron_expression": None,
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": True, "max_pages": 50, "save_to_csv": True, "scrape_mode": ScrapeMode.LINKS_ONLY.value},
+            "notes": None, "scrape_phase": ScrapePhase.INIT, "task_status": TaskStatus.INIT,
+            "last_run_at": None, "last_run_success": None, "retry_count": 0, "max_retries": 3
+        },
+         {
+            "task_name": "運行中任務(活動)", "crawler_id": sample_crawler.id, "is_auto": True,
+            "is_scheduled": True, "is_active": True, "cron_expression": "*/5 * * * *",
+            "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_pages": 15, "save_to_csv": False, "scrape_mode": ScrapeMode.FULL_SCRAPE.value},
+            "notes": "運行中", "scrape_phase": ScrapePhase.CONTENT_SCRAPING, "task_status": TaskStatus.RUNNING,
+            "last_run_at": now - timedelta(minutes=2), "last_run_success": None, "retry_count": 0, "max_retries": 3 # 上次運行時間為2分鐘前
+        }
     ]
-    session.add_all(tasks)
+
+    tasks_orm = [CrawlerTasks(**data) for data in tasks_data]
+    session.add_all(tasks_orm)
     session.commit()
 
     # 明確刷新所有物件以確保 ID 都已賦值
-    for task in tasks:
+    refreshed_tasks = []
+    for task in tasks_orm:
         session.refresh(task)
+        refreshed_tasks.append(task)
 
-    return tasks
+    return refreshed_tasks
 
 class TestCrawlerTasksRepository:
     """CrawlerTasksRepository 測試類"""
@@ -232,7 +219,7 @@ class TestCrawlerTasksRepository:
         all_tasks = crawler_tasks_repo.find_tasks_by_crawler_id(sample_crawler.id)
         auto_tasks = [task for task in all_tasks if task.is_auto]
         
-        assert len(auto_tasks) == 2
+        assert len(auto_tasks) == 3
         assert all(task.crawler_id == sample_crawler.id and task.is_auto for task in auto_tasks)
 
     def test_toggle_auto_status(self, crawler_tasks_repo, sample_tasks, session):
@@ -348,13 +335,13 @@ class TestCrawlerTasksRepository:
     def test_find_tasks_by_multiple_crawlers(self, crawler_tasks_repo, sample_tasks, sample_crawler):
         """測試根據多個爬蟲ID查詢任務"""
         tasks = crawler_tasks_repo.find_tasks_by_multiple_crawlers([sample_crawler.id])
-        assert len(tasks) == 5
+        assert len(tasks) == 6
         assert all(task.crawler_id == sample_crawler.id for task in tasks)
 
     def test_get_tasks_count_by_crawler(self, crawler_tasks_repo, sample_tasks, sample_crawler):
         """測試獲取特定爬蟲的任務數量"""
         count = crawler_tasks_repo.get_tasks_count_by_crawler(sample_crawler.id)
-        assert count == 5
+        assert count == 6
 
     def test_find_tasks_by_cron_expression(self, crawler_tasks_repo, session, sample_crawler):
         """測試根據 cron 表達式查詢任務"""
@@ -432,7 +419,7 @@ class TestCrawlerTasksRepository:
             crawler_id=sample_crawler.id,
             is_auto=True,
             cron_expression="0 * * * *",
-            last_run_at=now - timedelta(minutes=30),
+            last_run_at=now - timedelta(minutes=5), # 改為 5 分鐘前執行
             task_args={**TASK_ARGS_DEFAULT,"ai_only": False},  
             scrape_phase=ScrapePhase.INIT,
             max_retries=3,
@@ -845,6 +832,152 @@ class TestCrawlerTasksRepository:
         # 4. 更新不存在的任務
         result4 = crawler_tasks_repo.update_last_run(99999, success=True)
         assert result4 is None, "更新不存在的任務應返回 None"
+
+    def test_advanced_search(self, crawler_tasks_repo, sample_tasks, sample_crawler):
+        """測試 advanced_search 方法"""
+        total_tasks = len(sample_tasks)
+
+        # 1. 無過濾器 (應該返回所有任務，按預設排序)
+        result = crawler_tasks_repo.advanced_search()
+        assert result is not None, "advanced_search 不應返回 None"
+        assert result['total_count'] == total_tasks, "總數應為所有任務數量"
+        assert len(result['tasks']) == total_tasks, "任務列表應包含所有任務"
+        # 檢查預設排序 (created_at desc) - 這裡基於 sample_tasks 的創建順序反向
+        assert [t.task_name for t in result['tasks']] == [t.task_name for t in reversed(sample_tasks)], "預設排序應為創建時間降冪"
+
+        # 2. 簡單欄位過濾
+        # task_name (like)
+        result = crawler_tasks_repo.advanced_search(task_name="自動AI")
+        assert result['total_count'] == 1
+        assert result['tasks'][0].task_name == "自動AI任務(活動)"
+
+        # crawler_id
+        result = crawler_tasks_repo.advanced_search(crawler_id=sample_crawler.id)
+        assert result['total_count'] == total_tasks # 所有任務都屬於這個 crawler
+
+        result = crawler_tasks_repo.advanced_search(crawler_id=999)
+        assert result['total_count'] == 0
+
+        # is_auto
+        result = crawler_tasks_repo.advanced_search(is_auto=True)
+        expected_count = sum(1 for t in sample_tasks if t.is_auto)
+        assert result['total_count'] == expected_count
+
+        # is_active
+        result = crawler_tasks_repo.advanced_search(is_active=False)
+        expected_count = sum(1 for t in sample_tasks if not t.is_active)
+        assert result['total_count'] == expected_count
+
+        # last_run_success
+        result = crawler_tasks_repo.advanced_search(last_run_success=False)
+        assert result['total_count'] == 1
+        assert result['tasks'][0].task_name == "自動一般任務(活動)"
+
+        # cron_expression
+        result = crawler_tasks_repo.advanced_search(cron_expression="0 * * * *")
+        assert result['total_count'] == 1
+        assert result['tasks'][0].task_name == "自動AI任務(活動)"
+
+        # 3. 範圍/比較過濾
+        # date_range
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        result = crawler_tasks_repo.advanced_search(date_range=(today_start, now))
+        # 應該找到今天運行的任務 (失敗的和運行中的)
+        expected_names = {"自動一般任務(活動)", "運行中任務(活動)"}
+        found_names = {t.task_name for t in result['tasks']}
+        assert result['total_count'] == 2, f"日期範圍查詢錯誤，預期2個，找到{result['total_count']}個，找到的任務: {found_names}"
+        assert found_names == expected_names
+
+        # retry_count (exact)
+        result = crawler_tasks_repo.advanced_search(retry_count=1)
+        assert result['total_count'] == 1
+        assert result['tasks'][0].task_name == "自動一般任務(活動)"
+
+        # retry_count (range)
+        result = crawler_tasks_repo.advanced_search(retry_count={"min": 1, "max": 3})
+        expected_names = {"自動一般任務(活動)", "自動一般任務(非活動)"}
+        found_names = {t.task_name for t in result['tasks']}
+        assert result['total_count'] == 2
+        assert found_names == expected_names
+
+        # 4. Presence 過濾
+        # has_notes=True
+        result = crawler_tasks_repo.advanced_search(has_notes=True)
+        expected_count = sum(1 for t in sample_tasks if t.notes)
+        assert result['total_count'] == expected_count
+
+        # has_notes=False
+        result = crawler_tasks_repo.advanced_search(has_notes=False)
+        expected_count = sum(1 for t in sample_tasks if not t.notes)
+        assert result['total_count'] == expected_count
+
+        # 5. Enum 過濾
+        # task_status
+        result = crawler_tasks_repo.advanced_search(task_status=TaskStatus.COMPLETED)
+        expected_count = sum(1 for t in sample_tasks if t.task_status == TaskStatus.COMPLETED)
+        assert result['total_count'] == expected_count
+
+        # scrape_phase
+        result = crawler_tasks_repo.advanced_search(scrape_phase=ScrapePhase.INIT)
+        expected_count = sum(1 for t in sample_tasks if t.scrape_phase == ScrapePhase.INIT)
+        assert result['total_count'] == expected_count
+
+        # 6. JSON (task_args) 過濾
+        # ai_only
+        result = crawler_tasks_repo.advanced_search(ai_only=True)
+        expected_count = sum(1 for t in sample_tasks if t.task_args.get('ai_only') is True)
+        assert result['total_count'] == expected_count
+
+        # max_pages
+        result = crawler_tasks_repo.advanced_search(max_pages=10)
+        assert result['total_count'] == 1
+        assert result['tasks'][0].task_name == "自動AI任務(活動)"
+
+        # save_to_csv
+        result = crawler_tasks_repo.advanced_search(save_to_csv=True)
+        expected_count = sum(1 for t in sample_tasks if t.task_args.get('save_to_csv') is True)
+        assert result['total_count'] == expected_count
+
+        # scrape_mode
+        result = crawler_tasks_repo.advanced_search(scrape_mode=ScrapeMode.LINKS_ONLY)
+        expected_count = sum(1 for t in sample_tasks if t.task_args.get('scrape_mode') == ScrapeMode.LINKS_ONLY.value)
+        assert result['total_count'] == expected_count
+
+        # 7. 排序
+        # 按 task_name 升序
+        result = crawler_tasks_repo.advanced_search(sort_by='task_name', sort_desc=False)
+        assert result['tasks'][0].task_name.startswith("手動AI任務") # 中文排序可能複雜，只檢查第一個
+
+        # 按 last_run_at 降序 (有值的排前面)
+        result = crawler_tasks_repo.advanced_search(sort_by='last_run_at', sort_desc=True)
+        assert result['tasks'][0].task_name == "運行中任務(活動)" # 最新的運行時間
+        assert result['tasks'][-1].last_run_at is None # None 值排在後面
+
+        # 8. 分頁
+        result = crawler_tasks_repo.advanced_search(limit=2, offset=1, sort_by='id', sort_desc=False) # 按 ID 升序，取第 2, 3 個
+        assert len(result['tasks']) == 2
+        assert result['total_count'] == total_tasks # 總數不受分頁影響
+        assert result['tasks'][0].id == sample_tasks[1].id # ID=2
+        assert result['tasks'][1].id == sample_tasks[2].id # ID=3
+
+        # 9. 組合測試
+        result = crawler_tasks_repo.advanced_search(
+            is_active=True,
+            ai_only=True,
+            sort_by='task_name',
+            sort_desc=False,
+            limit=1
+        )
+        assert result['total_count'] == 2 # 兩個活動的 AI 任務
+        assert len(result['tasks']) == 1 # 但只取一個
+        assert result['tasks'][0].task_name == "手動AI任務(活動)" # 按名稱排序，手動排前面
+
+        # 10. 空結果測試
+        result = crawler_tasks_repo.advanced_search(task_name="不存在的任務")
+        assert result['total_count'] == 0
+        assert len(result['tasks']) == 0
+        # assert result['success'] is True
 
 class TestCrawlerTasksConstraints:
     """測試CrawlerTasks的模型約束"""

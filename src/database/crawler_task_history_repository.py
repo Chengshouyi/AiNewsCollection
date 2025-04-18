@@ -124,12 +124,14 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
             logger.error(f"更新 CrawlerTaskHistory (ID={entity_id}) 時發生未預期錯誤: {e}", exc_info=True)
             raise DatabaseOperationError(f"更新 CrawlerTaskHistory (ID={entity_id}) 時發生未預期錯誤: {e}") from e
 
-    def find_by_task_id(self, task_id: int) -> List['CrawlerTaskHistory']:
+    def find_by_task_id(self, task_id: int, limit: Optional[int] = None, offset: Optional[int] = None, sort_desc: bool = False) -> List['CrawlerTaskHistory']:
         """根據任務ID查詢相關的歷史記錄"""
         return self.execute_query(
             lambda: self.session.query(self.model_class).filter_by(
                 task_id=task_id
-            ).all(),
+            ).order_by(
+                self.model_class.start_time.desc() if sort_desc else self.model_class.start_time.asc()
+            ).offset(offset).limit(limit).all(),
             err_msg=f"查詢任務ID為{task_id}的歷史記錄時發生錯誤"
         )
     

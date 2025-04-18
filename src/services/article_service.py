@@ -31,6 +31,20 @@ class ArticleService(BaseService[Articles]):
             'Article': (ArticlesRepository, Articles)
         }
     
+    def validate_article_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
+        """驗證文章資料
+        
+        Args:
+            data: 要驗證的資料
+            is_update: 是否為更新操作   
+            
+        Returns:
+            Dict[str, Any]: 驗證後的資料
+        """
+        schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
+        return self.validate_data('Article', data, schema_type)
+    
+
     def create_article(self, article_data: Dict[str, Any]) -> Dict[str, Any]:
         """創建新文章，若連結已存在則更新，返回包含 ArticleReadSchema 的字典"""
         try:

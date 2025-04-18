@@ -7,6 +7,7 @@ from src.database.crawlers_repository import CrawlersRepository
 from src.services.base_service import BaseService
 from src.database.base_repository import BaseRepository
 from src.database.base_repository import SchemaType
+from sqlalchemy.orm.attributes import instance_state
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -61,7 +62,7 @@ class CrawlersService(BaseService[Crawlers]):
                 crawler: 爬蟲設定
         """
         try:
-            with self._transaction():
+            with self._transaction() as session:
                 # 添加必要的欄位
                 now = self.datetime_provider.now(timezone.utc)
                 crawler_data.update({
@@ -79,7 +80,7 @@ class CrawlersService(BaseService[Crawlers]):
                         'crawler': None
                     }
 
-                crawler_repo = self._get_repository()
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -88,18 +89,20 @@ class CrawlersService(BaseService[Crawlers]):
                     }
                 result = crawler_repo.create(validated_data)
                 
-                if not result:
+                if result and not instance_state(result).detached:
+                    session.flush()
+                    session.refresh(result)
+                    return {
+                        'success': True,
+                        'message': "爬蟲設定創建成功",
+                        'crawler': result
+                    }
+                else:
                     return {
                         'success': False,
                         'message': "創建爬蟲設定失敗",
                         'crawler': None
                     }
-                
-                return {
-                    'success': True,
-                    'message': "爬蟲設定創建成功",
-                    'crawler': result
-                }
                 
         except Exception as e:
             logger.error(f"創建爬蟲設定失敗: {str(e)}")
@@ -109,8 +112,8 @@ class CrawlersService(BaseService[Crawlers]):
                         sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
         """獲取所有爬蟲設定"""
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -136,8 +139,8 @@ class CrawlersService(BaseService[Crawlers]):
     def get_crawler_by_id(self, crawler_id: int) -> Dict[str, Any]:
         """根據ID獲取爬蟲設定"""
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -165,7 +168,7 @@ class CrawlersService(BaseService[Crawlers]):
     def update_crawler(self, crawler_id: int, crawler_data: Dict[str, Any]) -> Dict[str, Any]:
         """更新爬蟲設定"""
         try:
-            with self._transaction():
+            with self._transaction() as session:
                 # 自動更新 updated_at 欄位
                 crawler_data['updated_at'] = self.datetime_provider.now(timezone.utc)
                 
@@ -179,7 +182,7 @@ class CrawlersService(BaseService[Crawlers]):
                         'crawler': None
                     }
                 
-                crawler_repo = self._get_repository()
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -198,18 +201,22 @@ class CrawlersService(BaseService[Crawlers]):
                 
                 result = crawler_repo.update(crawler_id, validated_data)
                 
-                if not result:
+                if result and not instance_state(result).detached:
+                    session.flush()
+                    session.refresh(result)
                     return {
-                        'success': False,
-                        'message': f"更新爬蟲設定失敗，ID={crawler_id}",
-                        'crawler': None
+                        'success': True,
+                        'message': "爬蟲設定更新成功",
+                        'crawler': result
                     }
-                
-                return {
-                    'success': True,
-                    'message': "爬蟲設定更新成功",
-                    'crawler': result
-                }
+                else:
+                    logger.warning(f"更新爬蟲 ID={crawler_id} 時 repo.update 返回 None 或 False，可能無變更或更新失敗。")
+                    session.refresh(original_crawler)
+                    return {
+                        'success': True,
+                        'message': f"爬蟲設定更新操作完成 (可能無實際變更), ID={crawler_id}",
+                        'crawler': original_crawler
+                    }
                 
         except Exception as e:
             logger.error(f"更新爬蟲設定失敗，ID={crawler_id}: {str(e)}")
@@ -218,8 +225,8 @@ class CrawlersService(BaseService[Crawlers]):
     def delete_crawler(self, crawler_id: int) -> Dict[str, Any]:
         """刪除爬蟲設定"""
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -252,8 +259,8 @@ class CrawlersService(BaseService[Crawlers]):
                 crawlers: 活動中的爬蟲設定列表
         """
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -279,36 +286,39 @@ class CrawlersService(BaseService[Crawlers]):
     def toggle_crawler_status(self, crawler_id: int) -> Dict[str, Any]:
         """切換爬蟲活躍狀態"""
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
                         'message': '無法取得資料庫存取器',
                         'crawler': None
                     }
-                result = crawler_repo.toggle_active_status(crawler_id)
                 
-                if not result:
-                    return {
-                        'success': False,
-                        'message': f"爬蟲設定不存在或切換失敗，ID={crawler_id}",
-                        'crawler': None
-                    }
+                # Fetch the crawler first
+                crawler_to_toggle = crawler_repo.get_by_id(crawler_id)
                 
-                updated_crawler = crawler_repo.get_by_id(crawler_id)
-                if updated_crawler: 
-                    return {
-                        'success': True,
-                        'message': f"成功切換爬蟲狀態，新狀態={updated_crawler.is_active}",
-                        'crawler': updated_crawler
-                    }
-                else:
+                if not crawler_to_toggle:
                     return {
                         'success': False,
                         'message': f"爬蟲設定不存在，ID={crawler_id}",
                         'crawler': None
                     }
+
+                # Toggle status and update time
+                new_status = not crawler_to_toggle.is_active
+                crawler_to_toggle.is_active = new_status
+                crawler_to_toggle.updated_at = self.datetime_provider.now(timezone.utc)
+                
+                # Flush and refresh
+                session.flush()
+                session.refresh(crawler_to_toggle)
+                
+                return {
+                    'success': True,
+                    'message': f"成功切換爬蟲狀態，新狀態={new_status}",
+                    'crawler': crawler_to_toggle,
+                }
                 
         except Exception as e:
             logger.error(f"切換爬蟲狀態失敗，ID={crawler_id}: {str(e)}")
@@ -317,8 +327,8 @@ class CrawlersService(BaseService[Crawlers]):
     def get_crawlers_by_name(self, name: str) -> Dict[str, Any]:
         """根據名稱模糊查詢爬蟲設定"""
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -344,8 +354,8 @@ class CrawlersService(BaseService[Crawlers]):
     def get_crawlers_by_type(self, crawler_type: str) -> Dict[str, Any]:
         """根據爬蟲類型查找爬蟲"""
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -371,8 +381,8 @@ class CrawlersService(BaseService[Crawlers]):
     def get_crawlers_by_target(self, target_pattern: str) -> Dict[str, Any]:
         """根據爬取目標模糊查詢爬蟲"""
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -398,8 +408,8 @@ class CrawlersService(BaseService[Crawlers]):
     def get_crawler_statistics(self) -> Dict[str, Any]:
         """獲取爬蟲統計信息"""
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -419,8 +429,8 @@ class CrawlersService(BaseService[Crawlers]):
     def get_crawler_by_exact_name(self, crawler_name: str) -> Dict[str, Any]:
         """根據爬蟲名稱精確查詢"""
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -449,7 +459,7 @@ class CrawlersService(BaseService[Crawlers]):
         如果提供 ID 則更新現有爬蟲，否則創建新爬蟲
         """
         try:
-            with self._transaction():
+            with self._transaction() as session:
                 # 添加時間戳
                 now = self.datetime_provider.now(timezone.utc)
                 crawler_copy = crawler_data.copy()  # 複製資料，避免直接修改原始資料
@@ -471,7 +481,7 @@ class CrawlersService(BaseService[Crawlers]):
                     
                     if is_update:
                         # 驗證 ID 是否存在
-                        crawler_repo = self._get_repository()
+                        crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                         if not crawler_repo:
                             logger.error("無法取得資料庫存取器")
                             return {
@@ -508,6 +518,9 @@ class CrawlersService(BaseService[Crawlers]):
                         try:
                             result = crawler_repo.update(crawler_id, validated_data)
                             logger.info(f"更新結果: {result}")
+                            if result and not instance_state(result).detached:
+                                session.flush()
+                                session.refresh(result)
                         except Exception as update_error:
                             logger.error(f"更新操作執行失敗: {update_error}")
                             return {
@@ -532,7 +545,7 @@ class CrawlersService(BaseService[Crawlers]):
                                 'crawler': None
                             }
                         
-                        crawler_repo = self._get_repository()
+                        crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                         if not crawler_repo:
                             logger.error("無法取得資料庫存取器")
                             return {
@@ -544,6 +557,9 @@ class CrawlersService(BaseService[Crawlers]):
                         try:
                             result = crawler_repo.create(validated_data)
                             logger.info(f"創建結果: {result}")
+                            if result and not instance_state(result).detached:
+                                session.flush()
+                                session.refresh(result)
                         except Exception as create_error:
                             logger.error(f"創建操作執行失敗: {create_error}")
                             return {
@@ -587,8 +603,8 @@ class CrawlersService(BaseService[Crawlers]):
     def batch_toggle_crawler_status(self, crawler_ids: List[int], active_status: bool) -> Dict[str, Any]:
         """批量設置爬蟲的活躍狀態"""
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,
@@ -623,8 +639,8 @@ class CrawlersService(BaseService[Crawlers]):
                               sort_desc: bool = False) -> Dict[str, Any]:
         """根據過濾條件獲取分頁爬蟲列表"""
         try:
-            with self._transaction():
-                crawler_repo = self._get_repository()
+            with self._transaction() as session:
+                crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
                 if not crawler_repo:
                     return {
                         'success': False,

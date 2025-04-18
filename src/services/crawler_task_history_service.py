@@ -29,10 +29,6 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
         return {
             'CrawlerTaskHistory': (CrawlerTaskHistoryRepository, CrawlerTaskHistory)
         }
-    
-    def _get_repository(self) -> CrawlerTaskHistoryRepository:
-        """獲取爬蟲任務歷史記錄資料庫訪問對象"""
-        return cast(CrawlerTaskHistoryRepository, super()._get_repository('CrawlerTaskHistory'))
 
     def validate_history_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
         """驗證歷史記錄資料
@@ -51,8 +47,8 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
                           sort_by: Optional[str] = None, sort_desc: bool = True) -> Dict[str, Any]:
         """獲取所有歷史記錄"""
         try:
-            with self._transaction():
-                history_repo = self._get_repository()
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 if not history_repo:
                     return {
                         'success': False,
@@ -82,8 +78,8 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
     def get_successful_histories(self) -> Dict[str, Any]:
         """獲取所有成功的歷史記錄"""
         try:
-            with self._transaction():
-                history_repo = self._get_repository()
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 if not history_repo:
                     return {
                         'success': False,
@@ -113,8 +109,8 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
             失敗的歷史記錄列表
         """
         try:
-            with self._transaction():
-                history_repo = self._get_repository()
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 if not history_repo:
                     return {
                         'success': False,
@@ -147,8 +143,8 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
             符合條件的歷史記錄列表
         """
         try:
-            with self._transaction():
-                history_repo = self._get_repository()
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 if not history_repo:
                     return {
                         'success': False,
@@ -183,8 +179,8 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
             符合條件的歷史記錄列表
         """
         try:
-            with self._transaction():
-                history_repo = self._get_repository()
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 if not history_repo:
                     return {
                         'success': False,
@@ -218,8 +214,8 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
             總文章數量
         """
         try:
-            with self._transaction():
-                history_repo = self._get_repository()
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 if not history_repo:
                     return {
                         'success': False,
@@ -253,8 +249,8 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
             最新的歷史記錄或 None
         """
         try:
-            with self._transaction():
-                history_repo = self._get_repository()
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 if not history_repo:
                     return {
                         'success': False,
@@ -293,8 +289,8 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
             超過指定天數的歷史記錄列表
         """
         try:
-            with self._transaction():
-                history_repo = self._get_repository()
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 if not history_repo:
                     return {
                         'success': False,
@@ -319,8 +315,8 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
     def update_history_status(self, history_id: int, success: bool, message: Optional[str] = None, articles_count: Optional[int] = None) -> Dict[str, Any]:
         """更新歷史記錄的狀態"""
         try:
-            with self._transaction():
-                history_repo = self._get_repository()
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 
                 # 準備更新資料
                 update_data = {
@@ -369,8 +365,8 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
             是否成功刪除
         """
         try:
-            with self._transaction():
-                history_repo = self._get_repository()
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 if not history_repo:
                     return {
                         'success': False,
@@ -410,60 +406,80 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
             包含刪除結果的字典
         """
         try:
-            with self._transaction():
-                history_repo = self._get_repository()
+            deleted_count = 0 # 初始化計數器
+            failed_ids = [] # 初始化失敗列表
+
+            # --- Step 1: Get IDs to delete within a transaction ---
+            old_history_ids_to_delete = []
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
                 if not history_repo:
                     return {
                         'success': False,
-                        'message': '無法取得資料庫存取器',
-                        'resultMsg': {
-                            'deleted_count': 0,
-                            'failed_ids': [],
-                        }
+                        'message': '無法取得資料庫存取器 (查詢階段)',
+                        'resultMsg': {'deleted_count': 0, 'failed_ids': []}
                     }
                 old_histories = history_repo.get_histories_older_than(days)
-                
-            if not old_histories:
+                old_history_ids_to_delete = [h.id for h in old_histories] # 只獲取 ID
+
+            if not old_history_ids_to_delete:
                 return {
                     "success": True,
-                    "message": f"沒有超過 {days} 天的歷史記錄",
-                    "resultMsg": {
-                        "deleted_count": 0,
-                        "failed_ids": []
-                    }
+                    "message": f"沒有超過 {days} 天的歷史記錄可刪除",
+                    "resultMsg": {"deleted_count": 0, "failed_ids": []}
                 }
+                
+            # --- Step 2: Delete IDs one by one, possibly in separate transactions ---
+            # 這裡我們依然在一個 transaction 內處理，但如果需要可以分開
+            with self._transaction() as session:
+                history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('CrawlerTaskHistory', session))
+                if not history_repo:
+                     # 雖然不太可能，但還是加上防禦性檢查
+                    return {
+                        'success': False,
+                        'message': '無法取得資料庫存取器 (刪除階段)',
+                         'resultMsg': {'deleted_count': 0, 'failed_ids': old_history_ids_to_delete} # 將所有待刪除 ID 標記為失敗
+                    }
             
-            deleted_count = 0
-            failed_ids = []
+                for history_id in old_history_ids_to_delete:
+                    try:
+                        # 在同一個 session 下執行刪除
+                        success = history_repo.delete(history_id) 
+                        if success:
+                            deleted_count += 1
+                        else:
+                            # 即使在同一個 session，delete 返回 False 通常意味著 ID 不存在了
+                            logger.warning(f"嘗試刪除舊歷史記錄 ID {history_id} 時發現其已不存在。")
+                            # 這裡可以選擇是否將其計入 failed_ids，取決於業務邏輯
+                            # failed_ids.append(history_id) 
+                    except Exception as e:
+                        logger.error(f"刪除歷史記錄失敗，ID={history_id}: {str(e)}")
+                        failed_ids.append(history_id)
             
-            for history in old_histories:
-                try:
-                    result = history_repo.delete(history.id)
-                    if result:
-                        deleted_count += 1
-                    else:
-                        failed_ids.append(history.id)
-                except Exception as e:
-                    logger.error(f"刪除歷史記錄失敗，ID={history.id}: {str(e)}")
-                    failed_ids.append(history.id)
+            # 刪除迴圈結束後 commit (由 with self._transaction() 自動處理)
             
-            
+            success = len(failed_ids) == 0 # 只有當沒有任何失敗才算完全成功
+            message = (
+                f"批量刪除舊歷史記錄完成: 成功刪除 {deleted_count} 條"
+                f"{f', 失敗 {len(failed_ids)} 條' if failed_ids else ''}"
+            )
+
             return {
-                "success": True,
-                "message": f"成功刪除 {deleted_count} 條歷史記錄",
+                "success": success,
+                "message": message,
                 "resultMsg": {
                     "deleted_count": deleted_count,
                     "failed_ids": failed_ids,
                 }
             }
         except Exception as e:
-            error_msg = f"批量刪除歷史記錄失敗: {str(e)}"
+            error_msg = f"批量刪除超過 {days} 天歷史記錄的過程中發生未預期錯誤: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
                 'message': error_msg,
                 'resultMsg': {
-                    'deleted_count': 0,
-                    'failed_ids': []
+                    'deleted_count': deleted_count, # 返回當前計數
+                    'failed_ids': failed_ids # 返回當前失敗列表
                 }
             }

@@ -1,13 +1,16 @@
 from .base_repository import BaseRepository, SchemaType
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
-from typing import List, Optional, Type, Any, Dict, Literal, overload
+from typing import List, Optional, Type, Any, Dict, Literal, overload, Tuple
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import logging
-from src.error.errors import ValidationError, DatabaseOperationError
+from src.error.errors import ValidationError, DatabaseOperationError, InvalidOperationError
 from src.utils.datetime_utils import enforce_utc_datetime_transform
+from src.utils.enum_utils import TaskStatus, ScrapePhase, ScrapeMode
 from croniter import croniter
+from sqlalchemy import desc, asc, cast, JSON, Text, Boolean # 引入 JSON, Text, desc, asc, Boolean
+from sqlalchemy.orm.attributes import flag_modified # 導入 flag_modified
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -149,22 +152,13 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
     def find_ai_only_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
         """查詢 AI 專用任務"""
-        # 獲取所有活動的任務
-        all_tasks = self.execute_query(
+        return self.execute_query(
             lambda: self.session.query(self.model_class).filter(
-                self.model_class.is_active == is_active
+                self.model_class.is_active == is_active,
+                self.model_class.task_args['ai_only'].as_boolean() == True
             ).all(),
-            err_msg="查詢所有任務時發生錯誤"
+            err_msg="查詢 AI 專用任務時發生錯誤"
         )
-
-        # 在Python中過濾ai_only=True的任務
-        result = []
-        for task in all_tasks:
-            # 確保 task_args 是字典
-            if task.task_args and isinstance(task.task_args, dict) and task.task_args.get('ai_only') is True:
-                result.append(task)
-
-        return result
 
     def find_scheduled_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
         """查詢已排程的任務"""
@@ -208,7 +202,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
     def toggle_ai_only_status(self, task_id: int) -> Optional[CrawlerTasks]:
         """
-        切換任務的 AI 專用狀態。此方法不執行 commit。
+        切換任務的 AI 專用狀態 (在 task_args 中)。此方法不執行 commit。
 
         Args:
             task_id: 任務ID
@@ -222,15 +216,19 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             return None
 
         # 獲取當前 task_args，如果 task_args 是 None，則初始化為空字典
-        current_args = task.task_args.copy() if isinstance(task.task_args, dict) else {}
+        current_args = task.task_args or {}
+        # 創建副本以避免直接修改 session 中的對象 (雖然 flag_modified 會處理)
+        new_args = current_args.copy() 
 
         # 獲取當前 ai_only 值並切換
-        current_ai_only = current_args.get('ai_only', False)
-        current_args['ai_only'] = not current_ai_only
+        current_ai_only = new_args.get('ai_only', False)
+        new_args['ai_only'] = not current_ai_only
 
         # 更新整個 task_args 字典
-        task.task_args = current_args
+        task.task_args = new_args
         task.updated_at = datetime.now(timezone.utc)
+        # 標記 task_args 已修改
+        flag_modified(task, 'task_args')
         logger.info(f"任務 ID {task_id} 的 AI 專用狀態已在 Session 中更新: {current_ai_only} -> {not current_ai_only}")
 
         # 返回修改後的 task 物件 (尚未 commit)
@@ -460,3 +458,135 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             logger.error(f"未知的時區: {timezone_str}")
             # 可以選擇返回 UTC 或拋出錯誤
             return utc_time # 返回原始 UTC 時間
+
+    def advanced_search(self, **filters) -> Optional[Dict[str, Any]]:
+        """
+        進階搜尋任務
+
+        Args:
+            **filters: 包含過濾、排序和分頁參數的字典
+            可用過濾條件：
+            - task_name: 任務名稱 (模糊搜尋)
+            - crawler_id: 爬蟲ID
+            - is_auto: 是否自動執行
+            - is_active: 是否啟用
+            - ai_only: 是否只抓取AI相關文章 (task_args)
+            - last_run_success: 上次執行是否成功
+            - date_range: 上次執行時間範圍，格式為(start_date, end_date)
+            - has_notes: 是否有備註
+            - task_status: 任務狀態 (TaskStatus Enum 或其 value)
+            - scrape_phase: 爬取階段 (ScrapePhase Enum 或其 value)
+            - cron_expression: cron表達式
+            - retry_count: 重試次數 (可以是整數或範圍字典 {"min": x, "max": y})
+            - max_pages: 最大頁數 (task_args)
+            - save_to_csv: 是否保存到CSV (task_args)
+            - scrape_mode: 抓取模式 (task_args, ScrapeMode Enum 或其 value)
+            - sort_by: 排序欄位名稱 (預設 'created_at')
+            - sort_desc: 是否降冪排序 (預設 False)
+            - limit: 限制數量
+            - offset: 偏移量
+
+        Returns:
+            包含 'tasks' 列表和 'total_count' 的字典，或在錯誤時返回 None。
+        """
+        def build_and_run_query():
+            query = self.session.query(self.model_class)
+
+            # --- 過濾 ---
+            # task_args_filter_parts = [] # 移除列表
+
+            if 'task_name' in filters and filters['task_name']:
+                query = query.filter(self.model_class.task_name.like(f"%{filters['task_name']}%"))
+            if 'crawler_id' in filters and filters['crawler_id']:
+                query = query.filter_by(crawler_id=filters['crawler_id'])
+            if 'is_auto' in filters and filters['is_auto'] is not None:
+                query = query.filter_by(is_auto=filters['is_auto'])
+            if 'is_active' in filters and filters['is_active'] is not None:
+                query = query.filter_by(is_active=filters['is_active'])
+            if 'last_run_success' in filters and filters['last_run_success'] is not None:
+                query = query.filter_by(last_run_success=filters['last_run_success'])
+            if 'cron_expression' in filters and filters['cron_expression']:
+                query = query.filter_by(cron_expression=filters['cron_expression'])
+
+            if 'date_range' in filters and filters['date_range']:
+                start_date, end_date = filters['date_range']
+                if start_date:
+                    query = query.filter(self.model_class.last_run_at >= enforce_utc_datetime_transform(start_date))
+                if end_date:
+                    # 結束日期通常包含當天，所以查詢到 end_date 的下一天 00:00
+                    end_date_exclusive = enforce_utc_datetime_transform(end_date) + timedelta(days=1)
+                    query = query.filter(self.model_class.last_run_at < end_date_exclusive)
+
+            if 'has_notes' in filters and filters['has_notes'] is not None:
+                if filters['has_notes'] is True:
+                    query = query.filter(self.model_class.notes.isnot(None) & (self.model_class.notes != ''))
+                else:
+                    query = query.filter((self.model_class.notes == None) | (self.model_class.notes == ''))
+
+            if 'task_status' in filters and filters['task_status']:
+                status_value = filters['task_status'].value if isinstance(filters['task_status'], TaskStatus) else filters['task_status']
+                query = query.filter_by(task_status=status_value)
+
+            if 'scrape_phase' in filters and filters['scrape_phase']:
+                phase_value = filters['scrape_phase'].value if isinstance(filters['scrape_phase'], ScrapePhase) else filters['scrape_phase']
+                query = query.filter_by(scrape_phase=phase_value)
+
+            if 'retry_count' in filters:
+                retry_filter = filters['retry_count']
+                if isinstance(retry_filter, dict):
+                    if 'min' in retry_filter:
+                        query = query.filter(self.model_class.retry_count >= retry_filter['min'])
+                    if 'max' in retry_filter:
+                        query = query.filter(self.model_class.retry_count <= retry_filter['max'])
+                elif isinstance(retry_filter, int):
+                    query = query.filter_by(retry_count=retry_filter)
+
+            # --- 過濾 task_args (JSON) ---
+            if 'ai_only' in filters and filters['ai_only'] is not None:
+                # 直接應用過濾
+                query = query.filter(self.model_class.task_args['ai_only'].as_boolean() == filters['ai_only'])
+
+            if 'max_pages' in filters and filters['max_pages'] is not None:
+                # 直接應用過濾
+                query = query.filter(self.model_class.task_args['max_pages'].as_integer() == filters['max_pages'])
+
+            if 'save_to_csv' in filters and filters['save_to_csv'] is not None:
+                # 直接應用過濾
+                query = query.filter(self.model_class.task_args['save_to_csv'].as_boolean() == filters['save_to_csv'])
+
+            if 'scrape_mode' in filters and filters['scrape_mode']:
+                mode_value = filters['scrape_mode'].value if isinstance(filters['scrape_mode'], ScrapeMode) else filters['scrape_mode']
+                # 直接應用過濾
+                query = query.filter(self.model_class.task_args['scrape_mode'].as_string() == mode_value)
+
+            # --- 計算總數 (在分頁前) ---
+            total_count = query.count()
+
+            # --- 排序 ---
+            sort_by = filters.get('sort_by', 'created_at') # 預設按創建時間
+            sort_desc = filters.get('sort_desc', True) # 預設降冪
+            if hasattr(self.model_class, sort_by):
+                order_column = getattr(self.model_class, sort_by)
+                query = query.order_by(desc(order_column) if sort_desc else asc(order_column))
+            else:
+                logger.warning(f"無效的排序欄位 '{sort_by}'，將使用預設排序 (created_at desc)。")
+                query = query.order_by(desc(self.model_class.created_at))
+
+            # --- 分頁 ---
+            limit = filters.get('limit')
+            offset = filters.get('offset')
+            if offset is not None:
+                query = query.offset(offset)
+            if limit is not None:
+                query = query.limit(limit)
+
+            # --- 執行查詢 ---
+            tasks = query.all()
+            
+            return {'tasks': tasks, 'total_count': total_count}
+        
+        return self.execute_query(
+            build_and_run_query,
+            err_msg="進階搜尋任務時發生錯誤",
+            exception_class=DatabaseOperationError
+        )

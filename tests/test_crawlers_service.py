@@ -129,11 +129,6 @@ class TestCrawlersService:
         service = CrawlersService(db_manager)
         assert service.db_manager == db_manager
     
-    def test_get_repository(self, crawlers_service, db_manager):
-        """測試獲取儲存庫"""
-        repo = crawlers_service._get_repository()
-        assert isinstance(repo, CrawlersRepository)
-    
     def test_create_crawler(self, crawlers_service, valid_crawler_data, session):
         """測試創建爬蟲設定"""
         # 清除可能存在的同名爬蟲設定

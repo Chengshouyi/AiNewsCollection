@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text, VARCHAR, String, Enum, JSON
+from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text, VARCHAR, String, Enum as SQLAlchemyEnum, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from typing import Optional
@@ -105,13 +105,13 @@ class CrawlerTasks(Base, BaseEntity):
     cron_expression: Mapped[Optional[str]] = mapped_column(VARCHAR(255))
     
     scrape_phase: Mapped[ScrapePhase] = mapped_column(
-        Enum(ScrapePhase),
-        default=ScrapePhase.INIT,
+        SQLAlchemyEnum(ScrapePhase, values_callable=lambda x: [str(e.value) for e in ScrapePhase]),
+        default=ScrapePhase.INIT.value,
         nullable=False
     )
     task_status: Mapped[TaskStatus] = mapped_column(
-        Enum(TaskStatus),
-        default=TaskStatus.INIT,
+        SQLAlchemyEnum(TaskStatus, values_callable=lambda x: [str(e.value) for e in TaskStatus]),
+        default=TaskStatus.INIT.value,
         nullable=False
     )
 
@@ -164,7 +164,7 @@ class CrawlerTasks(Base, BaseEntity):
             'last_run_success': self.last_run_success,
             'last_run_message': self.last_run_message,
             'cron_expression': self.cron_expression,
-            'scrape_phase': self.scrape_phase.value,
+            'scrape_phase': self.scrape_phase.value if self.scrape_phase else None,
             'retry_count': self.retry_count,
             'task_status': self.task_status.value if self.task_status else None,
         }
