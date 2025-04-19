@@ -17,18 +17,13 @@ logger = logging.getLogger(__name__)
 # 通用類型變數，用於泛型方法
 T = TypeVar('T', bound=Base)
 
-# 添加 DatetimeProvider 輔助類，用於在測試中替換
-class DatetimeProvider:
-    @staticmethod
-    def now(tz=timezone.utc):
-        return datetime.now(tz)
+
 
 class CrawlersService(BaseService[Crawlers]):
     """爬蟲服務，提供爬蟲相關業務邏輯"""
     
     def __init__(self, db_manager=None):
         super().__init__(db_manager)
-        self.datetime_provider = DatetimeProvider()
 
     def _get_repository_mapping(self) -> Dict[str, Tuple[Type[BaseRepository], Type[Base]]]:
         """提供儲存庫映射"""
@@ -64,7 +59,7 @@ class CrawlersService(BaseService[Crawlers]):
         try:
             with self._transaction() as session:
                 # 添加必要的欄位
-                now = self.datetime_provider.now(timezone.utc)
+                now = datetime.now(timezone.utc)
                 crawler_data.update({
                     'created_at': now,
                     'updated_at': now
@@ -174,7 +169,7 @@ class CrawlersService(BaseService[Crawlers]):
         try:
             with self._transaction() as session:
                 # 自動更新 updated_at 欄位
-                crawler_data['updated_at'] = self.datetime_provider.now(timezone.utc)
+                crawler_data['updated_at'] = datetime.now(timezone.utc)
                 
                 # 使用 Pydantic 驗證資料
                 try:
@@ -317,7 +312,7 @@ class CrawlersService(BaseService[Crawlers]):
                 # Toggle status and update time
                 new_status = not crawler_to_toggle.is_active
                 crawler_to_toggle.is_active = new_status
-                crawler_to_toggle.updated_at = self.datetime_provider.now(timezone.utc)
+                crawler_to_toggle.updated_at = datetime.now(timezone.utc)
                 
                 # Flush and refresh
                 session.flush()
@@ -478,7 +473,7 @@ class CrawlersService(BaseService[Crawlers]):
         try:
             with self._transaction() as session:
                 # 添加時間戳
-                now = self.datetime_provider.now(timezone.utc)
+                now = datetime.now(timezone.utc)
                 crawler_copy = crawler_data.copy()  # 複製資料，避免直接修改原始資料
                 
                 logger.info(f"開始處理 create_or_update_crawler: {crawler_copy}")

@@ -547,9 +547,9 @@ class TestCrawlerTaskService:
         
         # 測試重置已經是 0 的情況
         result_already_zero = crawler_task_service.reset_retry_count(task_id)
-        assert result_already_zero["success"] is True
-        assert "無需重置" in result_already_zero["message"]
-        assert result_already_zero["task"].retry_count == 0
+        assert result_already_zero["success"] is False
+        assert "重試次數已是 0，無需重置" in result_already_zero["message"]
+        assert result_already_zero["task"] is None
 
     def test_update_max_retries(self, crawler_task_service, sample_tasks):
         """測試更新任務最大重試次數"""
@@ -591,36 +591,42 @@ class TestCrawlerTaskService:
         # 準備數據：一個最近失敗的任務
         task_id_fail_recent = sample_tasks[0].id
         crawler_task_service.update_task(task_id_fail_recent, {
-            "last_success": False,
-            "last_message": "最近失敗",
-            "last_run_time": datetime.now(timezone.utc) - timedelta(days=1),
-            "is_active": True
+            "last_run_success": False,
+            "last_run_message": "最近失敗",
+            "last_run_at": datetime.now(timezone.utc) - timedelta(days=1),
+            "is_active": True,
+            "scrape_phase": ScrapePhase.FAILED
         })
 
         # 準備數據：一個很久以前失敗的任務
         task_id_fail_old = sample_tasks[1].id
         crawler_task_service.update_task(task_id_fail_old, {
-            "last_success": False,
-            "last_message": "很久以前失敗",
-             "last_run_time": datetime.now(timezone.utc) - timedelta(days=days_to_check + 1),
-            "is_active": True
+            "last_run_success": False,
+            "last_run_message": "很久以前失敗",
+            "last_run_at": datetime.now(timezone.utc) - timedelta(days=days_to_check + 1),
+            "is_active": True,
+            "scrape_phase": ScrapePhase.FAILED
         })
 
         # 準備數據：一個最近成功的任務
         task_id_success_recent = crawler_task_service.create_task({
             "task_name": "最近成功任務", "crawler_id": 1, "is_auto": False,
             "task_args": TASK_ARGS_DEFAULT,
-            "last_success": True,
-            "last_run_time": datetime.now(timezone.utc) - timedelta(days=1)
+            "last_run_success": True,
+            "last_run_message": "最近成功",
+            "last_run_at": datetime.now(timezone.utc) - timedelta(days=1),
+            "scrape_phase": ScrapePhase.COMPLETED
         })["task"].id
 
         # 準備數據：一個最近失敗但不活躍的任務
         task_id_fail_inactive = crawler_task_service.create_task({
-             "task_name": "最近失敗但不活躍", "crawler_id": 1, "is_auto": False,
+            "task_name": "最近失敗但不活躍", "crawler_id": 1, "is_auto": False,
             "task_args": TASK_ARGS_DEFAULT,
-            "last_success": False,
-            "last_run_time": datetime.now(timezone.utc) - timedelta(days=1),
-            "is_active": False
+            "last_run_success": False,
+            "last_run_message": "最近失敗但不活躍",
+            "last_run_at": datetime.now(timezone.utc) - timedelta(days=1),
+            "is_active": False,
+            "scrape_phase": ScrapePhase.FAILED
         })["task"].id
 
         # 執行查詢
@@ -666,7 +672,7 @@ class TestCrawlerTaskService:
             "is_active": new_is_active,
             "cron_expression": new_cron,
             "scrape_phase": new_scrape_phase.value,
-            "task_args": new_task_args
+            "task_args":{**TASK_ARGS_DEFAULT, **new_task_args}
         }
         print(f"Update data: {update_data}")
 
@@ -687,7 +693,7 @@ class TestCrawlerTaskService:
         assert refetched_task.is_active == new_is_active, "DB value for is_active was not updated correctly"
         assert refetched_task.cron_expression == new_cron, "DB value for cron_expression was not updated correctly"
         assert refetched_task.scrape_phase == new_scrape_phase, "DB value for scrape_phase was not updated correctly"
-        assert refetched_task.task_args == new_task_args, "DB value for task_args was not updated correctly"
+        assert refetched_task.task_args == {**TASK_ARGS_DEFAULT, **new_task_args}, "DB value for task_args was not updated correctly"
         assert refetched_task.task_args.get("max_items") == 200
         assert refetched_task.task_args.get("new_param") == "test_value"
         assert refetched_task.task_args.get("scrape_mode") == ScrapeMode.LINKS_ONLY.value

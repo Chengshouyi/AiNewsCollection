@@ -15,6 +15,7 @@ from src.models.crawler_tasks_model import CrawlerTasks
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
 from src.services.task_executor_service import TaskExecutorService
 from src.error.errors import DatabaseOperationError
+from src.services.service_container import get_task_executor_service
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -36,7 +37,7 @@ class SchedulerService(BaseService[CrawlerTasks]):
         super().__init__(db_manager)
         
         # 儲存傳入的參數或創建新實例
-        self.task_executor_service = task_executor_service or TaskExecutorService()
+        self.task_executor_service = task_executor_service or get_task_executor_service()
         
         # 設定 SQLAlchemy 任務存儲
         jobstore = SQLAlchemyJobStore(
@@ -72,6 +73,11 @@ class SchedulerService(BaseService[CrawlerTasks]):
             'job_count': 0,
             'last_start_time': None,
             'last_shutdown_time': None
+        }
+    def _get_repository_mapping(self) -> Dict[str, Tuple[Type[BaseRepository], Type[Base]]]:
+        """提供儲存庫映射"""
+        return {
+            'CrawlerTask': (CrawlerTasksRepository, CrawlerTasks)
         }
     
     def start_scheduler(self) -> Dict[str, Any]:

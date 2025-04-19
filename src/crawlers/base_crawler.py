@@ -513,13 +513,13 @@ class BaseCrawler(ABC):
             retry_delay = self.global_params.get('retry_delay', 2.0)
             
             # 獲取當前的抓取模式
-            scrape_mode = self.global_params.get('scrape_mode', ScrapeMode.FULL_SCRAPE)
+            scrape_mode = self.global_params.get('scrape_mode', ScrapeMode.FULL_SCRAPE.value)
             if self._check_if_cancelled(task_id):
                 return self._handle_task_cancellation(task_id)
             # 根據抓取模式執行不同的流程
-            if scrape_mode == ScrapeMode.CONTENT_ONLY:
+            if scrape_mode == ScrapeMode.CONTENT_ONLY.value:
                 return self._execute_content_only_task(task_id, max_retries, retry_delay)
-            elif scrape_mode == ScrapeMode.LINKS_ONLY:
+            elif scrape_mode == ScrapeMode.LINKS_ONLY.value:
                 return self._execute_links_only_task(task_id, max_retries, retry_delay)
             else:  # ScrapeMode.FULL_SCRAPE
                 return self._execute_full_scrape_task(task_id, max_retries, retry_delay)

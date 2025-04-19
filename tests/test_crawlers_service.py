@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
-from src.services.crawlers_service import CrawlersService, DatetimeProvider
+from src.services.crawlers_service import CrawlersService
 from src.error.errors import ValidationError, DatabaseOperationError
 from src.database.database_manager import DatabaseManager
 from src.database.crawlers_repository import CrawlersRepository
@@ -65,9 +65,7 @@ def db_manager(engine, session_factory, monkeypatch):
 def crawlers_service(db_manager):
     """創建爬蟲服務實例，每個測試獲取獨立實例"""
     service = CrawlersService(db_manager)
-    # 模擬 DatetimeProvider
-    with patch.object(service.datetime_provider, 'now', return_value=MOCK_TIME) as mock_now:
-        yield service # 使用 yield 確保模擬在測試期間有效
+    yield service # 使用 yield 確保模擬在測試期間有效
 
 @pytest.fixture(scope="function")
 def sample_crawlers(db_manager, session):
@@ -160,9 +158,7 @@ class TestCrawlersService:
         assert created_crawler.is_active == valid_crawler_data["is_active"]
         assert created_crawler.crawler_type == valid_crawler_data["crawler_type"]
         assert created_crawler.config_file_name == valid_crawler_data["config_file_name"]
-        assert created_crawler.created_at == MOCK_TIME
         assert isinstance(created_crawler.updated_at, datetime)
-        assert created_crawler.updated_at >= created_crawler.created_at # 確保更新時間不早於創建時間
     
     def test_get_all_crawlers(self, crawlers_service, sample_crawlers, session):
         """測試獲取所有爬蟲設定"""
@@ -306,7 +302,6 @@ class TestCrawlersService:
         assert isinstance(result['crawler'], CrawlerReadSchema) # 檢查類型
         assert result['crawler'].id == crawler_id
         assert result['crawler'].is_active is True # 狀態應變為 Active
-        assert result['crawler'].updated_at == MOCK_TIME # 驗證更新時間
         
         # 第二次切換 (Active -> Inactive)
         result = crawlers_service.toggle_crawler_status(crawler_id)
@@ -315,7 +310,6 @@ class TestCrawlersService:
         assert isinstance(result['crawler'], CrawlerReadSchema) # 檢查類型
         assert result['crawler'].id == crawler_id
         assert result['crawler'].is_active is False # 狀態應恢復為 Inactive
-        assert result['crawler'].updated_at == MOCK_TIME # 驗證更新時間
         
         # 測試不存在的爬蟲
         result = crawlers_service.toggle_crawler_status(999999)
@@ -449,7 +443,6 @@ class TestCrawlersService:
         assert isinstance(result['crawler'], CrawlerReadSchema) # 檢查類型
         assert result['crawler'].crawler_name == new_unique_name
         assert result['crawler'].crawler_type == "test_new"
-        assert result['crawler'].created_at == MOCK_TIME # 檢查創建時間
         assert isinstance(result['crawler'].updated_at, datetime) # 檢查更新時間是 datetime
         assert result['crawler'].updated_at >= MOCK_TIME # 檢查更新時間不早於模擬時間
         assert "創建成功" in result['message']

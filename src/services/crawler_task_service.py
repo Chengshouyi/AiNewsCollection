@@ -209,7 +209,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                             task_args_updated = True 
                             entity_modified = True
                         else:
-                            logger.info(f"Task {task_id}: task_args are the same, skipping update.")
+                            logger.info(f"Task {task_id}: task_args 資料相同，跳過更新。")
 
                     elif hasattr(task, key):
                         # --- 處理其他欄位 --- 
@@ -425,10 +425,14 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     sort_desc=sort_desc
                 )
                 logger.debug(f"task_service.get_task_history() after find_by_task_id ：Session ID: {id(session)}")
+                if not histories:
+                    histories_schema = []
+                else:
+                    histories_schema = [CrawlerTaskHistoryReadSchema.model_validate(h) for h in histories]
                 return {
                     'success': True,
                     'message': '任務歷史獲取成功',
-                    'histories': histories,
+                    'histories': histories_schema,
                     'total_count': len(histories)
                 }
         except Exception as e:
@@ -450,8 +454,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 if not tasks_repo or not history_repo:
                     return {
-                        'task_status': TaskStatus.UNKNOWN,
-                        'scrape_phase': ScrapePhase.UNKNOWN,
+                        'task_status': TaskStatus.UNKNOWN.value,
+                        'scrape_phase': ScrapePhase.UNKNOWN.value,
                         'progress': 0,
                         'message': '無法取得資料庫存取器',
                         'task': None,
@@ -462,8 +466,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 task = tasks_repo.get_by_id(task_id)
                 if not task:
                     return {
-                        'task_status': TaskStatus.UNKNOWN, 
-                        'scrape_phase': ScrapePhase.UNKNOWN, 
+                        'task_status': TaskStatus.UNKNOWN.value, 
+                        'scrape_phase': ScrapePhase.UNKNOWN.value, 
                         'progress': 0,
                         'message': '任務不存在',
                         'task': None,
@@ -474,8 +478,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 latest_history = history_repo.get_latest_history(task_id)
                 
                 # --- 推斷狀態邏輯 --- 
-                task_status = task.task_status # 默認使用任務表中的狀態
-                scrape_phase = task.scrape_phase # 默認使用任務表中的階段
+                task_status_value = task.task_status # 默認使用任務表中的狀態
+                scrape_phase_value = task.scrape_phase # 默認使用任務表中的階段
                 progress = 0
                 message = '狀態來自任務表' 
                 
@@ -483,20 +487,20 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     message = latest_history.message or '狀態來自最新歷史記錄'
                     # 如果歷史記錄指示任務已結束 (完成/失敗/取消)
                     if latest_history.end_time and latest_history.task_status in [
-                        TaskStatus.COMPLETED, 
-                        TaskStatus.FAILED, 
-                        TaskStatus.CANCELLED
+                        TaskStatus.COMPLETED.value, 
+                        TaskStatus.FAILED.value, 
+                        TaskStatus.CANCELLED.value
                     ]:
-                        task_status = latest_history.task_status
-                        scrape_phase = ScrapePhase.COMPLETED
+                        task_status_value = latest_history.task_status
+                        scrape_phase_value = ScrapePhase.COMPLETED.value
                         progress = 100
                     # 如果歷史記錄指示任務正在運行 (有開始時間但無結束時間)
                     elif latest_history.start_time and not latest_history.end_time:
-                        task_status = TaskStatus.RUNNING
+                        task_status_value = TaskStatus.RUNNING.value
                         # 強制設為 RUNNING
                         # 階段可能需要更精確的判斷，暫時維持任務表中的值或設為 RUNNING
                         current_time = datetime.now(timezone.utc)
-                        elapsed = current_time - enforce_utc_datetime_transform(latest_history.start_time)
+                        elapsed = current_time - latest_history.start_time
                         # 這裡的進度計算非常粗略，僅作示意
                         progress = min(95, int((elapsed.total_seconds() / 300) * 100))
                         message = f"任務運行中 ({progress}%)" 
@@ -508,7 +512,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     # 沒有歷史記錄，狀態完全來自任務表
                     message = '無執行歷史，狀態來自任務表'
                     # 如果任務狀態是 IDLE/PENDING 等，進度為 0
-                    if task_status not in [TaskStatus.RUNNING]:
+                    if task_status_value not in [TaskStatus.RUNNING.value]:
                         progress = 0
                     # 否則，可能表示任務从未運行或狀態異常
                 
@@ -516,8 +520,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 # history_schema = CrawlerTaskHistoryReadSchema.model_validate(latest_history) if latest_history else None # 假設有 History Schema
 
                 return {
-                    'task_status': task_status,
-                    'scrape_phase': scrape_phase,
+                    'task_status': task_status_value,
+                    'scrape_phase': scrape_phase_value,
                     'progress': progress,
                     'message': message,
                     'task': task_schema, # 返回 Task Schema
@@ -528,8 +532,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             error_msg = f"獲取任務狀態失敗, ID={task_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {
-                'task_status': TaskStatus.UNKNOWN,
-                'scrape_phase': ScrapePhase.UNKNOWN,
+                'task_status': TaskStatus.UNKNOWN.value,
+                'scrape_phase': ScrapePhase.UNKNOWN.value,
                 'progress': 0,
                 'message': f'獲取狀態時發生錯誤: {str(e)}',
                 'task': None,
@@ -832,14 +836,23 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 # 使用 Repository 的 update_last_run 方法，假設它返回更新後的 task
                 task = tasks_repo.update_last_run(task_id, success, message)
-                task_schema = CrawlerTaskReadSchema.model_validate(task) if task else None # 轉換
+                if task:
+                    session.flush()
+                    session.refresh(task)
+                    task_schema = CrawlerTaskReadSchema.model_validate(task) if task else None # 轉換
                 
-                if task_schema:
-                    return {
-                        'success': True,
-                        'message': '任務執行狀態更新成功',
-                        'task': task_schema # 返回 Schema
-                    }
+                    if task_schema:
+                        return {
+                            'success': True,
+                            'message': '任務執行狀態更新成功',
+                            'task': task_schema # 返回 Schema
+                        }
+                    else:
+                        return {
+                            'success': False,
+                            'message': '任務不存在或更新失敗',
+                            'task': None
+                        }
                 else:
                     return {
                         'success': False,
@@ -1064,14 +1077,14 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 
                 if not result_task_schema:
                      # 更新失敗的處理
-                     task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換原始 task
+                    #  task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換原始 task
                      return {
                         'success': False,
                         'message': '增加重試次數失敗 (repo.update 返回 None)',
                         'exceeded_max_retries': None,
                         'retry_count': task.retry_count, # 返回原始值
                         'max_retries': max_retries,
-                        'task': task_schema # 返回原始 Schema
+                        'task': None
                     }
 
                 # 檢查是否達到最大重試次數
@@ -1127,22 +1140,24 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 # 僅當 retry_count 不為 0 時才更新
                 if task.retry_count == 0:
                      return {
-                        'success': True,
+                        'success': False,
                         'message': '重試次數已是 0，無需重置',
-                        'task': task
+                        'task': None
                     }
                 
                 # 重置重試次數
                 task_data = {'retry_count': 0}
                 result_task = tasks_repo.update(task_id, task_data)
+                logger.info(f"任務 {task_id} 已在 Session 中更新，等待提交。")
+                session.flush() # 確保更新寫入
+                session.refresh(task) # 獲取 DB 最新狀態 (可能包含觸發器等)
                 result_task_schema = CrawlerTaskReadSchema.model_validate(result_task) if result_task else None # 轉換
                 
                 if not result_task_schema:
-                    task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換原始 task
                     return {
                         'success': False,
                         'message': '重置重試次數失敗 (repo.update 返回 None)',
-                        'task': task_schema # 返回原始 Schema
+                        'task': None
                     }
 
                 return {
