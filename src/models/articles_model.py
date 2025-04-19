@@ -2,7 +2,7 @@ from sqlalchemy import UniqueConstraint, Integer, String, DateTime, Text, Boolea
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from .base_entity import BaseEntity
 from src.utils.type_utils import AwareDateTime
 import logging
@@ -101,7 +101,7 @@ class Articles(Base, BaseEntity):
     task = relationship("CrawlerTasks", back_populates="articles")
     
     # 定義需要監聽的 datetime 欄位
-    _child_datetime_fields_to_watch = {'published_at', 'last_scrape_attempt'}
+    _aware_datetime_fields = Base._aware_datetime_fields.union({'published_at', 'last_scrape_attempt'})
 
     def __init__(self, **kwargs):
         # 設置默認值
@@ -111,8 +111,7 @@ class Articles(Base, BaseEntity):
         if 'is_scraped' not in kwargs:
             kwargs['is_scraped'] = False
         # 告知父類需要監聽的 datetime 欄位
-        super().__init__(datetime_fields_to_watch=
-                         self._child_datetime_fields_to_watch, **kwargs)
+        super().__init__(**kwargs)
 
     # 文章資料repr
     def __repr__(self):
@@ -126,7 +125,7 @@ class Articles(Base, BaseEntity):
             'content': self.content,
             'link': self.link,
             'category': self.category,
-            'published_at': self.published_at,
+            'published_at': self.published_at.isoformat() if self.published_at else None,
             'author': self.author,
             'source': self.source,
             'source_url': self.source_url,
@@ -136,6 +135,6 @@ class Articles(Base, BaseEntity):
             'is_scraped': self.is_scraped,
             'scrape_status': self.scrape_status.value if self.scrape_status else None,
             'scrape_error': self.scrape_error,
-            'last_scrape_attempt': self.last_scrape_attempt,
+            'last_scrape_attempt': self.last_scrape_attempt.isoformat() if self.last_scrape_attempt else None,
             'task_id': self.task_id
         }

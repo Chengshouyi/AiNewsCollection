@@ -45,16 +45,17 @@ class Crawlers(Base, BaseEntity):
 
     crawler_tasks = relationship("CrawlerTasks", back_populates="crawler", lazy="joined")
 
+    # *** 關鍵：擴展需要 Base__setattr__ 處理的 AwareDateTime 欄位 ***
+    _aware_datetime_fields = Base._aware_datetime_fields.union()
+
     # 定義需要監聽的 datetime 欄位
-    _child_datetime_fields_to_watch = {}
 
     def __init__(self, **kwargs):
         # 設置默認值
         if 'is_active' not in kwargs:
             kwargs['is_active'] = True
             
-        super().__init__(datetime_fields_to_watch=
-                         self._child_datetime_fields_to_watch, **kwargs)
+        super().__init__(**kwargs)
 
     # 系統設定資料repr  
     def __repr__(self):

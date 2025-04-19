@@ -125,7 +125,7 @@ class CrawlerTasks(Base, BaseEntity):
 
         
     # 定義需要監聽的 datetime 欄位
-    _child_datetime_fields_to_watch = {'last_run_at'}
+    _aware_datetime_fields = Base._aware_datetime_fields.union({'last_run_at'})
 
     def __init__(self, **kwargs):
         # 設置預設值
@@ -145,8 +145,7 @@ class CrawlerTasks(Base, BaseEntity):
             kwargs['task_args'] = TASK_ARGS_DEFAULT
 
         # 告知父類需要監聽的 datetime 欄位
-        super().__init__(datetime_fields_to_watch=
-                         self._child_datetime_fields_to_watch, **kwargs)
+        super().__init__(**kwargs)
 
     def __repr__(self):
         return f"<CrawlerTask(id={self.id}, task_name={self.task_name}, crawler_id={self.crawler_id})>"
@@ -161,7 +160,7 @@ class CrawlerTasks(Base, BaseEntity):
             'is_scheduled': self.is_scheduled,
             'task_args': self.task_args,
             'notes': self.notes,
-            'last_run_at': self.last_run_at,
+            'last_run_at': self.last_run_at.isoformat() if self.last_run_at else None,
             'last_run_success': self.last_run_success,
             'last_run_message': self.last_run_message,
             'cron_expression': self.cron_expression,

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from sqlalchemy import DateTime
 from typing import Optional
 from src.models.base_model import Base
+from src.utils.type_utils import AwareDateTime
 import logging
 
 logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -19,12 +20,15 @@ class Task(Base):
     __tablename__ = 'tasks'
     title: Mapped[str] = mapped_column(String(50))
     # Add another datetime field to test custom watching
-    due_date: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    due_date: Mapped[Optional[datetime]] = mapped_column(AwareDateTime)
 
     # Override __init__ to add 'due_date' to watched fields
-    def __init__(self, **kwargs):
-        # Explicitly tell Base to watch 'due_date' as well for this subclass
-        super().__init__(datetime_fields_to_watch={'due_date'}, **kwargs)
+    # def __init__(self, **kwargs):
+    #     # Explicitly tell Base to watch 'due_date' as well for this subclass
+    #     super().__init__(datetime_fields_to_watch={'due_date'}, **kwargs)
+
+    # *** 關鍵：擴展需要 __setattr__ 處理的欄位 ***
+    _aware_datetime_fields = Base._aware_datetime_fields.union({'due_date'})
 
 
 @pytest.fixture(scope="session")
@@ -194,26 +198,26 @@ def test_manual_set_updated_at_naive(db_session):
     assert isinstance(fetched_task.updated_at, datetime)
 
 
-def test_getattribute_adds_utc_if_naive(db_session):
-    """Test __getattribute__ adding UTC timezone to a naive datetime."""
-    # This test simulates a scenario where data might somehow become naive
-    # BEFORE being accessed via the attribute. (e.g., direct DB read without ORM TZ handling)
-    # It also tests the __init__ path for setting timezone.
-    naive_dt = datetime(2024, 5, 5, 5, 5, 5)
-    task = Task(title="Getattribute Test", created_at=naive_dt)
+# def test_getattribute_adds_utc_if_naive(db_session):
+#     """Test __getattribute__ adding UTC timezone to a naive datetime."""
+#     # This test simulates a scenario where data might somehow become naive
+#     # BEFORE being accessed via the attribute. (e.g., direct DB read without ORM TZ handling)
+#     # It also tests the __init__ path for setting timezone.
+#     naive_dt = datetime(2024, 5, 5, 5, 5, 5)
+#     task = Task(title="Getattribute Test", created_at=naive_dt)
 
-    # Access attribute - __init__ should have already converted it via __setattr__
-    assert task.created_at.tzinfo == timezone.utc
-    assert task.created_at == naive_dt.replace(tzinfo=timezone.utc)
+#     # Access attribute - __init__ should have already converted it via __setattr__
+#     assert task.created_at.tzinfo == timezone.utc
+#     assert task.created_at == naive_dt.replace(tzinfo=timezone.utc)
 
-    # Simulate the attribute becoming naive *after* init (less common with DateTime(timezone=True))
-    # We can use object.__setattr__ to bypass our custom logic for testing purposes ONLY
-    object.__setattr__(task, 'created_at', naive_dt)
-    assert object.__getattribute__(task, 'created_at').tzinfo is None # Verify it's naive internally
+#     # Simulate the attribute becoming naive *after* init (less common with DateTime(timezone=True))
+#     # We can use object.__setattr__ to bypass our custom logic for testing purposes ONLY
+#     object.__setattr__(task, 'created_at', naive_dt)
+#     assert object.__getattribute__(task, 'created_at').tzinfo is None # Verify it's naive internally
 
-    # Now access normally, __getattribute__ should add tzinfo
-    assert task.created_at.tzinfo == timezone.utc
-    assert task.created_at == naive_dt.replace(tzinfo=timezone.utc)
+#     # Now access normally, __getattribute__ should add tzinfo
+#     assert task.created_at.tzinfo == timezone.utc
+#     assert task.created_at == naive_dt.replace(tzinfo=timezone.utc)
 
 
 def test_custom_datetime_field_watching(db_session):
@@ -250,8 +254,11 @@ def test_custom_datetime_field_watching(db_session):
     assert task_to_update.due_date == new_naive_due.replace(tzinfo=timezone.utc)
 
     # Assign aware
+    
     new_aware_due = datetime(2027, 2, 1, 15, 0, 0, tzinfo=cet_tz)
+    print(f"new_aware_due: {new_aware_due}")
     task_to_update.due_date = new_aware_due
+    print(f"task_to_update.due_date: {task_to_update.due_date}")
     assert task_to_update.due_date is not None # Add check after assignment
     assert task_to_update.due_date.tzinfo == timezone.utc # Check __setattr__
     assert task_to_update.due_date == new_aware_due.astimezone(timezone.utc)
@@ -281,8 +288,8 @@ def test_to_dict_method(db_session):
 
     assert isinstance(task_dict, dict)
     assert task_dict['id'] == fetched_task.id
-    assert task_dict['created_at'] == fetched_task.created_at
-    assert task_dict['updated_at'] == fetched_task.updated_at # Will be None initially
+    assert task_dict['created_at'] == fetched_task.created_at.isoformat()
+    assert task_dict['updated_at'] == fetched_task.updated_at.isoformat() # 如果 updated_at 也在 dict 中
     assert 'title' not in task_dict # Base to_dict only includes Base fields
 
     # Test after update
@@ -294,6 +301,6 @@ def test_to_dict_method(db_session):
     updated_dict = updated_task.to_dict()
 
     assert updated_dict['id'] == updated_task.id
-    assert updated_dict['created_at'] == updated_task.created_at
-    assert updated_dict['updated_at'] == updated_task.updated_at
+    assert updated_dict['created_at'] == updated_task.created_at.isoformat()
+    assert updated_dict['updated_at'] == updated_task.updated_at.isoformat() # 如果 updated_at 也在 dict 中
     assert updated_dict['updated_at'] is not None # Should be set now

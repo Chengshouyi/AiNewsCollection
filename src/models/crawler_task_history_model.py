@@ -41,14 +41,13 @@ class CrawlerTaskHistory(Base, BaseEntity):
     task = relationship("CrawlerTasks", back_populates="history", lazy="joined")
 
     # 定義需要監聽的 datetime 欄位  
-    _child_datetime_fields_to_watch = {'start_time', 'end_time'}
+    _aware_datetime_fields = Base._aware_datetime_fields.union({'start_time', 'end_time'})
 
     def __init__(self, **kwargs):
         if 'task_status' not in kwargs:
             kwargs['task_status'] = TaskStatus.INIT
         # 告知父類需要監聽的 datetime 欄位
-        super().__init__(datetime_fields_to_watch=
-                         self._child_datetime_fields_to_watch, **kwargs)
+        super().__init__(**kwargs)
 
     def __repr__(self):
         return f"<CrawlerTaskHistory(id={self.id}, task_id={self.task_id}, start_time='{self.start_time}')>"
@@ -57,8 +56,8 @@ class CrawlerTaskHistory(Base, BaseEntity):
         return {
             **super().to_dict(),
             'task_id': self.task_id,
-            'start_time': self.start_time,
-            'end_time': self.end_time,
+            'start_time': self.start_time.isoformat() if self.start_time else None,
+            'end_time': self.end_time.isoformat() if self.end_time else None,
             'success': self.success,
             'message': self.message,
             'articles_count': self.articles_count,
