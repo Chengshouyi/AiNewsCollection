@@ -25,8 +25,9 @@ def test_validation_error(app):
         
         data = response.get_json()
         assert status_code == 400
-        assert data["error"] == "欄位驗證錯誤"
-        assert data["type"] == "validation_error"
+        assert data["success"] is False
+        assert data["message"] == "欄位驗證錯誤"
+        assert data["errors"] == "Validation Error"
 
 def test_not_found_error(app):
     """測試處理 NotFoundError"""
@@ -36,8 +37,9 @@ def test_not_found_error(app):
         
         data = response.get_json()
         assert status_code == 404
-        assert data["error"] == "找不到資源"
-        assert data["type"] == "not_found"
+        assert data["success"] is False
+        assert data["message"] == "找不到資源"
+        assert data["errors"] == "Not Found Error"
 
 def test_database_error(app):
     """測試處理 DatabaseError"""
@@ -47,8 +49,9 @@ def test_database_error(app):
         
         data = response.get_json()
         assert status_code == 500
-        assert data["error"] == "資料庫操作錯誤"
-        assert data["type"] == "database_error"
+        assert data["success"] is False
+        assert data["message"] == "資料庫連接失敗"
+        assert data["errors"] == "Database Error"
 
 def test_data_operation_error(app):
     """測試處理 DataOperationError"""
@@ -58,8 +61,9 @@ def test_data_operation_error(app):
         
         data = response.get_json()
         assert status_code == 400
-        assert data["error"] == "資料操作失敗"
-        assert data["type"] == "data_operation_error"
+        assert data["success"] is False
+        assert data["message"] == "資料操作失敗"
+        assert data["errors"] == "Data Operation Error"
 
 def test_http_request_timeout_error(app):
     """測試處理 HTTP 請求超時錯誤"""
@@ -69,8 +73,9 @@ def test_http_request_timeout_error(app):
         
         data = response.get_json()
         assert status_code == 504
-        assert data["error"] == "請求超時"
-        assert data["type"] == "request_timeout"
+        assert data["success"] is False
+        assert data["message"] == "請求超時"
+        assert data["errors"] == "Request Timeout Error"
 
 def test_http_connection_error(app):
     """測試處理 HTTP 連接錯誤"""
@@ -80,8 +85,9 @@ def test_http_connection_error(app):
         
         data = response.get_json()
         assert status_code == 503
-        assert data["error"] == "無法連接到目標服務器"
-        assert data["type"] == "connection_error"
+        assert data["success"] is False
+        assert data["message"] == "連接失敗"
+        assert data["errors"] == "Connection Error"
 
 def test_http_url_error(app):
     """測試處理 HTTP URL 錯誤"""
@@ -91,8 +97,9 @@ def test_http_url_error(app):
         
         data = response.get_json()
         assert status_code == 400
-        assert data["error"] == "無效的 URL"
-        assert data["type"] == "invalid_url"
+        assert data["success"] is False
+        assert data["message"] == "需要 URL"
+        assert data["errors"] == "Invalid URL Error"
 
 def test_http_too_many_redirects_error(app):
     """測試處理 HTTP 重定向過多錯誤"""
@@ -102,8 +109,9 @@ def test_http_too_many_redirects_error(app):
         
         data = response.get_json()
         assert status_code == 400
-        assert data["error"] == "重定向次數過多"
-        assert data["type"] == "too_many_redirects"
+        assert data["success"] is False
+        assert data["message"] == "重定向過多"
+        assert data["errors"] == "Too Many Redirects Error"
 
 def test_flask_http_exception(app):
     """測試處理 Flask HTTP 異常"""
@@ -114,8 +122,10 @@ def test_flask_http_exception(app):
         
         data_404 = response_404.get_json()
         assert status_code_404 == 404
-        assert data_404["error"] == "找不到頁面"
-        assert data_404["type"] == "http_error"
+        assert data_404["success"] is False
+        # Flask 的 HTTPException 會將描述包在 str(error) 中
+        assert "找不到頁面" in data_404["message"]
+        assert data_404["errors"] == "HTTP Error"
         
         # 測試 403 Forbidden
         error_403 = Forbidden("禁止訪問")
@@ -123,8 +133,9 @@ def test_flask_http_exception(app):
         
         data_403 = response_403.get_json()
         assert status_code_403 == 403
-        assert data_403["error"] == "禁止訪問"
-        assert data_403["type"] == "http_error"
+        assert data_403["success"] is False
+        assert "禁止訪問" in data_403["message"]
+        assert data_403["errors"] == "HTTP Error"
 
 def test_generic_exception(app):
     """測試處理一般異常"""
@@ -134,5 +145,6 @@ def test_generic_exception(app):
         
         data = response.get_json()
         assert status_code == 500
-        assert data["error"] == "內部服務器錯誤"
-        assert data["type"] == "internal_error" 
+        assert data["success"] is False
+        assert data["message"] == "未知錯誤"
+        assert data["errors"] == "Internal Server Error" 
