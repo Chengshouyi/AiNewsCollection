@@ -4,6 +4,7 @@ from src.models.base_model import Base
 from typing import Optional
 from datetime import datetime
 from .base_entity import BaseEntity
+from src.utils.type_utils import AwareDateTime
 import logging
 from src.utils.enum_utils import ArticleScrapeStatus
 
@@ -56,7 +57,7 @@ class Articles(Base, BaseEntity):
     )
     category: Mapped[Optional[str]] = mapped_column(String(100))
     published_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True)
+        AwareDateTime
     )
     author: Mapped[Optional[str]] = mapped_column(String(100))
     source: Mapped[str] = mapped_column(String(50))
@@ -86,7 +87,7 @@ class Articles(Base, BaseEntity):
     scrape_error: Mapped[Optional[str]] = mapped_column(Text)
     
     last_scrape_attempt: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True)
+        AwareDateTime
     )
     
     # 新增與 CrawlerTasks 的關聯

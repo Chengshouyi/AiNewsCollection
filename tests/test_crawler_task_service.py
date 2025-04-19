@@ -11,6 +11,7 @@ from src.models.crawler_tasks_schema import TASK_ARGS_DEFAULT
 from src.models.crawler_task_history_schema import TaskStatus
 from src.utils.enum_utils import TaskStatus as StatusBeforeRead
 from unittest.mock import call
+from croniter import croniter
 
 # 設置測試資料庫
 @pytest.fixture(scope="session")
@@ -343,43 +344,57 @@ class TestCrawlerTaskService:
         # 確保任務的 cron 表達式匹配
         crawler_task_service.update_task(task_id, {"cron_expression": cron_expression, "is_auto": True, "is_active": True})
 
-        now = datetime.now(timezone.utc)
-        base_time = datetime(now.year, now.month, now.day, 0, 0, tzinfo=timezone.utc)
-        iter = croniter(cron_expression, base_time - timedelta(days=1))
-        prev_run_time_expected = iter.get_prev(datetime)
-        prev_run_time_expected_utc = prev_run_time_expected.replace(tzinfo=timezone.utc)
+        now = datetime.now(timezone.utc) # Get current time once for consistency in the test case
+
+        # --- Calculate the PREVIOUS scheduled time relative to NOW ---
+        # Use the SAME cron expression and NOW as the function would use
+        iter_for_test = croniter(cron_expression, now)
+        # This is the schedule time slot immediately before 'now'
+        prev_run_time_expected_utc = iter_for_test.get_prev(datetime)
+        # Ensure it has timezone info if croniter doesn't add it
+        if prev_run_time_expected_utc.tzinfo is None:
+             prev_run_time_expected_utc = prev_run_time_expected_utc.replace(tzinfo=timezone.utc) # Or use enforce_utc_datetime_transform
 
         # 情況 1: 上次執行時間是很久以前 -> 應該被找到
         print(f"\n--- Testing find_pending_tasks: Case 1 (Old last run) ---")
-        crawler_task_service.update_task(task_id, {"last_run_time": prev_run_time_expected_utc - timedelta(days=1)})
+        # Use a time clearly before the last slot
+        old_last_run = prev_run_time_expected_utc - timedelta(days=1)
+        crawler_task_service.update_task(task_id, {"last_run_at": old_last_run}) # Changed from last_run_time
         result1 = crawler_task_service.find_pending_tasks(cron_expression)
         print(f"Result 1 (Old last run): {result1}")
         assert result1["success"] is True
+        # Make sure the correct field 'last_run_at' is checked in the task data if needed for debugging
+        # print(f"Task {task_id} last_run_at after update 1: {crawler_task_service.get_task_by_id(task_id)['task'].last_run_at}")
         assert any(task.id == task_id for task in result1["tasks"]), "Task should be pending (old last run)"
 
         # 情況 2: 上次執行時間就是上次應該執行的時間 -> 不應該被找到
         print(f"\n--- Testing find_pending_tasks: Case 2 (Correct last run) ---")
-        crawler_task_service.update_task(task_id, {"last_run_time": prev_run_time_expected_utc})
+        # Set last run to the *actual* previous schedule time relative to now
+        crawler_task_service.update_task(task_id, {"last_run_at": prev_run_time_expected_utc}) # Changed from last_run_time
         result2 = crawler_task_service.find_pending_tasks(cron_expression)
         print(f"Result 2 (Correct last run): {result2}")
+        # print(f"Task {task_id} last_run_at after update 2: {crawler_task_service.get_task_by_id(task_id)['task'].last_run_at}")
+        # print(f"Tasks returned in result2: {[t.id for t in result2['tasks']]}")
         assert result2["success"] is True
-        assert not any(task.id == task_id for task in result2["tasks"]), "Task should NOT be pending (correct last run)"
+        assert not any(task.id == task_id for task in result2["tasks"]), f"Task should NOT be pending (correct last run). last_run_at={prev_run_time_expected_utc.isoformat()}" # Added more detail
 
-        # 情況 3: 從未執行過 (last_run_time is None) -> 應該被找到
+        # --- 情況 3: 從未執行過 (last_run_at is None) -> 應該被找到 ---
         print(f"\n--- Testing find_pending_tasks: Case 3 (Never run) ---")
-        crawler_task_service.update_task(task_id, {"last_run_time": None})
+        crawler_task_service.update_task(task_id, {"last_run_at": None}) # Changed from last_run_time
         result3 = crawler_task_service.find_pending_tasks(cron_expression)
         print(f"Result 3 (Never run): {result3}")
         assert result3["success"] is True
         assert any(task.id == task_id for task in result3["tasks"]), "Task should be pending (never run)"
 
-        # 情況 4: 任務 inactive -> 不應該被找到
+        # --- 情況 4: 任務 inactive -> 不應該被找到 ---
         print(f"\n--- Testing find_pending_tasks: Case 4 (Inactive) ---")
-        crawler_task_service.update_task(task_id, {"last_run_time": None, "is_active": False})
+        # Ensure last_run_at makes it pending if active, then set inactive
+        crawler_task_service.update_task(task_id, {"last_run_at": None, "is_active": False})
         result4 = crawler_task_service.find_pending_tasks(cron_expression)
         print(f"Result 4 (Inactive): {result4}")
         assert result4["success"] is True
         assert not any(task.id == task_id for task in result4["tasks"]), "Task should NOT be pending (inactive)"
+        # Clean up: set task back to active for potential subsequent tests if needed
         crawler_task_service.update_task(task_id, {"is_active": True})
 
     def test_update_task_status_and_history(self, crawler_task_service, sample_tasks):
@@ -389,14 +404,15 @@ class TestCrawlerTaskService:
 
         # 1. 初始狀態 (假設是 INIT)
         initial_status = crawler_task_service.get_task_status(task_id)
-        assert initial_status['task_status'] == TaskStatus.INIT.value
-        assert initial_status['scrape_phase'] == ScrapePhase.INIT.value
+        assert initial_status['task_status'] == TaskStatus.INIT
+        assert initial_status['scrape_phase'] == ScrapePhase.INIT
 
         # 2. 更新為 RUNNING, LINK_COLLECTION, 創建歷史記錄
         start_time = now - timedelta(minutes=1)
         history_data_start = {
+            "task_id": task_id,
             "start_time": start_time,
-            "task_status": TaskStatus.RUNNING.value,
+            "task_status": TaskStatus.RUNNING,
             "message": "開始連結收集"
         }
         result_start = crawler_task_service.update_task_status(
@@ -407,18 +423,18 @@ class TestCrawlerTaskService:
         )
         assert result_start['success'] is True
         assert result_start['updated'] is True
-        assert result_start['task'].task_status == TaskStatus.RUNNING.value
-        assert result_start['task'].scrape_phase == ScrapePhase.LINK_COLLECTION.value
+        assert result_start['task'].task_status == TaskStatus.RUNNING
+        assert result_start['task'].scrape_phase == ScrapePhase.LINK_COLLECTION
         assert result_start['history'] is not None
         history_id_start = result_start['history'].id
-        assert result_start['history'].task_status == TaskStatus.RUNNING.value
+        assert result_start['history'].task_status == TaskStatus.RUNNING
         assert result_start['history'].start_time == start_time
         assert result_start['history'].end_time is None
 
         # 驗證 get_task_status 返回正確的運行狀態
         status_running = crawler_task_service.get_task_status(task_id)
-        assert status_running['task_status'] == TaskStatus.RUNNING.value
-        assert status_running['scrape_phase'] == ScrapePhase.LINK_COLLECTION.value
+        assert status_running['task_status'] == TaskStatus.RUNNING
+        assert status_running['scrape_phase'] == ScrapePhase.LINK_COLLECTION
 
         # 3. 更新為 COMPLETED, COMPLETED, 更新歷史記錄
         end_time = now
@@ -426,7 +442,7 @@ class TestCrawlerTaskService:
             "end_time": end_time,
             "success": True,
             "articles_count": 10,
-            "task_status": TaskStatus.COMPLETED.value,
+            "task_status": TaskStatus.COMPLETED,
             "message": "任務執行成功"
         }
         result_end = crawler_task_service.update_task_status(
@@ -438,19 +454,19 @@ class TestCrawlerTaskService:
         )
         assert result_end['success'] is True
         assert result_end['updated'] is True
-        assert result_end['task'].task_status == TaskStatus.COMPLETED.value
-        assert result_end['task'].scrape_phase == ScrapePhase.COMPLETED.value
+        assert result_end['task'].task_status == TaskStatus.COMPLETED
+        assert result_end['task'].scrape_phase == ScrapePhase.COMPLETED
         assert result_end['history'] is not None
         assert result_end['history'].id == history_id_start
-        assert result_end['history'].task_status == TaskStatus.COMPLETED.value
+        assert result_end['history'].task_status == TaskStatus.COMPLETED
         assert result_end['history'].success is True
         assert result_end['history'].articles_count == 10
         assert result_end['history'].end_time == end_time
 
         # 驗證 get_task_status 返回完成狀態
         status_completed = crawler_task_service.get_task_status(task_id)
-        assert status_completed['task_status'] == TaskStatus.COMPLETED.value
-        assert status_completed['scrape_phase'] == ScrapePhase.COMPLETED.value
+        assert status_completed['task_status'] == TaskStatus.COMPLETED
+        assert status_completed['scrape_phase'] == ScrapePhase.COMPLETED
 
     def test_increment_retry_count(self, crawler_task_service, sample_tasks):
         """測試增加任務重試次數 (包括邊界條件)"""

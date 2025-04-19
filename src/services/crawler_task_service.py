@@ -18,6 +18,7 @@ from src.models.crawlers_model import Crawlers
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.articles_model import Articles
 from src.models.crawler_tasks_schema import CrawlerTaskReadSchema, PaginatedCrawlerTaskResponse
+from src.models.crawler_task_history_schema import CrawlerTaskHistoryReadSchema
 from src.error.errors import ValidationError
 from src.utils.enum_utils import ScrapeMode, ScrapePhase, TaskStatus
 from src.utils.model_utils import validate_task_args
@@ -913,6 +914,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                          task_result = task # 回退到原始 task
                     else:
                          logger.info(f"任務 {task_id} 狀態更新為: {update_data}")
+                         session.flush()
+                         session.refresh(task_result)
 
                 # --- 處理歷史記錄 --- 
                 history_result = None
@@ -927,6 +930,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                             history_result = history_repo.update(history_id, validated_history_data)
                             if history_result:
                                 history_updated = True
+                                session.flush()
+                                session.refresh(history_result)
                                 logger.info(f"任務 {task_id} 的歷史記錄 {history_id} 已更新。")
                             else:
                                 logger.warning(f"任務 {task_id} 的歷史記錄 {history_id} 更新失敗 (repo 返回 None)。")
@@ -937,6 +942,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                             validated_history_data['task_id'] = task_id 
                             history_result = history_repo.create(validated_history_data)
                             if history_result:
+                                session.flush()
+                                session.refresh(history_result)
                                 history_created = True
                                 history_id = history_result.id # 獲取新 ID
                                 logger.info(f"任務 {task_id} 的新歷史記錄 {history_id} 已創建。")
@@ -956,12 +963,18 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if not messages: messages.append("無狀態或歷史記錄變更")
                 
                 final_message = ", ".join(messages)
-                
+                #時區確認
+                if history_result and history_result.end_time:
+                    print(f"ORM end_time type: {type(history_result.end_time)}")
+                    print(f"ORM end_time tzinfo: {history_result.end_time.tzinfo}")
+                    print(f"ORM end_time value: {history_result.end_time}")
+                else:
+                    print("history ORM object or history.end_time not found/set.")
                 return {
                     'success': True, # 操作嘗試成功，即使內部可能有部分失敗
                     'message': final_message,
                     'task': CrawlerTaskReadSchema.model_validate(task_result) if task_result else None, # 返回更新後 (或原始) 的 task Schema
-                    'history': history_result, # 返回創建/更新後 (或 None) 的 history 對象
+                    'history': CrawlerTaskHistoryReadSchema.model_validate(history_result) if history_result else None, # 返回創建/更新後 (或 None) 的 history 對象
                     'updated': task_updated or history_created or history_updated # 是否有任何實際變更
                 }
         except Exception as e:

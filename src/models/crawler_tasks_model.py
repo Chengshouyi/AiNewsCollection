@@ -5,6 +5,7 @@ from typing import Optional
 from datetime import datetime
 from .base_entity import BaseEntity
 from src.utils.enum_utils import ScrapePhase, ScrapeMode, TaskStatus
+from src.utils.type_utils import AwareDateTime
 
 TASK_ARGS_DEFAULT = {
     'max_pages': 10,
@@ -99,7 +100,7 @@ class CrawlerTasks(Base, BaseEntity):
     )
     task_args: Mapped[dict] = mapped_column(JSON, default=TASK_ARGS_DEFAULT)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    last_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    last_run_at: Mapped[Optional[datetime]] = mapped_column(AwareDateTime)
     last_run_success: Mapped[Optional[bool]] = mapped_column(Boolean)
     last_run_message: Mapped[Optional[str]] = mapped_column(Text)
     cron_expression: Mapped[Optional[str]] = mapped_column(VARCHAR(255))

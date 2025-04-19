@@ -8,6 +8,7 @@ import logging
 from src.error.errors import ValidationError, DatabaseOperationError, InvalidOperationError
 from src.utils.datetime_utils import enforce_utc_datetime_transform
 from src.utils.enum_utils import TaskStatus, ScrapePhase, ScrapeMode
+from src.utils.model_utils import validate_cron_expression
 from croniter import croniter
 from sqlalchemy import desc, asc, cast, JSON, Text, Boolean # 引入 JSON, Text, desc, asc, Boolean
 from sqlalchemy.orm.attributes import flag_modified # 導入 flag_modified
@@ -361,7 +362,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
     def find_pending_tasks(self, cron_expression: str) -> List[CrawlerTasks]:
         """查詢需要執行的任務（根據 cron 表達式和上次執行時間, 只查 is_auto=True）"""
         try:
-            croniter(cron_expression)
+            validate_cron_expression('cron_expression', max_length=255, min_length=5, required=True)(cron_expression)
         except ValueError:
             error_msg = f"無效的 cron 表達式: {cron_expression}"
             logger.error(error_msg)
@@ -391,13 +392,12 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
                 # 確保 last_run_at 也是帶時區的
                 last_run = task.last_run_at
                 if last_run.tzinfo is None:
-                    # 如果 last_run_at 沒有時區信息，假設它是 UTC
+                    # 如果 last_run_at 沒有時區信息，因為寫是 UTC
                     last_run = enforce_utc_datetime_transform(last_run)
                     logger.debug(f"[find_pending_tasks] Task ID {task.id}: Forced last_run_at to UTC: {last_run.isoformat()}")
 
                 # 對於所有 cron 表達式，使用 croniter 計算下次執行時間
                 try:
-                    # Find the *most recent* scheduled time slot that should have occurred before or at 'now'
                     cron_now = croniter(cron_expression, now)
                     previous_scheduled_run = cron_now.get_prev(datetime)
                     # 確保 previous_scheduled_run 也有時區

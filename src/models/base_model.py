@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Integer, DateTime, func
 from typing import Optional, Set
 from src.utils.datetime_utils import enforce_utc_datetime_transform
+from src.utils.type_utils import AwareDateTime
 import logging
 
 # 設定 logger
@@ -25,13 +26,13 @@ class Base(DeclarativeBase):
         autoincrement=True
     )
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), 
+        AwareDateTime, 
         default=lambda: datetime.now(timezone.utc),
         server_default=func.timezone('UTC', func.now()),
         nullable=False
     )
     updated_at: Mapped[Optional[datetime]] = mapped_column(
-        DateTime(timezone=True),
+        AwareDateTime,
         onupdate=lambda: datetime.now(timezone.utc)
     )
     # 用來儲存需要監聽的 datetime 欄位
@@ -56,8 +57,9 @@ class Base(DeclarativeBase):
     def __setattr__(self, key, value):
         """覆寫 __setattr__ 方法，在設置屬性時進行時區轉換"""
         if key in getattr(self, '_datetime_fields_to_watch', set()) and isinstance(value, datetime):
+            print(f"datetime field setattr before transform check： key: {key}, value: {value}")
             value = enforce_utc_datetime_transform(value)
-            
+            print(f"datetime field setattr after transform check： key: {key}, value: {value}")
         super().__setattr__(key, value)
 
     def __getattribute__(self, key):
@@ -68,8 +70,10 @@ class Base(DeclarativeBase):
         # 檢查是否是需要監聽的 datetime 欄位
         datetime_fields = object.__getattribute__(self, '_datetime_fields_to_watch')
         if key in datetime_fields and isinstance(value, datetime) and value.tzinfo is None:
+            print(f"datetime field getattribute before transform check： key: {key}, value: {value}")
             # 如果是 naive datetime，轉換為帶 UTC 時區的版本
             value = enforce_utc_datetime_transform(value)
+            print(f"datetime field getattribute after transform check： key: {key}, value: {value}")
             # 將轉換後的值寫回物件，避免下次存取時重複轉換
             object.__setattr__(self, key, value)
         

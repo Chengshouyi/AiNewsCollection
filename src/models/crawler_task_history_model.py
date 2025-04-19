@@ -6,6 +6,7 @@ from src.models.base_model import Base
 from .base_entity import BaseEntity
 from src.utils.enum_utils import TaskStatus
 from sqlalchemy import Enum
+from src.utils.type_utils import AwareDateTime
 
 class CrawlerTaskHistory(Base, BaseEntity):
     """爬蟲任務執行歷史記錄
@@ -26,8 +27,8 @@ class CrawlerTaskHistory(Base, BaseEntity):
         ForeignKey('crawler_tasks.id'), 
         nullable=False
     )
-    start_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
-    end_time: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    start_time: Mapped[Optional[datetime]] = mapped_column(AwareDateTime)
+    end_time: Mapped[Optional[datetime]] = mapped_column(AwareDateTime)
     success: Mapped[Optional[bool]] = mapped_column(Boolean)
     message: Mapped[Optional[str]] = mapped_column(Text)
     articles_count: Mapped[Optional[int]] = mapped_column(Integer)
