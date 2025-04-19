@@ -311,7 +311,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'task': None
                     }
                     
-                task = tasks_repo.find_tasks_by_id(task_id, is_active)
+                task = tasks_repo.get_task_by_id(task_id, is_active)
                 task_schema = CrawlerTaskReadSchema.model_validate(task) if task else None # 轉換
                 if task_schema:
                     return {
@@ -553,7 +553,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'tasks': []
                     }
                     
-                failed_tasks = tasks_repo.get_failed_tasks(days)
+                failed_tasks = tasks_repo.find_failed_tasks(days)
                 tasks_orm = failed_tasks or [] # 確保是列表
                 tasks_schema = [CrawlerTaskReadSchema.model_validate(t) for t in tasks_orm] # 轉換
                 return {
@@ -797,7 +797,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'message': '無法取得資料庫存取器',
                         'tasks': []
                     }
-                tasks = tasks_repo.find_pending_tasks(cron_expression)
+                tasks = tasks_repo.find_due_tasks(cron_expression)
                 tasks_orm = tasks or [] # 確保是列表
                 tasks_schema = [CrawlerTaskReadSchema.model_validate(t) for t in tasks_orm] # 轉換
                 return {

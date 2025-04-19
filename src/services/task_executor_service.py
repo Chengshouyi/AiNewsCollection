@@ -77,7 +77,7 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('TaskHistory', session))
                 
                 # 檢查任務是否存在
-                task = tasks_repo.find_tasks_by_id(task_id, is_active=True)
+                task = tasks_repo.get_task_by_id(task_id, is_active=True)
                 if not task:
                     return {
                         'success': False,

@@ -116,7 +116,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             # 將其他錯誤包裝成 DatabaseOperationError
             raise DatabaseOperationError(f"更新 CrawlerTask (ID={entity_id}) 時發生未預期錯誤: {e}") from e
 
-    def find_tasks_by_id(self, task_id: int, is_active: Optional[bool] = True) -> Optional[CrawlerTasks]:
+    def get_task_by_id(self, task_id: int, is_active: Optional[bool] = True) -> Optional[CrawlerTasks]:
         """查詢特定任務
 
         Args:
@@ -141,7 +141,6 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             lambda: self.session.query(self.model_class).filter_by(crawler_id=crawler_id, is_active=is_active).all(),
             err_msg=f"查詢爬蟲ID {crawler_id} 的啟用任務時發生錯誤"
         )
-
 
     def find_auto_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
         """查詢所有自動執行的任務"""
@@ -184,7 +183,6 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             logger.warning(f"切換排程狀態失敗，任務ID不存在: {task_id}")
             return None
         return self._toggle_status(task, 'is_scheduled')
-
 
     def toggle_auto_status(self, task_id: int) -> Optional[CrawlerTasks]:
         """
@@ -235,7 +233,6 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
         # 返回修改後的 task 物件 (尚未 commit)
         return task
-
 
     def toggle_active_status(self, task_id: int) -> Optional[CrawlerTasks]:
         """
@@ -332,7 +329,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             err_msg="查詢多個爬蟲ID的任務時發生錯誤"
         )
 
-    def get_tasks_count_by_crawler(self, crawler_id: int) -> int:
+    def count_tasks_by_crawler(self, crawler_id: int) -> int:
         """獲取特定爬蟲的任務數量"""
         return self.execute_query(
             lambda: self.session.query(self.model_class).filter_by(
@@ -359,7 +356,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             err_msg=f"查詢 cron 表達式 {cron_expression} 的自動任務時發生錯誤"
         )
 
-    def find_pending_tasks(self, cron_expression: str) -> List[CrawlerTasks]:
+    def find_due_tasks(self, cron_expression: str) -> List[CrawlerTasks]:
         """查詢需要執行的任務（根據 cron 表達式和上次執行時間, 只查 is_auto=True）"""
         try:
             validate_cron_expression('cron_expression', max_length=255, min_length=5, required=True)(cron_expression)
@@ -368,7 +365,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             logger.error(error_msg)
             raise ValidationError(error_msg)
 
-        def get_pending_tasks():
+        def get_due_tasks():
             # 只查詢 is_auto=True 且 is_active=True 的任務 (通常排程器只關心活動的自動任務)
             base_query = self.session.query(self.model_class).filter(
                 self.model_class.cron_expression == cron_expression,
@@ -380,12 +377,12 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             # 使用 UTC 時間
             now = datetime.now(timezone.utc)
             result_tasks = []
-            logger.debug(f"[find_pending_tasks] Current UTC time (now): {now.isoformat()}") # Log current time
+            logger.debug(f"[find_due_tasks] Current UTC time (now): {now.isoformat()}") # Log current time
 
             for task in all_relevant_tasks:
                 # 從未執行的任務直接加入
                 if task.last_run_at is None:
-                    logger.debug(f"[find_pending_tasks] Task ID {task.id} ({task.task_name}) added (never run).")
+                    logger.debug(f"[find_due_tasks] Task ID {task.id} ({task.task_name}) added (never run).")
                     result_tasks.append(task)
                     continue
 
@@ -394,7 +391,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
                 if last_run.tzinfo is None:
                     # 如果 last_run_at 沒有時區信息，因為寫是 UTC
                     last_run = enforce_utc_datetime_transform(last_run)
-                    logger.debug(f"[find_pending_tasks] Task ID {task.id}: Forced last_run_at to UTC: {last_run.isoformat()}")
+                    logger.debug(f"[find_due_tasks] Task ID {task.id}: Forced last_run_at to UTC: {last_run.isoformat()}")
 
                 # 對於所有 cron 表達式，使用 croniter 計算下次執行時間
                 try:
@@ -403,19 +400,19 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
                     # 確保 previous_scheduled_run 也有時區
                     if previous_scheduled_run.tzinfo is None:
                         previous_scheduled_run = enforce_utc_datetime_transform(previous_scheduled_run)
-                        logger.debug(f"[find_pending_tasks] Task ID {task.id}: Forced previous_scheduled_run to UTC: {previous_scheduled_run.isoformat()}")
+                        logger.debug(f"[find_due_tasks] Task ID {task.id}: Forced previous_scheduled_run to UTC: {previous_scheduled_run.isoformat()}")
 
                     # Log the comparison values
-                    logger.debug(f"[find_pending_tasks] Task ID {task.id} ({task.task_name}): last_run={last_run.isoformat()}, previous_scheduled_run={previous_scheduled_run.isoformat()}, now={now.isoformat()}")
+                    logger.debug(f"[find_due_tasks] Task ID {task.id} ({task.task_name}): last_run={last_run.isoformat()}, previous_scheduled_run={previous_scheduled_run.isoformat()}, now={now.isoformat()}")
 
                     # If the last run occurred *before* the most recent scheduled time slot,
                     # it means the task is pending (it missed that slot or hasn't run since).
                     if last_run < previous_scheduled_run:
-                        logger.debug(f"[find_pending_tasks] Task ID {task.id} added. Condition met: last_run ({last_run.isoformat()}) < previous_scheduled_run ({previous_scheduled_run.isoformat()})")
+                        logger.debug(f"[find_due_tasks] Task ID {task.id} added. Condition met: last_run ({last_run.isoformat()}) < previous_scheduled_run ({previous_scheduled_run.isoformat()})")
                         result_tasks.append(task)
                     else:
                         # If the last run was at or after the most recent scheduled time, it's not pending for that slot.
-                        logger.debug(f"[find_pending_tasks] Task ID {task.id} skipped. Condition not met: last_run ({last_run.isoformat()}) >= previous_scheduled_run ({previous_scheduled_run.isoformat()})")
+                        logger.debug(f"[find_due_tasks] Task ID {task.id} skipped. Condition not met: last_run ({last_run.isoformat()}) >= previous_scheduled_run ({previous_scheduled_run.isoformat()})")
                         continue
 
                 except Exception as e:
@@ -423,15 +420,14 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
                     logger.error(f"計算任務 {task.id} 的下次執行時間時出錯 ({cron_expression}, {last_run}): {e}", exc_info=True)
                     continue
 
-
             return result_tasks
 
         return self.execute_query(
-            get_pending_tasks,
+            get_due_tasks,
             err_msg=f"查詢待執行的 cron 表達式 {cron_expression} 的任務時發生錯誤"
         )
 
-    def get_failed_tasks(self, days: int = 1) -> List[CrawlerTasks]:
+    def find_failed_tasks(self, days: int = 1) -> List[CrawlerTasks]:
         """獲取最近失敗的任務 (只查 is_active=True 的任務)"""
         if days < 0:
             days = 0 # 防止負數天數

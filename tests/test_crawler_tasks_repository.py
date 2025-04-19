@@ -340,7 +340,7 @@ class TestCrawlerTasksRepository:
 
     def test_get_tasks_count_by_crawler(self, crawler_tasks_repo, sample_tasks, sample_crawler):
         """測試獲取特定爬蟲的任務數量"""
-        count = crawler_tasks_repo.get_tasks_count_by_crawler(sample_crawler.id)
+        count = crawler_tasks_repo.count_tasks_by_crawler(sample_crawler.id)
         assert count == 6
 
     def test_find_tasks_by_cron_expression(self, crawler_tasks_repo, session, sample_crawler):
@@ -448,7 +448,7 @@ class TestCrawlerTasksRepository:
         session.refresh(task3)
         
         # 執行測試
-        pending_tasks = crawler_tasks_repo.find_pending_tasks("0 * * * *")
+        pending_tasks = crawler_tasks_repo.find_due_tasks("0 * * * *")
         
         # 取得找到的任務 ID 集合
         found_ids = {task.id for task in pending_tasks}
@@ -502,7 +502,7 @@ class TestCrawlerTasksRepository:
         session.commit()
 
         # 測試查詢
-        failed_tasks = crawler_tasks_repo.get_failed_tasks(days=1)
+        failed_tasks = crawler_tasks_repo.find_failed_tasks(days=1)
         assert len(failed_tasks) == 1
         assert all(not task.last_run_success for task in failed_tasks)
         assert all(task.last_run_at >= datetime.now(timezone.utc) - timedelta(days=1) for task in failed_tasks)
@@ -609,39 +609,39 @@ class TestCrawlerTasksRepository:
         inactive_task = next(t for t in sample_tasks if not t.is_active)
 
         # 1. 查詢存在的活動任務 (預設 is_active=True)
-        found_task = crawler_tasks_repo.find_tasks_by_id(active_task.id)
+        found_task = crawler_tasks_repo.get_task_by_id(active_task.id)
         assert found_task is not None
         assert found_task.id == active_task.id
         assert found_task.is_active is True
 
         # 2. 查詢存在的活動任務 (明確 is_active=True)
-        found_task = crawler_tasks_repo.find_tasks_by_id(active_task.id, is_active=True)
+        found_task = crawler_tasks_repo.get_task_by_id(active_task.id, is_active=True)
         assert found_task is not None
         assert found_task.id == active_task.id
         assert found_task.is_active is True
 
         # 3. 查詢存在的非活動任務 (使用 is_active=False)
-        found_task = crawler_tasks_repo.find_tasks_by_id(inactive_task.id, is_active=False)
+        found_task = crawler_tasks_repo.get_task_by_id(inactive_task.id, is_active=False)
         assert found_task is not None
         assert found_task.id == inactive_task.id
         assert found_task.is_active is False
 
         # 4. 查詢存在的非活動任務 (使用 is_active=True 應找不到)
-        found_task = crawler_tasks_repo.find_tasks_by_id(inactive_task.id, is_active=True)
+        found_task = crawler_tasks_repo.get_task_by_id(inactive_task.id, is_active=True)
         assert found_task is None
 
         # 5. 查詢存在的活動任務 (使用 is_active=None)
-        found_task = crawler_tasks_repo.find_tasks_by_id(active_task.id, is_active=None)
+        found_task = crawler_tasks_repo.get_task_by_id(active_task.id, is_active=None)
         assert found_task is not None
         assert found_task.id == active_task.id
 
         # 6. 查詢存在的非活動任務 (使用 is_active=None)
-        found_task = crawler_tasks_repo.find_tasks_by_id(inactive_task.id, is_active=None)
+        found_task = crawler_tasks_repo.get_task_by_id(inactive_task.id, is_active=None)
         assert found_task is not None
         assert found_task.id == inactive_task.id
 
         # 7. 查詢不存在的任務ID
-        found_task = crawler_tasks_repo.find_tasks_by_id(99999)
+        found_task = crawler_tasks_repo.get_task_by_id(99999)
         assert found_task is None
 
     def test_toggle_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
@@ -988,17 +988,18 @@ class TestCrawlerTasksConstraints:
             task_name="測試任務",
             crawler_id=sample_crawler.id,
             task_args=TASK_ARGS_DEFAULT,
-            scrape_phase=ScrapePhase.INIT,
+            task_status=TaskStatus.INIT,
             max_retries=3,
             retry_count=0,
-            scrape_mode=ScrapeMode.FULL_SCRAPE
+            scrape_phase=ScrapePhase.INIT
         )
         session.add(task)
         session.flush()
         
         assert task.is_auto is True  # 默認為True
         assert task.task_args.get('ai_only') is False  # 預設為False
-        assert task.scrape_mode == ScrapeMode.FULL_SCRAPE
+        assert task.scrape_phase == ScrapePhase.INIT
+        assert task.task_status == TaskStatus.INIT
 
 class TestModelStructure:
     """測試模型結構"""
@@ -1061,7 +1062,7 @@ class TestSpecialCases:
             crawler_tasks_repo.find_tasks_by_cron_expression("invalid")
             
         with pytest.raises(ValidationError):
-            crawler_tasks_repo.find_pending_tasks("invalid")
+            crawler_tasks_repo.find_due_tasks("invalid")
 
     def test_empty_cron_results(self, crawler_tasks_repo, session):
         """測試空的 cron 結果"""
@@ -1070,7 +1071,7 @@ class TestSpecialCases:
         session.commit()
         
         assert crawler_tasks_repo.find_tasks_by_cron_expression("0 * * * *") == []
-        assert crawler_tasks_repo.find_pending_tasks("0 0 * * *") == []
+        assert crawler_tasks_repo.find_due_tasks("0 * * * *") == []
 
     def test_cron_with_no_auto_tasks(self, crawler_tasks_repo, session, sample_crawler):
         """測試沒有自動執行的 cron 任務"""
@@ -1088,7 +1089,7 @@ class TestSpecialCases:
         session.commit()
 
         assert len(crawler_tasks_repo.find_tasks_by_cron_expression("0 * * * *")) == 0
-        assert len(crawler_tasks_repo.find_pending_tasks("0 * * * *")) == 0
+        assert len(crawler_tasks_repo.find_due_tasks("0 * * * *")) == 0
 
 class TestCrawlerTasksRepositoryValidation:
     """CrawlerTasksRepository 驗證相關的測試類"""

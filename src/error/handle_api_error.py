@@ -27,69 +27,69 @@ def handle_api_error(error: Exception) -> tuple[Response, int]:
     # 映射錯誤類型到 HTTP 狀態碼和錯誤訊息
     if isinstance(error, ValidationError):
         # 驗證錯誤
-        return jsonify({"error": str(error), "type": "validation_error"}), 400
+        return jsonify({"success": False, "message": str(error), "errors": "Validation Error"}), 400
     
     elif isinstance(error, NotFoundError):
         # 資源不存在
-        return jsonify({"error": str(error), "type": "not_found"}), 404
+        return jsonify({"success": False, "message": str(error), "errors": "Not Found Error"}), 404
     
     elif isinstance(error, InvalidOperationError):
         # 無效操作
-        return jsonify({"error": str(error), "type": "invalid_operation"}), 400
+        return jsonify({"success": False, "message": str(error), "errors": "Invalid Operation Error"}), 400
     
     elif isinstance(error, DatabaseError):
         # 資料庫錯誤
-        return jsonify({"error": "資料庫操作錯誤", "type": "database_error"}), 500
+        return jsonify({"success": False, "message": str(error), "errors": "Database Error"}), 500
     
     elif isinstance(error, DataOperationError):
         # 資料操作錯誤
-        return jsonify({"error": str(error), "type": "data_operation_error"}), 400
+        return jsonify({"success": False, "message": str(error), "errors": "Data Operation Error"}), 400
     
     # HTTP 請求相關錯誤處理
     elif isinstance(error, requests.Timeout):
         # 請求超時
-        return jsonify({"error": "請求超時", "type": "request_timeout"}), 504
+        return jsonify({"success": False, "message": str(error), "errors": "Request Timeout Error"}), 504
     
     elif isinstance(error, requests.ConnectionError):
         # 連接錯誤
-        return jsonify({"error": "無法連接到目標服務器", "type": "connection_error"}), 503
+        return jsonify({"success": False, "message": str(error), "errors": "Connection Error"}), 503
     
     elif isinstance(error, requests.URLRequired):
         # URL 錯誤
-        return jsonify({"error": "無效的 URL", "type": "invalid_url"}), 400
+        return jsonify({"success": False, "message": str(error), "errors": "Invalid URL Error"}), 400
     
     elif isinstance(error, requests.TooManyRedirects):
         # 重定向次數過多
-        return jsonify({"error": "重定向次數過多", "type": "too_many_redirects"}), 400
+        return jsonify({"success": False, "message": str(error), "errors": "Too Many Redirects Error"}), 400
     
     elif isinstance(error, requests.RequestException):
         # 一般的請求錯誤
-        return jsonify({"error": f"請求錯誤: {str(error)}", "type": "request_error"}), 500
+        return jsonify({"success": False, "message": str(error), "errors": "Request Error"}), 500
     
     elif isinstance(error, HTTPException):
         # Flask/Werkzeug HTTP 異常
-        return jsonify({"error": error.description, "type": "http_error"}), error.code if error.code is not None else 500
+        return jsonify({"success": False, "message": str(error), "errors": "HTTP Error"}), error.code if error.code is not None else 500
     
     elif isinstance(error, ValueError):
-        return jsonify({"error": str(error), "type": "validation_error"}), 400
+        return jsonify({"success": False, "message": str(error), "errors": "Validation Error"}), 400
     
     elif isinstance(error, KeyError):
-        return jsonify({"error": "無效的請求資料", "type": "invalid_request"}), 400
+        return jsonify({"success": False, "message": str(error), "errors": "Invalid Request Error"}), 400
     
     elif isinstance(error, FileNotFoundError):
-        return jsonify({"error": "找不到資源", "type": "not_found"}), 404
+        return jsonify({"success": False, "message": str(error), "errors": "Not Found Error"}), 404
     
     elif isinstance(error, PermissionError):
-        return jsonify({"error": "權限不足", "type": "permission_denied"}), 403
+        return jsonify({"success": False, "message": str(error), "errors": "Permission Denied Error"}), 403
     
     elif isinstance(error, TimeoutError):
-        return jsonify({"error": "請求超時", "type": "timeout"}), 504
+        return jsonify({"success": False, "message": str(error), "errors": "Timeout Error"}), 504
     
     elif isinstance(error, ConnectionError):
-        return jsonify({"error": "連線錯誤", "type": "connection_error"}), 503
+        return jsonify({"success": False, "message": str(error), "errors": "Connection Error"}), 503
     
     elif isinstance(error, requests.exceptions.RequestException):
-        return jsonify({"error": "外部服務錯誤", "type": "external_service_error"}), 502
+        return jsonify({"success": False, "message": str(error), "errors": "External Service Error"}), 502
     
     # 其他未處理的錯誤
-    return jsonify({"error": "內部服務器錯誤", "type": "internal_error"}), 500
+    return jsonify({"success": False, "message": str(error), "errors": "Internal Server Error"}), 500

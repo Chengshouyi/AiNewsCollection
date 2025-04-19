@@ -968,8 +968,8 @@ class ArticleService(BaseService[Articles]):
                 'message': error_msg
             }
 
-    def get_unscraped_articles(self, limit: Optional[int] = 100, source: Optional[str] = None) -> Dict[str, Any]:
-        """獲取未爬取的文章，返回包含 ArticleReadSchema 列表的字典"""
+    def find_unscraped_articles(self, task_id: Optional[int] = None, limit: Optional[int] = 100, source: Optional[str] = None, is_preview: Optional[bool] = False) -> Dict[str, Any]:
+        """獲取未爬取的文章，返回包含 ArticleReadSchema 或預覽資訊列表的字典"""
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
@@ -981,10 +981,11 @@ class ArticleService(BaseService[Articles]):
                     }
 
                 filter_criteria: Dict[str, Any] = {'is_scraped': False}
+                if task_id is not None: # 新增 task_id 條件
+                    filter_criteria['task_id'] = task_id
                 if source:
                     filter_criteria['source'] = source
 
-                # 假設 repo 返回 ORM 列表
                 articles_orm = article_repo.get_all(
                     filter_criteria=filter_criteria,
                     limit=limit,
@@ -992,13 +993,23 @@ class ArticleService(BaseService[Articles]):
                     sort_desc=False
                 )
                 
-                # 轉換
-                articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_orm]
+                # 根據 is_preview 決定返回的內容
+                articles_result = []
+                preview_fields = {'title', 'link', 'summary', 'source','published_at'} # 定義預覽欄位
+                for article in articles_orm:
+                    article_schema = ArticleReadSchema.model_validate(article)
+                    if is_preview:
+                        # 只包含預覽欄位
+                        articles_result.append(article_schema.model_dump(include=preview_fields))
+                    else:
+                        # 返回完整的 Schema
+                        articles_result.append(article_schema)
+
 
                 return {
                     'success': True,
                     'message': '獲取未爬取文章成功',
-                    'articles': articles_schema # 返回 Schema 列表
+                    'articles': articles_result # 返回處理後的列表
                 }
         except Exception as e:
             error_msg = f"獲取未爬取文章失敗: {str(e)}"
@@ -1009,8 +1020,8 @@ class ArticleService(BaseService[Articles]):
                 'articles': []
             }
 
-    def get_scraped_articles(self, limit: Optional[int] = 100, source: Optional[str] = None) -> Dict[str, Any]:
-        """獲取已爬取的文章，返回包含 ArticleReadSchema 列表的字典"""
+    def find_scraped_articles(self, task_id: Optional[int] = None, limit: Optional[int] = 100, source: Optional[str] = None, is_preview: Optional[bool] = False) -> Dict[str, Any]:
+        """獲取已爬取的文章，返回包含 ArticleReadSchema 或預覽資訊列表的字典"""
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
@@ -1022,10 +1033,11 @@ class ArticleService(BaseService[Articles]):
                     }
 
                 filter_criteria: Dict[str, Any] = {'is_scraped': True}
+                if task_id is not None: # 新增 task_id 條件
+                    filter_criteria['task_id'] = task_id
                 if source:
                     filter_criteria['source'] = source
 
-                # 假設 repo 返回 ORM 列表
                 articles_orm = article_repo.get_all(
                     filter_criteria=filter_criteria,
                     limit=limit,
@@ -1033,13 +1045,22 @@ class ArticleService(BaseService[Articles]):
                     sort_desc=True
                 )
                 
-                # 轉換
-                articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_orm]
+                # 根據 is_preview 決定返回的內容
+                articles_result = []
+                preview_fields = {'title', 'link', 'summary', 'source'} # 定義預覽欄位
+                for article in articles_orm:
+                    article_schema = ArticleReadSchema.model_validate(article)
+                    if is_preview:
+                        # 只包含預覽欄位
+                        articles_result.append(article_schema.model_dump(include=preview_fields))
+                    else:
+                        # 返回完整的 Schema
+                        articles_result.append(article_schema)
 
                 return {
                     'success': True,
                     'message': '獲取已爬取文章成功',
-                    'articles': articles_schema # 返回 Schema 列表
+                    'articles': articles_result # 返回處理後的列表
                 }
         except Exception as e:
             error_msg = f"獲取已爬取文章失敗: {str(e)}"
@@ -1050,7 +1071,7 @@ class ArticleService(BaseService[Articles]):
                 'articles': []
             }
 
-    def count_unscraped_articles(self, source: Optional[str] = None) -> Dict[str, Any]:
+    def count_unscraped_articles(self, task_id: Optional[int] = None, source: Optional[str] = None) -> Dict[str, Any]:
         """計算未爬取的文章數量"""
         try:
             with self._transaction() as session:
@@ -1063,6 +1084,8 @@ class ArticleService(BaseService[Articles]):
                     }
 
                 filter_criteria: Dict[str, Any] = {'is_scraped': False}
+                if task_id is not None: # 新增 task_id 條件
+                    filter_criteria['task_id'] = task_id
                 if source:
                     filter_criteria['source'] = source
 
@@ -1081,7 +1104,7 @@ class ArticleService(BaseService[Articles]):
                 'count': 0
             }
 
-    def count_scraped_articles(self, source: Optional[str] = None) -> Dict[str, Any]:
+    def count_scraped_articles(self, task_id: Optional[int] = None, source: Optional[str] = None) -> Dict[str, Any]:
         """計算已爬取的文章數量"""
         try:
             with self._transaction() as session:
@@ -1094,6 +1117,8 @@ class ArticleService(BaseService[Articles]):
                     }
 
                 filter_criteria: Dict[str, Any] = {'is_scraped': True}
+                if task_id is not None: # 新增 task_id 條件
+                    filter_criteria['task_id'] = task_id
                 if source:
                     filter_criteria['source'] = source
 
