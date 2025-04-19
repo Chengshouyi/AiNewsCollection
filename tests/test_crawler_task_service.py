@@ -225,8 +225,8 @@ class TestCrawlerTaskService:
         assert update_result["success"] is True
         
         result = crawler_task_service.get_task_status(task_id)
-        assert result["task_status"] == TaskStatus.RUNNING
-        assert result["scrape_phase"] == ScrapePhase.LINK_COLLECTION
+        assert result["task_status"] == TaskStatus.RUNNING.value
+        assert result["scrape_phase"] == ScrapePhase.LINK_COLLECTION.value
         assert 0 <= result["progress"] <= 95
         assert "任務運行中" in result["message"]
 
@@ -404,8 +404,8 @@ class TestCrawlerTaskService:
 
         # 1. 初始狀態 (假設是 INIT)
         initial_status = crawler_task_service.get_task_status(task_id)
-        assert initial_status['task_status'] == TaskStatus.INIT
-        assert initial_status['scrape_phase'] == ScrapePhase.INIT
+        assert initial_status['task_status'] == TaskStatus.INIT.value
+        assert initial_status['scrape_phase'] == ScrapePhase.INIT.value
 
         # 2. 更新為 RUNNING, LINK_COLLECTION, 創建歷史記錄
         start_time = now - timedelta(minutes=1)
@@ -433,8 +433,8 @@ class TestCrawlerTaskService:
 
         # 驗證 get_task_status 返回正確的運行狀態
         status_running = crawler_task_service.get_task_status(task_id)
-        assert status_running['task_status'] == TaskStatus.RUNNING
-        assert status_running['scrape_phase'] == ScrapePhase.LINK_COLLECTION
+        assert status_running['task_status'] == TaskStatus.RUNNING.value
+        assert status_running['scrape_phase'] == ScrapePhase.LINK_COLLECTION.value
 
         # 3. 更新為 COMPLETED, COMPLETED, 更新歷史記錄
         end_time = now
@@ -465,8 +465,8 @@ class TestCrawlerTaskService:
 
         # 驗證 get_task_status 返回完成狀態
         status_completed = crawler_task_service.get_task_status(task_id)
-        assert status_completed['task_status'] == TaskStatus.COMPLETED
-        assert status_completed['scrape_phase'] == ScrapePhase.COMPLETED
+        assert status_completed['task_status'] == TaskStatus.COMPLETED.value
+        assert status_completed['scrape_phase'] == ScrapePhase.COMPLETED.value
 
     def test_increment_retry_count(self, crawler_task_service, sample_tasks):
         """測試增加任務重試次數 (包括邊界條件)"""

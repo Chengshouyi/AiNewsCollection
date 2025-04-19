@@ -358,7 +358,7 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 if task_id in self.running_crawlers:
                     del self.running_crawlers[task_id]
 
-            result['task_status'] = task_status_enum # 返回 Enum 本身或 .value 取決於你的 API 設計
+            result['task_status'] = task_status_enum.value
             return result
         except Exception as e:
             # --- 通用異常處理 --- 
@@ -712,6 +712,7 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
             Dict[str, Any]: 執行結果
         """
         # 確保 scrape_mode 正確設置
+        kwargs['operation_type'] = 'fetch_full_article'
         kwargs['scrape_mode'] = 'full_scrape'
         return self.execute_task(task_id, is_async, **kwargs)
     

@@ -141,17 +141,12 @@ class BaseService(Generic[T]):
             raise ValidationError(error_msg) from e
 
     def cleanup(self):
-        """
-        清理服務使用的資源 (此版本無需特別操作)
-        """
-        # 因為 session 由 _transaction 管理，這裡不再需要關閉 session
-        # self._repositories 已經移除，無需清理
-        logger.info("BaseService cleanup called (no specific action needed in this version).")
-    
+        """清理資源 (如果需要)"""
+        # logger.info("BaseService cleanup called (no specific action needed in this version).") # <--- 註解或移除此行
+        pass # 或者如果 cleanup 沒有其他事做，直接 pass
+
     def __del__(self):
-        """
-        析構方法，確保資源被釋放
-        """
+        """確保清理方法被呼叫"""
         self.cleanup()
 
     def __enter__(self):

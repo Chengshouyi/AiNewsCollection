@@ -478,8 +478,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 latest_history = history_repo.get_latest_history(task_id)
                 
                 # --- 推斷狀態邏輯 --- 
-                task_status_value = task.task_status # 默認使用任務表中的狀態
-                scrape_phase_value = task.scrape_phase # 默認使用任務表中的階段
+                task_status_value = task.task_status.value # 默認使用任務表中的狀態
+                scrape_phase_value = task.scrape_phase.value # 默認使用任務表中的階段
                 progress = 0
                 message = '狀態來自任務表' 
                 

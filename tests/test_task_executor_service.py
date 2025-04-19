@@ -13,6 +13,11 @@ from src.utils.enum_utils import TaskStatus
 from unittest.mock import patch, MagicMock, AsyncMock, ANY, call
 from concurrent.futures import Future
 import time
+import logging
+# 設定 logger
+logging.basicConfig(level=logging.INFO, 
+                    format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 # --- Fixtures ---
 
@@ -117,20 +122,20 @@ class MockCrawler:
         self.global_params = {} # For cancellation testing
 
     def execute_task(self, task_id, task_args):
-        print(f"MockCrawler executing task {task_id} with args {task_args}")
+        logger.info(f"MockCrawler executing task {task_id} with args {task_args}")
         if self.raise_exception:
             raise self.raise_exception
         # 模擬執行時間
         time.sleep(0.1)
         if self.cancelled:
-             print(f"MockCrawler task {task_id} was cancelled during execution.")
+             logger.info(f"MockCrawler task {task_id} was cancelled during execution.")
              # Return structure similar to a cancelled/failed state
              return {
                  'success': False,
                  'message': '任務在執行期間被取消',
                  'articles_count': 0 # Or potentially partial count if supported
              }
-        print(f"MockCrawler task {task_id} finished.")
+        logger.info(f"MockCrawler task {task_id} finished.")
         return {
             'success': self.success,
             'message': self.message,
@@ -138,11 +143,11 @@ class MockCrawler:
         }
 
     def cancel_task(self, task_id):
-        print(f"MockCrawler cancelling task {task_id}")
+        logger.info(f"MockCrawler cancelling task {task_id}")
         self.cancelled = True
         # Simulate potential data saving based on global_params
         if self.global_params.get('save_partial_results_on_cancel'):
-             print("MockCrawler: Pretending to save partial results...")
+             logger.info("MockCrawler: Pretending to save partial results...")
              # Add logic here if needed
         return True # Indicate cancellation attempt was acknowledged
 
@@ -258,20 +263,20 @@ class TestTaskExecutorService:
         assert result['success'] is True
         assert result['message'] == "同步成功"
         assert result['articles_count'] == 8
-        assert result['task_status'] == TaskStatus.COMPLETED # 同步執行會直接返回最終狀態
+        assert result['task_status'] == TaskStatus.COMPLETED.value # 同步執行會直接返回最終狀態
 
         # --- 驗證數據庫狀態 ---
         session.expire_all()
         db_task = session.get(CrawlerTasks, task_id)
         assert db_task is not None # 添加斷言
-        assert db_task.task_status == TaskStatus.COMPLETED
-        assert db_task.scrape_phase == ScrapePhase.COMPLETED
+        assert db_task.task_status.value == TaskStatus.COMPLETED.value
+        assert db_task.scrape_phase.value == ScrapePhase.COMPLETED.value
         assert db_task.last_run_success is True
         assert db_task.last_run_message == "同步成功"
 
         history = session.query(CrawlerTaskHistory).filter_by(task_id=task_id).order_by(CrawlerTaskHistory.id.desc()).first()
         assert history is not None
-        assert history.task_status == TaskStatus.COMPLETED
+        assert history.task_status.value == TaskStatus.COMPLETED.value
         assert history.message == "同步成功"
         assert history.end_time is not None
 
@@ -454,7 +459,7 @@ class TestTaskExecutorService:
             task_executor_service.execute_task.reset_mock() # 重置 mock
             result_full = task_executor_service.fetch_full_article(task_id, is_async=False)
             # full_article 應該沒有額外 kwargs
-            mock_execute_task.assert_called_with(task_id, False) # Only task_id and is_async=False
+            mock_execute_task.assert_called_with(task_id, False, operation_type='fetch_full_article', scrape_mode='full_scrape') 
 
 
     @patch('src.crawlers.crawler_factory.CrawlerFactory.get_crawler')
