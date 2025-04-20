@@ -594,7 +594,7 @@ class TestArticleServiceAdvancedFeatures:
 
     def test_get_unscraped_articles(self, article_service, sample_articles):
         """測試獲取未爬取的文章"""
-        result = article_service.get_unscraped_articles()
+        result = article_service.find_unscraped_articles()
         assert result["success"] is True
         assert "articles" in result
         assert len(result["articles"]) == 1
@@ -603,7 +603,7 @@ class TestArticleServiceAdvancedFeatures:
 
     def test_get_scraped_articles(self, article_service, sample_articles):
         """測試獲取已爬取的文章"""
-        result = article_service.get_scraped_articles()
+        result = article_service.find_scraped_articles()
         assert result["success"] is True
         assert "articles" in result
         assert len(result["articles"]) == 3

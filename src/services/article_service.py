@@ -185,7 +185,7 @@ class ArticleService(BaseService[Articles]):
                 'resultMsg': None
             }
 
-    def get_all_articles(self, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
+    def find_all_articles(self, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
         """獲取所有文章，返回包含 ArticleReadSchema 列表的字典"""
         try:
             with self._transaction() as session:

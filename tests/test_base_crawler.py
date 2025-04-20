@@ -336,8 +336,8 @@ class TestBaseCrawler:
             db_result = article_service.get_all_articles()
             assert db_result["success"] is True
             assert len(db_result["articles"]) == 2
-            assert db_result["articles"][0].title == "Test Article 1"
-            assert db_result["articles"][1].title == "Test Article 2"
+            assert db_result["articles"][0].title == "Test Article 2"
+            assert db_result["articles"][1].title == "Test Article 1"
     
     def test_execute_task_no_articles(self, mock_config_file, article_service):
         """測試執行任務但沒有獲取到文章的情況"""

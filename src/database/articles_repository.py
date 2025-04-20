@@ -1,7 +1,7 @@
 from src.database.base_repository import BaseRepository, SchemaType
 from src.models.articles_model import Articles
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
-from typing import Optional, List, Dict, Any, Type, Union, overload, Literal, Tuple
+from typing import Optional, List, Dict, Any, Type, Union, overload, Literal, Tuple, cast
 from sqlalchemy import func, or_, case, desc, asc
 from sqlalchemy.orm import Query
 from src.error.errors import ValidationError, DatabaseOperationError, InvalidOperationError
@@ -42,67 +42,128 @@ class ArticlesRepository(BaseRepository[Articles]):
         return self.execute_query(lambda: self.session.query(self.model_class).filter_by(link=link).first())
 
     
-    def find_by_category(self, category: str) -> List[Articles]:
-        """根據分類查詢文章"""
-        return self.execute_query(lambda: self.session.query(self.model_class).filter_by(category=category).all())
+    def find_by_category(self, category: str, 
+                         limit: Optional[int] = None, 
+                         offset: Optional[int] = None,
+                         is_preview: bool = False, 
+                         preview_fields: Optional[List[str]] = None
+                         ) -> Union[List[Articles], List[Dict[str, Any]]]:
+        """根據分類查詢文章，支援分頁和預覽"""
+        # Use base class find_by_filter and pass parameters
+        return self.find_by_filter(
+            filter_criteria={"category": category},
+            limit=limit,
+            offset=offset,
+            is_preview=is_preview,
+            preview_fields=preview_fields
+        )
 
-    def search_by_title(self, keyword: str, exact_match: bool = False, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Articles]:
-        """根據標題搜索文章
+    def search_by_title(self, keyword: str, exact_match: bool = False, 
+                        limit: Optional[int] = None, 
+                        offset: Optional[int] = None,
+                        is_preview: bool = False,
+                        preview_fields: Optional[List[str]] = None
+                        ) -> Union[List[Articles], List[Dict[str, Any]]]:
+        """根據標題搜索文章，支援分頁和預覽
         
         Args:
             keyword: 搜索關鍵字
             exact_match: 是否進行精確匹配（預設為模糊匹配）
+            limit: 限制數量
+            offset: 偏移量
+            is_preview: 是否預覽模式
+            preview_fields: 預覽欄位
         
         Returns:
-            符合條件的文章列表
+            符合條件的文章列表 (模型實例或字典)
         """
         if exact_match:
-            # 精確匹配（區分大小寫）
-            return self.execute_query(lambda: self.session.query(self.model_class).filter(
-                self.model_class.title == keyword
-            ).limit(limit).offset(offset).all())
+            # 精確匹配: 使用基類的 find_by_filter
+            return self.find_by_filter(
+                filter_criteria={"title": keyword},
+                limit=limit,
+                offset=offset,
+                is_preview=is_preview,
+                preview_fields=preview_fields
+            )
         else:
-            # 模糊匹配
-            return self.execute_query(lambda: self.session.query(self.model_class).filter(
-                self.model_class.title.like(f'%{keyword}%')
-            ).limit(limit).offset(offset).all())
+            # 模糊匹配: 保留原有實現，但添加預覽和 limit/offset
+            def query_builder():
+                # --- Preview Logic ---
+                query_entities = [self.model_class]
+                valid_preview_fields = []
+                local_is_preview = is_preview
+                if local_is_preview and preview_fields:
+                    valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
+                    if valid_preview_fields:
+                        query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+                    else:
+                        logger.warning(f"search_by_title (fuzzy) 預覽欄位無效: {preview_fields}，返回完整物件。")
+                        local_is_preview = False
+                # --- End Preview Logic ---
+
+                query = self.session.query(*query_entities).filter(
+                    self.model_class.title.like(f'%{keyword}%')
+                )
+                
+                # Apply offset and limit
+                if offset is not None:
+                    query = query.offset(offset)
+                if limit is not None:
+                    query = query.limit(limit)
+                    
+                raw_results = query.all()
+
+                # --- Result Transformation ---
+                if local_is_preview and valid_preview_fields:
+                    return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+                else:
+                    return raw_results
+                # --- End Result Transformation ---
+
+            return self.execute_query(query_builder, err_msg=f"模糊搜索標題 '{keyword}' 時出錯")
+
+    def search_by_keywords(self, keywords: str, 
+                           limit: Optional[int] = None, 
+                           offset: Optional[int] = None,
+                           is_preview: bool = False,
+                           preview_fields: Optional[List[str]] = None
+                           ) -> Union[List[Articles], List[Dict[str, Any]]]:
+        """根據關鍵字搜索文章（標題、內容和摘要），支援分頁和預覽
+        
+        Args:
+            keywords: 搜索關鍵字
+            limit: 限制數量
+            offset: 偏移量
+            is_preview: 是否預覽模式
+            preview_fields: 預覽欄位
             
-    
-    def _build_filter_query(self, query: Query, filter_dict: Dict[str, Any]) -> Query:
-        """構建過濾查詢"""
-        if not filter_dict:
-            return query
-        
-        for key, value in filter_dict.items():
-            if key == "is_ai_related":
-                # 確保值是布爾類型
-                if isinstance(value, bool):
-                     query = query.filter(self.model_class.is_ai_related == value)
-                else:
-                     logger.warning(f"過濾 is_ai_related 時收到非布爾值: {value}, 已忽略此條件。")
-            elif key == "tags":
-                if isinstance(value, str):
-                    query = query.filter(self.model_class.tags.like(f'%{value}%'))
-                else:
-                     logger.warning(f"過濾 tags 時收到非字串值: {value}, 已忽略此條件。")
-            elif key == "published_at" and isinstance(value, dict):
-                if "$gte" in value:
-                    query = query.filter(self.model_class.published_at >= value["$gte"])
-                if "$lte" in value:
-                    query = query.filter(self.model_class.published_at <= value["$lte"])
-            elif key == "search_text" and isinstance(value, str) and value:
-                search_term = f"%{value}%"
-                query = query.filter(or_(
-                    self.model_class.title.like(search_term),
-                    self.model_class.content.like(search_term),
-                    self.model_class.summary.like(search_term)
-                ))
-            else:
-                if hasattr(self.model_class, key):
-                    query = query.filter(getattr(self.model_class, key) == value)
-        
-        return query
-    
+        Returns:
+            符合條件的文章列表 (模型實例或字典)
+        """
+        if not keywords or not isinstance(keywords, str):
+             logger.warning("search_by_keywords 需要一個非空字串關鍵字。")
+             return []
+             
+        # Use base class find_by_filter and pass parameters
+        # _apply_filters in base class handles "search_text" if needed, 
+        # otherwise we might need _build_filter_query logic here if base class doesn't support it.
+        # Assuming BaseRepository._apply_filters now handles 'search_text' or similar custom logic.
+        # If not, this needs to revert to using _build_filter_query.
+        # For now, assume find_by_filter is sufficient.
+        filter_criteria = {"search_text": keywords} # Use a key recognized by _apply_filters if possible
+
+        # If BaseRepository._apply_filters cannot handle 'search_text', 
+        # we must use the custom query logic with preview handling like in search_by_title (fuzzy)
+        # Let's assume for now BaseRepository handles it:
+        return self.find_by_filter(
+            filter_criteria=filter_criteria, 
+            limit=limit, 
+            offset=offset,
+            is_preview=is_preview,
+            preview_fields=preview_fields
+        )
+
     def get_statistics(self) -> Dict[str, Any]:
         """獲取文章統計信息"""
         def stats_func():
@@ -196,7 +257,7 @@ class ArticlesRepository(BaseRepository[Articles]):
         """計算符合條件的文章數量"""
         def query_builder():
             query = self.session.query(func.count(self.model_class.id))
-            query = self._build_filter_query(query, filter_dict or {})
+            query = self._apply_filters(query, filter_dict or {})
             result = query.scalar()
             return result if result is not None else 0
         
@@ -204,21 +265,6 @@ class ArticlesRepository(BaseRepository[Articles]):
             query_builder,
             err_msg="計算符合條件的文章數量時發生錯誤"
         )
-
-    def search_by_keywords(self, keywords: str, limit: Optional[int] = None, offset: Optional[int] = None) -> List[Articles]:
-        """根據關鍵字搜索文章（標題、內容和摘要）
-        
-        Args:
-            keywords: 搜索關鍵字
-            
-        Returns:
-            符合條件的文章列表
-        """
-        if not keywords or not isinstance(keywords, str):
-             logger.warning("search_by_keywords 需要一個非空字串關鍵字。")
-             return []
-             
-        return self.get_by_filter(filter_criteria={"search_text": keywords}, limit=limit, offset=offset)
 
     def get_category_distribution(self) -> Dict[str, int]:
         """獲取各分類的文章數量分布"""
@@ -234,35 +280,63 @@ class ArticlesRepository(BaseRepository[Articles]):
         )
         return {str(category) if category else "未分類": count for category, count in result}
 
-    def find_by_tags(self, tags: List[str]) -> List[Articles]:
-        """根據標籤列表查詢文章 (OR 邏輯)"""
+    def find_by_tags(self, tags: List[str], 
+                     limit: Optional[int] = None, 
+                     offset: Optional[int] = None,
+                     is_preview: bool = False,
+                     preview_fields: Optional[List[str]] = None
+                     ) -> Union[List[Articles], List[Dict[str, Any]]]:
+        """根據標籤列表查詢文章 (OR 邏輯)，支援分頁和預覽"""
         if not tags or not isinstance(tags, list):
             logger.warning("find_by_tags 需要一個非空的標籤列表。")
-            return [] # 或者根據需求拋出錯誤
+            return [] 
             
         def query_builder():
+            # --- Preview Logic ---
+            query_entities = [self.model_class]
+            valid_preview_fields = []
+            local_is_preview = is_preview
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+                else:
+                    logger.warning(f"find_by_tags 預覽欄位無效: {preview_fields}，返回完整物件。")
+                    local_is_preview = False
+            # --- End Preview Logic ---
+
+            query = self.session.query(*query_entities)
+
             # 創建用於存放 LIKE 條件的列表
             conditions = []
             for tag in tags:
-                if isinstance(tag, str) and tag.strip(): # 確保是有效字串
-                    # 為每個標籤創建 LIKE 條件，注意處理 SQL 注入風險（此處簡單演示）
-                    # 實際應用中可能需要更安全的參數化方法，但 SQLAlchemy 通常會處理
+                if isinstance(tag, str) and tag.strip(): 
                     conditions.append(self.model_class.tags.like(f'%{tag.strip()}%'))
                 else:
                     logger.warning(f"find_by_tags 收到無效標籤: {tag}, 已忽略。")
             
-            query = self.session.query(self.model_class)
             # 如果有有效的條件，使用 or_ 連接它們
             if conditions:
                 query = query.filter(or_(*conditions))
             else:
-                # 如果沒有有效的標籤條件，則不返回任何結果
-                # 或者根據需求調整行為，例如返回所有文章
                 logger.info("find_by_tags: 沒有提供有效的標籤條件。")
                 return [] 
                 
-            return query.all()
-        
+            # Apply offset and limit
+            if offset is not None:
+                query = query.offset(offset)
+            if limit is not None:
+                query = query.limit(limit)
+
+            raw_results = query.all()
+
+            # --- Result Transformation ---
+            if local_is_preview and valid_preview_fields:
+                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                return raw_results
+            # --- End Result Transformation ---
+
         return self.execute_query(
             query_builder,
             err_msg="根據標籤列表查詢文章時發生錯誤"
@@ -435,7 +509,7 @@ class ArticlesRepository(BaseRepository[Articles]):
                     "error": f"未預期錯誤: {str(e)}"
                 })
                 # 考慮是否需要在事務中進行 rollback
-                # self.session.rollback()
+                # self.session.rollback() # 考慮事務回滾
                 continue # 確保繼續處理下一個
         
         # 批量操作通常應在一個事務中完成，這裡未顯式處理事務
@@ -801,91 +875,22 @@ class ArticlesRepository(BaseRepository[Articles]):
 
     def get_paginated_by_filter(self, filter_dict: Dict[str, Any], page: int, per_page: int, 
                                sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
-        """根據過濾條件獲取分頁資料
-        
-        Args:
-            filter_dict: 過濾條件字典
-            page: 當前頁碼，從1開始
-            per_page: 每頁數量
-            sort_by: 排序欄位
-            sort_desc: 是否降序排列
+        """根據過濾條件獲取分頁資料 (現在使用 BaseRepository.find_paginated)"""
+        # 如果未指定排序欄位，預設按 published_at 降序排序
+        if sort_by is None:
+            sort_by = 'published_at'
+            sort_desc = True
             
-        Returns:
-            包含分頁資訊和結果的字典
-        
-        Raises:
-            InvalidOperationError: 如果分頁參數無效。
-            DatabaseOperationError: 如果查詢過程中發生錯誤。
-        """
-        # 驗證分頁參數 (移到這裡更合適)
-        if not isinstance(page, int) or page <= 0:
-             # 允許 page=1 作為有效值，但 0 或負數無效
-             # raise InvalidOperationError("頁碼必須是正整數")
-             logger.warning(f"無效的頁碼 '{page}'，將使用預設值 1。")
-             page = 1
-        if not isinstance(per_page, int) or per_page <= 0:
-             raise InvalidOperationError("每頁數量必須是正整數")
-
-        def paginated_query():
-            # --- 內部實現與 BaseRepository.get_paginated 類似 ---
-            # --- 可以考慮重用 BaseRepository 的邏輯，如果過濾部分能整合 ---
-            
-            # 構建計數查詢
-            count_query = self.session.query(func.count(self.model_class.id))
-            count_query = self._build_filter_query(count_query, filter_dict)
-            total = count_query.scalar() or 0 # 確保 count 結果是 int
-
-            # 計算總頁數
-            total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
-            
-            # 調整頁碼 (如果請求的頁碼超出範圍)
-            current_page = max(1, min(page, total_pages)) if total_pages > 0 else 1
-            
-            # 計算偏移量
-            offset = (current_page - 1) * per_page
-            
-            # 構建獲取數據的查詢
-            data_query = self.session.query(self.model_class)
-            data_query = self._build_filter_query(data_query, filter_dict)
-            
-            # 添加排序
-            if sort_by:
-                 if hasattr(self.model_class, sort_by):
-                     order_column = getattr(self.model_class, sort_by)
-                     data_query = data_query.order_by(order_column.desc() if sort_desc else order_column.asc())
-                 else:
-                      logger.warning(f"請求的排序欄位 '{sort_by}' 不存在於模型 {self.model_class.__name__}，將使用預設排序。")
-                      # 應用預設排序 (例如，按 published_at)
-                      if hasattr(self.model_class, 'published_at'):
-                           data_query = data_query.order_by(self.model_class.published_at.desc())
-            else:
-                # 預設排序 (例如，按 published_at)
-                if hasattr(self.model_class, 'published_at'):
-                     data_query = data_query.order_by(self.model_class.published_at.desc())
-                elif hasattr(self.model_class, 'id'): # 備用排序
-                     data_query = data_query.order_by(self.model_class.id.desc())
-            
-            # 應用分頁
-            items = data_query.offset(offset).limit(per_page).all()
-            
-            return {
-                "items": items,
-                "page": current_page,
-                "per_page": per_page,
-                "total": total,
-                "total_pages": total_pages,
-                "has_next": current_page < total_pages,
-                "has_prev": current_page > 1
-            }
-        
-        # 使用 execute_query 包裹以處理異常
-        return self.execute_query(
-            paginated_query,
-            err_msg="根據過濾條件獲取分頁資料時發生錯誤",
-            exception_class=DatabaseOperationError # 指定錯誤類型
+        # 直接調用基類的方法，它會使用我們覆寫的 _apply_filters
+        return self.find_paginated(
+            filter_criteria=filter_dict,
+            page=page,
+            per_page=per_page,
+            sort_by=sort_by,
+            sort_desc=sort_desc,
+            # 預設 is_preview=False，除非需要在這裡覆寫
         )
     
-
     def delete_by_link(self, link: str) -> bool:
         """根據文章連結刪除"""
         if not link:
@@ -933,38 +938,54 @@ class ArticlesRepository(BaseRepository[Articles]):
         # 直接調用 count_scraped_articles，因為它們邏輯相同
         return self.count_scraped_articles(source)
     
-    def find_scraped_links(self, limit: Optional[int] = 100, source: Optional[str] = None) -> List[Articles]:
-        """查詢已爬取的連結 (is_scraped=True)"""
-        # 可以使用 get_by_filter 或直接構建查詢
-        def query_func():
-            query = self.session.query(self.model_class).filter(self.model_class.is_scraped == True)
-            if source:
-                 if hasattr(self.model_class, 'source'):
-                     query = query.filter_by(source=source)
-                 else:
-                     logger.warning(f"嘗試按 source 過濾，但模型 {self.model_class.__name__} 沒有 'source' 欄位。")
+    def find_scraped_links(self, limit: Optional[int] = 100, 
+                           source: Optional[str] = None,
+                           is_preview: bool = False,
+                           preview_fields: Optional[List[str]] = None
+                           ) -> Union[List[Articles], List[Dict[str, Any]]]:
+        """查詢已爬取的連結 (is_scraped=True)，支援預覽"""
+        # 使用基類的 find_by_filter
+        filter_criteria: Dict[str, Any] = {"is_scraped": True}
+        if source:
+            if hasattr(self.model_class, 'source'):
+                filter_criteria["source"] = source
+            else:
+                logger.warning(f"嘗試按 source 過濾，但模型 {self.model_class.__name__} 沒有 'source' 欄位。")
 
-            # 添加排序，例如按更新時間
-            if hasattr(self.model_class, 'updated_at'):
-                 query = query.order_by(self.model_class.updated_at.desc())
-
-            if limit is not None and limit > 0:
-                query = query.limit(limit)
-            elif limit is not None and limit <= 0:
-                 logger.warning(f"查詢已爬取連結時提供了無效的 limit={limit}，將忽略限制。")
-
-            return query.all()
-            
-        return self.execute_query(
-            query_func,
-            err_msg="查詢已爬取的連結時發生錯誤"
+        # 決定排序欄位
+        sort_column = 'updated_at' if hasattr(self.model_class, 'updated_at') else 'id'
+        
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            sort_by=sort_column,
+            sort_desc=True, # 假設按最新更新排序
+            is_preview=is_preview,
+            preview_fields=preview_fields
         )
-    
-    def find_unscraped_links(self, limit: Optional[int] = 100, source: Optional[str] = None, 
-                             order_by_status: bool = True) -> List[Articles]:
-        """查詢未爬取的連結 (is_scraped=False)，可選按爬取狀態排序"""
+        
+    def find_unscraped_links(self, limit: Optional[int] = 100, 
+                             source: Optional[str] = None, 
+                             order_by_status: bool = True,
+                             is_preview: bool = False,
+                             preview_fields: Optional[List[str]] = None
+                             ) -> Union[List[Articles], List[Dict[str, Any]]]:
+        """查詢未爬取的連結 (is_scraped=False)，可選按爬取狀態排序，支援預覽"""
         def query_func():
-            query = self.session.query(self.model_class).filter(self.model_class.is_scraped == False)
+            # --- Preview Logic ---
+            query_entities = [self.model_class]
+            valid_preview_fields = []
+            local_is_preview = is_preview
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+                else:
+                    logger.warning(f"find_unscraped_links 預覽欄位無效: {preview_fields}，返回完整物件。")
+                    local_is_preview = False
+            # --- End Preview Logic ---
+            
+            query = self.session.query(*query_entities).filter(self.model_class.is_scraped == False)
             if source:
                  if hasattr(self.model_class, 'source'):
                      query = query.filter_by(source=source)
@@ -973,27 +994,33 @@ class ArticlesRepository(BaseRepository[Articles]):
             
             # 添加排序
             if order_by_status and hasattr(self.model_class, 'scrape_status') and hasattr(self.model_class, 'updated_at'):
-                # 優先處理 PENDING，然後是 LINK_SAVED，然後按更新時間
                 query = query.order_by(
                     case(
                         (self.model_class.scrape_status == ArticleScrapeStatus.PENDING, 0),
                         (self.model_class.scrape_status == ArticleScrapeStatus.LINK_SAVED, 1),
-                        (self.model_class.scrape_status == ArticleScrapeStatus.FAILED, 2), # FAILED 也算未爬取
-                        else_=3 # 其他狀態（理論上不應出現）
+                        (self.model_class.scrape_status == ArticleScrapeStatus.FAILED, 2), 
+                        else_=3 
                     ).asc(),
-                    self.model_class.updated_at.asc() # 或 desc() 取決於優先級
+                    self.model_class.updated_at.asc() 
                 )
             elif hasattr(self.model_class, 'updated_at'):
-                 # 默認按更新時間排序 (升序較早的先處理，或降序較新的先處理)
                  query = query.order_by(self.model_class.updated_at.asc())
                  
+            # Apply limit
             if limit is not None and limit > 0:
                 query = query.limit(limit)
             elif limit is not None and limit <= 0:
                 logger.warning(f"查詢未爬取連結時提供了無效的 limit={limit}，將忽略限制。")
 
-            return query.all()
-            
+            raw_results = query.all()
+
+            # --- Result Transformation ---
+            if local_is_preview and valid_preview_fields:
+                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                return raw_results
+            # --- End Result Transformation ---
+
         return self.execute_query(
             query_func,
             err_msg="查詢未爬取的連結時發生錯誤"
@@ -1016,37 +1043,43 @@ class ArticlesRepository(BaseRepository[Articles]):
             err_msg="計算已爬取的文章數量時發生錯誤"
         )
         
-    def find_articles_by_task_id(self, task_id: Optional[int], is_scraped: Optional[bool] = None, limit: Optional[int] = None) -> List[Articles]:
-        """根據任務ID查詢相關的文章
-        
-        Args:
-            task_id: 任務ID (可以是 None)
-            is_scraped: 可選過濾條件，是否已爬取內容
-            limit: 可選限制返回數量
-            
-        Returns:
-            符合條件的文章列表 
-        """
+    def find_articles_by_task_id(self, task_id: Optional[int], 
+                                 is_scraped: Optional[bool] = None, 
+                                 limit: Optional[int] = None,
+                                 is_preview: bool = False,
+                                 preview_fields: Optional[List[str]] = None
+                                 ) -> Union[List[Articles], List[Dict[str, Any]]]:
+        """根據任務ID查詢相關的文章，支援預覽"""
         if task_id is not None and (not isinstance(task_id, int) or task_id <= 0):
              raise ValueError("task_id 必須是正整數或 None")
             
         def query_func():
-            # 確保 task_id 欄位存在
+            # --- Preview Logic ---
+            query_entities = [self.model_class]
+            valid_preview_fields = []
+            local_is_preview = is_preview
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+                else:
+                    logger.warning(f"find_articles_by_task_id 預覽欄位無效: {preview_fields}，返回完整物件。")
+                    local_is_preview = False
+            # --- End Preview Logic ---
+
             if not hasattr(self.model_class, 'task_id'):
                  raise AttributeError(f"模型 {self.model_class.__name__} 沒有 'task_id' 欄位")
                  
-            query = self.session.query(self.model_class).filter(self.model_class.task_id == task_id)
+            query = self.session.query(*query_entities).filter(self.model_class.task_id == task_id)
             
-            # 如果指定了是否已爬取內容
             if is_scraped is not None:
-                 # 確保 is_scraped 是布爾值
                  is_scraped_bool = bool(is_scraped)
                  if not hasattr(self.model_class, 'is_scraped'):
                      logger.warning(f"嘗試按 is_scraped 過濾，但模型 {self.model_class.__name__} 沒有 'is_scraped' 欄位。")
                  else:
                      query = query.filter(self.model_class.is_scraped == is_scraped_bool)
                 
-            # 根據抓取狀態和更新時間排序
+            # 排序邏輯不變
             if hasattr(self.model_class, 'scrape_status') and hasattr(self.model_class, 'updated_at'):
                 query = query.order_by(
                     case(
@@ -1056,20 +1089,27 @@ class ArticlesRepository(BaseRepository[Articles]):
                         (self.model_class.scrape_status == ArticleScrapeStatus.CONTENT_SCRAPED, 3),
                         else_=4
                     ).asc(),
-                    self.model_class.updated_at.desc() # 相同狀態下，最新的優先
+                    self.model_class.updated_at.desc() 
                 )
             elif hasattr(self.model_class, 'updated_at'):
-                 query = query.order_by(self.model_class.updated_at.desc()) # 降序排列，返回最新更新的記錄
+                 query = query.order_by(self.model_class.updated_at.desc()) 
             
-            # 如果指定了限制數量
+            # Apply limit
             if limit is not None:
                  if isinstance(limit, int) and limit > 0:
                      query = query.limit(limit)
                  else:
                       logger.warning(f"find_articles_by_task_id 提供了無效的 limit={limit}，將忽略限制。")
 
-            return query.all()
-            
+            raw_results = query.all()
+
+            # --- Result Transformation ---
+            if local_is_preview and valid_preview_fields:
+                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                return raw_results
+            # --- End Result Transformation ---
+
         return self.execute_query(
             query_func,
             err_msg=f"根據任務ID={task_id}查詢文章時發生錯誤"
@@ -1111,3 +1151,35 @@ class ArticlesRepository(BaseRepository[Articles]):
             query_func,
             err_msg=f"計算任務ID={task_id}的文章數量時發生錯誤"
         )
+
+    def _apply_filters(self, query, filter_criteria: Dict[str, Any]):
+        """
+        覆寫基類的過濾方法，以處理 ArticlesRepository 特有的過濾條件。
+        """
+        # 創建副本以安全地修改
+        remaining_criteria = filter_criteria.copy()
+        processed_query = query 
+
+        # 1. 處理 ArticlesRepository 特有的過濾鍵
+        search_text = remaining_criteria.pop("search_text", None)
+        tags_like = remaining_criteria.pop("tags", None) # 假設 'tags' 意指 LIKE 搜索
+        # is_ai_related 和 published_at Range 也可以在這裡處理，
+        # 或者如果基類 _apply_filters 已能處理 bool 和 $gte/$lte，則讓基類處理
+        
+        if search_text and isinstance(search_text, str):
+            search_term = f"%{search_text}%"
+            processed_query = processed_query.filter(or_(
+                self.model_class.title.like(search_term),
+                # 假設 content 和 summary 欄位存在於 Articles 模型
+                self.model_class.content.like(search_term), 
+                self.model_class.summary.like(search_term) 
+            ))
+            
+        if tags_like and isinstance(tags_like, str):
+            processed_query = processed_query.filter(self.model_class.tags.like(f'%{tags_like}%'))
+            
+        # ... 可以繼續處理其他 Articles 特有的鍵 ...
+
+        # 2. 調用基類的 _apply_filters 處理剩餘的標準條件
+        #    將已經部分過濾的查詢物件和剩餘的條件傳遞過去
+        return super()._apply_filters(processed_query, remaining_criteria)

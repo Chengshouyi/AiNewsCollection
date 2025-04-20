@@ -427,66 +427,9 @@ class BaseRepository(Generic[T], ABC):
         
         return False
         
-    def get_all(self, filter_criteria: Optional[Dict[str, Any]] = None, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False) -> List[T]:
-        """獲取所有實體，支援過濾、分頁和排序
-
-        Args:
-            filter_criteria: 過濾條件字典
-            limit: 限制返回結果數量
-            offset: 跳過結果數量
-            sort_by: 排序欄位名稱
-            sort_desc: 是否降序排列
-
-        Returns:
-            實體列表
-        """
-        def query_builder():
-            query = self.session.query(self.model_class)
-            
-            # 應用過濾
-            query = self._apply_filters(query, filter_criteria or {})
-            
-            # 處理排序
-            if sort_by:
-                if not hasattr(self.model_class, sort_by):
-                    raise InvalidOperationError(f"無效的排序欄位: {sort_by}")
-                order_column = getattr(self.model_class, sort_by)
-                if sort_desc:
-                    query = query.order_by(desc(order_column))
-                else:
-                    query = query.order_by(asc(order_column))
-            else:
-                # 預設按創建時間或ID降序排列
-                try:
-                    # 嘗試使用 created_at
-                    created_at_attr = getattr(self.model_class, 'created_at', None)
-                    if created_at_attr is not None:
-                        query = query.order_by(desc(created_at_attr))
-                    else:
-                        # 否則使用 id
-                        id_attr = getattr(self.model_class, 'id', None)
-                        if id_attr is not None:
-                            query = query.order_by(desc(id_attr))
-                except (AttributeError, TypeError):
-                    # 如果無法訪問這些屬性，則不排序
-                    pass
-            
-            # 處理分頁
-            if offset is not None:
-                query = query.offset(offset)
-            if limit is not None:
-                query = query.limit(limit)
-            
-            return query.all()
-            
-        return self.execute_query(
-            query_builder,
-            err_msg="獲取所有資料庫物件時發生錯誤",
-            exception_class=DatabaseOperationError
-        )
     
-    def get_paginated(self, filter_criteria: Optional[Dict[str, Any]] = None, page: int = 1, per_page: int = 10, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
-        """獲取分頁數據，支援過濾和排序"""
+    def find_paginated(self, filter_criteria: Optional[Dict[str, Any]] = None, page: int = 1, per_page: int = 10, sort_by: Optional[str] = None, sort_desc: bool = False, is_preview: bool = False, preview_fields: Optional[List[str]] = None) -> Dict[str, Any]:
+        """獲取分頁數據，支援過濾、排序和預覽模式"""
         # 驗證分頁參數
         if per_page <= 0:
             # 使用 InvalidOperationError 替換 ValueError
@@ -497,33 +440,71 @@ class BaseRepository(Generic[T], ABC):
         # 計算偏移量
         offset = (page - 1) * per_page
         
-        # 構建查詢
-        query = self.session.query(self.model_class)
+        # --- 預覽模式處理 ---
+        query_entities = [self.model_class] # 默認查詢整個模型
+        valid_preview_fields = []
+        if is_preview and preview_fields:
+            valid_preview_fields = [field for field in preview_fields if hasattr(self.model_class, field)]
+            if valid_preview_fields:
+                # 確保至少有一個有效欄位才替換查詢實體
+                 query_entities = [getattr(self.model_class, field) for field in valid_preview_fields]
+            else:
+                logger.warning(f"預覽模式請求的欄位 {preview_fields} 均無效，將返回完整物件。")
+                is_preview = False # 重置預覽標誌，因為沒有有效的欄位
+        # --- 預覽模式處理結束 ---
         
-        # 應用過濾
+        # 構建查詢，使用 query_entities
+        query = self.session.query(*query_entities)
+        
+        # 應用過濾 (注意：過濾仍然基於 self.model_class 的屬性)
         query = self._apply_filters(query, filter_criteria or {})
 
         # 添加排序
         if sort_by:
             if not hasattr(self.model_class, sort_by):
                 raise DatabaseOperationError(f"無效的排序欄位: {sort_by}")
-            order_by = desc(getattr(self.model_class, sort_by)) if sort_desc else asc(getattr(self.model_class, sort_by))
+            sort_column = getattr(self.model_class, sort_by)
+            # 如果是預覽模式且排序欄位不在預覽欄位中，排序可能會失敗或行為不符預期
+            # SQLAlchemy 在 .order_by() 中引用未在 select 列表中的欄位通常是允許的
+            order_by = desc(sort_column) if sort_desc else asc(sort_column)
             query = query.order_by(order_by)
         
-        # 獲取總記錄數
-        total = query.count()
+        # 獲取總記錄數 (count 需要在應用分頁前)
+        # 注意: count() 會忽略 with_entities 的設定，這是 SQLAlchemy 的行為
+        total_query = self.session.query(self.model_class)
+        total_query = self._apply_filters(total_query, filter_criteria or {})
+        total = total_query.count()
         
         # 計算總頁數
-        total_pages = (total + per_page - 1) // per_page
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 1 # 避免 total=0 時除以0
         
-        # 調整頁碼
+        # 調整頁碼 (如果請求頁碼超過總頁數)
         if page > total_pages and total > 0:
             page = total_pages
             offset = (page - 1) * per_page
+        elif page > 1 and total == 0: # 如果總數為0，強制回到第一頁
+             page = 1
+             offset = 0
         
-        # 獲取當前頁的記錄
-        items = query.offset(offset).limit(per_page).all()
+        # 應用分頁獲取當前頁的記錄
+        paginated_query = query.offset(offset).limit(per_page)
         
+        # 執行查詢
+        raw_items = self.execute_query(
+            lambda: paginated_query.all(),
+            err_msg=f"分頁獲取資料時發生錯誤 (Page: {page}, PerPage: {per_page})"
+        )
+        
+        # --- 結果轉換 (如果為預覽模式) ---
+        items = []
+        if is_preview and valid_preview_fields:
+             # 如果使用了 with_entities，結果是元組列表
+            items = [dict(zip(valid_preview_fields, row)) for row in raw_items]
+        else:
+            # 否則結果是模型實例列表
+            items = raw_items
+        # --- 結果轉換結束 ---
+
         return {
             "items": items,
             "page": page,
@@ -534,13 +515,13 @@ class BaseRepository(Generic[T], ABC):
             "has_prev": page > 1
         }
 
-    def find_all(self, *args, **kwargs):
-        """找出所有實體的別名方法"""
-        # 避免嵌套使用 execute_query
-        return self.get_all(*args, **kwargs)
+    # def find_all(self, *args, **kwargs):
+    #     """找出所有實體的別名方法"""
+    #     # 避免嵌套使用 execute_query
+    #     return self.get_all(*args, **kwargs)
 
-    def get_by_filter(self, filter_criteria: Dict[str, Any], sort_by: Optional[str] = None, sort_desc: bool = False, limit: Optional[int] = None, offset: Optional[int] = None) -> List[T]:
-        """根據過濾條件查找實體列表
+    def find_by_filter(self, filter_criteria: Dict[str, Any], sort_by: Optional[str] = None, sort_desc: bool = False, limit: Optional[int] = None, offset: Optional[int] = None, is_preview: bool = False, preview_fields: Optional[List[str]] = None) -> Union[List[T], List[Dict[str, Any]]]:
+        """根據過濾條件查找實體列表，支援排序、分頁和預覽模式
 
         Args:
             filter_criteria: 過濾條件字典
@@ -548,13 +529,29 @@ class BaseRepository(Generic[T], ABC):
             sort_desc: 是否降序排列
             limit: 限制返回結果數量
             offset: 跳過結果數量
+            is_preview: 是否為預覽模式，若為 True 且 preview_fields 有效，返回字典列表
+            preview_fields: 預覽模式下要選擇的欄位列表
+
         Returns:
-            符合條件的實體列表
+            符合條件的實體列表 (預設) 或 字典列表 (預覽模式)
         """
         def query_builder():
-            query = self.session.query(self.model_class)
+            # --- 預覽模式處理 ---
+            query_entities = [self.model_class] # 默認查詢整個模型
+            valid_preview_fields = []
+            local_is_preview = is_preview # 創建本地變數以在閉包中使用
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [field for field in preview_fields if hasattr(self.model_class, field)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, field) for field in valid_preview_fields]
+                else:
+                    logger.warning(f"預覽模式請求的欄位 {preview_fields} 均無效，將返回完整物件。")
+                    local_is_preview = False # 在此 query_builder 範圍內重置預覽標誌
+            # --- 預覽模式處理結束 ---
 
-            # 1. 應用過濾 (使用修改後的 _apply_filters)
+            query = self.session.query(*query_entities)
+
+            # 1. 應用過濾
             query = self._apply_filters(query, filter_criteria or {})
 
             # 2. 處理排序
@@ -587,7 +584,17 @@ class BaseRepository(Generic[T], ABC):
             if limit is not None:
                 query = query.limit(limit)
 
-            return query.all()
+            # 執行查詢
+            raw_results = query.all()
+
+            # --- 結果轉換 (如果為預覽模式) ---
+            if local_is_preview and valid_preview_fields:
+                # 如果使用了 with_entities，結果是元組列表
+                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                # 否則結果是模型實例列表
+                return raw_results
+            # --- 結果轉換結束 ---
 
         return self.execute_query(
             query_builder,
@@ -595,3 +602,97 @@ class BaseRepository(Generic[T], ABC):
             exception_class=DatabaseOperationError
         )
 
+    def find_all(self, limit: Optional[int] = None, offset: Optional[int] = None, sort_by: Optional[str] = None, sort_desc: bool = False, is_preview: bool = False, preview_fields: Optional[List[str]] = None) -> Union[List[T], List[Dict[str, Any]]]:
+        """獲取所有實體，支援分頁、排序和預覽模式
+
+        Args:
+            limit: 限制返回結果數量
+            offset: 跳過結果數量
+            sort_by: 排序欄位名稱
+            sort_desc: 是否降序排列
+            is_preview: 是否為預覽模式，若為 True 且 preview_fields 有效，返回字典列表
+            preview_fields: 預覽模式下要選擇的欄位列表
+
+        Returns:
+            實體列表 (預設) 或 字典列表 (預覽模式)
+        """
+        # 基本上與 find_by_filter 相同，只是 filter_criteria 為空
+        # 為了避免代碼重複，可以直接調用 find_by_filter
+        # return self.find_by_filter(
+        #     filter_criteria={}, 
+        #     limit=limit, 
+        #     offset=offset, 
+        #     sort_by=sort_by, 
+        #     sort_desc=sort_desc, 
+        #     is_preview=is_preview, 
+        #     preview_fields=preview_fields
+        # )
+        # 或者，如果想保持獨立實現：
+        def query_builder():
+            # --- 預覽模式處理 ---
+            query_entities = [self.model_class] # 默認查詢整個模型
+            valid_preview_fields = []
+            local_is_preview = is_preview # 創建本地變數以在閉包中使用
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [field for field in preview_fields if hasattr(self.model_class, field)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, field) for field in valid_preview_fields]
+                else:
+                    logger.warning(f"預覽模式請求的欄位 {preview_fields} 均無效，將返回完整物件。")
+                    local_is_preview = False # 在此 query_builder 範圍內重置預覽標誌
+            # --- 預覽模式處理結束 ---
+
+            query = self.session.query(*query_entities)
+            
+            # 應用過濾 (find_all 沒有過濾條件)
+            # query = self._apply_filters(query, {}) # 這行不需要，因為沒有 filter_criteria
+            
+            # 處理排序
+            if sort_by:
+                if not hasattr(self.model_class, sort_by):
+                    raise InvalidOperationError(f"無效的排序欄位: {sort_by}")
+                order_column = getattr(self.model_class, sort_by)
+                if sort_desc:
+                    query = query.order_by(desc(order_column))
+                else:
+                    query = query.order_by(asc(order_column))
+            else:
+                # 預設按創建時間或ID降序排列
+                try:
+                    # 嘗試使用 created_at
+                    created_at_attr = getattr(self.model_class, 'created_at', None)
+                    if created_at_attr is not None:
+                        query = query.order_by(desc(created_at_attr))
+                    else:
+                        # 否則使用 id
+                        id_attr = getattr(self.model_class, 'id', None)
+                        if id_attr is not None:
+                            query = query.order_by(desc(id_attr))
+                except (AttributeError, TypeError):
+                    # 如果無法訪問這些屬性，則不排序
+                    pass
+            
+            # 處理分頁
+            if offset is not None:
+                query = query.offset(offset)
+            if limit is not None:
+                query = query.limit(limit)
+            
+            # 執行查詢
+            raw_results = query.all()
+
+            # --- 結果轉換 (如果為預覽模式) ---
+            if local_is_preview and valid_preview_fields:
+                 # 如果使用了 with_entities，結果是元組列表
+                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                # 否則結果是模型實例列表
+                return raw_results
+            # --- 結果轉換結束 ---
+            
+        return self.execute_query(
+            query_builder,
+            err_msg="獲取所有資料庫物件時發生錯誤",
+            exception_class=DatabaseOperationError
+        )
+    

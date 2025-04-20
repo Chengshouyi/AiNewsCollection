@@ -74,7 +74,7 @@ def test_required_fail_one_missing():
     """失敗：缺少一個必填欄位"""
     required = ["name", "email", "age"]
     data = {"name": "Test User", "email": "test@example.com"} # Missing 'age'
-    with pytest.raises(ValidationError, match="age: 不能為空"):
+    with pytest.raises(ValidationError, match="以下必填欄位缺失或值為空/空白: age"):
         validate_required_fields_schema(required, data)
 
 def test_required_fail_multiple_missing():
@@ -82,14 +82,14 @@ def test_required_fail_multiple_missing():
     required = ["name", "email", "city"]
     data = {"name": "Test User"} # Missing 'email', 'city'
     # pytest will catch the first missing field encountered in the loop
-    with pytest.raises(ValidationError, match="email: 不能為空"):
-         validate_required_fields_schema(required, data)
+    with pytest.raises(ValidationError, match="以下必填欄位缺失或值為空/空白: email, city"):
+        validate_required_fields_schema(required, data)
 
 def test_required_fail_data_empty():
     """失敗：data 為空，但有必填欄位"""
     required = ["name"]
     data = {}
-    with pytest.raises(ValidationError, match="name: 不能為空"):
+    with pytest.raises(ValidationError, match="以下必填欄位缺失或值為空/空白: name"):
         validate_required_fields_schema(required, data)
 
 
