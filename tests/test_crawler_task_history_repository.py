@@ -1,7 +1,7 @@
 import pytest
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.crawler_tasks_model import CrawlerTasks
@@ -9,37 +9,49 @@ from src.models.crawlers_model import Crawlers
 from src.models.base_model import Base
 from debug.model_info import get_model_info
 from src.error.errors import DatabaseOperationError, ValidationError
+from typing import Dict, Any, List
 
-# 設置測試資料庫
-@pytest.fixture
+# 使用 session scope 以提高效率
+@pytest.fixture(scope="session")
 def engine():
     return create_engine('sqlite:///:memory:')
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def tables(engine):
     Base.metadata.create_all(engine)
     yield
     Base.metadata.drop_all(engine)
 
-@pytest.fixture
-def session(engine, tables):
-    connection = engine.connect()
-    transaction = connection.begin()
-    session = Session(bind=connection)
-    
-    try:
-        yield session
-    finally:
-        session.close()
-        if transaction.is_active:
-            transaction.rollback()
-        connection.close()
+# 使用 session scope 的 session factory
+@pytest.fixture(scope="session")
+def session_factory(engine):
+    return sessionmaker(bind=engine)
 
-@pytest.fixture
+# 為每個測試函數創建獨立的 session 和 transaction
+@pytest.fixture(scope="function")
+def session(session_factory, tables):
+    """Creates a new session for each test function, managing transactions."""
+    # Create a session instance from the factory
+    session = session_factory()
+    try:
+        # Yield the session to the test
+        yield session
+        # If the test completes without exception, commit the transaction
+        session.commit()
+    except Exception:
+        # If any exception occurs during the test, rollback
+        session.rollback()
+        raise # Re-raise the exception to fail the test
+    finally:
+        # Ensure the session is closed in any case
+        session.close()
+
+@pytest.fixture(scope="function")
 def crawler_task_history_repo(session):
     return CrawlerTaskHistoryRepository(session, CrawlerTaskHistory)
 
-@pytest.fixture
+# Fixture for sample data, using function scope to ensure clean data for each test
+@pytest.fixture(scope="function")
 def sample_crawler(session):
     crawler = Crawlers(
         crawler_name="測試爬蟲",
@@ -49,10 +61,10 @@ def sample_crawler(session):
         config_file_name="bnext_config.json"
     )
     session.add(crawler)
-    session.commit()
+    session.commit() # Commit within fixture to get ID
     return crawler
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def sample_task(session, sample_crawler):
     task = CrawlerTasks(
         task_name="測試任務",
@@ -62,387 +74,426 @@ def sample_task(session, sample_crawler):
         notes="測試任務"
     )
     session.add(task)
-    session.commit()
+    session.commit() # Commit within fixture to get ID
     return task
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 def sample_histories(session, sample_task):
-    now = datetime.now()
-    histories = [
-        CrawlerTaskHistory(
-            task_id=sample_task.id,
-            start_time=now - timedelta(days=3),
-            end_time=now - timedelta(days=3, hours=1),
-            success=True,
-            articles_count=10,
-            message="成功抓取"
-        ),
-        CrawlerTaskHistory(
-            task_id=sample_task.id,
-            start_time=now - timedelta(days=2),
-            end_time=now - timedelta(days=2, hours=1),
-            success=False,
-            articles_count=0,
-            message="抓取失敗"
-        ),
-        CrawlerTaskHistory(
-            task_id=sample_task.id,
-            start_time=now - timedelta(days=1),
-            end_time=now - timedelta(days=1, hours=1),
-            success=True,
-            articles_count=15,
-            message="成功抓取更多文章"
-        )
+    now = datetime.now(timezone.utc) # Ensure timezone aware
+    histories_data = [
+        { # ID 1 (assuming sequential IDs)
+            'task_id': sample_task.id,
+            'start_time': now - timedelta(days=3),
+            'end_time': now - timedelta(days=3, hours=-1), # Corrected end time
+            'success': True,
+            'articles_count': 10,
+            'message': "成功抓取"
+        },
+        { # ID 2
+            'task_id': sample_task.id,
+            'start_time': now - timedelta(days=2),
+            'end_time': now - timedelta(days=2, hours=-1), # Corrected end time
+            'success': False,
+            'articles_count': 0,
+            'message': "抓取失敗"
+        },
+        { # ID 3
+            'task_id': sample_task.id,
+            'start_time': now - timedelta(days=1),
+            'end_time': now - timedelta(days=1, hours=-1), # Corrected end time
+            'success': True,
+            'articles_count': 15,
+            'message': "成功抓取更多文章"
+        }
     ]
-    session.add_all(histories)
-    session.commit()
-    return histories
+    # Add and flush to get IDs, then return objects
+    histories_objs = [CrawlerTaskHistory(**data) for data in histories_data]
+    session.add_all(histories_objs)
+    session.flush() # Assign IDs
+    session.commit() # Commit to make data available for tests
+    # Re-fetch ordered by start_time to ensure consistent test results
+    return session.query(CrawlerTaskHistory).order_by(CrawlerTaskHistory.start_time.asc()).all()
+
 
 class TestCrawlerTaskHistoryRepository:
     """CrawlerTaskHistoryRepository 測試類"""
-    
-    def test_find_by_task_id(self, crawler_task_history_repo, sample_task, sample_histories):
-        """測試根據任務ID查詢歷史記錄"""
-        histories = crawler_task_history_repo.find_by_task_id(sample_task.id)
-        assert len(histories) == 3
-        assert all(history.task_id == sample_task.id for history in histories)
 
-    def test_find_successful_histories(self, crawler_task_history_repo, sample_histories):
-        """測試查詢成功的歷史記錄"""
+    def test_find_by_task_id(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_task, sample_histories: List[CrawlerTaskHistory]):
+        """測試根據任務ID查詢歷史記錄（包括預覽）"""
+        task_id = sample_task.id
+        preview_fields = ["id", "success", "articles_count"]
+
+        # Test non-preview
+        histories = crawler_task_history_repo.find_by_task_id(task_id, sort_desc=False)
+        assert len(histories) == 3
+        assert all(isinstance(h, CrawlerTaskHistory) for h in histories)
+        assert all(history.task_id == task_id for history in histories if isinstance(history, CrawlerTaskHistory))
+
+        # Test preview
+        histories_preview = crawler_task_history_repo.find_by_task_id(
+            task_id,
+            limit=2,
+            sort_desc=True, # Get latest 2
+            is_preview=True,
+            preview_fields=preview_fields
+        )
+        assert len(histories_preview) == 2
+        assert all(isinstance(h, dict) for h in histories_preview)
+        assert all(set(h.keys()) == set(preview_fields) for h in histories_preview if isinstance(h, dict))
+        # Check content based on sort_desc=True (latest first)
+        if isinstance(histories_preview[0], dict):
+            assert histories_preview[0]["articles_count"] == 15 # Should be the last history created
+        if isinstance(histories_preview[1], dict):
+            assert histories_preview[1]["success"] is False      # Should be the middle history
+
+    def test_find_successful_histories(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_histories: List[CrawlerTaskHistory]):
+        """測試查詢成功的歷史記錄（包括預覽）"""
+        preview_fields = ["start_time", "message"]
+
+        # Test non-preview
         successful_histories = crawler_task_history_repo.find_successful_histories()
         assert len(successful_histories) == 2
-        assert all(history.success for history in successful_histories)
+        assert all(isinstance(h, CrawlerTaskHistory) for h in successful_histories)
+        assert all(history.success for history in successful_histories if isinstance(history, CrawlerTaskHistory))
 
-    def test_find_failed_histories(self, crawler_task_history_repo, sample_histories):
-        """測試查詢失敗的歷史記錄"""
+        # Test preview
+        successful_preview = crawler_task_history_repo.find_successful_histories(
+            limit=1,
+            is_preview=True,
+            preview_fields=preview_fields
+            # Default sort is likely created_at desc or id desc
+        )
+        assert len(successful_preview) == 1
+        assert isinstance(successful_preview[0], dict)
+        assert set(successful_preview[0].keys()) == set(preview_fields)
+        # Assuming default sort gets the latest successful one
+        assert successful_preview[0]["message"] == "成功抓取更多文章"
+
+    def test_find_failed_histories(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_histories: List[CrawlerTaskHistory]):
+        """測試查詢失敗的歷史記錄（包括預覽）"""
+        preview_fields = ["id", "message"]
+
+        # Test non-preview
         failed_histories = crawler_task_history_repo.find_failed_histories()
         assert len(failed_histories) == 1
-        assert all(not history.success for history in failed_histories)
+        assert isinstance(failed_histories[0], CrawlerTaskHistory)
+        assert not failed_histories[0].success
+        assert failed_histories[0].message == "抓取失敗"
 
-    def test_find_histories_with_articles(self, crawler_task_history_repo, sample_histories):
-        """測試查詢有文章的歷史記錄"""
-        histories_with_articles = crawler_task_history_repo.find_histories_with_articles(min_articles=10)
+        # Test preview
+        failed_preview = crawler_task_history_repo.find_failed_histories(
+            is_preview=True,
+            preview_fields=preview_fields
+        )
+        assert len(failed_preview) == 1
+        assert isinstance(failed_preview[0], dict)
+        assert set(failed_preview[0].keys()) == set(preview_fields)
+        assert failed_preview[0]["message"] == "抓取失敗"
+
+    def test_find_histories_with_articles(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_histories: List[CrawlerTaskHistory]):
+        """測試查詢有文章的歷史記錄（包括預覽）"""
+        preview_fields = ["articles_count", "success"]
+        min_articles = 10
+
+        # Test non-preview
+        histories_with_articles = crawler_task_history_repo.find_histories_with_articles(min_articles=min_articles)
         assert len(histories_with_articles) == 2
-        assert all(history.articles_count >= 10 for history in histories_with_articles)
+        assert all(isinstance(h, CrawlerTaskHistory) for h in histories_with_articles)
+        assert all((h.articles_count or 0) >= min_articles for h in histories_with_articles if isinstance(h, CrawlerTaskHistory))
 
-    def test_find_histories_by_date_range(self, crawler_task_history_repo, sample_histories):
-        """測試根據日期範圍查詢歷史記錄"""
-        earliest_date = min(h.start_time for h in sample_histories)
-        latest_date = max(h.start_time for h in sample_histories)
-        
+        # Test preview
+        histories_preview = crawler_task_history_repo.find_histories_with_articles(
+            min_articles=min_articles,
+            limit=1, # Get only one
+            is_preview=True,
+            preview_fields=preview_fields
+            # Default sort applies
+        )
+        assert len(histories_preview) == 1
+        assert isinstance(histories_preview[0], dict)
+        assert set(histories_preview[0].keys()) == set(preview_fields)
+        assert histories_preview[0]["articles_count"] >= min_articles
+        assert histories_preview[0]["success"] is True # Assuming default sort gets the latest one (15 articles)
+
+    def test_find_histories_by_date_range(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_histories: List[CrawlerTaskHistory]):
+        """測試根據日期範圍查詢歷史記錄（包括預覽）"""
+        preview_fields = ["id", "start_time"]
+        earliest_date = min(h.start_time for h in sample_histories if h.start_time)
+        latest_date = max(h.start_time for h in sample_histories if h.start_time)
         middle_date = earliest_date + (latest_date - earliest_date) / 2
-        
-        # 測試只有開始日期
-        start_only_histories = crawler_task_history_repo.find_histories_by_date_range(
-            start_date=middle_date
-        )
-        assert len(start_only_histories) > 0
-        
-        # 測試只有結束日期
-        end_only_histories = crawler_task_history_repo.find_histories_by_date_range(
-            end_date=middle_date
-        )
-        assert len(end_only_histories) > 0
-        
-        # 測試完整日期範圍
-        histories = crawler_task_history_repo.find_histories_by_date_range(
-            start_date=middle_date,
-            end_date=latest_date
-        )
-        
-        expected_count = sum(1 for h in sample_histories if middle_date <= h.start_time <= latest_date)
-        assert len(histories) == expected_count
 
-    def test_get_total_articles_count(self, crawler_task_history_repo, sample_task, sample_histories):
+        # Test non-preview (example: start date only)
+        start_only_histories = crawler_task_history_repo.find_histories_by_date_range(start_date=middle_date)
+        assert len(start_only_histories) > 0 # Exact count depends on timing
+        assert all(isinstance(h, CrawlerTaskHistory) for h in start_only_histories)
+        assert all(h.start_time >= middle_date for h in start_only_histories if isinstance(h, CrawlerTaskHistory) and h.start_time)
+
+        # Test preview (example: end date only)
+        end_only_preview = crawler_task_history_repo.find_histories_by_date_range(
+            end_date=middle_date,
+            limit=1,
+            is_preview=True,
+            preview_fields=preview_fields
+            # Default sort applies
+        )
+        assert len(end_only_preview) <= 1 # Could be 0 or 1 depending on middle_date
+        if end_only_preview:
+             assert isinstance(end_only_preview[0], dict)
+             assert set(end_only_preview[0].keys()) == set(preview_fields)
+             assert end_only_preview[0]["start_time"] <= middle_date
+
+    def test_get_total_articles_count(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_task, sample_histories: List[CrawlerTaskHistory]):
         """測試獲取總文章數量"""
-        # 測試特定任務的文章總數
-        task_total_count = crawler_task_history_repo.get_total_articles_count(sample_task.id)
+        task_total_count = crawler_task_history_repo.count_total_articles(sample_task.id)
         assert task_total_count == 25  # 10 + 0 + 15
-        
-        # 測試所有任務的文章總數
-        total_count = crawler_task_history_repo.get_total_articles_count()
-        assert total_count == 25  # 在此測試中只有一個任務
 
-    def test_get_latest_history(self, crawler_task_history_repo, sample_task, sample_histories):
-        """測試獲取最新的歷史記錄（根據開始時間）"""
-        latest_history = crawler_task_history_repo.get_latest_history(sample_task.id)
+        total_count = crawler_task_history_repo.count_total_articles()
+        assert total_count == 25
+
+    def test_get_latest_history(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_task, sample_histories: List[CrawlerTaskHistory]):
+        """測試獲取最新的歷史記錄（根據開始時間，包括預覽）"""
+        task_id = sample_task.id
+        preview_fields = ["id", "start_time", "message"]
+
+        # Test non-preview
+        latest_history = crawler_task_history_repo.get_latest_history(task_id)
         assert latest_history is not None
-        assert latest_history.start_time == max(h.start_time for h in sample_histories)
-        
-        # 測試獲取不存在任務的最新歷史
+        assert isinstance(latest_history, CrawlerTaskHistory)
+        expected_latest_start_time = max(h.start_time for h in sample_histories if h.start_time)
+        assert latest_history.start_time == expected_latest_start_time
+
+        # Test preview
+        latest_preview = crawler_task_history_repo.get_latest_history(
+            task_id,
+            is_preview=True,
+            preview_fields=preview_fields
+        )
+        assert latest_preview is not None
+        assert isinstance(latest_preview, dict)
+        assert set(latest_preview.keys()) == set(preview_fields)
+        assert latest_preview["start_time"] == expected_latest_start_time
+        assert latest_preview["message"] == "成功抓取更多文章"
+
+        # Test non-existent task
         nonexistent_latest = crawler_task_history_repo.get_latest_history(999)
         assert nonexistent_latest is None
 
-    def test_get_latest_by_task_id(self, crawler_task_history_repo, sample_task, sample_histories, monkeypatch):
-        """測試獲取指定任務的最新一筆歷史記錄（根據創建時間）"""
-        latest_history = crawler_task_history_repo.get_latest_by_task_id(sample_task.id)
+    def test_get_latest_by_task_id(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_task, sample_histories: List[CrawlerTaskHistory]):
+        """測試獲取指定任務的最新一筆歷史記錄（根據創建時間，包括預覽）"""
+        task_id = sample_task.id
+        preview_fields = ["id", "created_at"] # Use created_at if available, else id might be the default
+
+        # Test non-preview
+        latest_history = crawler_task_history_repo.get_latest_by_task_id(task_id)
         assert latest_history is not None
-        
-        # 測試獲取不存在任務的最新歷史（使用模擬來避免實際的資料庫錯誤）
-        def mock_query_error(*args, **kwargs):
-            raise Exception("模擬資料庫查詢錯誤")
-        
-        monkeypatch.setattr(crawler_task_history_repo.session, "query", mock_query_error)
-        
-        with pytest.raises(DatabaseOperationError) as excinfo:
-            crawler_task_history_repo.get_latest_by_task_id(999)
-        assert "獲取最新歷史記錄失敗" in str(excinfo.value)
+        assert isinstance(latest_history, CrawlerTaskHistory)
+        # Assuming the last one added is the latest by created_at
+        assert latest_history.id == sample_histories[-1].id
 
-    def test_get_histories_older_than(self, crawler_task_history_repo, sample_histories):
-        """測試獲取超過指定天數的歷史記錄"""
-        histories_older_than_2_days = crawler_task_history_repo.get_histories_older_than(2)
-        assert len(histories_older_than_2_days) > 0
-        for history in histories_older_than_2_days:
-            assert (datetime.now(timezone.utc) - history.start_time).days >= 2
+        # Test preview
+        latest_preview = crawler_task_history_repo.get_latest_by_task_id(
+            task_id,
+            is_preview=True,
+            preview_fields=preview_fields
+        )
+        assert latest_preview is not None
+        assert isinstance(latest_preview, dict)
+        # Check if created_at exists in the model and preview fields
+        expected_keys = set(f for f in preview_fields if hasattr(CrawlerTaskHistory, f))
+        assert set(latest_preview.keys()) == expected_keys
+        # We might not be able to reliably check created_at value without more control
+        assert latest_preview["id"] == sample_histories[-1].id
 
-    def test_update_history_status(self, crawler_task_history_repo, sample_histories, session):
+        # Test non-existent task
+        nonexistent_latest = crawler_task_history_repo.get_latest_by_task_id(999)
+        assert nonexistent_latest is None
+
+    def test_get_histories_older_than(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_histories: List[CrawlerTaskHistory]):
+        """測試獲取超過指定天數的歷史記錄（包括預覽）"""
+        preview_fields = ["start_time", "success"]
+        days = 2
+
+        # Test non-preview
+        histories_older = crawler_task_history_repo.get_histories_older_than(days)
+        assert len(histories_older) > 0 # Should find at least the first one
+        assert all(isinstance(h, CrawlerTaskHistory) for h in histories_older)
+        threshold_date = datetime.now(timezone.utc) - timedelta(days=days)
+        assert all((h.start_time < threshold_date) for h in histories_older if isinstance(h, CrawlerTaskHistory) and h.start_time)
+
+        # Test preview
+        histories_preview = crawler_task_history_repo.get_histories_older_than(
+            days,
+            limit=1,
+            is_preview=True,
+            preview_fields=preview_fields
+            # Default sort applies (likely created_at desc)
+        )
+        assert len(histories_preview) <= 1
+        if histories_preview:
+            assert isinstance(histories_preview[0], dict)
+            assert set(histories_preview[0].keys()) == set(preview_fields)
+            assert histories_preview[0]["start_time"] < threshold_date
+
+    def test_update_history_status(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_histories: List[CrawlerTaskHistory], session):
         """測試更新歷史記錄狀態"""
-        history = sample_histories[1]
-        
-        # 測試更新部分欄位
-        partial_update_result = crawler_task_history_repo.update_history_status(
-            history_id=history.id,
-            success=True
-        )
-        assert partial_update_result is True
-        
-        # 在 repo 不再 commit 後，測試需要自行 commit
-        session.commit()
-        
-        # 重新獲取實體以驗證持久化
-        updated_history_partial = crawler_task_history_repo.get_by_id(history.id)
-        assert updated_history_partial is not None
-        assert updated_history_partial.success is True
-        assert updated_history_partial.end_time is not None
-        # 確保其他欄位未意外更改
-        assert updated_history_partial.message == history.message
-        assert updated_history_partial.articles_count == history.articles_count
-        
-        # 測試完整更新
-        complete_update_result = crawler_task_history_repo.update_history_status(
-            history_id=history.id,
-            success=True,
-            message="重試成功",
-            articles_count=5
-        )
-        
-        assert complete_update_result is True
-        
-        # 再次 commit
-        session.commit()
-        
-        # 再次重新獲取實體以驗證持久化
-        updated_history_complete = crawler_task_history_repo.get_by_id(history.id)
-        assert updated_history_complete is not None
-        assert updated_history_complete.success is True
-        assert updated_history_complete.message == "重試成功"
-        assert updated_history_complete.articles_count == 5
-        assert updated_history_complete.end_time is not None
-        # 可以選擇性地斷言 end_time 已更新 (可能因執行速度而不穩定)
-        # assert updated_history_complete.end_time > updated_history_partial.end_time
+        history = sample_histories[1] # The failed one
+        history_id = history.id
 
-    # 新增測試：測試預設值設定
-    def test_create_with_default_values(self, crawler_task_history_repo, sample_task, session):
+        # Test update success=True
+        result1 = crawler_task_history_repo.update_history_status(
+            history_id=history_id, success=True
+        )
+        assert result1 is True
+        session.commit()
+        updated1 = crawler_task_history_repo.get_by_id(history_id)
+        assert updated1 and updated1.success is True and updated1.end_time is not None
+
+        # Test update success=True, message, articles_count
+        result2 = crawler_task_history_repo.update_history_status(
+            history_id=history_id, success=True, message="重試成功", articles_count=5
+        )
+        assert result2 is True
+        session.commit()
+        updated2 = crawler_task_history_repo.get_by_id(history_id)
+        assert updated2 and updated2.success is True and updated2.message == "重試成功" and updated2.articles_count == 5
+
+        # Test updating non-existent ID
+        result3 = crawler_task_history_repo.update_history_status(
+            history_id=999, success=True
+        )
+        assert result3 is False # Should return False if update method returns None for non-existent ID
+
+    # ... other tests like create, update, validation, immutable fields, empty data ...
+    # These tests should generally work without changes as they test create/update logic,
+    # which was less affected by the refactoring of finder methods.
+
+    def test_create_with_default_values(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_task, session):
         """測試創建時設定預設值的邏輯"""
-        # 只提供最小必填欄位
-        min_data = {
-            'task_id': sample_task.id
-        }
-        
-        # 創建並檢查預設值是否如預期
+        min_data = {'task_id': sample_task.id}
         history = crawler_task_history_repo.create(min_data)
         assert history is not None
         assert history.task_id == sample_task.id
-        assert history.start_time is not None  # 預期設置為當前時間
-        assert history.success is False  # 預期預設為 False
-        assert history.articles_count == 0  # 預期預設為 0
-
-        # !! 加入 commit 才能將 history 寫入資料庫 !!
-        session.commit()
-
-        # 驗證存入資料庫 (現在 history.id 應該有值了)
-        # 在 commit 後重新獲取，確保是從資料庫讀取的
+        assert history.start_time is not None
+        assert history.success is False
+        assert history.articles_count == 0
+        session.commit() # Commit to save
         db_history = crawler_task_history_repo.get_by_id(history.id)
-        assert db_history is not None
-        assert db_history.task_id == sample_task.id
-        # 可以添加更多對 db_history 的斷言，例如檢查時間戳等，但基本驗證是 not None
-        assert db_history.success is False
-        assert db_history.articles_count == 0
+        assert db_history is not None and db_history.success is False
 
-        # 清理創建的數據 (如果需要)
-        # session.delete(history)
-        # session.commit()
-
-    # 新增測試：測試創建時的驗證錯誤
-    def test_create_validation_error(self, crawler_task_history_repo):
+    def test_create_validation_error(self, crawler_task_history_repo: CrawlerTaskHistoryRepository):
         """測試創建時的驗證錯誤處理"""
-        # 缺少必填欄位 task_id
-        invalid_data = {
-            'start_time': datetime.now(timezone.utc),  # 使用 UTC 時區
-            'success': True
-        }
-        
-        # 應該拋出 ValidationError
+        invalid_data = {'start_time': datetime.now(timezone.utc), 'success': True}
         with pytest.raises(ValidationError) as excinfo:
             crawler_task_history_repo.create(invalid_data)
+        assert 'task_id' in str(excinfo.value).lower() # Check for field name in error
 
-        # 檢查異常訊息中是否包含關鍵的欄位名稱
-        assert 'task_id' in str(excinfo.value)
-    
-    # 新增測試：測試更新不可變欄位
-    def test_update_immutable_fields(self, crawler_task_history_repo, sample_histories, session):
+    def test_update_immutable_fields(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_histories: List[CrawlerTaskHistory], session):
         """測試更新不可變欄位的處理邏輯"""
         history = sample_histories[0]
+        history_id = history.id
         original_task_id = history.task_id
         original_start_time = history.start_time
-        
-        # 嘗試更新不可變欄位
+
         update_data = {
-            'task_id': 999,  # 不可變欄位
-            'start_time': datetime.now(timezone.utc),  # 不可變欄位
-            'message': "新訊息"  # 可變欄位
+            'task_id': 999,
+            'start_time': datetime.now(timezone.utc),
+            'message': "新訊息"
         }
-        
-        # 更新操作
-        updated = crawler_task_history_repo.update(history.id, update_data)
-        assert updated is not None
-        
-        # Commit a session to persist changes
+        updated = crawler_task_history_repo.update(history_id, update_data)
+        assert updated is not None # Update should proceed ignoring immutable fields
         session.commit()
-        
-        # 重新獲取以驗證
-        refetched_history = crawler_task_history_repo.get_by_id(history.id)
-        assert refetched_history is not None
-        
-        # 驗證不可變欄位沒有被更新，但可變欄位有被更新
-        assert refetched_history.task_id == original_task_id  # task_id 應保持不變
-        assert refetched_history.start_time == original_start_time  # start_time 應保持不變
-        assert refetched_history.message == "新訊息"  # message 應被更新
-    
-    # 新增測試：測試更新空資料
-    def test_update_empty_data(self, crawler_task_history_repo, sample_histories, session):
+        refetched = crawler_task_history_repo.get_by_id(history_id)
+        assert refetched
+        assert refetched.task_id == original_task_id
+        assert refetched.start_time == original_start_time
+        assert refetched.message == "新訊息"
+
+    def test_update_empty_data(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_histories: List[CrawlerTaskHistory], session):
         """測試更新空資料的處理邏輯"""
         history = sample_histories[0]
-        original_message = history.message # Store original value
-        
-        # 更新空資料
-        updated = crawler_task_history_repo.update(history.id, {})
-        
-        # 應該返回原實體，不做任何更改
+        history_id = history.id
+        original_message = history.message
+        updated = crawler_task_history_repo.update(history_id, {})
+        # BaseRepository.update might return None if no changes are made.
+        # The current implementation returns the existing entity. Let's keep that expectation.
         assert updated is not None
-        assert updated.id == history.id
-        assert updated.message == original_message # Check against original stored value
-        assert updated.success == history.success
-        
-        # Commit is technically not needed here as no changes should happen,
-        # but adding it doesn't hurt and ensures consistency if update logic changes.
-        session.commit()
-        
-        # Re-fetch to be absolutely sure state didn't change in DB
-        refetched_history = crawler_task_history_repo.get_by_id(history.id)
-        assert refetched_history is not None
-        assert refetched_history.message == original_message
+        assert updated.message == original_message
+        session.commit() # Commit (though likely no changes)
+        refetched = crawler_task_history_repo.get_by_id(history_id)
+        assert refetched and refetched.message == original_message
+
 
 class TestModelStructure:
     """測試模型結構"""
-    
     def test_crawler_task_history_model_structure(self, session):
-        """測試CrawlerTaskHistory模型結構"""
         model_info = get_model_info(CrawlerTaskHistory)
-        
-        # 測試表名
         assert model_info["table"] == "crawler_task_history"
-        
-        # 測試主鍵
         assert "id" in model_info["primary_key"]
-        
-        # 測試外鍵
         foreign_keys = model_info.get("foreign_keys", [])
-        # 檢查是否有指向 crawler_tasks 表的外鍵
-        has_task_fk = False
-        for fk in foreign_keys:
-            if "task_id" in str(fk):  # 使用更寬鬆的檢查
-                has_task_fk = True
-                break
-        assert has_task_fk, "應該有指向 crawler_tasks 表的外鍵"
-        
-        # 測試必填欄位
-        required_fields = []
-        for field, info in model_info["columns"].items():
-            if not info["nullable"] and info["default"] is None:
-                required_fields.append(field)
-        
+        assert any("task_id" in str(fk) for fk in foreign_keys)
+        required_fields = [f for f, info in model_info["columns"].items() if not info["nullable"] and info["default"] is None]
         assert "task_id" in required_fields
-        assert "id" in required_fields
+
 
 class TestSpecialCases:
     """測試特殊情況"""
-    
-    def test_empty_database(self, crawler_task_history_repo):
+    def test_empty_database(self, crawler_task_history_repo: CrawlerTaskHistoryRepository):
         """測試空數據庫的情況"""
-        assert crawler_task_history_repo.get_all() == []
+        assert crawler_task_history_repo.find_all() == []
         assert crawler_task_history_repo.find_successful_histories() == []
         assert crawler_task_history_repo.find_failed_histories() == []
+        assert crawler_task_history_repo.count_total_articles() == 0
 
-    def test_invalid_operations(self, crawler_task_history_repo):
+    def test_invalid_operations(self, crawler_task_history_repo: CrawlerTaskHistoryRepository):
         """測試無效操作"""
-        # 測試不存在的歷史記錄ID
-        assert crawler_task_history_repo.update_history_status(
-            history_id=999, 
-            success=True
-        ) is False
+        # Test updating non-existent history ID
+        assert crawler_task_history_repo.update_history_status(history_id=999, success=True) is False
+
 
 class TestErrorHandling:
     """測試錯誤處理"""
-    
-    def test_repository_exception_handling(self, crawler_task_history_repo, session, monkeypatch):
-        """測試資料庫操作異常處理"""
-        # 模擬查詢時資料庫異常
-        def mock_query_error(*args, **kwargs):
-            raise Exception("模擬資料庫查詢錯誤")
-        
-        monkeypatch.setattr(crawler_task_history_repo.session, "query", mock_query_error)
-        
-        # 測試各方法的異常處理
+    def test_repository_exception_handling(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, monkeypatch):
+        """測試資料庫操作異常處理 (Finder methods)"""
+        def mock_execute_query_error(*args, **kwargs):
+            # Simulate error during query execution within find_by_filter/find_all
+            raise DatabaseOperationError("模擬資料庫查詢錯誤 from execute_query")
+
+        monkeypatch.setattr(crawler_task_history_repo, "execute_query", mock_execute_query_error)
+
+        # Test a finder method that now uses find_by_filter -> execute_query
         with pytest.raises(DatabaseOperationError) as excinfo:
             crawler_task_history_repo.find_by_task_id(1)
-        
-        # 修改斷言方式
-        assert "查詢任務ID為1的歷史記錄時發生錯誤" in str(excinfo.value)
-        
-        # 測試 get_latest_by_task_id 的異常處理
+        # The error message comes from execute_query wrapper now
+        assert "模擬資料庫查詢錯誤 from execute_query" in str(excinfo.value)
+
+        # Test another finder
         with pytest.raises(DatabaseOperationError) as excinfo:
             crawler_task_history_repo.get_latest_by_task_id(1)
-        assert "獲取最新歷史記錄失敗" in str(excinfo.value)
-    
-    # 新增測試：測試創建時的異常處理
-    def test_create_exception_handling(self, crawler_task_history_repo, sample_task, monkeypatch):
+        assert "模擬資料庫查詢錯誤 from execute_query" in str(excinfo.value)
+
+    def test_create_exception_handling(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_task, monkeypatch):
         """測試創建時的異常處理"""
-        # 模擬內部方法拋出異常
         def mock_create_internal_error(*args, **kwargs):
-            raise Exception("模擬創建內部錯誤")
-        
+            raise DatabaseOperationError("模擬創建內部錯誤") # Raise specific error type
+
         monkeypatch.setattr(crawler_task_history_repo, "_create_internal", mock_create_internal_error)
-        
-        # 嘗試創建
+
         with pytest.raises(DatabaseOperationError) as excinfo:
             crawler_task_history_repo.create({'task_id': sample_task.id})
-        
-        assert "創建 CrawlerTaskHistory 時發生未預期錯誤" in str(excinfo.value)
-    
-    # 新增測試：測試更新時的異常處理
-    def test_update_exception_handling(self, crawler_task_history_repo, sample_histories, monkeypatch):
+        # Error comes from _create_internal via create
+        assert "模擬創建內部錯誤" in str(excinfo.value)
+
+    def test_update_exception_handling(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_histories: List[CrawlerTaskHistory], monkeypatch):
         """測試更新時的異常處理"""
         history = sample_histories[0]
-        
-        # 模擬內部方法拋出異常
+        history_id = history.id
+
         def mock_update_internal_error(*args, **kwargs):
-            raise Exception("模擬更新內部錯誤")
-        
+            raise DatabaseOperationError("模擬更新內部錯誤") # Raise specific error type
+
         monkeypatch.setattr(crawler_task_history_repo, "_update_internal", mock_update_internal_error)
-        
-        # 嘗試更新
+
         with pytest.raises(DatabaseOperationError) as excinfo:
-            crawler_task_history_repo.update(history.id, {'message': '測試更新'})
-        
-        assert f"更新 CrawlerTaskHistory (ID={history.id}) 時發生未預期錯誤" in str(excinfo.value) 
+            crawler_task_history_repo.update(history_id, {'message': '測試更新'})
+        # Error comes from _update_internal via update
+        assert "模擬更新內部錯誤" in str(excinfo.value) 

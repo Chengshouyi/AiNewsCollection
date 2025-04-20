@@ -1,6 +1,6 @@
 from .base_repository import BaseRepository, SchemaType
 from src.models.crawlers_model import Crawlers
-from typing import List, Optional, Dict, Any, Type, Literal, overload, TypeVar
+from typing import List, Optional, Dict, Any, Type, Literal, overload, TypeVar, Union
 from datetime import datetime, timezone
 from sqlalchemy import func
 from pydantic import BaseModel
@@ -8,6 +8,7 @@ from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchem
 from src.error.errors import ValidationError, DatabaseOperationError
 import logging
 from sqlalchemy.orm.attributes import instance_state
+from sqlalchemy.orm import Query
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -43,8 +44,11 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             # 1. 特定前置檢查：名稱唯一性
             crawler_name = entity_data.get('crawler_name')
             if crawler_name:
-                existing = self.find_by_crawler_name_exact(crawler_name)
-                if existing:
+                existing_check = self.find_by_crawler_name_exact(crawler_name)
+                if isinstance(existing_check, self.model_class):
+                    raise ValidationError(f"爬蟲名稱 '{crawler_name}' 已存在")
+                elif isinstance(existing_check, dict):
+                    logger.warning(f"創建檢查時 find_by_crawler_name_exact 返回了字典，可能配置錯誤。")
                     raise ValidationError(f"爬蟲名稱 '{crawler_name}' 已存在")
 
             # 2. 設定特定預設值 (如果 Schema 沒處理)
@@ -87,7 +91,10 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             new_crawler_name = entity_data.get('crawler_name')
             if new_crawler_name and new_crawler_name != existing_entity.crawler_name:
                 existing_check = self.find_by_crawler_name_exact(new_crawler_name)
-                if existing_check:
+                if isinstance(existing_check, self.model_class):
+                    raise ValidationError(f"爬蟲名稱 '{new_crawler_name}' 已存在")
+                elif isinstance(existing_check, dict):
+                    logger.warning(f"更新檢查時 find_by_crawler_name_exact 返回了字典，可能配置錯誤。")
                     raise ValidationError(f"爬蟲名稱 '{new_crawler_name}' 已存在")
 
             # 3. updated_at 由 Schema 處理
@@ -113,53 +120,104 @@ class CrawlersRepository(BaseRepository['Crawlers']):
              logger.error(f"更新 Crawler (ID={entity_id}) 時發生未預期錯誤: {e}", exc_info=True)
              raise DatabaseOperationError(f"更新 Crawler (ID={entity_id}) 時發生未預期錯誤: {e}") from e
     
-    def find_active_crawlers(self) -> Optional[List['Crawlers']]:
-        """查詢活動中的爬蟲"""
-        result = self.execute_query(
-            lambda: self.session.query(self.model_class)
-                .filter_by(is_active=True)
-                .all()
+    def find_active_crawlers(self, 
+                             limit: Optional[int] = None, 
+                             offset: Optional[int] = None,
+                             is_preview: bool = False, 
+                             preview_fields: Optional[List[str]] = None
+                             ) -> Union[List[Crawlers], List[Dict[str, Any]]]:
+        """查詢活動中的爬蟲，支援分頁和預覽"""
+        return self.find_by_filter(
+            filter_criteria={"is_active": True},
+            limit=limit,
+            offset=offset,
+            sort_by='created_at', # 或其他預設排序欄位
+            sort_desc=True,
+            is_preview=is_preview,
+            preview_fields=preview_fields
         )
-        if not result:
-            return None
-        return result
     
-    def find_by_crawler_id(self, crawler_id: int, is_active: bool = True) -> Optional[Crawlers]:
-        """根據爬蟲ID查詢，回傳匹配的列表"""
-        result = self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(id=crawler_id, is_active=is_active).first(),
-            err_msg=f"查詢爬蟲ID {crawler_id} 時發生錯誤"
+    def find_by_crawler_id(self, crawler_id: int, 
+                           is_active: bool = True,
+                           is_preview: bool = False,
+                           preview_fields: Optional[List[str]] = None
+                           ) -> Optional[Union[Crawlers, Dict[str, Any]]]:
+        """根據爬蟲ID查詢，支援預覽"""
+        # 使用 find_by_filter 並限制結果為 1
+        results = self.find_by_filter(
+            filter_criteria={"id": crawler_id, "is_active": is_active},
+            limit=1,
+            is_preview=is_preview,
+            preview_fields=preview_fields
         )
-        if not result:
-            return None
-        return result
+        # find_by_filter 返回列表，取第一個元素（如果存在）
+        return results[0] if results else None
     
-    def find_by_crawler_name(self, crawler_name: str, is_active: Optional[bool] = None) -> Optional[List['Crawlers']]:
-        """根據爬蟲名稱模糊查詢，可選擇根據 is_active 過濾
+    def find_by_crawler_name(self, crawler_name: str, 
+                             is_active: Optional[bool] = None,
+                             limit: Optional[int] = None,
+                             offset: Optional[int] = None,
+                             is_preview: bool = False,
+                             preview_fields: Optional[List[str]] = None
+                             ) -> Union[List[Crawlers], List[Dict[str, Any]]]:
+        """根據爬蟲名稱模糊查詢，支援活躍狀態過濾、分頁和預覽
         
         Args:
-            crawler_name: 爬蟲名稱
-            is_active: 是否過濾活躍狀態
-                None:抓全部
-                True:只抓活躍的
-                False:只抓非活躍的
+            crawler_name: 爬蟲名稱 (模糊匹配)
+            is_active: 是否過濾活躍狀態 (None:不過濾, True:活躍, False:非活躍)
+            limit: 限制數量
+            offset: 偏移量
+            is_preview: 是否預覽模式
+            preview_fields: 預覽欄位
             
         Returns:
-            爬蟲列表    
-            
+            符合條件的爬蟲列表 (模型實例或字典)
         """
-        query = self.session.query(self.model_class).filter(
-            self.model_class.crawler_name.like(f"%{crawler_name}%")
+        def query_builder():
+            # --- Preview Logic ---
+            query_entities = [self.model_class]
+            valid_preview_fields = []
+            local_is_preview = is_preview
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+                else:
+                    logger.warning(f"find_by_crawler_name 預覽欄位無效: {preview_fields}，返回完整物件。")
+                    local_is_preview = False
+            # --- End Preview Logic ---
+            
+            query = self.session.query(*query_entities).filter(
+                self.model_class.crawler_name.like(f"%{crawler_name}%")
+            )
+
+            # 如果 is_active 不是 None，則添加 is_active 過濾條件
+            if is_active is not None:
+                query = query.filter(self.model_class.is_active == is_active)
+            
+            # 添加預設排序 (例如按創建時間)
+            if hasattr(self.model_class, 'created_at'):
+                 query = query.order_by(self.model_class.created_at.desc())
+                 
+            # Apply offset and limit
+            if offset is not None:
+                query = query.offset(offset)
+            if limit is not None:
+                query = query.limit(limit)
+
+            raw_results = query.all()
+
+            # --- Result Transformation ---
+            if local_is_preview and valid_preview_fields:
+                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                return raw_results
+            # --- End Result Transformation ---
+
+        return self.execute_query(
+            query_builder,
+            err_msg=f"模糊查詢爬蟲名稱 '{crawler_name}' 時發生錯誤"
         )
-
-        # 如果 is_active 不是 None，則添加 is_active 過濾條件
-        if is_active is not None:
-            query = query.filter(self.model_class.is_active == is_active)
-
-        result = self.execute_query(lambda: query.all())
-
-        # 注意：即使找不到結果，也返回空列表而不是 None，以保持一致性
-        return result if result else []
 
     def toggle_active_status(self, crawler_id: int) -> bool:
         """切換爬蟲活躍狀態"""
@@ -181,29 +239,86 @@ class CrawlersRepository(BaseRepository['Crawlers']):
         )
 
 
-    def find_by_type(self, crawler_type: str, is_active: bool = True) -> Optional[List[Crawlers]]:
-        """根據爬蟲類型查找爬蟲"""
-        result = self.execute_query(
-            lambda: self.session.query(self.model_class)
-                .filter(self.model_class.crawler_type == crawler_type, self.model_class.is_active == is_active)
-                .all(),
-            err_msg=f"查詢類型為{crawler_type}的爬蟲時發生錯誤"
+    def find_by_type(self, crawler_type: str, 
+                     is_active: Optional[bool] = None,
+                     limit: Optional[int] = None,
+                     offset: Optional[int] = None,
+                     is_preview: bool = False,
+                     preview_fields: Optional[List[str]] = None
+                     ) -> Union[List[Crawlers], List[Dict[str, Any]]]:
+        """根據爬蟲類型查找爬蟲，支援活躍狀態過濾、分頁和預覽"""
+        # 建立基礎過濾條件
+        filter_criteria: Dict[str, Any] = {"crawler_type": crawler_type}
+        
+        # 只有當 is_active 不是 None 時，才添加 is_active 過濾條件
+        if is_active is not None:
+            filter_criteria["is_active"] = is_active
+            
+        return self.find_by_filter(
+            filter_criteria=filter_criteria, # 使用動態建立的 filter_criteria
+            limit=limit,
+            offset=offset,
+            sort_by='created_at', # 或其他預設排序欄位
+            sort_desc=True,
+            is_preview=is_preview,
+            preview_fields=preview_fields
         )
-        if not result:
-            return None
-        return result
     
-    def find_by_target(self, target_pattern: str, is_active: bool = True) -> Optional[List[Crawlers]]:
-        """根據爬取目標模糊查詢爬蟲"""
-        result = self.execute_query(
-            lambda: self.session.query(self.model_class)
-                .filter(self.model_class.base_url.like(f"%{target_pattern}%"), self.model_class.is_active == is_active)
-                .all(),
-            err_msg=f"查詢目標包含{target_pattern}的爬蟲時發生錯誤"
+    def find_by_target(self, target_pattern: str, 
+                       is_active: Optional[bool] = None,
+                       limit: Optional[int] = None,
+                       offset: Optional[int] = None,
+                       is_preview: bool = False,
+                       preview_fields: Optional[List[str]] = None
+                       ) -> Union[List[Crawlers], List[Dict[str, Any]]]:
+        """根據爬取目標模糊查詢爬蟲，支援活躍狀態過濾、分頁和預覽"""
+        def query_builder():
+            # --- Preview Logic ---
+            query_entities = [self.model_class]
+            valid_preview_fields = []
+            local_is_preview = is_preview
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+                else:
+                    logger.warning(f"find_by_target 預覽欄位無效: {preview_fields}，返回完整物件。")
+                    local_is_preview = False
+            # --- End Preview Logic ---
+            
+            # 先只過濾 target_pattern
+            query = self.session.query(*query_entities).filter(
+                 # 假設目標是 base_url
+                self.model_class.base_url.like(f"%{target_pattern}%")
+            )
+            
+            # 只有當 is_active 不是 None 時，才添加 is_active 過濾條件
+            if is_active is not None:
+                 query = query.filter(self.model_class.is_active == is_active)
+            
+            # 添加預設排序
+            if hasattr(self.model_class, 'created_at'):
+                 query = query.order_by(self.model_class.created_at.desc())
+
+            # Apply offset and limit
+            if offset is not None:
+                query = query.offset(offset)
+            if limit is not None:
+                query = query.limit(limit)
+
+            raw_results = query.all()
+
+            # --- Result Transformation ---
+            if local_is_preview and valid_preview_fields:
+                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                return raw_results
+            # --- End Result Transformation ---
+
+        return self.execute_query(
+            query_builder,
+            err_msg=f"模糊查詢爬蟲目標 '{target_pattern}' 時發生錯誤"
         )
-        if not result:
-            return None
-        return result
     
     def get_crawler_statistics(self) -> Dict[str, Any]:
         """獲取爬蟲統計信息"""
@@ -229,17 +344,18 @@ class CrawlersRepository(BaseRepository['Crawlers']):
             err_msg="獲取爬蟲統計信息時發生錯誤"
         )
 
-    def find_by_crawler_name_exact(self, crawler_name: str) -> Optional[Crawlers]:
-        """根據爬蟲名稱精確查詢，回傳匹配的爬蟲或None"""
-        result = self.execute_query(
-            lambda: self.session.query(self.model_class)
-                .filter(self.model_class.crawler_name == crawler_name)
-                .first(),
-            err_msg=f"精確查詢爬蟲名稱 '{crawler_name}' 時發生錯誤"
+    def find_by_crawler_name_exact(self, crawler_name: str,
+                                   is_preview: bool = False,
+                                   preview_fields: Optional[List[str]] = None
+                                   ) -> Optional[Union[Crawlers, Dict[str, Any]]]:
+        """根據爬蟲名稱精確查詢，支援預覽"""
+        results = self.find_by_filter(
+            filter_criteria={"crawler_name": crawler_name},
+            limit=1,
+            is_preview=is_preview,
+            preview_fields=preview_fields
         )
-        if not result:
-            return None
-        return result
+        return results[0] if results else None
     
 
     def create_or_update(self, entity_data: Dict[str, Any]) -> Optional[Crawlers]:
@@ -301,99 +417,4 @@ class CrawlersRepository(BaseRepository['Crawlers']):
         return self.execute_query(
             batch_update,
             err_msg=f"批量{'啟用' if active_status else '停用'}爬蟲時發生錯誤"
-        )
-
-    def _build_filter_query(self, query, filter_dict: Dict[str, Any]):
-        """根據過濾條件構建查詢"""
-        for key, value in filter_dict.items():
-            if key not in self.model_class.__table__.columns.keys() and key != "created_at_range":
-                logger.warning(f"忽略未知的過濾條件: {key}")
-                continue
-            
-            if isinstance(value, dict):
-                # 處理特殊操作符，如 $gt, $lt 等
-                for op, op_value in value.items():
-                    if op == "$gte":
-                        query = query.filter(getattr(self.model_class, key) >= op_value)
-                    elif op == "$gt":
-                        query = query.filter(getattr(self.model_class, key) > op_value)
-                    elif op == "$lte":
-                        query = query.filter(getattr(self.model_class, key) <= op_value)
-                    elif op == "$lt":
-                        query = query.filter(getattr(self.model_class, key) < op_value)
-                    elif op == "$eq":
-                        query = query.filter(getattr(self.model_class, key) == op_value)
-                    elif op == "$ne":
-                        query = query.filter(getattr(self.model_class, key) != op_value)
-                    else:
-                        logger.warning(f"忽略未知的操作符: {op}")
-            elif isinstance(value, list):
-                # 處理列表值，如 "crawler_type": ["web", "rss"]
-                query = query.filter(getattr(self.model_class, key).in_(value))
-            else:
-                # 處理普通的等值條件
-                query = query.filter(getattr(self.model_class, key) == value)
-            
-        return query
-    
-    def get_paginated_by_filter(self, filter_dict: Dict[str, Any], page: int, per_page: int, 
-                               sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
-        """根據過濾條件獲取分頁資料
-        
-        Args:
-            filter_dict: 過濾條件字典
-            page: 當前頁碼，從1開始
-            per_page: 每頁數量
-            sort_by: 排序欄位
-            sort_desc: 是否降序排列
-            
-        Returns:
-            包含分頁資訊和結果的字典
-        """
-        def paginated_query():
-            # 計算總記錄數和過濾後的記錄數
-            # 構建基本查詢
-            query = self.session.query(self.model_class)
-            query = self._build_filter_query(query, filter_dict)
-            
-            # 計算過濾後的總記錄數
-            total = query.count()
-            
-            # 計算總頁數
-            total_pages = (total + per_page - 1) // per_page if per_page > 0 else 0
-            
-            # 確保頁碼有效
-            current_page = max(1, min(page, total_pages)) if total_pages > 0 else 1
-            
-            # 計算偏移量
-            offset = (current_page - 1) * per_page
-            
-            # 添加排序 - 使用兼容 SQLite 的方式
-            if sort_by and hasattr(self.model_class, sort_by):
-                order_column = getattr(self.model_class, sort_by)
-                # SQLite 兼容的排序方式
-                query = query.order_by(order_column.desc() if sort_desc else order_column.asc())
-            else:
-                # 默認按創建時間降序排列
-                query = query.order_by(self.model_class.created_at.desc())
-            
-            # 應用分頁
-            query = query.offset(offset).limit(per_page)
-            
-            # 執行查詢
-            items = query.all()
-            
-            return {
-                "items": items,
-                "page": current_page,
-                "per_page": per_page,
-                "total": total,
-                "total_pages": total_pages,
-                "has_next": current_page < total_pages,
-                "has_prev": current_page > 1
-            }
-        
-        return self.execute_query(
-            paginated_query,
-            err_msg="根據過濾條件獲取分頁資料時發生錯誤"
         )

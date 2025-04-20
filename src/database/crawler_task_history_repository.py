@@ -1,7 +1,7 @@
 from .base_repository import BaseRepository, SchemaType
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.crawler_task_history_schema import CrawlerTaskHistoryCreateSchema, CrawlerTaskHistoryUpdateSchema
-from typing import List, Optional, Dict, Any, Type, Literal, overload, Tuple
+from typing import List, Optional, Dict, Any, Type, Literal, overload, Tuple, Union
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import logging
@@ -124,95 +124,110 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
             logger.error(f"更新 CrawlerTaskHistory (ID={entity_id}) 時發生未預期錯誤: {e}", exc_info=True)
             raise DatabaseOperationError(f"更新 CrawlerTaskHistory (ID={entity_id}) 時發生未預期錯誤: {e}") from e
 
-    def find_by_task_id(self, task_id: int, limit: Optional[int] = None, offset: Optional[int] = None, sort_desc: bool = False) -> List['CrawlerTaskHistory']:
-        """根據任務ID查詢相關的歷史記錄，返回列表和總數"""
-        def query_logic():
-            # 先計算總數
-            # total_count_query = self.session.query(self.model_class).filter_by(task_id=task_id)
-            # total_count = total_count_query.count()
+    def find_by_task_id(self, task_id: int, 
+                        limit: Optional[int] = None, 
+                        offset: Optional[int] = None, 
+                        sort_desc: bool = False,
+                        is_preview: bool = False, 
+                        preview_fields: Optional[List[str]] = None
+                        ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
+        """根據任務ID查詢相關的歷史記錄，支援分頁、排序和預覽"""
+        filter_criteria = {"task_id": task_id}
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            offset=offset,
+            sort_by="start_time", # Default sort for this method
+            sort_desc=sort_desc,
+            is_preview=is_preview,
+            preview_fields=preview_fields
+        )
 
-            # 再獲取分頁後的列表
-            logger.debug(f"task_history_repo.find_by_task_id() before query ：Session ID: {id(self.session)}")
-            query = self.session.query(self.model_class).filter_by(
-                task_id=task_id
-            ).order_by(
-                self.model_class.start_time.desc() if sort_desc else self.model_class.start_time.asc()
-            )
+    def find_successful_histories(self, 
+                                  limit: Optional[int] = None, 
+                                  offset: Optional[int] = None,
+                                  is_preview: bool = False, 
+                                  preview_fields: Optional[List[str]] = None
+                                  ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
+        """查詢所有成功的任務歷史記錄，支援分頁和預覽"""
+        filter_criteria = {"success": True}
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            offset=offset,
+            is_preview=is_preview,
+            preview_fields=preview_fields
+            # Default sorting by created_at/id desc will be applied by find_by_filter
+        )
+
+    def find_failed_histories(self, 
+                              limit: Optional[int] = None, 
+                              offset: Optional[int] = None,
+                              is_preview: bool = False, 
+                              preview_fields: Optional[List[str]] = None
+                              ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
+        """查詢所有失敗的任務歷史記錄，支援分頁和預覽"""
+        filter_criteria = {"success": False}
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            offset=offset,
+            is_preview=is_preview,
+            preview_fields=preview_fields
+            # Default sorting by created_at/id desc will be applied by find_by_filter
+        )
+
+    def find_histories_with_articles(self, 
+                                     min_articles: int = 1, 
+                                     limit: Optional[int] = None, 
+                                     offset: Optional[int] = None,
+                                     is_preview: bool = False, 
+                                     preview_fields: Optional[List[str]] = None
+                                     ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
+        """查詢文章數量大於等於指定值的歷史記錄，支援分頁和預覽"""
+        if min_articles < 0:
+            raise ValueError("min_articles 不能為負數")
             
-            if offset is not None:
-                 query = query.offset(offset)
-            if limit is not None:
-                 query = query.limit(limit)
-                 
-            histories = query.all()
-            logger.debug(f"task_history_repo.find_by_task_id() after query ：Session ID: {id(self.session)}")
-            return histories # , total_count
+        filter_criteria = {"articles_count": {"$gte": min_articles}}
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            offset=offset,
+            is_preview=is_preview,
+            preview_fields=preview_fields
+            # Default sorting by created_at/id desc will be applied by find_by_filter
+        )
 
-        # 使用 execute_query 包裹查詢邏輯
-        logger.debug(f"task_history_repo.find_by_task_id() before execute_query ：Session ID: {id(self.session)}")
-        result = self.execute_query(
-            query_logic,
-            err_msg=f"查詢任務ID為{task_id}的歷史記錄時發生錯誤"
-        )
-        logger.debug(f"task_history_repo.find_by_task_id() after execute_query ：Session ID: {id(self.session)}")
-        # 如果 execute_query 返回 None (查詢失敗)，則返回空列表和 0
-        if result is None:
-             return []#, 0
-             
-        return result 
-    
-    def find_successful_histories(self, limit: Optional[int] = None, offset: Optional[int] = None) -> List['CrawlerTaskHistory']:
-        """查詢所有成功的任務歷史記錄 (支援分頁)"""
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(
-                success=True
-            ).offset(offset).limit(limit).all(),
-            err_msg="查詢成功任務歷史記錄時發生錯誤"
-        )
-    
-    def find_failed_histories(self, limit: Optional[int] = None, offset: Optional[int] = None) -> List['CrawlerTaskHistory']:
-        """查詢所有失敗的任務歷史記錄 (支援分頁)"""
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(
-                success=False
-            ).offset(offset).limit(limit).all(),
-            err_msg="查詢失敗任務歷史記錄時發生錯誤"
-        )
-    
-    def find_histories_with_articles(self, min_articles: int = 1, limit: Optional[int] = None, offset: Optional[int] = None) -> List['CrawlerTaskHistory']:
-        """查詢文章數量大於指定值的歷史記錄 (支援分頁)"""
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter(
-                self.model_class.articles_count >= min_articles
-            ).offset(offset).limit(limit).all(),
-            err_msg=f"查詢文章數量大於{min_articles}的歷史記錄時發生錯誤"
-        )
-    
     def find_histories_by_date_range(
         self, 
         start_date: Optional[datetime] = None, 
         end_date: Optional[datetime] = None,
         limit: Optional[int] = None, 
-        offset: Optional[int] = None
-    ) -> List['CrawlerTaskHistory']:
-        """根據日期範圍查詢歷史記錄 (支援分頁)"""
-        def query_builder():
-            query = self.session.query(self.model_class)
-            
-            if start_date:
-                query = query.filter(self.model_class.start_time >= start_date)
-            
-            if end_date:
-                query = query.filter(self.model_class.start_time <= end_date)
-            
-            return query.offset(offset).limit(limit).all()
-            
-        return self.execute_query(
-            query_builder,
-            err_msg="根據日期範圍查詢歷史記錄時發生錯誤"
+        offset: Optional[int] = None,
+        is_preview: bool = False, 
+        preview_fields: Optional[List[str]] = None
+    ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
+        """根據日期範圍查詢歷史記錄，支援分頁和預覽"""
+        filter_criteria: Dict[str, Any] = {}
+        if start_date:
+            filter_criteria["start_time"] = {"$gte": start_date}
+        if end_date:
+            # If start_date was also provided, merge the conditions
+            if "start_time" in filter_criteria:
+                filter_criteria["start_time"]["$lte"] = end_date
+            else:
+                filter_criteria["start_time"] = {"$lte": end_date}
+                
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            offset=offset,
+            is_preview=is_preview,
+            preview_fields=preview_fields
+            # Default sorting by created_at/id desc will be applied by find_by_filter
         )
-    
-    def get_total_articles_count(self, task_id: Optional[int] = None) -> int:
+
+    def count_total_articles(self, task_id: Optional[int] = None) -> int:
         """
         獲取總文章數量
         
@@ -220,55 +235,91 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         :return: 文章總數
         """
         def query_builder():
+            # Use query directly for aggregation
             query = self.session.query(self.model_class)
             
             if task_id is not None:
+                # Ensure task_id attribute exists
+                if not hasattr(self.model_class, 'task_id'):
+                    raise AttributeError(f"模型 {self.model_class.__name__} 沒有 'task_id' 屬性")
                 query = query.filter_by(task_id=task_id)
-            
-            return sum(int(history.articles_count or 0) for history in query.all())
-            
-        return self.execute_query(
+                
+            # Ensure articles_count attribute exists
+            if not hasattr(self.model_class, 'articles_count'):
+                raise AttributeError(f"模型 {self.model_class.__name__} 沒有 'articles_count' 屬性")
+
+            # Efficiently sum using SQL SUM function if possible, requires articles_count to be numeric
+            # from sqlalchemy import func, cast, Integer
+            # total_sum = self.session.query(func.sum(cast(self.model_class.articles_count, Integer))).select_from(query.subquery()).scalar()
+            # return total_sum or 0
+
+            # Fallback to Python sum if SQL SUM is complex or type issues arise
+            # Be mindful of performance with large datasets
+            histories = query.all() # This might load many objects
+            return sum(int(history.articles_count or 0) for history in histories)
+
+        # execute_query handles potential errors
+        result = self.execute_query(
             query_builder,
             err_msg="獲取總文章數量時發生錯誤"
         )
-    
-    def get_latest_history(self, task_id: int) -> Optional['CrawlerTaskHistory']:
+        # Ensure result is an int, return 0 if query failed or returned None
+        return int(result) if result is not None else 0
+
+    def get_latest_history(self, task_id: int,
+                           is_preview: bool = False, 
+                           preview_fields: Optional[List[str]] = None
+                           ) -> Optional[Union['CrawlerTaskHistory', Dict[str, Any]]]:
         """
-        獲取指定任務的最新歷史記錄
+        獲取指定任務的最新歷史記錄 (按 start_time 降序)，支援預覽
         
         :param task_id: 任務ID
-        :return: 最新的歷史記錄，如果不存在則返回 None
+        :param is_preview: 是否預覽模式
+        :param preview_fields: 預覽欄位
+        :return: 最新的歷史記錄實例或字典，如果不存在則返回 None
         """
-        return self.execute_query(
-            lambda: (
-                self.session.query(self.model_class)
-                .filter_by(task_id=task_id)
-                .order_by(self.model_class.start_time.desc())
-                .first()
-            ),
-            err_msg=f"獲取任務ID為{task_id}的最新歷史記錄時發生錯誤"
+        filter_criteria = {"task_id": task_id}
+        results = self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=1,
+            sort_by="start_time", 
+            sort_desc=True,
+            is_preview=is_preview,
+            preview_fields=preview_fields
         )
-    
-    def get_histories_older_than(self, days: int, limit: Optional[int] = None, offset: Optional[int] = None) -> List['CrawlerTaskHistory']:
+        return results[0] if results else None
+
+    def get_histories_older_than(self, days: int, 
+                                 limit: Optional[int] = None, 
+                                 offset: Optional[int] = None,
+                                 is_preview: bool = False, 
+                                 preview_fields: Optional[List[str]] = None
+                                 ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
         """
-        獲取超過指定天數的歷史記錄 (支援分頁)
+        獲取超過指定天數的歷史記錄，支援分頁和預覽
         
         :param days: 天數
-        :return: 超過指定天數的歷史記錄列表
+        :param limit: 限制數量
+        :param offset: 偏移量
+        :param is_preview: 是否預覽模式
+        :param preview_fields: 預覽欄位
+        :return: 超過指定天數的歷史記錄列表 (實例或字典)
         """
-        def query_builder():
-            threshold_date = datetime.now() - timedelta(days=days)
-            return (
-                self.session.query(self.model_class)
-                .filter(self.model_class.start_time < threshold_date)
-                .offset(offset).limit(limit).all()
-            )
+        if days < 0:
+            raise ValueError("天數不能為負數")
             
-        return self.execute_query(
-            query_builder,
-            err_msg=f"獲取超過{days}天的歷史記錄時發生錯誤"
+        threshold_date = datetime.now(timezone.utc) - timedelta(days=days)
+        filter_criteria = {"start_time": {"$lt": threshold_date}}
+        
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            offset=offset,
+            is_preview=is_preview,
+            preview_fields=preview_fields
+            # Default sorting by created_at/id desc will be applied by find_by_filter
         )
-    
+
     def update_history_status(
         self, 
         history_id: int, 
@@ -303,16 +354,18 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
             logger.error(f"更新歷史記錄狀態時發生錯誤: {e}")
             return False
 
-    def get_latest_by_task_id(self, task_id: int) -> Optional[CrawlerTaskHistory]:
-        """獲取指定任務的最新一筆歷史記錄"""
-        try:
-            result = self.session.query(self.model_class).\
-                filter(self.model_class.task_id == task_id).\
-                order_by(self.model_class.created_at.desc()).\
-                first()
-            return result
-        except Exception as e:
-            self.session.rollback()
-            error_msg = f"獲取最新歷史記錄失敗, task_id={task_id}: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            raise DatabaseOperationError(error_msg) from e 
+    def get_latest_by_task_id(self, task_id: int,
+                              is_preview: bool = False, 
+                              preview_fields: Optional[List[str]] = None
+                              ) -> Optional[Union['CrawlerTaskHistory', Dict[str, Any]]]:
+        """獲取指定任務的最新一筆歷史記錄 (按 created_at 降序)，支援預覽"""
+        filter_criteria = {"task_id": task_id}
+        results = self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=1,
+            sort_by="created_at", # Sort by creation time as per original logic
+            sort_desc=True,
+            is_preview=is_preview,
+            preview_fields=preview_fields
+        )
+        return results[0] if results else None 
