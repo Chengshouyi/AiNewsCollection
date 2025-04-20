@@ -1,7 +1,7 @@
 from .base_repository import BaseRepository, SchemaType
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawler_tasks_schema import CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema
-from typing import List, Optional, Type, Any, Dict, Literal, overload, Tuple
+from typing import List, Optional, Type, Any, Dict, Literal, overload, Tuple, Union, cast
 from datetime import datetime, timedelta, timezone
 from pydantic import BaseModel
 import logging
@@ -10,7 +10,7 @@ from src.utils.datetime_utils import enforce_utc_datetime_transform
 from src.utils.enum_utils import TaskStatus, ScrapePhase, ScrapeMode
 from src.utils.model_utils import validate_cron_expression
 from croniter import croniter
-from sqlalchemy import desc, asc, cast, JSON, Text, Boolean # 引入 JSON, Text, desc, asc, Boolean
+from sqlalchemy import desc, asc, cast, JSON, Text, Boolean, or_, func # 引入 JSON, Text, desc, asc, Boolean, or_, func
 from sqlalchemy.orm.attributes import flag_modified # 導入 flag_modified
 
 # 設定 logger
@@ -126,46 +126,110 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
         Returns:
             CrawlerTasks: 任務實體
         """
-        query = self.session.query(self.model_class).filter_by(id=task_id)
+        filter_criteria: Dict[str, Any] = {"id": task_id}
         if is_active is not None:
-            query = query.filter_by(is_active=is_active)
+            filter_criteria["is_active"] = is_active
 
-        return self.execute_query(
-            lambda: query.first(),
-            err_msg=f"查詢任務ID {task_id} (is_active={is_active}) 時發生錯誤"
+        # 使用 find_by_filter 查找，limit=1 (is_preview 預設為 False)
+        results = self.find_by_filter(filter_criteria=filter_criteria, limit=1)
+        if results:
+            item = results[0]
+            # 進行運行時類型檢查
+            if isinstance(item, self.model_class):
+                return item
+        return None
+
+    def find_tasks_by_crawler_id(self, crawler_id: int, is_active: bool = True,
+                                 limit: Optional[int] = None,
+                                 is_preview: bool = False,
+                                 preview_fields: Optional[List[str]] = None
+                                 ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
+        """根據爬蟲ID查詢相關的任務，支援分頁和預覽"""
+        filter_criteria: Dict[str, Any] = {"crawler_id": crawler_id, "is_active": is_active}
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            is_preview=is_preview,
+            preview_fields=preview_fields,
+            sort_by='created_at', # 可選：添加預設排序
+            sort_desc=True
         )
 
-    def find_tasks_by_crawler_id(self, crawler_id: int, is_active: bool = True) -> List[CrawlerTasks]:
-        """根據爬蟲ID查詢相關的任務"""
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(crawler_id=crawler_id, is_active=is_active).all(),
-            err_msg=f"查詢爬蟲ID {crawler_id} 的啟用任務時發生錯誤"
+    def find_auto_tasks(self, is_active: bool = True,
+                        limit: Optional[int] = None,
+                        is_preview: bool = False,
+                        preview_fields: Optional[List[str]] = None
+                        ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
+        """查詢所有自動執行的任務，支援分頁和預覽"""
+        filter_criteria: Dict[str, Any] = {"is_auto": True, "is_active": is_active}
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            is_preview=is_preview,
+            preview_fields=preview_fields,
+            sort_by='created_at', # 可選：添加預設排序
+            sort_desc=True
         )
 
-    def find_auto_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
-        """查詢所有自動執行的任務"""
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(
-                is_auto=True, is_active=is_active
-            ).all(),
-            err_msg="查詢自動執行任務時發生錯誤"
-        )
+    def find_ai_only_tasks(self, is_active: bool = True,
+                           limit: Optional[int] = None,
+                           is_preview: bool = False,
+                           preview_fields: Optional[List[str]] = None
+                           ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
+        """查詢 AI 專用任務，支援分頁和預覽"""
+        def query_builder():
+            # --- Preview Logic ---
+            query_entities = [self.model_class]
+            valid_preview_fields = []
+            local_is_preview = is_preview
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+                else:
+                    logger.warning(f"find_ai_only_tasks 預覽欄位無效: {preview_fields}，返回完整物件。")
+                    local_is_preview = False
+            # --- End Preview Logic ---
 
-    def find_ai_only_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
-        """查詢 AI 專用任務"""
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter(
+            query = self.session.query(*query_entities).filter(
                 self.model_class.is_active == is_active,
+                # 確保 task_args 不是 NULL 且 ai_only 鍵的值為 True
+                self.model_class.task_args.isnot(None),
                 self.model_class.task_args['ai_only'].as_boolean() == True
-            ).all(),
+            )
+
+            # Apply limit
+            if limit is not None:
+                query = query.limit(limit)
+
+            raw_results = query.all()
+
+            # --- Result Transformation ---
+            if local_is_preview and valid_preview_fields:
+                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                return raw_results
+            # --- End Result Transformation ---
+
+        return self.execute_query(
+            query_builder,
             err_msg="查詢 AI 專用任務時發生錯誤"
         )
 
-    def find_scheduled_tasks(self, is_active: bool = True) -> List[CrawlerTasks]:
-        """查詢已排程的任務"""
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(is_active=is_active, is_scheduled=True).all(),
-            err_msg="查詢已排程的任務時發生錯誤"
+    def find_scheduled_tasks(self, is_active: bool = True,
+                             limit: Optional[int] = None,
+                             is_preview: bool = False,
+                             preview_fields: Optional[List[str]] = None
+                             ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
+        """查詢已排程的任務，支援分頁和預覽"""
+        filter_criteria: Dict[str, Any] = {"is_active": is_active, "is_scheduled": True}
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            is_preview=is_preview,
+            preview_fields=preview_fields,
+            sort_by='created_at', # 可選：添加預設排序
+            sort_desc=True
         )
 
     def toggle_scheduled_status(self, task_id: int) -> Optional[CrawlerTasks]:
@@ -308,38 +372,82 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
         task.updated_at = datetime.now(timezone.utc)
         return task # 返回修改後的物件
 
-    def find_tasks_with_notes(self) -> List[CrawlerTasks]:
-        """查詢所有有備註的任務"""
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter(
+    def find_tasks_with_notes(self, limit: Optional[int] = None,
+                              is_preview: bool = False,
+                              preview_fields: Optional[List[str]] = None
+                              ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
+        """查詢所有有備註的任務，支援分頁和預覽"""
+        def query_builder():
+             # --- Preview Logic ---
+            query_entities = [self.model_class]
+            valid_preview_fields = []
+            local_is_preview = is_preview
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+                else:
+                    logger.warning(f"find_tasks_with_notes 預覽欄位無效: {preview_fields}，返回完整物件。")
+                    local_is_preview = False
+            # --- End Preview Logic ---
+
+            query = self.session.query(*query_entities).filter(
                 self.model_class.notes.isnot(None),
                 self.model_class.notes != '' # 同時排除空字串
-            ).all(),
+            )
+
+            # Apply limit
+            if limit is not None:
+                query = query.limit(limit)
+
+            raw_results = query.all()
+
+            # --- Result Transformation ---
+            if local_is_preview and valid_preview_fields:
+                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                return raw_results
+            # --- End Result Transformation ---
+
+        return self.execute_query(
+            query_builder,
             err_msg="查詢有備註的任務時發生錯誤"
         )
 
-    def find_tasks_by_multiple_crawlers(self, crawler_ids: List[int]) -> List[CrawlerTasks]:
-        """根據多個爬蟲ID查詢任務"""
+    def find_tasks_by_multiple_crawlers(self, crawler_ids: List[int],
+                                        limit: Optional[int] = None,
+                                        is_preview: bool = False,
+                                        preview_fields: Optional[List[str]] = None
+                                        ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
+        """根據多個爬蟲ID查詢任務，支援分頁和預覽"""
         if not crawler_ids:
             return []
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter(
-                self.model_class.crawler_id.in_(crawler_ids)
-            ).all(),
-            err_msg="查詢多個爬蟲ID的任務時發生錯誤"
+        filter_criteria: Dict[str, Any] = {"crawler_id": {"$in": crawler_ids}}
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            is_preview=is_preview,
+            preview_fields=preview_fields,
+            sort_by='created_at', # 可選：添加預設排序
+            sort_desc=True
         )
 
     def count_tasks_by_crawler(self, crawler_id: int) -> int:
         """獲取特定爬蟲的任務數量"""
+        # Count 不涉及預覽或限制，保持原樣
         return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(
+            lambda: self.session.query(func.count(self.model_class.id)).filter_by( # 使用 func.count
                 crawler_id=crawler_id
-            ).count(),
+            ).scalar() or 0, # 使用 scalar() 並處理 None
             err_msg=f"獲取爬蟲ID {crawler_id} 的任務數量時發生錯誤"
         )
 
-    def find_tasks_by_cron_expression(self, cron_expression: str) -> List[CrawlerTasks]:
-        """根據 cron 表達式查詢任務 (只查詢 is_auto=True 的)"""
+    def find_tasks_by_cron_expression(self, cron_expression: str,
+                                      limit: Optional[int] = None,
+                                      is_preview: bool = False,
+                                      preview_fields: Optional[List[str]] = None
+                                      ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
+        """根據 cron 表達式查詢任務 (只查詢 is_auto=True 的)，支援分頁和預覽"""
         try:
             # 僅驗證 cron 表達式格式
             croniter(cron_expression)
@@ -348,16 +456,25 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             logger.error(error_msg)
             raise ValidationError(error_msg)
 
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter_by(
-                cron_expression=cron_expression,
-                is_auto=True # 只查詢自動執行的任務
-            ).all(),
-            err_msg=f"查詢 cron 表達式 {cron_expression} 的自動任務時發生錯誤"
+        filter_criteria: Dict[str, Any] = {
+            "cron_expression": cron_expression,
+            "is_auto": True # 只查詢自動執行的任務
+        }
+        return self.find_by_filter(
+            filter_criteria=filter_criteria,
+            limit=limit,
+            is_preview=is_preview,
+            preview_fields=preview_fields,
+            sort_by='created_at', # 可選：添加預設排序
+            sort_desc=True
         )
 
-    def find_due_tasks(self, cron_expression: str) -> List[CrawlerTasks]:
-        """查詢需要執行的任務（根據 cron 表達式和上次執行時間, 只查 is_auto=True）"""
+    def find_due_tasks(self, cron_expression: str,
+                       limit: Optional[int] = None,
+                       is_preview: bool = False,
+                       preview_fields: Optional[List[str]] = None
+                       ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
+        """查詢需要執行的任務（根據 cron 表達式和上次執行時間, 只查 is_auto=True），支援分頁和預覽"""
         try:
             validate_cron_expression('cron_expression', max_length=255, min_length=5, required=True)(cron_expression)
         except ValueError:
@@ -365,81 +482,155 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             logger.error(error_msg)
             raise ValidationError(error_msg)
 
-        def get_due_tasks():
-            # 只查詢 is_auto=True 且 is_active=True 的任務 (通常排程器只關心活動的自動任務)
-            base_query = self.session.query(self.model_class).filter(
+        def get_due_tasks_logic():
+            # --- Preview Logic ---
+            query_entities = [self.model_class]
+            valid_preview_fields = []
+            local_is_preview = is_preview
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+                else:
+                    logger.warning(f"find_due_tasks 預覽欄位無效: {preview_fields}，返回完整物件。")
+                    local_is_preview = False
+            # --- End Preview Logic ---
+
+            # 只查詢 is_auto=True 且 is_active=True 的任務
+            base_query = self.session.query(*query_entities).filter(
                 self.model_class.cron_expression == cron_expression,
                 self.model_class.is_auto == True,
-                self.model_class.is_active == True # 新增 active 條件
+                self.model_class.is_active == True
             )
-            all_relevant_tasks = base_query.all()
+            # 注意：預覽模式下，我們不能直接使用 .all() 然後在 Python 中過濾，
+            # 因為 limit 需要在資料庫層面應用。
+            # 因此，我們需要將 croniter 邏輯轉換為 SQLAlchemy 條件，或者先獲取 ID 再查詢。
+            # 轉換 croniter 邏輯為 SQL 非常複雜。一個務實的方法是：
+            # 1. 獲取所有符合基本條件 (cron_expression, is_auto, is_active) 的任務 ID 和 last_run_at。
+            # 2. 在 Python 中使用 croniter 篩選出需要執行的任務 ID。
+            # 3. 使用這些 ID 再次查詢資料庫，應用 limit 和 preview。
 
-            # 使用 UTC 時間
+            # 步驟 1: 獲取候選任務的 ID 和 last_run_at
+            candidate_tasks_info = self.session.query(
+                self.model_class.id, self.model_class.last_run_at
+            ).filter(
+                self.model_class.cron_expression == cron_expression,
+                self.model_class.is_auto == True,
+                self.model_class.is_active == True
+            ).all()
+
+            # 步驟 2: 在 Python 中篩選
             now = datetime.now(timezone.utc)
-            result_tasks = []
-            logger.debug(f"[find_due_tasks] Current UTC time (now): {now.isoformat()}") # Log current time
+            due_task_ids = []
+            logger.debug(f"[find_due_tasks] Current UTC time (now): {now.isoformat()}")
 
-            for task in all_relevant_tasks:
-                # 從未執行的任務直接加入
-                if task.last_run_at is None:
-                    logger.debug(f"[find_due_tasks] Task ID {task.id} ({task.task_name}) added (never run).")
-                    result_tasks.append(task)
+            for task_id, last_run_at in candidate_tasks_info:
+                if last_run_at is None:
+                    logger.debug(f"[find_due_tasks] Task ID {task_id} added (never run).")
+                    due_task_ids.append(task_id)
                     continue
 
-                # 確保 last_run_at 也是帶時區的
-                last_run = task.last_run_at
+                last_run = last_run_at
                 if last_run.tzinfo is None:
-                    # 如果 last_run_at 沒有時區信息，因為寫是 UTC
                     last_run = enforce_utc_datetime_transform(last_run)
-                    logger.debug(f"[find_due_tasks] Task ID {task.id}: Forced last_run_at to UTC: {last_run.isoformat()}")
+                    logger.debug(f"[find_due_tasks] Task ID {task_id}: Forced last_run_at to UTC: {last_run.isoformat()}")
 
-                # 對於所有 cron 表達式，使用 croniter 計算下次執行時間
                 try:
                     cron_now = croniter(cron_expression, now)
                     previous_scheduled_run = cron_now.get_prev(datetime)
-                    # 確保 previous_scheduled_run 也有時區
                     if previous_scheduled_run.tzinfo is None:
                         previous_scheduled_run = enforce_utc_datetime_transform(previous_scheduled_run)
-                        logger.debug(f"[find_due_tasks] Task ID {task.id}: Forced previous_scheduled_run to UTC: {previous_scheduled_run.isoformat()}")
+                        logger.debug(f"[find_due_tasks] Task ID {task_id}: Forced previous_scheduled_run to UTC: {previous_scheduled_run.isoformat()}")
 
-                    # Log the comparison values
-                    logger.debug(f"[find_due_tasks] Task ID {task.id} ({task.task_name}): last_run={last_run.isoformat()}, previous_scheduled_run={previous_scheduled_run.isoformat()}, now={now.isoformat()}")
+                    logger.debug(f"[find_due_tasks] Task ID {task_id}: last_run={last_run.isoformat()}, previous_scheduled_run={previous_scheduled_run.isoformat()}, now={now.isoformat()}")
 
-                    # If the last run occurred *before* the most recent scheduled time slot,
-                    # it means the task is pending (it missed that slot or hasn't run since).
                     if last_run < previous_scheduled_run:
-                        logger.debug(f"[find_due_tasks] Task ID {task.id} added. Condition met: last_run ({last_run.isoformat()}) < previous_scheduled_run ({previous_scheduled_run.isoformat()})")
-                        result_tasks.append(task)
+                        logger.debug(f"[find_due_tasks] Task ID {task_id} added. Condition met.")
+                        due_task_ids.append(task_id)
                     else:
-                        # If the last run was at or after the most recent scheduled time, it's not pending for that slot.
-                        logger.debug(f"[find_due_tasks] Task ID {task.id} skipped. Condition not met: last_run ({last_run.isoformat()}) >= previous_scheduled_run ({previous_scheduled_run.isoformat()})")
+                        logger.debug(f"[find_due_tasks] Task ID {task_id} skipped. Condition not met.")
                         continue
 
                 except Exception as e:
-                    # 防止 croniter 計算出錯導致整個查詢失敗
-                    logger.error(f"計算任務 {task.id} 的下次執行時間時出錯 ({cron_expression}, {last_run}): {e}", exc_info=True)
+                    logger.error(f"計算任務 {task_id} 的下次執行時間時出錯 ({cron_expression}, {last_run}): {e}", exc_info=True)
                     continue
 
-            return result_tasks
+            # 如果沒有到期的任務，直接返回空列表
+            if not due_task_ids:
+                return []
+
+            # 步驟 3: 使用 ID 查詢，應用 limit 和 preview
+            final_query = self.session.query(*query_entities).filter(
+                self.model_class.id.in_(due_task_ids)
+            )
+
+            # Apply limit
+            if limit is not None:
+                final_query = final_query.limit(limit)
+
+            # 添加排序（可選，例如按 ID 或其他欄位）
+            final_query = final_query.order_by(self.model_class.id) # 或者其他排序
+
+            raw_results = final_query.all()
+
+            # --- Result Transformation ---
+            if local_is_preview and valid_preview_fields:
+                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                return raw_results
+            # --- End Result Transformation ---
 
         return self.execute_query(
-            get_due_tasks,
+            get_due_tasks_logic,
             err_msg=f"查詢待執行的 cron 表達式 {cron_expression} 的任務時發生錯誤"
         )
 
-    def find_failed_tasks(self, days: int = 1) -> List[CrawlerTasks]:
-        """獲取最近失敗的任務 (只查 is_active=True 的任務)"""
+    def find_failed_tasks(self, days: int = 1,
+                          limit: Optional[int] = None,
+                          is_preview: bool = False,
+                          preview_fields: Optional[List[str]] = None
+                          ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
+        """獲取最近失敗的任務 (只查 is_active=True 的任務)，支援分頁和預覽"""
         if days < 0:
             days = 0 # 防止負數天數
         time_threshold = datetime.now(timezone.utc) - timedelta(days=days)
 
-        return self.execute_query(
-            lambda: self.session.query(self.model_class).filter(
+        def query_builder():
+            # --- Preview Logic ---
+            query_entities = [self.model_class]
+            valid_preview_fields = []
+            local_is_preview = is_preview
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+                else:
+                    logger.warning(f"find_failed_tasks 預覽欄位無效: {preview_fields}，返回完整物件。")
+                    local_is_preview = False
+            # --- End Preview Logic ---
+
+            query = self.session.query(*query_entities).filter(
                 self.model_class.is_active == True, # 只關心活動任務的失敗狀態
                 self.model_class.last_run_success == False,
                 self.model_class.last_run_at.isnot(None), # 確保有執行過
                 self.model_class.last_run_at >= time_threshold
-            ).order_by(self.model_class.last_run_at.desc()).all(),
+            ).order_by(self.model_class.last_run_at.desc()) # 按失敗時間降序
+
+            # Apply limit
+            if limit is not None:
+                query = query.limit(limit)
+
+            raw_results = query.all()
+
+            # --- Result Transformation ---
+            if local_is_preview and valid_preview_fields:
+                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                return raw_results
+            # --- End Result Transformation ---
+
+        return self.execute_query(
+            query_builder,
             err_msg=f"查詢最近 {days} 天失敗的活動任務時發生錯誤"
         )
 
@@ -459,11 +650,13 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             # 可以選擇返回 UTC 或拋出錯誤
             return utc_time # 返回原始 UTC 時間
 
-    def advanced_search(self, **filters) -> Optional[Dict[str, Any]]:
+    def advanced_search(self, is_preview: bool = False, preview_fields: Optional[List[str]] = None, **filters) -> Optional[Dict[str, Any]]:
         """
-        進階搜尋任務
+        進階搜尋任務 (已更新以支援預覽)
 
         Args:
+            is_preview: 是否啟用預覽模式
+            preview_fields: 預覽模式下要返回的欄位列表
             **filters: 包含過濾、排序和分頁參數的字典
             可用過濾條件：
             - task_name: 任務名稱 (模糊搜尋)
@@ -488,32 +681,44 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
         Returns:
             包含 'tasks' 列表和 'total_count' 的字典，或在錯誤時返回 None。
+            如果 is_preview=True，'tasks' 將是字典列表，否則為模型實例列表。
         """
         def build_and_run_query():
-            query = self.session.query(self.model_class)
+            # --- Preview Logic ---
+            query_entities = [self.model_class]
+            valid_preview_fields = []
+            local_is_preview = is_preview # 使用本地變數
+            if local_is_preview and preview_fields:
+                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
+                if valid_preview_fields:
+                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+                else:
+                    logger.warning(f"advanced_search 預覽欄位無效: {preview_fields}，返回完整物件。")
+                    local_is_preview = False # 重置預覽標誌
+            # --- End Preview Logic ---
 
-            # --- 過濾 ---
-            # task_args_filter_parts = [] # 移除列表
+            # 使用 query_entities 初始化查詢
+            query = self.session.query(*query_entities)
 
+            # --- 過濾 (邏輯不變，但基於 self.model_class 的屬性) ---
             if 'task_name' in filters and filters['task_name']:
                 query = query.filter(self.model_class.task_name.like(f"%{filters['task_name']}%"))
             if 'crawler_id' in filters and filters['crawler_id']:
-                query = query.filter_by(crawler_id=filters['crawler_id'])
+                query = query.filter(self.model_class.crawler_id == filters['crawler_id']) # 使用 == 而非 filter_by
             if 'is_auto' in filters and filters['is_auto'] is not None:
-                query = query.filter_by(is_auto=filters['is_auto'])
+                query = query.filter(self.model_class.is_auto == filters['is_auto'])
             if 'is_active' in filters and filters['is_active'] is not None:
-                query = query.filter_by(is_active=filters['is_active'])
+                query = query.filter(self.model_class.is_active == filters['is_active'])
             if 'last_run_success' in filters and filters['last_run_success'] is not None:
-                query = query.filter_by(last_run_success=filters['last_run_success'])
+                query = query.filter(self.model_class.last_run_success == filters['last_run_success'])
             if 'cron_expression' in filters and filters['cron_expression']:
-                query = query.filter_by(cron_expression=filters['cron_expression'])
+                query = query.filter(self.model_class.cron_expression == filters['cron_expression'])
 
             if 'date_range' in filters and filters['date_range']:
                 start_date, end_date = filters['date_range']
                 if start_date:
                     query = query.filter(self.model_class.last_run_at >= enforce_utc_datetime_transform(start_date))
                 if end_date:
-                    # 結束日期通常包含當天，所以查詢到 end_date 的下一天 00:00
                     end_date_exclusive = enforce_utc_datetime_transform(end_date) + timedelta(days=1)
                     query = query.filter(self.model_class.last_run_at < end_date_exclusive)
 
@@ -525,11 +730,11 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
             if 'task_status' in filters and filters['task_status']:
                 status_value = filters['task_status'].value if isinstance(filters['task_status'], TaskStatus) else filters['task_status']
-                query = query.filter_by(task_status=status_value)
+                query = query.filter(self.model_class.task_status == status_value)
 
             if 'scrape_phase' in filters and filters['scrape_phase']:
                 phase_value = filters['scrape_phase'].value if isinstance(filters['scrape_phase'], ScrapePhase) else filters['scrape_phase']
-                query = query.filter_by(scrape_phase=phase_value)
+                query = query.filter(self.model_class.scrape_phase == phase_value)
 
             if 'retry_count' in filters:
                 retry_filter = filters['retry_count']
@@ -539,40 +744,98 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
                     if 'max' in retry_filter:
                         query = query.filter(self.model_class.retry_count <= retry_filter['max'])
                 elif isinstance(retry_filter, int):
-                    query = query.filter_by(retry_count=retry_filter)
+                    query = query.filter(self.model_class.retry_count == retry_filter)
+
 
             # --- 過濾 task_args (JSON) ---
             if 'ai_only' in filters and filters['ai_only'] is not None:
-                # 直接應用過濾
-                query = query.filter(self.model_class.task_args['ai_only'].as_boolean() == filters['ai_only'])
+                 query = query.filter(self.model_class.task_args.isnot(None)) # 確保 task_args 非 NULL
+                 query = query.filter(self.model_class.task_args['ai_only'].as_boolean() == filters['ai_only'])
 
             if 'max_pages' in filters and filters['max_pages'] is not None:
-                # 直接應用過濾
-                query = query.filter(self.model_class.task_args['max_pages'].as_integer() == filters['max_pages'])
+                 query = query.filter(self.model_class.task_args.isnot(None))
+                 query = query.filter(self.model_class.task_args['max_pages'].as_integer() == filters['max_pages'])
 
             if 'save_to_csv' in filters and filters['save_to_csv'] is not None:
-                # 直接應用過濾
-                query = query.filter(self.model_class.task_args['save_to_csv'].as_boolean() == filters['save_to_csv'])
+                 query = query.filter(self.model_class.task_args.isnot(None))
+                 query = query.filter(self.model_class.task_args['save_to_csv'].as_boolean() == filters['save_to_csv'])
 
             if 'scrape_mode' in filters and filters['scrape_mode']:
                 mode_value = filters['scrape_mode'].value if isinstance(filters['scrape_mode'], ScrapeMode) else filters['scrape_mode']
-                # 直接應用過濾
+                query = query.filter(self.model_class.task_args.isnot(None))
                 query = query.filter(self.model_class.task_args['scrape_mode'].as_string() == mode_value)
 
             # --- 計算總數 (在分頁前) ---
-            total_count = query.count()
+            # 創建一個僅用於計數的查詢，應用相同的過濾器
+            count_query = self.session.query(func.count(self.model_class.id))
+            # 重新應用所有過濾條件到 count_query
+            if 'task_name' in filters and filters['task_name']:
+                count_query = count_query.filter(self.model_class.task_name.like(f"%{filters['task_name']}%"))
+            # ... (複製所有過濾條件到 count_query) ...
+            if 'crawler_id' in filters and filters['crawler_id']:
+                count_query = count_query.filter(self.model_class.crawler_id == filters['crawler_id'])
+            if 'is_auto' in filters and filters['is_auto'] is not None:
+                count_query = count_query.filter(self.model_class.is_auto == filters['is_auto'])
+            if 'is_active' in filters and filters['is_active'] is not None:
+                count_query = count_query.filter(self.model_class.is_active == filters['is_active'])
+            if 'last_run_success' in filters and filters['last_run_success'] is not None:
+                count_query = count_query.filter(self.model_class.last_run_success == filters['last_run_success'])
+            if 'cron_expression' in filters and filters['cron_expression']:
+                count_query = count_query.filter(self.model_class.cron_expression == filters['cron_expression'])
+            if 'date_range' in filters and filters['date_range']:
+                start_date, end_date = filters['date_range']
+                if start_date:
+                    count_query = count_query.filter(self.model_class.last_run_at >= enforce_utc_datetime_transform(start_date))
+                if end_date:
+                    end_date_exclusive = enforce_utc_datetime_transform(end_date) + timedelta(days=1)
+                    count_query = count_query.filter(self.model_class.last_run_at < end_date_exclusive)
+            if 'has_notes' in filters and filters['has_notes'] is not None:
+                if filters['has_notes'] is True:
+                    count_query = count_query.filter(self.model_class.notes.isnot(None) & (self.model_class.notes != ''))
+                else:
+                    count_query = count_query.filter((self.model_class.notes == None) | (self.model_class.notes == ''))
+            if 'task_status' in filters and filters['task_status']:
+                status_value = filters['task_status'].value if isinstance(filters['task_status'], TaskStatus) else filters['task_status']
+                count_query = count_query.filter(self.model_class.task_status == status_value)
+            if 'scrape_phase' in filters and filters['scrape_phase']:
+                phase_value = filters['scrape_phase'].value if isinstance(filters['scrape_phase'], ScrapePhase) else filters['scrape_phase']
+                count_query = count_query.filter(self.model_class.scrape_phase == phase_value)
+            if 'retry_count' in filters:
+                 retry_filter = filters['retry_count']
+                 if isinstance(retry_filter, dict):
+                     if 'min' in retry_filter: count_query = count_query.filter(self.model_class.retry_count >= retry_filter['min'])
+                     if 'max' in retry_filter: count_query = count_query.filter(self.model_class.retry_count <= retry_filter['max'])
+                 elif isinstance(retry_filter, int): count_query = count_query.filter(self.model_class.retry_count == retry_filter)
+            # --- task_args 過濾 for count_query ---
+            if 'ai_only' in filters and filters['ai_only'] is not None:
+                 count_query = count_query.filter(self.model_class.task_args.isnot(None))
+                 count_query = count_query.filter(self.model_class.task_args['ai_only'].as_boolean() == filters['ai_only'])
+            if 'max_pages' in filters and filters['max_pages'] is not None:
+                 count_query = count_query.filter(self.model_class.task_args.isnot(None))
+                 count_query = count_query.filter(self.model_class.task_args['max_pages'].as_integer() == filters['max_pages'])
+            if 'save_to_csv' in filters and filters['save_to_csv'] is not None:
+                 count_query = count_query.filter(self.model_class.task_args.isnot(None))
+                 count_query = count_query.filter(self.model_class.task_args['save_to_csv'].as_boolean() == filters['save_to_csv'])
+            if 'scrape_mode' in filters and filters['scrape_mode']:
+                mode_value = filters['scrape_mode'].value if isinstance(filters['scrape_mode'], ScrapeMode) else filters['scrape_mode']
+                count_query = count_query.filter(self.model_class.task_args.isnot(None))
+                count_query = count_query.filter(self.model_class.task_args['scrape_mode'].as_string() == mode_value)
 
-            # --- 排序 ---
+            total_count = count_query.scalar() or 0
+
+            # --- 排序 (應用到原始 query) ---
             sort_by = filters.get('sort_by', 'created_at') # 預設按創建時間
             sort_desc = filters.get('sort_desc', True) # 預設降冪
+            # 排序欄位必須存在於模型中
             if hasattr(self.model_class, sort_by):
                 order_column = getattr(self.model_class, sort_by)
+                # 如果是預覽模式且排序欄位不在預覽欄位中，仍嘗試排序
                 query = query.order_by(desc(order_column) if sort_desc else asc(order_column))
             else:
                 logger.warning(f"無效的排序欄位 '{sort_by}'，將使用預設排序 (created_at desc)。")
                 query = query.order_by(desc(self.model_class.created_at))
 
-            # --- 分頁 ---
+            # --- 分頁 (應用到原始 query) ---
             limit = filters.get('limit')
             offset = filters.get('offset')
             if offset is not None:
@@ -580,11 +843,21 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             if limit is not None:
                 query = query.limit(limit)
 
-            # --- 執行查詢 ---
-            tasks = query.all()
-            
+            # --- 執行查詢 (獲取數據) ---
+            raw_results = query.all()
+
+            # --- 結果轉換 (如果為預覽模式) ---
+            tasks = []
+            if local_is_preview and valid_preview_fields:
+                # 如果使用了 with_entities，結果是元組列表
+                tasks = [dict(zip(valid_preview_fields, row)) for row in raw_results]
+            else:
+                # 否則結果是模型實例列表
+                tasks = raw_results
+            # --- 結果轉換結束 ---
+
             return {'tasks': tasks, 'total_count': total_count}
-        
+
         return self.execute_query(
             build_and_run_query,
             err_msg="進階搜尋任務時發生錯誤",

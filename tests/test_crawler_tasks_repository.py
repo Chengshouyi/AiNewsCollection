@@ -86,42 +86,42 @@ def sample_tasks(session, clean_db, sample_crawler):
     two_days_ago = now - timedelta(days=2)
 
     tasks_data = [
-        {
+        { # ID: 1
             "task_name": "自動AI任務(活動)", "crawler_id": sample_crawler.id, "is_auto": True,
             "is_scheduled": True, "is_active": True, "cron_expression": "0 * * * *",
             "task_args": {**TASK_ARGS_DEFAULT, "ai_only": True, "max_pages": 10, "save_to_csv": False, "scrape_mode": ScrapeMode.FULL_SCRAPE.value},
             "notes": "自動AI任務", "scrape_phase": ScrapePhase.COMPLETED, "task_status": TaskStatus.COMPLETED,
             "last_run_at": yesterday, "last_run_success": True, "retry_count": 0, "max_retries": 3
         },
-        {
+        { # ID: 2
             "task_name": "自動一般任務(活動)", "crawler_id": sample_crawler.id, "is_auto": True,
             "is_scheduled": True, "is_active": True, "cron_expression": "30 * * * *",
             "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_pages": 5, "save_to_csv": True, "scrape_mode": ScrapeMode.LINKS_ONLY.value},
             "notes": "有Notes的失敗任務", "scrape_phase": ScrapePhase.FAILED, "task_status": TaskStatus.FAILED,
             "last_run_at": now - timedelta(hours=1), "last_run_success": False, "retry_count": 1, "max_retries": 3
         },
-        {
+        { # ID: 3
             "task_name": "手動AI任務(活動)", "crawler_id": sample_crawler.id, "is_auto": False,
             "is_scheduled": False, "is_active": True, "cron_expression": None,
             "task_args": {**TASK_ARGS_DEFAULT, "ai_only": True, "max_pages": 100, "save_to_csv": False, "scrape_mode": ScrapeMode.CONTENT_ONLY.value},
             "notes": "手動AI任務", "scrape_phase": ScrapePhase.INIT, "task_status": TaskStatus.INIT,
             "last_run_at": None, "last_run_success": None, "retry_count": 0, "max_retries": 0 # 不可重試
         },
-        {
+        { # ID: 4
             "task_name": "自動一般任務(非活動)", "crawler_id": sample_crawler.id, "is_auto": True,
             "is_scheduled": True, "is_active": False, "cron_expression": "0 0 * * *",
             "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_pages": 20, "save_to_csv": False, "scrape_mode": ScrapeMode.FULL_SCRAPE.value},
             "notes": "非活動任務", "scrape_phase": ScrapePhase.COMPLETED, "task_status": TaskStatus.COMPLETED,
             "last_run_at": two_days_ago, "last_run_success": True, "retry_count": 3, "max_retries": 5
         },
-        {
+        { # ID: 5
             "task_name": "手動AI任務(非活動)", "crawler_id": sample_crawler.id, "is_auto": False,
             "is_scheduled": False, "is_active": False, "cron_expression": None,
             "task_args": {**TASK_ARGS_DEFAULT, "ai_only": True, "max_pages": 50, "save_to_csv": True, "scrape_mode": ScrapeMode.LINKS_ONLY.value},
             "notes": None, "scrape_phase": ScrapePhase.INIT, "task_status": TaskStatus.INIT,
             "last_run_at": None, "last_run_success": None, "retry_count": 0, "max_retries": 3
         },
-         {
+         { # ID: 6
             "task_name": "運行中任務(活動)", "crawler_id": sample_crawler.id, "is_auto": True,
             "is_scheduled": True, "is_active": True, "cron_expression": "*/5 * * * *",
             "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False, "max_pages": 15, "save_to_csv": False, "scrape_mode": ScrapeMode.FULL_SCRAPE.value},
@@ -146,7 +146,7 @@ class TestCrawlerTasksRepository:
     """CrawlerTasksRepository 測試類"""
     
     def test_find_by_crawler_id(self, crawler_tasks_repo, sample_tasks, sample_crawler):
-        """測試根據爬蟲ID查詢任務 (包含is_active)"""
+        """測試根據爬蟲ID查詢任務 (包含is_active, limit, is_preview)"""
         crawler_id = sample_crawler.id
         active_count = sum(1 for t in sample_tasks if t.crawler_id == crawler_id and t.is_active)
         inactive_count = sum(1 for t in sample_tasks if t.crawler_id == crawler_id and not t.is_active)
@@ -155,72 +155,123 @@ class TestCrawlerTasksRepository:
         # 預設 is_active=True
         tasks_active = crawler_tasks_repo.find_tasks_by_crawler_id(crawler_id)
         assert len(tasks_active) == active_count
-        assert all(task.crawler_id == crawler_id and task.is_active for task in tasks_active)
+        assert all(isinstance(task, CrawlerTasks) and task.crawler_id == crawler_id and task.is_active for task in tasks_active)
 
         # is_active=False
         tasks_inactive = crawler_tasks_repo.find_tasks_by_crawler_id(crawler_id, is_active=False)
         assert len(tasks_inactive) == inactive_count
-        assert all(task.crawler_id == crawler_id and not task.is_active for task in tasks_inactive)
+        assert all(isinstance(task, CrawlerTasks) and task.crawler_id == crawler_id and not task.is_active for task in tasks_inactive)
 
-        # is_active=None (BaseRepository 方法) - 需確認 BaseRepository 是否支援 is_active=None
-        # BaseRepository 的 get_all 可能沒有 is_active 過濾，find_by 可能有，這裡假設 find_tasks_by_crawler_id 不直接支援 None
-        # 如果需要測試 is_active=None，可能需要直接調用更底層的方法或修改 repository
+        # Test limit
+        tasks_limit = crawler_tasks_repo.find_tasks_by_crawler_id(crawler_id, limit=2)
+        assert len(tasks_limit) == 2
+
+        # Test is_preview
+        preview_fields = ["id", "task_name"]
+        tasks_preview = crawler_tasks_repo.find_tasks_by_crawler_id(crawler_id, is_preview=True, preview_fields=preview_fields, limit=1)
+        assert len(tasks_preview) == 1
+        assert isinstance(tasks_preview[0], dict)
+        assert list(tasks_preview[0].keys()) == preview_fields
+        assert tasks_preview[0]['id'] is not None
+        assert tasks_preview[0]['task_name'] is not None
+
+        # Test is_preview with invalid fields (should return full objects)
+        tasks_preview_invalid = crawler_tasks_repo.find_tasks_by_crawler_id(crawler_id, is_preview=True, preview_fields=["invalid_field"], limit=1)
+        assert len(tasks_preview_invalid) == 1
+        assert isinstance(tasks_preview_invalid[0], CrawlerTasks) # Returns full object
 
     def test_find_auto_tasks(self, crawler_tasks_repo, sample_tasks):
-        """測試查詢自動執行的任務 (包含is_active)"""
+        """測試查詢自動執行的任務 (包含is_active, limit, is_preview)"""
         active_auto_count = sum(1 for t in sample_tasks if t.is_auto and t.is_active)
         inactive_auto_count = sum(1 for t in sample_tasks if t.is_auto and not t.is_active)
 
         # 預設 is_active=True
         auto_tasks_active = crawler_tasks_repo.find_auto_tasks()
         assert len(auto_tasks_active) == active_auto_count
-        assert all(task.is_auto and task.is_active for task in auto_tasks_active)
+        assert all(isinstance(task, CrawlerTasks) and task.is_auto and task.is_active for task in auto_tasks_active)
 
         # is_active=False
         auto_tasks_inactive = crawler_tasks_repo.find_auto_tasks(is_active=False)
         assert len(auto_tasks_inactive) == inactive_auto_count
-        assert all(task.is_auto and not task.is_active for task in auto_tasks_inactive)
+        assert all(isinstance(task, CrawlerTasks) and task.is_auto and not task.is_active for task in auto_tasks_inactive)
+
+        # Test limit
+        auto_tasks_limit = crawler_tasks_repo.find_auto_tasks(limit=1)
+        assert len(auto_tasks_limit) == 1
+
+        # Test is_preview
+        preview_fields = ["id", "is_auto", "is_active"]
+        auto_tasks_preview = crawler_tasks_repo.find_auto_tasks(is_preview=True, preview_fields=preview_fields, limit=1)
+        assert len(auto_tasks_preview) == 1
+        assert isinstance(auto_tasks_preview[0], dict)
+        assert list(auto_tasks_preview[0].keys()) == preview_fields
+        assert auto_tasks_preview[0]['is_auto'] is True
+        assert auto_tasks_preview[0]['is_active'] is True
 
     def test_find_scheduled_tasks(self, crawler_tasks_repo, sample_tasks):
-        """測試查詢已排程的任務 (包含is_active)"""
+        """測試查詢已排程的任務 (包含is_active, limit, is_preview)"""
         active_scheduled_count = sum(1 for t in sample_tasks if t.is_scheduled and t.is_active)
         inactive_scheduled_count = sum(1 for t in sample_tasks if t.is_scheduled and not t.is_active)
 
         # 預設 is_active=True
         scheduled_tasks_active = crawler_tasks_repo.find_scheduled_tasks()
         assert len(scheduled_tasks_active) == active_scheduled_count
-        assert all(task.is_scheduled and task.is_active for task in scheduled_tasks_active)
+        assert all(isinstance(task, CrawlerTasks) and task.is_scheduled and task.is_active for task in scheduled_tasks_active)
 
         # is_active=False
         scheduled_tasks_inactive = crawler_tasks_repo.find_scheduled_tasks(is_active=False)
         assert len(scheduled_tasks_inactive) == inactive_scheduled_count
-        assert all(task.is_scheduled and not task.is_active for task in scheduled_tasks_inactive)
+        assert all(isinstance(task, CrawlerTasks) and task.is_scheduled and not task.is_active for task in scheduled_tasks_inactive)
+
+        # Test limit
+        scheduled_tasks_limit = crawler_tasks_repo.find_scheduled_tasks(limit=2)
+        assert len(scheduled_tasks_limit) == 2
+
+        # Test is_preview
+        preview_fields = ["id", "task_name", "is_scheduled"]
+        scheduled_tasks_preview = crawler_tasks_repo.find_scheduled_tasks(is_preview=True, preview_fields=preview_fields, limit=1)
+        assert len(scheduled_tasks_preview) == 1
+        assert isinstance(scheduled_tasks_preview[0], dict)
+        assert list(scheduled_tasks_preview[0].keys()) == preview_fields
+        assert scheduled_tasks_preview[0]['is_scheduled'] is True
 
     def test_find_ai_only_tasks(self, crawler_tasks_repo, sample_tasks):
-        """測試查詢AI相關的任務 (包含is_active)"""
+        """測試查詢AI相關的任務 (包含is_active, limit, is_preview)"""
         active_ai_count = sum(1 for t in sample_tasks if isinstance(t.task_args, dict) and t.task_args.get('ai_only') is True and t.is_active)
         inactive_ai_count = sum(1 for t in sample_tasks if isinstance(t.task_args, dict) and t.task_args.get('ai_only') is True and not t.is_active)
 
         # 預設 is_active=True
         ai_tasks_active = crawler_tasks_repo.find_ai_only_tasks()
-        print(f"\n找到 {len(ai_tasks_active)} 個活動的 AI 專用任務")
         assert len(ai_tasks_active) == active_ai_count
-        assert all(isinstance(task.task_args, dict) and task.task_args.get('ai_only') is True and task.is_active for task in ai_tasks_active)
+        assert all(isinstance(task, CrawlerTasks) and isinstance(task.task_args, dict) and task.task_args.get('ai_only') is True and task.is_active for task in ai_tasks_active)
 
         # is_active=False
         ai_tasks_inactive = crawler_tasks_repo.find_ai_only_tasks(is_active=False)
-        print(f"\n找到 {len(ai_tasks_inactive)} 個非活動的 AI 專用任務")
         assert len(ai_tasks_inactive) == inactive_ai_count
-        assert all(isinstance(task.task_args, dict) and task.task_args.get('ai_only') is True and not task.is_active for task in ai_tasks_inactive)
+        assert all(isinstance(task, CrawlerTasks) and isinstance(task.task_args, dict) and task.task_args.get('ai_only') is True and not task.is_active for task in ai_tasks_inactive)
+
+        # Test limit
+        ai_tasks_limit = crawler_tasks_repo.find_ai_only_tasks(limit=1)
+        assert len(ai_tasks_limit) == 1
+
+        # Test is_preview
+        preview_fields = ["id", "task_args"] # task_args is JSON
+        ai_tasks_preview = crawler_tasks_repo.find_ai_only_tasks(is_preview=True, preview_fields=preview_fields, limit=1)
+        assert len(ai_tasks_preview) == 1
+        assert isinstance(ai_tasks_preview[0], dict)
+        assert list(ai_tasks_preview[0].keys()) == preview_fields
+        assert isinstance(ai_tasks_preview[0]['task_args'], dict) # Should still be a dict
+        assert ai_tasks_preview[0]['task_args'].get('ai_only') is True
 
     def test_find_tasks_by_crawler_and_auto(self, crawler_tasks_repo, sample_tasks, sample_crawler):
-        """測試根據爬蟲ID和自動執行狀態查詢任務"""
-        # 使用現有方法並在 Python 中過濾
-        all_tasks = crawler_tasks_repo.find_tasks_by_crawler_id(sample_crawler.id)
-        auto_tasks = [task for task in all_tasks if task.is_auto]
-        
-        assert len(auto_tasks) == 3
-        assert all(task.crawler_id == sample_crawler.id and task.is_auto for task in auto_tasks)
+        """測試根據爬蟲ID和自動執行狀態查詢任務 (保持原有邏輯)"""
+        # 使用現有方法並在 Python 中過濾 (或者改用 advanced_search)
+        all_tasks_by_crawler = crawler_tasks_repo.find_tasks_by_crawler_id(sample_crawler.id, is_active=True)
+        auto_tasks_active = [task for task in all_tasks_by_crawler if task.is_auto]
+
+        expected_count = sum(1 for t in sample_tasks if t.crawler_id == sample_crawler.id and t.is_auto and t.is_active)
+        assert len(auto_tasks_active) == expected_count
+        assert all(task.crawler_id == sample_crawler.id and task.is_auto and task.is_active for task in auto_tasks_active)
 
     def test_toggle_auto_status(self, crawler_tasks_repo, sample_tasks, session):
         """測試切換自動執行狀態"""
@@ -265,31 +316,28 @@ class TestCrawlerTasksRepository:
     def test_update_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
         """測試更新 task_args 中的 ai_only 狀態 (模擬正確的 JSON 更新流程)"""
         # 選擇一個 ai_only 為 False 的活動任務
-        task_to_update_orig = next((t for t in sample_tasks if not t.task_args.get('ai_only') and t.is_active), None)
+        task_to_update_orig = next((t for t in sample_tasks if isinstance(t.task_args, dict) and not t.task_args.get('ai_only') and t.is_active), None)
         assert task_to_update_orig is not None, "找不到適合測試的任務 (ai_only=False, is_active=True)"
 
         task_id = task_to_update_orig.id
-        original_args = task_to_update_orig.task_args.copy()
+        original_args = task_to_update_orig.task_args.copy() if task_to_update_orig.task_args else {}
         print(f"\n--- test_update_ai_only_status (Corrected for JSON) ---")
         print(f"Task ID: {task_id}, Original task_args: {original_args}")
 
-        # 1. 準備新的 task_args 數據
-        new_task_args = original_args.copy()
-        new_task_args['ai_only'] = True
-        print(f"New task_args payload: {new_task_args}")
-
         # --- 模擬 Service 層的正確更新步驟 ---
-        # a. 從當前 session 獲取實體
         task_in_session = session.get(CrawlerTasks, task_id)
         assert task_in_session is not None
-
-        # b. 將新字典賦值給屬性
-        task_in_session.task_args = new_task_args
-
-        # c. 標記欄位已修改 (關鍵步驟 for JSON)
+        
+        # 更新屬性
+        new_task_args = (task_in_session.task_args or {}).copy()
+        new_task_args['ai_only'] = True # Update the value
+        task_in_session.task_args = new_task_args # Assign the new dict
+        print(f"New task_args payload: {new_task_args}")
+        
+        # 標記欄位已修改 (關鍵步驟 for JSON)
         flag_modified(task_in_session, 'task_args')
 
-        # d. 提交事務 (由測試 session 控制)
+        # 提交事務 (由測試 session 控制)
         session.commit()
         # --- 模擬結束 ---
 
@@ -300,6 +348,7 @@ class TestCrawlerTasksRepository:
         # 5. 斷言重新載入後的物件狀態
         assert reloaded_task is not None
         print(f"Reloaded task_args from DB: {reloaded_task.task_args}")
+        assert isinstance(reloaded_task.task_args, dict), "task_args should be a dict"
         assert reloaded_task.task_args.get('ai_only') is True, "DB value for 'ai_only' should be updated to True"
         # 確保其他 task_args 不變
         for key, value in original_args.items():
@@ -327,11 +376,14 @@ class TestCrawlerTasksRepository:
         assert updated_task.updated_at is not None, "updated_at 應已更新"
 
     def test_find_tasks_with_notes(self, crawler_tasks_repo, sample_tasks):
-        """測試查詢有備註的任務"""
+        """測試查詢有備註的任務 (包含 limit, is_preview)"""
+        expected_count = sum(1 for t in sample_tasks if t.notes is not None and t.notes != '')
         tasks = crawler_tasks_repo.find_tasks_with_notes()
-        assert len(tasks) == 5
-        assert all(task.notes is not None for task in tasks)
+        assert len(tasks) == expected_count
+        assert all(isinstance(task, CrawlerTasks) and task.notes is not None and task.notes != '' for task in tasks)
 
+        # Test limit
+        tasks_limit = crawler_tasks_repo.find_tasks_with_notes(limit=1)
     def test_find_tasks_by_multiple_crawlers(self, crawler_tasks_repo, sample_tasks, sample_crawler):
         """測試根據多個爬蟲ID查詢任務"""
         tasks = crawler_tasks_repo.find_tasks_by_multiple_crawlers([sample_crawler.id])
@@ -1042,7 +1094,7 @@ class TestSpecialCases:
         session.query(CrawlerTasks).delete()
         session.commit()
         
-        assert crawler_tasks_repo.get_all() == []
+        assert crawler_tasks_repo.find_all() == []
         assert crawler_tasks_repo.find_auto_tasks() == []
         assert crawler_tasks_repo.find_ai_only_tasks() == []
 
