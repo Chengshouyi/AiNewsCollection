@@ -1,4 +1,4 @@
-from typing import Annotated, Optional, Any, List
+from typing import Annotated, Optional, Any, List, Union, Dict
 from pydantic import BaseModel, BeforeValidator, model_validator, ConfigDict
 from datetime import datetime
 from src.utils.model_utils import validate_str, validate_datetime, validate_boolean, validate_positive_int,validate_task_status
@@ -80,8 +80,8 @@ class CrawlerTaskHistoryReadSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class PaginatedCrawlerTaskHistoryResponse(BaseModel):
-    """用於分頁響應的結構化數據模型"""
-    items: List[CrawlerTaskHistoryReadSchema]
+    """用於分頁響應的結構化數據模型，支援預覽模式"""
+    items: Union[List[CrawlerTaskHistoryReadSchema], List[Dict[str, Any]]]
     page: int
     per_page: int
     total: int

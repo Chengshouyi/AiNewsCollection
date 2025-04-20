@@ -160,27 +160,62 @@ class TestCrawlersService:
         assert created_crawler.config_file_name == valid_crawler_data["config_file_name"]
         assert isinstance(created_crawler.updated_at, datetime)
     
-    def test_get_all_crawlers(self, crawlers_service, sample_crawlers, session):
-        """測試獲取所有爬蟲設定"""
-        result = crawlers_service.get_all_crawlers()
+    def test_find_all_crawlers(self, crawlers_service, sample_crawlers, session):
+        """測試獲取所有爬蟲設定，包括分頁、排序和預覽"""
+        # 基本測試
+        result = crawlers_service.find_all_crawlers()
         assert result['success'] is True
         assert len(result['crawlers']) == 3
-        assert all(isinstance(c, CrawlerReadSchema) for c in result['crawlers']) # 檢查類型
+        assert all(isinstance(c, CrawlerReadSchema) for c in result['crawlers'])
         
         # 測試分頁
-        result = crawlers_service.get_all_crawlers(limit=2)
-        assert len(result['crawlers']) == 2
+        result_limit = crawlers_service.find_all_crawlers(limit=2)
+        assert result_limit['success'] is True
+        assert len(result_limit['crawlers']) == 2
         
-        result = crawlers_service.get_all_crawlers(offset=1, limit=1)
-        assert len(result['crawlers']) == 1
+        result_offset = crawlers_service.find_all_crawlers(offset=1, limit=1)
+        assert result_offset['success'] is True
+        assert len(result_offset['crawlers']) == 1
         
         # 測試排序
-        result = crawlers_service.get_all_crawlers(sort_by="crawler_name", sort_desc=True)
-        names = [crawler.crawler_name for crawler in result['crawlers']]
-        # 從 sample_crawlers 獲取預期排序的名稱
+        result_sort = crawlers_service.find_all_crawlers(sort_by="crawler_name", sort_desc=True)
+        assert result_sort['success'] is True
+        names = [crawler.crawler_name for crawler in result_sort['crawlers']]
         expected_names = sorted([c['crawler_name'] for c in sample_crawlers], reverse=True)
         assert names == expected_names
-    
+
+        # --- 測試預覽模式 --- 
+        preview_fields = ['id', 'crawler_name', 'is_active']
+        result_preview = crawlers_service.find_all_crawlers(is_preview=True, preview_fields=preview_fields)
+        assert result_preview['success'] is True
+        assert len(result_preview['crawlers']) == 3
+        # 驗證返回的是字典列表，且只包含指定欄位
+        for item in result_preview['crawlers']:
+            assert isinstance(item, dict)
+            assert set(item.keys()) == set(preview_fields)
+            # 驗證字典中的值是否正確 (與 sample_crawlers 對比)
+            original = next((c for c in sample_crawlers if c['id'] == item['id']), None)
+            assert original is not None
+            assert item['crawler_name'] == original['crawler_name']
+            assert item['is_active'] == original['is_active']
+
+        # 測試預覽模式 + 分頁 + 排序
+        result_preview_paged = crawlers_service.find_all_crawlers(
+            is_preview=True, 
+            preview_fields=preview_fields,
+            limit=1,
+            offset=1,
+            sort_by='crawler_name',
+            sort_desc=False
+        )
+        assert result_preview_paged['success'] is True
+        assert len(result_preview_paged['crawlers']) == 1
+        assert isinstance(result_preview_paged['crawlers'][0], dict)
+        assert set(result_preview_paged['crawlers'][0].keys()) == set(preview_fields)
+        # 驗證是排序後的第二個元素
+        expected_sorted_names = sorted([c['crawler_name'] for c in sample_crawlers])
+        assert result_preview_paged['crawlers'][0]['crawler_name'] == expected_sorted_names[1]
+
     def test_get_crawler_by_id(self, crawlers_service, sample_crawlers, session):
         """測試根據ID獲取爬蟲設定"""
         crawler_id = sample_crawlers[0]["id"]
@@ -199,50 +234,86 @@ class TestCrawlersService:
         assert result['crawler'] is None # 確保無效時返回 None
     
     def test_get_active_crawlers(self, crawlers_service, sample_crawlers, session):
-        """測試獲取活動中的爬蟲設定"""
-        result = crawlers_service.get_active_crawlers()
-        
+        """測試獲取活動中的爬蟲設定，包括分頁和預覽"""
+        # 基本測試
+        result = crawlers_service.find_active_crawlers()
         assert result['success'] is True
-        assert len(result['crawlers']) == 2
-        assert all(isinstance(c, CrawlerReadSchema) for c in result['crawlers']) # 檢查類型
+        assert len(result['crawlers']) == 2 # 預期有 2 個活動的
+        assert all(isinstance(c, CrawlerReadSchema) for c in result['crawlers'])
         assert all(crawler.is_active for crawler in result['crawlers'])
-    
-    def test_get_crawlers_by_name(self, crawlers_service, sample_crawlers, session):
-        """測試根據名稱模糊查詢爬蟲設定"""
+
+        # --- 測試分頁 --- 
+        result_limit = crawlers_service.find_active_crawlers(limit=1)
+        assert result_limit['success'] is True
+        assert len(result_limit['crawlers']) == 1
+
+        result_offset = crawlers_service.find_active_crawlers(offset=1, limit=1)
+        assert result_offset['success'] is True
+        assert len(result_offset['crawlers']) == 1
+        # 驗證偏移後取到的還是活動的
+        assert result_offset['crawlers'][0].is_active is True 
+
+        # --- 測試預覽模式 --- 
+        preview_fields = ['id', 'base_url']
+        result_preview = crawlers_service.find_active_crawlers(is_preview=True, preview_fields=preview_fields)
+        assert result_preview['success'] is True
+        assert len(result_preview['crawlers']) == 2
+        for item in result_preview['crawlers']:
+            assert isinstance(item, dict)
+            assert set(item.keys()) == set(preview_fields)
+            # 驗證 base_url 存在且與 sample_crawlers 一致
+            original = next((c for c in sample_crawlers if c['id'] == item['id']), None)
+            assert original is not None
+            assert item['base_url'] == original['base_url']
+
+    def test_find_crawlers_by_name(self, crawlers_service, sample_crawlers, session):
+        """測試根據名稱模糊查詢爬蟲設定，包括分頁、狀態過濾和預覽"""
         # 確保會話中的資料是最新的
         session.expire_all()
-        
-        # --- 測試 is_active=None (預設，查找所有) ---
-        result_all = crawlers_service.get_crawlers_by_name("爬蟲")
+    
+        # --- 測試 is_active=None (預設，查找所有) --- 
+        result_all = crawlers_service.find_crawlers_by_name("爬蟲")
         assert result_all['success'] is True
-        assert len(result_all['crawlers']) == 3, "預期找到所有 3 個包含'爬蟲'的爬蟲"
-        assert all(isinstance(c, CrawlerReadSchema) for c in result_all['crawlers']) # 檢查類型
+        assert len(result_all['crawlers']) == 3
+        assert all(isinstance(c, CrawlerReadSchema) for c in result_all['crawlers'])
         
-        # --- 測試 is_active=True (僅查找活動的) ---
-        result_active = crawlers_service.get_crawlers_by_name("爬蟲", is_active=True)
+        # --- 測試 is_active=True (僅查找活動的) --- 
+        result_active = crawlers_service.find_crawlers_by_name("爬蟲", is_active=True)
         assert result_active['success'] is True
-        assert len(result_active['crawlers']) == 2, "預期找到 2 個活動的'爬蟲'爬蟲"
+        assert len(result_active['crawlers']) == 2
         assert all(crawler.is_active for crawler in result_active['crawlers'])
         
-        # --- 測試 is_active=False (僅查找非活動的) ---
-        result_inactive = crawlers_service.get_crawlers_by_name("爬蟲", is_active=False)
+        # --- 測試 is_active=False (僅查找非活動的) --- 
+        result_inactive = crawlers_service.find_crawlers_by_name("爬蟲", is_active=False)
         assert result_inactive['success'] is True
-        assert len(result_inactive['crawlers']) == 1, "預期找到 1 個非活動的'爬蟲'爬蟲"
+        assert len(result_inactive['crawlers']) == 1
         assert not result_inactive['crawlers'][0].is_active
 
-        # 查詢包含"數位"的爬蟲設定 (預設 is_active=None)
-        digital_crawlers_result = crawlers_service.get_crawlers_by_name("數位")
-        assert digital_crawlers_result['success'] is True
-        assert len(digital_crawlers_result['crawlers']) == 1
-        assert digital_crawlers_result['crawlers'][0].crawler_name == "數位時代爬蟲"
-        
-        # 測試不存在的名稱
-        no_crawlers_result = crawlers_service.get_crawlers_by_name("不存在")
-        # 服務層現在對於找不到結果返回 success: True 和空列表
+        # --- 測試分頁 --- 
+        result_limit = crawlers_service.find_crawlers_by_name("爬蟲", limit=2)
+        assert result_limit['success'] is True
+        assert len(result_limit['crawlers']) == 2
+
+        result_offset = crawlers_service.find_crawlers_by_name("爬蟲", offset=2, limit=1)
+        assert result_offset['success'] is True
+        assert len(result_offset['crawlers']) == 1
+
+        # --- 測試預覽模式 --- 
+        preview_fields = ['crawler_name', 'crawler_type']
+        result_preview = crawlers_service.find_crawlers_by_name("爬蟲", is_preview=True, preview_fields=preview_fields)
+        assert result_preview['success'] is True
+        assert len(result_preview['crawlers']) == 3
+        for item in result_preview['crawlers']:
+            assert isinstance(item, dict)
+            assert set(item.keys()) == set(preview_fields)
+            assert "爬蟲" in item['crawler_name'] # 驗證內容
+
+        # --- 測試不存在的名稱 --- 
+        no_crawlers_result = crawlers_service.find_crawlers_by_name("不存在")
         assert no_crawlers_result['success'] is True
         assert "找不到任何符合條件的爬蟲設定" in no_crawlers_result['message']
         assert len(no_crawlers_result['crawlers']) == 0
-    
+
     def test_update_crawler(self, crawlers_service, sample_crawlers, session):
         """測試更新爬蟲設定"""
         crawler_id = sample_crawlers[0]["id"]
@@ -317,42 +388,78 @@ class TestCrawlersService:
         assert "不存在" in result['message']
         assert result['crawler'] is None
     
-    def test_get_crawlers_by_type(self, crawlers_service, sample_crawlers, session):
-        """測試根據爬蟲類型查找爬蟲"""
+    def test_find_crawlers_by_type(self, crawlers_service, sample_crawlers, session):
+        """測試根據爬蟲類型查找爬蟲，包括分頁和預覽"""
         # 確保會話中的資料是最新的
         session.expire_all()
         
-        # 查詢 bnext 類型的爬蟲
-        result = crawlers_service.get_crawlers_by_type("bnext")
+        # --- 基本測試 --- 
+        result = crawlers_service.find_crawlers_by_type("bnext")
         assert result['success'] is True
         assert len(result['crawlers']) == 1
-        assert isinstance(result['crawlers'][0], CrawlerReadSchema) # 檢查類型
+        assert isinstance(result['crawlers'][0], CrawlerReadSchema)
         assert all(crawler.crawler_type == "bnext" for crawler in result['crawlers'])
+
+        # --- 測試分頁 (雖然只有一個結果，但也測試參數傳遞) --- 
+        result_limit = crawlers_service.find_crawlers_by_type("bnext", limit=1)
+        assert result_limit['success'] is True
+        assert len(result_limit['crawlers']) == 1
+
+        result_offset = crawlers_service.find_crawlers_by_type("bnext", offset=1, limit=1)
+        assert result_offset['success'] is True
+        assert len(result_offset['crawlers']) == 0 # 因為偏移量為 1
+
+        # --- 測試預覽模式 --- 
+        preview_fields = ['id', 'config_file_name']
+        result_preview = crawlers_service.find_crawlers_by_type("bnext", is_preview=True, preview_fields=preview_fields)
+        assert result_preview['success'] is True
+        assert len(result_preview['crawlers']) == 1
+        assert isinstance(result_preview['crawlers'][0], dict)
+        assert set(result_preview['crawlers'][0].keys()) == set(preview_fields)
+        assert "bnext" in result_preview['crawlers'][0]['config_file_name']
         
-        # 測試不存在的類型
-        no_result = crawlers_service.get_crawlers_by_type("不存在類型")
-        assert no_result['success'] is True # 服務層找不到時返回 True
+        # --- 測試不存在的類型 --- 
+        no_result = crawlers_service.find_crawlers_by_type("不存在類型")
+        assert no_result['success'] is True 
         assert f"找不到類型為 不存在類型 的爬蟲設定" in no_result['message']
         assert len(no_result['crawlers']) == 0
-    
-    def test_get_crawlers_by_target(self, crawlers_service, sample_crawlers, session):
-        """測試根據爬取目標模糊查詢爬蟲"""
+
+    def test_find_crawlers_by_target(self, crawlers_service, sample_crawlers, session):
+        """測試根據爬取目標模糊查詢爬蟲，包括分頁和預覽"""
         # 確保會話中的資料是最新的
         session.expire_all()
         
-        # 查詢 URL 包含 bnext 的爬蟲
-        result = crawlers_service.get_crawlers_by_target("bnext")
+        # --- 基本測試 --- 
+        result = crawlers_service.find_crawlers_by_target("bnext")
         assert result['success'] is True
         assert len(result['crawlers']) == 1
-        assert isinstance(result['crawlers'][0], CrawlerReadSchema) # 檢查類型
+        assert isinstance(result['crawlers'][0], CrawlerReadSchema)
         assert "bnext" in result['crawlers'][0].base_url
+    
+        # --- 測試分頁 --- 
+        result_limit = crawlers_service.find_crawlers_by_target(".com", limit=2) # 查找包含 .com 的
+        assert result_limit['success'] is True
+        assert len(result_limit['crawlers']) == 2
+    
+        result_offset = crawlers_service.find_crawlers_by_target(".com", offset=2, limit=1)
+        assert result_offset['success'] is True
+        assert len(result_offset['crawlers']) == 0 # 修正斷言：offset=2 應該返回 0 個
+    
+        # --- 測試預覽模式 --- 
+        preview_fields = ['id', 'base_url']
+        result_preview = crawlers_service.find_crawlers_by_target("bnext", is_preview=True, preview_fields=preview_fields)
+        assert result_preview['success'] is True
+        assert len(result_preview['crawlers']) == 1
+        assert isinstance(result_preview['crawlers'][0], dict)
+        assert set(result_preview['crawlers'][0].keys()) == set(preview_fields)
+        assert "bnext" in result_preview['crawlers'][0]['base_url']
         
-        # 測試不存在的目標
-        no_result = crawlers_service.get_crawlers_by_target("不存在網址")
-        assert no_result['success'] is True # 服務層找不到時返回 True
+        # --- 測試不存在的目標 --- 
+        no_result = crawlers_service.find_crawlers_by_target("不存在網址")
+        assert no_result['success'] is True 
         assert f"找不到目標包含 不存在網址 的爬蟲設定" in no_result['message']
         assert len(no_result['crawlers']) == 0
-    
+
     def test_get_crawler_statistics(self, crawlers_service, sample_crawlers, session):
         """測試獲取爬蟲統計信息"""
         # 確保會話中的資料是最新的
@@ -463,7 +570,7 @@ class TestCrawlersService:
         assert "批量停用爬蟲設定完成" in result['message']
         
         # 檢查是否全部已停用
-        all_crawlers_result = crawlers_service.get_all_crawlers()
+        all_crawlers_result = crawlers_service.find_all_crawlers()
         assert all(not crawler.is_active for crawler in all_crawlers_result['crawlers'])
         
         # 批量啟用所有爬蟲
@@ -474,10 +581,10 @@ class TestCrawlersService:
         assert "批量啟用爬蟲設定完成" in result['message']
         
         # 檢查是否全部已啟用
-        all_crawlers_result = crawlers_service.get_all_crawlers()
+        all_crawlers_result = crawlers_service.find_all_crawlers()
         assert all(crawler.is_active for crawler in all_crawlers_result['crawlers'])
         
-        # 測試部分不存在的 ID (預期全部失敗)
+        # 測試部分不存在的 ID (預期部分失敗)
         invalid_ids = [999999, 888888]
         result = crawlers_service.batch_toggle_crawler_status(invalid_ids, False)
         assert result['success'] is False # 因為 success_count 為 0
@@ -487,34 +594,35 @@ class TestCrawlersService:
         assert 888888 in result['result']['failed_ids']
     
     def test_get_filtered_crawlers(self, crawlers_service, sample_crawlers, session):
-        """測試根據過濾條件獲取分頁爬蟲列表"""
+        """測試根據過濾條件獲取分頁爬蟲列表，包括預覽"""
         # 確保會話中的資料是最新的
         session.expire_all()
         
-        # 測試按類型過濾
+        # --- 測試按類型過濾 --- 
         filter_data = {"crawler_type": "bnext"}
-        result = crawlers_service.get_filtered_crawlers(filter_data)
+        result = crawlers_service.find_filtered_crawlers(filter_data)
         assert result['success'] is True
         assert result['data'] is not None
         paginated_data = result['data'] # 應為 PaginatedCrawlerResponse
         assert paginated_data.total == 1
         assert paginated_data.page == 1
         assert len(paginated_data.items) == 1
-        assert isinstance(paginated_data.items[0], CrawlerReadSchema) # 檢查類型
+        assert isinstance(paginated_data.items[0], CrawlerReadSchema)
         assert paginated_data.items[0].crawler_type == "bnext"
         
-        # 測試按啟用狀態過濾
+        # --- 測試按啟用狀態過濾 --- 
         filter_data = {"is_active": True}
-        result = crawlers_service.get_filtered_crawlers(filter_data)
+        result = crawlers_service.find_filtered_crawlers(filter_data)
         assert result['success'] is True
         paginated_data = result['data']
         assert paginated_data.total == 2
         assert len(paginated_data.items) == 2
+        assert all(isinstance(item, CrawlerReadSchema) for item in paginated_data.items) # 檢查類型
         assert all(item.is_active for item in paginated_data.items)
         
-        # 測試複合條件過濾
+        # --- 測試複合條件過濾 --- 
         filter_data = {"is_active": True, "crawler_type": "bnext"}
-        result = crawlers_service.get_filtered_crawlers(filter_data)
+        result = crawlers_service.find_filtered_crawlers(filter_data)
         assert result['success'] is True
         paginated_data = result['data']
         assert paginated_data.total == 1
@@ -522,46 +630,48 @@ class TestCrawlersService:
         assert paginated_data.items[0].crawler_type == "bnext"
         assert paginated_data.items[0].is_active is True
         
-        # 測試排序和分頁
+        # --- 測試排序和分頁 --- 
         filter_data = {}
-        result = crawlers_service.get_filtered_crawlers(
+        result_sort = crawlers_service.find_filtered_crawlers(
             filter_data, page=1, per_page=2, sort_by="crawler_name", sort_desc=True
         )
-        assert result['success'] is True
-        paginated_data = result['data']
-        assert paginated_data.total == 3
-        assert paginated_data.page == 1
-        assert len(paginated_data.items) == 2
-        assert paginated_data.has_next is True
-        assert paginated_data.has_prev is False
-        # 驗證排序
+        assert result_sort['success'] is True
+        paginated_data_sort = result_sort['data']
+        assert paginated_data_sort.total == 3
+        assert paginated_data_sort.page == 1
+        assert len(paginated_data_sort.items) == 2
+        assert paginated_data_sort.has_next is True
+        assert paginated_data_sort.has_prev is False
         expected_first_page_names = sorted([c['crawler_name'] for c in sample_crawlers], reverse=True)[:2]
-        actual_names = [item.crawler_name for item in paginated_data.items]
+        actual_names = [item.crawler_name for item in paginated_data_sort.items]
         assert actual_names == expected_first_page_names
 
-        # 測試獲取第二頁
-        result_page_2 = crawlers_service.get_filtered_crawlers(
-            filter_data, page=2, per_page=2, sort_by="crawler_name", sort_desc=True
+        # --- 測試預覽模式 --- 
+        preview_fields = ['id', 'is_active']
+        result_preview = crawlers_service.find_filtered_crawlers(
+            filter_criteria={"crawler_type": "technews"}, 
+            is_preview=True, 
+            preview_fields=preview_fields
         )
-        assert result_page_2['success'] is True
-        paginated_data_2 = result_page_2['data']
-        assert paginated_data_2.total == 3
-        assert paginated_data_2.page == 2
-        assert len(paginated_data_2.items) == 1
-        assert paginated_data_2.has_next is False
-        assert paginated_data_2.has_prev is True
-        expected_second_page_names = sorted([c['crawler_name'] for c in sample_crawlers], reverse=True)[2:]
-        actual_names_page_2 = [item.crawler_name for item in paginated_data_2.items]
-        assert actual_names_page_2 == expected_second_page_names
-        
-        # 測試不匹配的條件
+        assert result_preview['success'] is True
+        assert result_preview['data'] is not None
+        paginated_preview = result_preview['data']
+        assert paginated_preview.total == 1
+        assert len(paginated_preview.items) == 1
+        item = paginated_preview.items[0]
+        assert isinstance(item, dict)
+        assert set(item.keys()) == set(preview_fields)
+        assert item['is_active'] is False # technews is inactive
+
+        # --- 測試不匹配的條件 --- 
         filter_data = {"crawler_type": "不存在類型"}
-        result = crawlers_service.get_filtered_crawlers(filter_data)
-        assert result['success'] is False # 服務層在此情況下返回 False
-        assert "找不到符合條件" in result['message']
-        assert result['data'] is not None # 即使失敗，也應返回分頁結構
-        assert result['data'].total == 0
-        assert len(result['data'].items) == 0
+        result_nomatch = crawlers_service.find_filtered_crawlers(filter_data)
+        # 服務層對於找不到結果返回 success: False
+        assert result_nomatch['success'] is False # 修正斷言：應為 False
+        assert "找不到符合條件" in result_nomatch['message']
+        assert result_nomatch['data'] is not None # 即使失敗，也應返回分頁結構
+        assert result_nomatch['data'].total == 0
+        assert len(result_nomatch['data'].items) == 0
 
 class TestCrawlersServiceErrorHandling:
     """測試爬蟲服務的錯誤處理"""

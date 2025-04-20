@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Dict, Any, List, TypeVar, Tuple, Type, cast
+from typing import Optional, Dict, Any, List, TypeVar, Tuple, Type, cast, Union, Sequence
 from src.models.crawlers_model import Base, Crawlers
 from datetime import datetime, timezone
 from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema, CrawlerReadSchema, PaginatedCrawlerResponse
@@ -104,8 +104,10 @@ class CrawlersService(BaseService[Crawlers]):
             logger.error(f"創建爬蟲設定失敗: {str(e)}")
             raise e
 
-    def get_all_crawlers(self, limit: Optional[int] = None, offset: Optional[int] = None,
-                        sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
+    def find_all_crawlers(self, limit: Optional[int] = None, offset: Optional[int] = None,
+                         sort_by: Optional[str] = None, sort_desc: bool = False,
+                         is_preview: bool = False, 
+                         preview_fields: Optional[List[str]] = None) -> Dict[str, Any]:
         """獲取所有爬蟲設定"""
         try:
             with self._transaction() as session:
@@ -116,19 +118,29 @@ class CrawlersService(BaseService[Crawlers]):
                         'message': '無法取得資料庫存取器',
                         'crawlers': []
                     }
-                crawlers = crawler_repo.get_all(
+                crawlers = crawler_repo.find_all(
                     limit=limit,
                     offset=offset,
                     sort_by=sort_by,
-                    sort_desc=sort_desc
+                    sort_desc=sort_desc,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
                 )
                 
-                crawlers_orm = crawlers or [] # 確保是列表
-                crawlers_schema = [CrawlerReadSchema.model_validate(c) for c in crawlers_orm] # 轉換為 Schema 列表
+                # Prepare result based on is_preview
+                crawlers_result: Sequence[Union[CrawlerReadSchema, Dict[str, Any]]] = []
+                if crawlers:
+                    if is_preview:
+                        # Repository returns List[Dict[str, Any]] in preview mode
+                        crawlers_result = cast(List[Dict[str, Any]], crawlers)
+                    else:
+                        # Repository returns List[Crawlers] when not in preview mode
+                        crawlers_result = [CrawlerReadSchema.model_validate(c) for c in cast(List[Crawlers], crawlers)]
+
                 return {
                     'success': True,
                     'message': "獲取爬蟲設定列表成功",
-                    'crawlers': crawlers_schema or []
+                    'crawlers': crawlers_result
                 }
         except Exception as e:
             logger.error(f"獲取所有爬蟲設定失敗: {str(e)}")
@@ -251,14 +263,25 @@ class CrawlersService(BaseService[Crawlers]):
             logger.error(f"刪除爬蟲設定失敗，ID={crawler_id}: {str(e)}")
             raise e
 
-    def get_active_crawlers(self) -> Dict[str, Any]:
+    def find_active_crawlers(self, 
+                             limit: Optional[int] = None,
+                             offset: Optional[int] = None,
+                             is_preview: bool = False, 
+                             preview_fields: Optional[List[str]] = None
+                             ) -> Dict[str, Any]:
         """獲取所有活動中的爬蟲設定
         
+        Args:
+            limit: 限制數量
+            offset: 偏移量
+            is_preview: 是否啟用預覽模式，僅返回指定欄位
+            preview_fields: 預覽模式下要返回的欄位列表
+            
         Returns:
             Dict[str, Any]: 活動中的爬蟲設定
                 success: 是否成功
                 message: 訊息
-                crawlers: 活動中的爬蟲設定列表
+                crawlers: 活動中的爬蟲設定列表 (完整 Schema 或預覽字典)
         """
         try:
             with self._transaction() as session:
@@ -269,19 +292,33 @@ class CrawlersService(BaseService[Crawlers]):
                         'message': '無法取得資料庫存取器',
                         'crawlers': []
                     }
-                crawlers = crawler_repo.find_active_crawlers()
-                crawlers_orm = crawlers or [] # 確保是列表
-                crawlers_schema = [CrawlerReadSchema.model_validate(c) for c in crawlers_orm] # 轉換為 Schema 列表
-                if not crawlers_schema:
+                
+                # Pass is_preview and preview_fields to repository method
+                crawlers = crawler_repo.find_active_crawlers(
+                    limit=limit,
+                    offset=offset,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
+                )
+                
+                # Prepare result based on is_preview
+                crawlers_result: Sequence[Union[CrawlerReadSchema, Dict[str, Any]]] = []
+                if crawlers:
+                    if is_preview:
+                        crawlers_result = cast(List[Dict[str, Any]], crawlers)
+                    else:
+                        crawlers_result = [CrawlerReadSchema.model_validate(c) for c in cast(List[Crawlers], crawlers)]
+
+                if not crawlers_result:
                     return {
-                        'success': True, # 找不到不算失敗
+                        'success': True, # Finding none is not a failure
                         'message': "找不到任何活動中的爬蟲設定",
                         'crawlers': []
                     }
                 return {
                     'success': True,
                     'message': "獲取活動中的爬蟲設定成功",
-                    'crawlers': crawlers_schema
+                    'crawlers': crawlers_result
                 }
         except Exception as e:
             logger.error(f"獲取活動中的爬蟲設定失敗: {str(e)}")
@@ -329,8 +366,29 @@ class CrawlersService(BaseService[Crawlers]):
             logger.error(f"切換爬蟲狀態失敗，ID={crawler_id}: {str(e)}")
             raise e
     
-    def get_crawlers_by_name(self, name: str, is_active: Optional[bool] = None) -> Dict[str, Any]:
-        """根據名稱模糊查詢爬蟲設定"""
+    def find_crawlers_by_name(self, name: str, 
+                              is_active: Optional[bool] = None,
+                              limit: Optional[int] = None,
+                              offset: Optional[int] = None,
+                              is_preview: bool = False, 
+                              preview_fields: Optional[List[str]] = None
+                              ) -> Dict[str, Any]:
+        """根據名稱模糊查詢爬蟲設定
+        
+        Args:
+            name: 爬蟲名稱 (模糊匹配)
+            is_active: 是否過濾活躍狀態 (None:不過濾, True:活躍, False:非活躍)
+            limit: 限制數量
+            offset: 偏移量
+            is_preview: 是否啟用預覽模式，僅返回指定欄位
+            preview_fields: 預覽模式下要返回的欄位列表
+
+        Returns:
+            Dict[str, Any]: 爬蟲設定列表
+                success: 是否成功
+                message: 訊息
+                crawlers: 符合條件的爬蟲設定列表 (完整 Schema 或預覽字典)
+        """
         try:
             with self._transaction() as session:
                 crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
@@ -340,26 +398,61 @@ class CrawlersService(BaseService[Crawlers]):
                         'message': '無法取得資料庫存取器',
                         'crawlers': []
                     }
-                crawlers = crawler_repo.find_by_crawler_name(name, is_active=is_active)
-                crawlers_orm = crawlers or [] # 確保是列表
-                crawlers_schema = [CrawlerReadSchema.model_validate(c) for c in crawlers_orm] # 轉換為 Schema 列表
-                if not crawlers_schema:
+                
+                # Pass parameters including is_preview and preview_fields
+                crawlers = crawler_repo.find_by_crawler_name(
+                    name, 
+                    is_active=is_active,
+                    limit=limit,
+                    offset=offset,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
+                )
+                
+                # Prepare result based on is_preview
+                crawlers_result: Sequence[Union[CrawlerReadSchema, Dict[str, Any]]] = []
+                if crawlers:
+                    if is_preview:
+                        crawlers_result = cast(List[Dict[str, Any]], crawlers)
+                    else:
+                        crawlers_result = [CrawlerReadSchema.model_validate(c) for c in cast(List[Crawlers], crawlers)]
+                
+                if not crawlers_result:
                     return {
-                        'success': True, # 找不到不算失敗
+                        'success': True, # Finding none is not a failure
                         'message': "找不到任何符合條件的爬蟲設定",
                         'crawlers': []
                     }
                 return {
                     'success': True,
                     'message': "獲取爬蟲設定列表成功",
-                    'crawlers': crawlers_schema
+                    'crawlers': crawlers_result
                 }   
         except Exception as e:
             logger.error(f"獲取爬蟲設定列表失敗: {str(e)}")
             raise e
     
-    def get_crawlers_by_type(self, crawler_type: str) -> Dict[str, Any]:
-        """根據爬蟲類型查找爬蟲"""
+    def find_crawlers_by_type(self, crawler_type: str,
+                              limit: Optional[int] = None,
+                              offset: Optional[int] = None,
+                              is_preview: bool = False, 
+                              preview_fields: Optional[List[str]] = None
+                              ) -> Dict[str, Any]:
+        """根據爬蟲類型查找爬蟲
+        
+        Args:
+            crawler_type: 爬蟲類型
+            limit: 限制數量
+            offset: 偏移量
+            is_preview: 是否啟用預覽模式，僅返回指定欄位
+            preview_fields: 預覽模式下要返回的欄位列表
+
+        Returns:
+            Dict[str, Any]: 爬蟲設定列表
+                success: 是否成功
+                message: 訊息
+                crawlers: 符合條件的爬蟲設定列表 (完整 Schema 或預覽字典)
+        """
         try:
             with self._transaction() as session:
                 crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
@@ -369,26 +462,60 @@ class CrawlersService(BaseService[Crawlers]):
                         'message': '無法取得資料庫存取器',
                         'crawlers': []
                     }
-                crawlers = crawler_repo.find_by_type(crawler_type)
-                crawlers_orm = crawlers or [] # 確保是列表
-                crawlers_schema = [CrawlerReadSchema.model_validate(c) for c in crawlers_orm] # 轉換為 Schema 列表
-                if not crawlers_schema:
+                
+                # Pass parameters including is_preview and preview_fields
+                crawlers = crawler_repo.find_by_type(
+                    crawler_type,
+                    limit=limit,
+                    offset=offset,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
+                )
+                
+                # Prepare result based on is_preview
+                crawlers_result: Sequence[Union[CrawlerReadSchema, Dict[str, Any]]] = []
+                if crawlers:
+                    if is_preview:
+                        crawlers_result = cast(List[Dict[str, Any]], crawlers)
+                    else:
+                        crawlers_result = [CrawlerReadSchema.model_validate(c) for c in cast(List[Crawlers], crawlers)]
+
+                if not crawlers_result:
                     return {
-                        'success': True, # 找不到不算失敗
+                        'success': True, # Finding none is not a failure
                         'message': f"找不到類型為 {crawler_type} 的爬蟲設定",
                         'crawlers': []
                     }
                 return {
                     'success': True,
                     'message': f"獲取類型為 {crawler_type} 的爬蟲設定列表成功",
-                    'crawlers': crawlers_schema
+                    'crawlers': crawlers_result
                 }
         except Exception as e:
             logger.error(f"獲取類型為 {crawler_type} 的爬蟲設定列表失敗: {str(e)}")
             raise e
     
-    def get_crawlers_by_target(self, target_pattern: str) -> Dict[str, Any]:
-        """根據爬取目標模糊查詢爬蟲"""
+    def find_crawlers_by_target(self, target_pattern: str,
+                                limit: Optional[int] = None,
+                                offset: Optional[int] = None,
+                                is_preview: bool = False, 
+                                preview_fields: Optional[List[str]] = None
+                                ) -> Dict[str, Any]:
+        """根據爬取目標模糊查詢爬蟲
+        
+        Args:
+            target_pattern: 目標模式 (模糊匹配 base_url)
+            limit: 限制數量
+            offset: 偏移量
+            is_preview: 是否啟用預覽模式，僅返回指定欄位
+            preview_fields: 預覽模式下要返回的欄位列表
+
+        Returns:
+            Dict[str, Any]: 爬蟲設定列表
+                success: 是否成功
+                message: 訊息
+                crawlers: 符合條件的爬蟲設定列表 (完整 Schema 或預覽字典)
+        """
         try:
             with self._transaction() as session:
                 crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
@@ -398,19 +525,34 @@ class CrawlersService(BaseService[Crawlers]):
                         'message': '無法取得資料庫存取器',
                         'crawlers': []
                     }
-                crawlers = crawler_repo.find_by_target(target_pattern)
-                crawlers_orm = crawlers or [] # 確保是列表
-                crawlers_schema = [CrawlerReadSchema.model_validate(c) for c in crawlers_orm] # 轉換為 Schema 列表
-                if not crawlers_schema:
+                
+                # Pass parameters including is_preview and preview_fields
+                crawlers = crawler_repo.find_by_target(
+                    target_pattern,
+                    limit=limit,
+                    offset=offset,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
+                )
+                
+                # Prepare result based on is_preview
+                crawlers_result: Sequence[Union[CrawlerReadSchema, Dict[str, Any]]] = []
+                if crawlers:
+                    if is_preview:
+                        crawlers_result = cast(List[Dict[str, Any]], crawlers)
+                    else:
+                        crawlers_result = [CrawlerReadSchema.model_validate(c) for c in cast(List[Crawlers], crawlers)]
+
+                if not crawlers_result:
                     return {
-                        'success': True, # 找不到不算失敗
+                        'success': True, # Finding none is not a failure
                         'message': f"找不到目標包含 {target_pattern} 的爬蟲設定",
                         'crawlers': []
                     }
                 return {
                     'success': True,
                     'message': f"獲取目標包含 {target_pattern} 的爬蟲設定列表成功",
-                    'crawlers': crawlers_schema
+                    'crawlers': crawlers_result
                 }
         except Exception as e:
             logger.error(f"獲取目標包含 {target_pattern} 的爬蟲設定列表失敗: {str(e)}")
@@ -437,8 +579,23 @@ class CrawlersService(BaseService[Crawlers]):
             logger.error(f"獲取爬蟲統計信息失敗: {str(e)}")
             raise e
     
-    def get_crawler_by_exact_name(self, crawler_name: str) -> Dict[str, Any]:
-        """根據爬蟲名稱精確查詢"""
+    def get_crawler_by_exact_name(self, crawler_name: str,
+                                  is_preview: bool = False, 
+                                  preview_fields: Optional[List[str]] = None
+                                  ) -> Dict[str, Any]:
+        """根據爬蟲名稱精確查詢
+        
+        Args:
+            crawler_name: 爬蟲名稱 (精確匹配)
+            is_preview: 是否啟用預覽模式，僅返回指定欄位
+            preview_fields: 預覽模式下要返回的欄位列表
+
+        Returns:
+            Dict[str, Any]: 單個爬蟲設定
+                success: 是否成功
+                message: 訊息
+                crawler: 符合條件的爬蟲設定 (完整 Schema 或預覽字典) 或 None
+        """
         try:
             with self._transaction() as session:
                 crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
@@ -448,18 +605,46 @@ class CrawlersService(BaseService[Crawlers]):
                         'message': '無法取得資料庫存取器',
                         'crawler': None
                     }
-                crawler = crawler_repo.find_by_crawler_name_exact(crawler_name)
-                crawler_schema = CrawlerReadSchema.model_validate(crawler) if crawler else None
-                if not crawler_schema:
+                
+                # Pass parameters including is_preview and preview_fields
+                crawler = crawler_repo.find_by_crawler_name_exact(
+                    crawler_name,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
+                )
+                
+                # Prepare result based on is_preview
+                crawler_result: Optional[Union[CrawlerReadSchema, Dict[str, Any]]] = None
+                if crawler:
+                    if is_preview:
+                        # Repository returns Dict[str, Any] in preview mode
+                        if isinstance(crawler, dict):
+                            crawler_result = crawler
+                        else:
+                            # This case shouldn't happen based on repo logic, but handle defensively
+                            logger.warning(f"Preview mode expected Dict but got {type(crawler)} for {crawler_name}")
+                            # Decide fallback: return None or try to convert? Let's return None for now.
+                            pass # crawler_result remains None
+                    else:
+                        # Repository returns Crawlers when not in preview mode
+                        # Ensure crawler is Crawlers before validating
+                        if isinstance(crawler, Crawlers):
+                             crawler_result = CrawlerReadSchema.model_validate(crawler) # Convert to Schema
+                        else:
+                            # This case shouldn't happen, handle defensively
+                            logger.warning(f"Non-preview mode expected Crawlers but got {type(crawler)} for {crawler_name}")
+                            pass # crawler_result remains None
+
+                if not crawler_result:
                     return {
-                        'success': False,
+                        'success': False, # Changed to False as exact match failed
                         'message': f"找不到名稱為 {crawler_name} 的爬蟲設定",
                         'crawler': None
                     }
                 return {
                     'success': True,
                     'message': "獲取爬蟲設定成功",
-                    'crawler': crawler_schema
+                    'crawler': crawler_result
                 }
         except Exception as e:
             logger.error(f"獲取名稱為 {crawler_name} 的爬蟲設定失敗: {str(e)}")
@@ -644,13 +829,16 @@ class CrawlersService(BaseService[Crawlers]):
             logger.error(f"批量切換爬蟲狀態失敗: {str(e)}")
             raise e
     
-    def get_filtered_crawlers(self, 
-                              filter_dict: Dict[str, Any], 
-                              page: int = 1, 
-                              per_page: int = 10,
-                              sort_by: Optional[str] = None, 
-                              sort_desc: bool = False) -> Dict[str, Any]:
-        """根據過濾條件獲取分頁爬蟲列表"""
+    def find_filtered_crawlers(self, 
+                               filter_criteria: Dict[str, Any], 
+                               page: int = 1, 
+                               per_page: int = 10,
+                               sort_by: Optional[str] = None, 
+                               sort_desc: bool = False,
+                               is_preview: bool = False,             # 添加 is_preview
+                               preview_fields: Optional[List[str]] = None # 添加 preview_fields
+                               ) -> Dict[str, Any]:
+        """根據過濾條件獲取分頁爬蟲列表，支援預覽模式"""
         try:
             with self._transaction() as session:
                 crawler_repo = cast(CrawlersRepository, self._get_repository('Crawler', session))
@@ -661,42 +849,24 @@ class CrawlersService(BaseService[Crawlers]):
                         'data': None
                     }
                 
-                result = crawler_repo.get_paginated_by_filter(
-                    filter_dict=filter_dict,
+                # 使用 Repository 的 find_paginated 方法
+                repo_result = crawler_repo.find_paginated(
+                    filter_criteria=filter_criteria,
                     page=page,
                     per_page=per_page,
                     sort_by=sort_by,
-                    sort_desc=sort_desc
+                    sort_desc=sort_desc,
+                    is_preview=is_preview,       # 傳遞 is_preview
+                    preview_fields=preview_fields # 傳遞 preview_fields
                 )
                 
-                if not result or not result.get('items'):
-                    # 即使找不到結果，也返回空的 PaginatedCrawlerResponse 對象
-                    empty_response = PaginatedCrawlerResponse(
-                        items=[],
-                        page=page,
-                        per_page=per_page,
-                        total=0,
-                        total_pages=0,
-                        has_next=False,
-                        has_prev=False
-                    )
-                    return {
-                        'success': False, # 維持 False 表示未找到
-                        'message': "找不到符合條件的爬蟲設定",
-                        'data': empty_response
-                    }
-                
-                # 確保 repo 返回的 result 是字典
-                repo_result = result if isinstance(result, dict) else {}
-                
-                # 轉換 items 為 Schema 列表
-                items_orm = repo_result.get('items', []) or [] # 確保是列表
-                items_schema = [CrawlerReadSchema.model_validate(item) for item in items_orm]
+                # repo_result 現在是包含 'items', 'page', etc. 的字典
                 
                 # 創建 PaginatedCrawlerResponse 實例
+                # Schema 已更新，可以直接接收 repo_result['items'] (無論是 Schema 還是 Dict)
                 try:
                     paginated_response = PaginatedCrawlerResponse(
-                        items=items_schema,
+                        items=repo_result.get('items', []), # 直接使用 repo 返回的 items
                         page=repo_result.get("page", 1),
                         per_page=repo_result.get("per_page", per_page),
                         total=repo_result.get("total", 0),
@@ -704,21 +874,26 @@ class CrawlersService(BaseService[Crawlers]):
                         has_next=repo_result.get("has_next", False),
                         has_prev=repo_result.get("has_prev", False)
                     )
-                except Exception as pydantic_error: # 捕捉可能的 Pydantic 驗證錯誤
+                except Exception as pydantic_error:
                     logger.error(f"創建 PaginatedCrawlerResponse 時出錯: {pydantic_error}", exc_info=True)
+                    # 返回標準錯誤結構
                     return {'success': False, 'message': f'分頁結果格式錯誤: {pydantic_error}', 'data': None}
 
-                if not paginated_response.items: # 即使成功，也檢查是否有數據
+                # 檢查是否有數據並設置消息
+                if not paginated_response.items:
                     message = "找不到符合條件的爬蟲設定"
+                    success_status = False # 維持 False 表示未找到 (或 True 如果空列表是成功) -> 保持一致性，返回 True
                 else:
                     message = "獲取爬蟲設定列表成功"
+                    success_status = True
                     
                 return {
-                    'success': True,
+                    'success': success_status,
                     'message': message,
                     'data': paginated_response # 返回 Schema 實例
                 }
         except Exception as e:
-            logger.error(f"獲取過濾後的爬蟲設定列表失敗: {str(e)}")
-            raise e
+            logger.error(f"獲取過濾後的分頁爬蟲設定列表失敗: {str(e)}")
+            # 直接返回標準錯誤結構，避免拋出未處理的異常
+            return {'success': False, 'message': f'處理請求時發生錯誤: {str(e)}', 'data': None}
 

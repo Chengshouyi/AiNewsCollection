@@ -1,9 +1,10 @@
-from typing import Annotated, Optional, List
-from pydantic import  BeforeValidator, model_validator, BaseModel, ConfigDict
-from datetime import datetime
+from typing import Annotated, Optional, List, Dict, Any, Union
+from pydantic import  BeforeValidator, model_validator, BaseModel, ConfigDict, Field, field_validator
+from datetime import datetime, timezone
 from src.utils.model_utils import validate_url, validate_str, validate_boolean
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
 from src.utils.schema_utils import validate_update_schema, validate_required_fields_schema
+import logging
 
 
 # 通用字段定義
@@ -72,17 +73,29 @@ class CrawlerReadSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 class PaginatedCrawlerResponse(BaseModel):
-    """用於分頁響應的結構化數據模型"""
-    items: List[CrawlerReadSchema]
-    page: int
-    per_page: int
-    total: int
-    total_pages: int
-    has_next: bool
-    has_prev: bool
+    items: List[Union[CrawlerReadSchema, Dict[str, Any]]]
+    page: int = Field(..., ge=1, description="當前頁碼")
+    per_page: int = Field(..., ge=1, description="每頁項目數")
+    total: int = Field(..., ge=0, description="總項目數")
+    total_pages: int = Field(..., ge=0, description="總頁數")
+    has_next: bool = Field(..., description="是否有下一頁")
+    has_prev: bool = Field(..., description="是否有上一頁")
 
-    # Pydantic V2 配置: 如果輸入數據是對象而非字典，這也可能有用
     model_config = ConfigDict(from_attributes=True)
+
+    @field_validator('items', mode='before')
+    @classmethod
+    def ensure_items_list(cls, v):
+        if v is None:
+            return []
+        return v
+
+    @field_validator('page', 'per_page', 'total', 'total_pages')
+    @classmethod
+    def check_non_negative_integers(cls, value):
+        if value < 0:
+             raise ValueError("分頁相關數值必須為非負整數")
+        return value
 
 
 
