@@ -19,7 +19,7 @@ def get_crawlers():
     """取得所有爬蟲設定列表"""
     try:
         service: CrawlersService = get_crawlers_service() # 指定類型提示
-        result = service.get_all_crawlers()
+        result = service.find_all_crawlers()
 
         if not result.get('success'):
             # Service 失數通常是內部錯誤，但這裡也可能是找不到資料庫存取器
@@ -169,7 +169,7 @@ def get_active_crawlers():
     """取得所有活動中的爬蟲設定"""
     try:
         service: CrawlersService = get_crawlers_service()
-        result = service.get_active_crawlers()
+        result = service.find_active_crawlers()
 
         if not result.get('success'):
              # 如果 Service 內部出錯（例如無法訪問 DB）
@@ -228,7 +228,7 @@ def get_crawlers_by_name(name):
         if is_active_str:
             is_active = is_active_str.lower() in ['true', '1', 'yes']
 
-        result = service.get_crawlers_by_name(name, is_active=is_active)
+        result = service.find_crawlers_by_name(name, is_active=is_active)
 
         if not result.get('success'):
              # Service 內部錯誤
@@ -255,7 +255,7 @@ def get_crawlers_by_type(crawler_type):
     """根據爬蟲類型查找爬蟲"""
     try:
         service: CrawlersService = get_crawlers_service()
-        result = service.get_crawlers_by_type(crawler_type)
+        result = service.find_crawlers_by_type(crawler_type)
 
         if not result.get('success'):
              return jsonify(result), 500
@@ -280,7 +280,7 @@ def get_crawlers_by_target(target_pattern):
     """根據爬取目標模糊查詢爬蟲"""
     try:
         service: CrawlersService = get_crawlers_service()
-        result = service.get_crawlers_by_target(target_pattern)
+        result = service.find_crawlers_by_target(target_pattern)
 
         if not result.get('success'):
             return jsonify(result), 500
@@ -442,8 +442,8 @@ def get_filtered_crawlers():
         sort_by = data.get('sort_by') # Optional[str]
         sort_desc = data.get('sort_desc', False) # bool
 
-        result = service.get_filtered_crawlers(
-            filter_dict=filter_dict,
+        result = service.find_filtered_crawlers(
+            filter_criteria=filter_dict,
             page=page,
             per_page=per_page,
             sort_by=sort_by,

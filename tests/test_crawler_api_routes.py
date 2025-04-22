@@ -245,7 +245,8 @@ def mock_crawlers_service(monkeypatch, sample_crawlers_data):
                 'message': "爬蟲設定刪除成功"
             }
 
-        def get_all_crawlers(self, **kwargs): # 忽略 limit, offset 等參數
+        # Renamed from get_all_crawlers
+        def find_all_crawlers(self, **kwargs): # 忽略 limit, offset 等參數
             all_crawlers = list(self.crawlers.values())
             return {
                 'success': True,
@@ -253,7 +254,8 @@ def mock_crawlers_service(monkeypatch, sample_crawlers_data):
                 'crawlers': all_crawlers # 返回模擬 Schema 物件列表
             }
 
-        def get_active_crawlers(self):
+        # Renamed from get_active_crawlers
+        def find_active_crawlers(self, **kwargs): # 忽略 limit, offset 等參數
             active = [c for c in self.crawlers.values() if c.is_active]
             message = "獲取活動中的爬蟲設定成功" if active else "找不到任何活動中的爬蟲設定"
             return {
@@ -278,7 +280,8 @@ def mock_crawlers_service(monkeypatch, sample_crawlers_data):
                 'crawler': crawler # 返回更新後的模擬 Schema 物件
             }
 
-        def get_crawlers_by_name(self, name, is_active=None):
+        # Renamed from get_crawlers_by_name
+        def find_crawlers_by_name(self, name, is_active=None, **kwargs): # 忽略 limit, offset 等參數
             matched = [c for c in self.crawlers.values()
                        if name.lower() in c.crawler_name.lower()]
             if is_active is not None:
@@ -291,7 +294,8 @@ def mock_crawlers_service(monkeypatch, sample_crawlers_data):
                 'crawlers': matched # 返回模擬 Schema 物件列表
             }
 
-        def get_crawlers_by_type(self, crawler_type):
+        # Renamed from get_crawlers_by_type
+        def find_crawlers_by_type(self, crawler_type, **kwargs): # 忽略 limit, offset 等參數
             matched = [c for c in self.crawlers.values() if c.crawler_type == crawler_type]
             message = f"獲取類型為 {crawler_type} 的爬蟲設定列表成功" if matched else f"找不到類型為 {crawler_type} 的爬蟲設定"
             return {
@@ -300,7 +304,7 @@ def mock_crawlers_service(monkeypatch, sample_crawlers_data):
                 'crawlers': matched # 返回模擬 Schema 物件列表
             }
 
-        def get_crawler_by_exact_name(self, crawler_name):
+        def get_crawler_by_exact_name(self, crawler_name, **kwargs): # 忽略 preview 參數
             for c in self.crawlers.values():
                 if c.crawler_name == crawler_name:
                     return {
@@ -375,12 +379,13 @@ def mock_crawlers_service(monkeypatch, sample_crawlers_data):
                 'result': result_details # 將詳細結果放在 'result' 鍵下
             }
 
-        def get_filtered_crawlers(self, filter_dict, page=1, per_page=10, sort_by=None, sort_desc=False):
+        # Renamed from get_filtered_crawlers
+        def find_filtered_crawlers(self, filter_criteria, page=1, per_page=10, sort_by=None, sort_desc=False, **kwargs): # 忽略 preview 參數
              # 模擬過濾
              filtered_crawlers = []
              for crawler in self.crawlers.values():
                  match = True
-                 for field, value in filter_dict.items():
+                 for field, value in filter_criteria.items():
                      # 假設只支持簡單的等值過濾
                      if getattr(crawler, field, None) != value:
                          match = False
@@ -978,7 +983,7 @@ class TestCrawlerApiRoutes:
         assert paginated_data['has_prev'] is False
 
         # 比較返回的第一項
-        # 現在 paginated_data['items'][0']['created_at'] 應該是 ISO 字串
+        # 現在 paginated_data['items'][0]['created_at'] 應該是 ISO 字串
         assert compare_crawler_dicts(paginated_data['items'][0], expected_items[0])
         # compare_datetimes 
         assert compare_datetimes(paginated_data['items'][0]['created_at'], expected_items[0]['created_at'])

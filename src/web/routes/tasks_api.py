@@ -19,13 +19,17 @@ tasks_bp = Blueprint('tasks_api', __name__, url_prefix='/api/tasks')
 def get_scheduled_tasks():
     try:
         service = get_crawler_task_service()
-        # 使用 advanced_search_tasks 查找自動、活躍的排程任務
-        result = service.advanced_search_tasks(is_scheduled=True, is_active=True, is_auto=True)
+        # 使用 find_tasks_advanced 查找自動、活躍的排程任務
+        # 注意：這裡沒有傳遞分頁參數，會獲取所有符合條件的任務
+        result = service.find_tasks_advanced(is_scheduled=True, is_active=True, is_auto=True, is_preview=False) # is_preview=False 返回 Schema
         if not result['success']:
             # 如果服務層返回失敗，根據 message 返回錯誤
             return jsonify({"success": False, "message": result.get('message', '獲取排程任務失敗')}), 500
+        
+        # 從 result['data']['items'] 獲取任務列表 (Pydantic Schema)
+        tasks_list_schemas = result.get('data', {}).get('items', [])
         # 將返回的 Pydantic Schema 列表轉換為字典列表
-        tasks_list = [task.model_dump() for task in result.get('tasks', [])]
+        tasks_list = [task.model_dump() for task in tasks_list_schemas]
         return jsonify(tasks_list), 200
     except Exception as e:
         return handle_api_error(e)
@@ -492,21 +496,23 @@ def get_task_history(task_id):
     try:
         # 從 CrawlerTaskService 獲取歷史記錄
         service = get_crawler_task_service()
-        # 注意: get_task_history 在 CrawlerTaskService 中
-        result = service.get_task_history(task_id)
+        # 使用 find_task_history
+        # 注意：這裡沒有傳遞分頁/預覽參數
+        result = service.find_task_history(task_id)
         
         if not result.get('success'):
             return jsonify(result), 404
 
-        # 將 history schema 列表轉換為 dict 列表
-        histories_list = [h.model_dump() for h in result.get('histories', [])]
+        # 將 history schema 列表轉換為 dict 列表 (從 'history' 鍵獲取)
+        histories_list = [h.model_dump() for h in result.get('history', [])]
         
         # 構造最終的 JSON 響應
         response_data = {
             'success': True,
             'message': result.get('message', '獲取任務歷史成功'),
             'histories': histories_list,
-            'total_count': result.get('total_count', len(histories_list))
+            # total_count 不再由 find_task_history 直接返回，但可以從列表長度計算
+            'total_count': len(histories_list) 
         }
         return jsonify(response_data), 200
     except Exception as e:
@@ -544,9 +550,7 @@ def _setup_validate_task_data(task_data: Dict[str, Any], service: CrawlerTaskSer
     validation_result = service.validate_task_data(task_data, is_update=is_update)
     
     # 清理掉臨時加到頂層的 scrape_mode 和 is_auto (如果驗證成功且返回了 data)
-    # 驗證器應該只返回模型定義的字段，所以這步可能不需要
-    # if validation_result.get('success') and validation_result.get('data'):
-    #     validation_result['data'].pop('scrape_mode', None)
-    #     validation_result['data'].pop('is_auto', None)
+    # service.validate_task_data 現在返回的 data 應該已經是清理過的 Pydantic 模型字典
+    # 無需手動 pop
 
     return validation_result
