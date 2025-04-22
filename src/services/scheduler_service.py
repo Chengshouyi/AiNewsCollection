@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Any, Tuple, Optional, Type, cast
+from typing import Dict, Any, Tuple, Optional, Type, cast, List
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
@@ -108,7 +108,8 @@ class SchedulerService(BaseService[CrawlerTasks]):
                 repo = cast(CrawlerTasksRepository, self._get_repository('CrawlerTask', session))
                 
                 # 從資料庫獲取需要自動執行的任務
-                auto_tasks = repo.find_auto_tasks()
+                auto_tasks_raw = repo.find_auto_tasks()
+                auto_tasks = cast(List[CrawlerTasks], auto_tasks_raw)
                 
                 # 記錄資料庫任務和持久化任務的 ID 對應關係
                 db_task_ids = {task.id for task in auto_tasks}
@@ -498,7 +499,8 @@ class SchedulerService(BaseService[CrawlerTasks]):
                 repo = cast(CrawlerTasksRepository, self._get_repository('CrawlerTask', session))
                 
                 # 從資料庫獲取最新的自動執行任務
-                auto_tasks = repo.find_auto_tasks()
+                auto_tasks_raw = repo.find_auto_tasks()
+                auto_tasks = cast(List[CrawlerTasks], auto_tasks_raw)
                 db_task_ids = {task.id for task in auto_tasks}
                 
                 # 1. 移除已不存在於資料庫或不再是 auto_tasks 的持久化任務

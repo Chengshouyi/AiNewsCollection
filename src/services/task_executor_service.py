@@ -202,26 +202,34 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 with self._transaction() as session:
                     tasks_repo = cast(CrawlerTasksRepository, self._get_repository('CrawlerTask', session))
                     history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('TaskHistory', session))
-                    
+
                     if tasks_repo:
                         task_data = {
                             'task_status': TaskStatus.FAILED.value,
                             'scrape_phase': ScrapePhase.FAILED.value
                         }
-                        tasks_repo.update(task_id, task_data)
-                    
+                        # 檢查更新操作的結果
+                        updated_task = tasks_repo.update(task_id, task_data)
+                        if not updated_task:
+                            logger.error(f"回調中更新任務 {task_id} 狀態為 FAILED 失敗 (tasks_repo.update 返回 None)")
+
+
                     # 同時更新對應的歷史記錄為失敗
-                    # 尋找與此任務ID相關的最新"運行中"歷史記錄
-                    latest_history = history_repo.get_latest_history(task_id)
-                    if latest_history and latest_history.task_status == TaskStatus.RUNNING.value and not latest_history.end_time:
+                    # 使用 cast 解決類型提示問題
+                    latest_history_orm = cast(Optional[CrawlerTaskHistory], history_repo.get_latest_history(task_id, is_preview=False)) # 明確指定 is_preview=False
+                    if latest_history_orm and latest_history_orm.task_status == TaskStatus.RUNNING.value and not latest_history_orm.end_time:
                         history_data = {
                             'end_time': datetime.now(timezone.utc),
                             'task_status': TaskStatus.FAILED.value,
                             'message': f"任務執行失敗: {error_info}"
                         }
                         validated_history_data = history_repo.validate_data(history_data, SchemaType.UPDATE)
-                        history_repo.update(latest_history.id, validated_history_data)
-                        logger.info(f"已更新任務 {task_id} 的歷史記錄 {latest_history.id} 狀態為失敗")
+                        # 檢查更新操作的結果
+                        updated_history = history_repo.update(latest_history_orm.id, validated_history_data)
+                        if updated_history:
+                            logger.info(f"已更新任務 {task_id} 的歷史記錄 {latest_history_orm.id} 狀態為失敗")
+                        else:
+                            logger.error(f"回調中更新歷史記錄 {latest_history_orm.id} 狀態為 FAILED 失敗 (history_repo.update 返回 None)")
                     else:
                          logger.warning(f"找不到任務 {task_id} 對應的運行中歷史記錄進行失敗狀態更新。")
 
@@ -264,7 +272,9 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                                   'message': f'執行時找不到任務 {task_id}'
                               }
                               validated_history_data = history_repo.validate_data(history_data, SchemaType.UPDATE)
-                              history_repo.update(history_id, validated_history_data)
+                              updated_history = history_repo.update(history_id, validated_history_data)
+                              if not updated_history:
+                                  logger.error(f"更新找不到任務 {task_id} 的歷史記錄 {history_id} 失敗 (history_repo.update 返回 None)")
                               session.flush()
                           except Exception as history_update_err:
                                logger.error(f"更新找不到任務 {task_id} 的歷史記錄 {history_id} 失敗: {history_update_err}")
@@ -284,7 +294,9 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                         'task_status': TaskStatus.FAILED.value,
                         'scrape_phase': ScrapePhase.FAILED.value
                     }
-                    tasks_repo.update(task_id, task_data)
+                    updated_task_fail = tasks_repo.update(task_id, task_data)
+                    if not updated_task_fail:
+                         logger.error(f"更新任務 {task_id} 狀態為 FAILED (因找不到爬蟲) 失敗 (tasks_repo.update 返回 None)")
                     if history_id:
                         history_data = {
                             'end_time': datetime.now(timezone.utc),
@@ -292,7 +304,9 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                             'message': f'爬蟲 ID {task.crawler_id} 不存在'
                         }
                         validated_history_data = history_repo.validate_data(history_data, SchemaType.UPDATE)
-                        history_repo.update(history_id, validated_history_data)
+                        updated_history_fail = history_repo.update(history_id, validated_history_data)
+                        if not updated_history_fail:
+                             logger.error(f"更新歷史記錄 {history_id} 狀態為 FAILED (因找不到爬蟲) 失敗 (history_repo.update 返回 None)")
                     session.flush()
                     return {
                         'success': False,
@@ -333,10 +347,12 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                     'last_run_success': result.get('success', False),
                     'last_run_message': message
                 }
-                # 驗證後更新
+                # 檢查更新操作的結果
                 validated_task_data = tasks_repo.validate_data(task_data, SchemaType.UPDATE)
-                tasks_repo.update(task_id, validated_task_data)
-                
+                updated_task_final = tasks_repo.update(task_id, validated_task_data)
+                if not updated_task_final:
+                     logger.error(f"更新任務 {task_id} 最終狀態失敗 (tasks_repo.update 返回 None)")
+
                 # 更新任務歷史記錄
                 if history_id:
                     history_data = {
@@ -347,7 +363,10 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                         'success': result.get('success', False) # 補上 success 欄位
                     }
                     validated_history_data = history_repo.validate_data(history_data, SchemaType.UPDATE)
-                    history_repo.update(history_id, validated_history_data)
+                    # 檢查更新操作的結果
+                    updated_history_final = history_repo.update(history_id, validated_history_data)
+                    if not updated_history_final:
+                         logger.error(f"更新歷史記錄 {history_id} 最終狀態失敗 (history_repo.update 返回 None)")
                 
                 session.flush() # 確保所有更新寫入
 
@@ -381,8 +400,11 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                             'last_run_message': error_msg
                         }
                         validated_task_data = tasks_repo.validate_data(task_data, SchemaType.UPDATE)
-                        tasks_repo.update(task_id, validated_task_data)
-                    
+                        # 檢查更新操作的結果
+                        updated_task_err = tasks_repo.update(task_id, validated_task_data)
+                        if not updated_task_err:
+                            logger.error(f"異常處理中更新任務 {task_id} 狀態為 FAILED 失敗 (tasks_repo.update 返回 None)")
+
                     # 更新歷史記錄
                     if history_id and history_repo.get_by_id(history_id):
                         history_data = {
@@ -392,8 +414,11 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                             'success': False
                         }
                         validated_history_data = history_repo.validate_data(history_data, SchemaType.UPDATE)
-                        history_repo.update(history_id, validated_history_data)
-                        
+                        # 檢查更新操作的結果
+                        updated_history_err = history_repo.update(history_id, validated_history_data)
+                        if not updated_history_err:
+                             logger.error(f"異常處理中更新歷史記錄 {history_id} 狀態為 FAILED 失敗 (history_repo.update 返回 None)")
+
                     error_session.flush()
             except Exception as update_error:
                 logger.error(f"寫入任務 {task_id} 失敗狀態時發生錯誤: {str(update_error)}")
@@ -482,10 +507,11 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 
                 if cancelled:
                     # 獲取最新的歷史記錄 (運行中)
-                    latest_history = history_repo.get_latest_history(task_id)
+                    # 使用 cast 解決類型提示問題
+                    latest_history_orm = cast(Optional[CrawlerTaskHistory], history_repo.get_latest_history(task_id, is_preview=False)) # 明確指定 is_preview=False
                     history_id_to_update = None
-                    if latest_history and latest_history.task_status == TaskStatus.RUNNING.value and not latest_history.end_time:
-                        history_id_to_update = latest_history.id
+                    if latest_history_orm and latest_history_orm.task_status == TaskStatus.RUNNING.value and not latest_history_orm.end_time:
+                        history_id_to_update = latest_history_orm.id
 
                     # 更新歷史記錄為已取消
                     if history_id_to_update:
@@ -510,8 +536,10 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                             'success': False
                         }
                         validated_history_data = history_repo.validate_data(history_data, SchemaType.CREATE)
-                        history_repo.create(validated_history_data)
-                        
+                        created_history = history_repo.create(validated_history_data)
+                        if not created_history:
+                            logger.error(f"創建任務 {task_id} 的取消歷史記錄失敗 (history_repo.create 返回 None)")
+
                     # 更新任務狀態為已取消
                     task_data = {
                         'task_status': TaskStatus.CANCELLED.value,
@@ -618,25 +646,28 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                     }
                 
                 # 從資料庫獲取最新一筆歷史記錄
-                latest_history = history_repo.get_latest_history(task_id)
-                
+                # 注意：這裡 get_task_status 可能不需要 is_preview=False，因為它本來就不預期返回 ORM 物件屬性細節
+                # 但為了與其他部分一致，並假設後續可能需要 ORM 物件，保留 is_preview=False 並使用 cast
+                latest_history_orm = cast(Optional[CrawlerTaskHistory], history_repo.get_latest_history(task_id, is_preview=False))
+
                 # 確定最終狀態和階段
                 task_status_value = task.task_status # 默認使用任務表的狀態
                 scrape_phase_value = task.scrape_phase # 默認使用任務表的階段
                 message = task.last_run_message or '' # 默認消息
                 progress = 0 # 默認進度
 
-                if latest_history:
-                    message = latest_history.message or message # 優先使用歷史記錄消息
-                    # 檢查 latest_history.task_status 是否有效
+                if latest_history_orm:
+                    message = latest_history_orm.message or message # 優先使用歷史記錄消息
+                    # 檢查 latest_history_orm.task_status 是否有效
                     latest_history_status_value = None
-                    if hasattr(latest_history, 'task_status') and latest_history.task_status is not None:
+                    # 直接訪問 ORM 屬性
+                    if latest_history_orm.task_status is not None:
                          # 假設 task_status 可能存儲 Enum 成員或其值，優先取 .value
-                         latest_history_status_value = getattr(latest_history.task_status, 'value', latest_history.task_status)
-                    
+                         latest_history_status_value = getattr(latest_history_orm.task_status, 'value', latest_history_orm.task_status)
+
                     # 如果歷史記錄指示任務已結束
-                    if latest_history.end_time and latest_history_status_value in [
-                        TaskStatus.COMPLETED.value, 
+                    if latest_history_orm.end_time and latest_history_status_value in [
+                        TaskStatus.COMPLETED.value,
                         TaskStatus.FAILED.value,
                         TaskStatus.CANCELLED.value
                     ]:
@@ -650,12 +681,12 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                             scrape_phase_value = ScrapePhase.CANCELLED.value
                         progress = 100
                     # 如果歷史記錄是運行中 (通常不應該出現，因為我們先檢查內存)
-                    elif not latest_history.end_time and latest_history_status_value == TaskStatus.RUNNING.value:
+                    elif not latest_history_orm.end_time and latest_history_status_value == TaskStatus.RUNNING.value:
                          task_status_value = TaskStatus.RUNNING.value
                          # 嘗試估算進度
                          current_time = datetime.now(timezone.utc)
-                         if latest_history.start_time:
-                             elapsed = current_time - latest_history.start_time
+                         if latest_history_orm.start_time:
+                             elapsed = current_time - latest_history_orm.start_time
                              progress = min(95, int((elapsed.total_seconds() / 300) * 100))
                          message = f"任務可能仍在運行 (基於歷史記錄) {progress}%"
                     # 其他情況 (例如歷史記錄狀態異常)，維持任務表的狀態
