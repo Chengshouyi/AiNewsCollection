@@ -1,4 +1,4 @@
-from typing import Annotated, Optional, List
+from typing import Annotated, Optional, List, Union, Dict, Any
 from pydantic import BeforeValidator, model_validator, BaseModel, ConfigDict
 from datetime import datetime
 from src.utils.model_utils import validate_str, validate_url, validate_datetime, validate_boolean, validate_int,validate_article_scrape_status
@@ -123,7 +123,7 @@ class ArticleReadSchema(BaseModel):
 
 class PaginatedArticleResponse(BaseModel):
     """用於分頁響應的結構化數據模型"""
-    items: List[ArticleReadSchema]
+    items: Union[List[ArticleReadSchema], List[Dict[str, Any]]] # 支援 ORM Schema 或預覽字典
     page: int
     per_page: int
     total: int

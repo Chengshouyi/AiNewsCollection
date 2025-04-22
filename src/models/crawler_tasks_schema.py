@@ -1,4 +1,4 @@
-from typing import Annotated, Optional, Any, List
+from typing import Annotated, Optional, Any, List, Dict, Union
 from pydantic import BeforeValidator, model_validator, BaseModel, ConfigDict
 from datetime import datetime
 from src.error.errors import ValidationError
@@ -114,7 +114,7 @@ class CrawlerTaskReadSchema(BaseModel):
 
 class PaginatedCrawlerTaskResponse(BaseModel):
     """用於分頁響應的結構化數據模型"""
-    items: List[CrawlerTaskReadSchema]
+    items: Union[List[CrawlerTaskReadSchema], List[Dict[str, Any]]]
     page: int
     per_page: int
     total: int

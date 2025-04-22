@@ -185,3 +185,4 @@ cython_debug/
 .pypirc
 
 .ai/
+filememory

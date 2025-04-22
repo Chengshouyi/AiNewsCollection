@@ -650,7 +650,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             # 可以選擇返回 UTC 或拋出錯誤
             return utc_time # 返回原始 UTC 時間
 
-    def advanced_search(self, is_preview: bool = False, preview_fields: Optional[List[str]] = None, **filters) -> Optional[Dict[str, Any]]:
+    def advanced_search(self, is_preview: bool = False, preview_fields: Optional[List[str]] = None, **filters) -> Dict[str, Any]:
         """
         進階搜尋任務 (已更新以支援預覽)
 

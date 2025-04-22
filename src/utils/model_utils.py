@@ -484,11 +484,18 @@ def validate_task_args(field_name: str, required: bool = False):
                         raise ValidationError(f"{field_name}.{param}: {str(e)}")
 
             # 驗證數值參數
-            numeric_params = ['max_pages', 'num_articles', 'min_keywords', 'timeout', 'max_retries']
-            for param in numeric_params:
+            numeric_params = {
+                'max_pages': False,
+                'num_articles': False,
+                'min_keywords': False,
+                'timeout': False,
+                'max_retries': True # 允許 max_retries 為 0
+            }
+            for param, is_zero_allowed in numeric_params.items():
                 if param in task_args:
                     try:
-                        validate_positive_int(param, required=True)(task_args[param]) 
+                        # 傳遞 is_zero_allowed 給驗證器
+                        validate_positive_int(param, is_zero_allowed=is_zero_allowed, required=True)(task_args[param])
                     except Exception as e:
                         raise ValidationError(f"{field_name}.{param}: {str(e)}")
             

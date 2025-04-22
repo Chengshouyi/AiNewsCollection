@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Dict, Any, List, TypeVar, Tuple, Hashable, Type, cast
+from typing import Optional, Dict, Any, List, TypeVar, Tuple, Hashable, Type, cast, Union
 from src.models.articles_model import Base, Articles, ArticleScrapeStatus
 from src.models.articles_schema import ArticleReadSchema, PaginatedArticleResponse
 from datetime import datetime, timedelta
@@ -9,19 +9,21 @@ from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from src.services.base_service import BaseService
 from src.database.base_repository import BaseRepository, SchemaType
-from sqlalchemy.orm.attributes import instance_state # Import for checking state
+from sqlalchemy.orm.attributes import instance_state
 
 # 設定 logger
-logging.basicConfig(level=logging.INFO, 
+logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
 # 通用類型變數，用於泛型方法
 T = TypeVar('T', bound=Base)
+# 定義返回結果的類型別名
+ArticleResultType = Union[List[ArticleReadSchema], List[Dict[str, Any]]]
 
 class ArticleService(BaseService[Articles]):
     """文章服務，提供文章相關業務邏輯"""
-    
+
     def __init__(self, db_manager=None):
         super().__init__(db_manager)
 
@@ -30,27 +32,26 @@ class ArticleService(BaseService[Articles]):
         return {
             'Article': (ArticlesRepository, Articles)
         }
-    
+
     def validate_article_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
         """驗證文章資料
-        
+
         Args:
             data: 要驗證的資料
-            is_update: 是否為更新操作   
-            
+            is_update: 是否為更新操作
+
         Returns:
             Dict[str, Any]: 驗證後的資料
         """
         schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
         return self.validate_data('Article', data, schema_type)
-    
 
     def create_article(self, article_data: Dict[str, Any]) -> Dict[str, Any]:
         """創建新文章，若連結已存在則更新，返回包含 ArticleReadSchema 的字典"""
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
-                
+
                 link = article_data.get('link')
                 existing_article = None
                 if link:
@@ -59,14 +60,14 @@ class ArticleService(BaseService[Articles]):
                 if existing_article:
                     logger.info(f"文章連結 '{link}' 已存在，將執行更新操作。")
                     # 業務邏輯：重複爬取的文章，預設更新，移除 link 欄位，避免驗證時出現錯誤
-                    if 'link' in article_data: 
+                    if 'link' in article_data:
                         article_data_for_validation = article_data.copy()
                         article_data_for_validation.pop('link', None)
                     else:
                         article_data_for_validation = article_data
-                        
+
                     validated_data = self.validate_article_data(article_data_for_validation, is_update=True)
-                    
+
                     updated_article = article_repo.update(existing_article.id, validated_data)
                     # commit 由 _transaction 處理
                     if updated_article:
@@ -82,17 +83,17 @@ class ArticleService(BaseService[Articles]):
                         session.refresh(existing_article) # 確保是最新狀態
                         article_schema = ArticleReadSchema.model_validate(existing_article) # 轉換為 Schema
                         return {
-                            'success': True, 
+                            'success': True,
                             'message': '文章已存在，無變更或更新失敗',
                             'article': article_schema # 返回 Schema
                         }
                 else:
                     validated_data = self.validate_article_data(article_data, is_update=False)
                     new_article = article_repo.create(validated_data)
-                    
+
                     if new_article:
-                        session.flush() 
-                        session.refresh(new_article) 
+                        session.flush()
+                        session.refresh(new_article)
                         article_schema = ArticleReadSchema.model_validate(new_article) # 轉換為 Schema
                         return {
                             'success': True,
@@ -100,9 +101,11 @@ class ArticleService(BaseService[Articles]):
                             'article': article_schema # 返回 Schema
                         }
                     else:
+                        # 這裡可能表示 repo.create 內部邏輯返回了 None，需要檢查 repo 實現
+                        logger.warning("create_article: repo.create 返回 None")
                         return {
                             'success': False,
-                            'message': '文章創建失敗',
+                            'message': '文章創建失敗 (內部原因)',
                             'article': None
                         }
 
@@ -128,14 +131,14 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
-                
+
                 repo_result = article_repo.batch_create(articles_data)
 
                 # --- 新增: Flush 和 Refresh 以獲取 ID ---
                 session.flush() # 將所有待處理的變更寫入 DB (獲取 ID)
                 inserted_articles_orm = repo_result.get('inserted_articles', [])
                 updated_articles_orm = repo_result.get('updated_articles', [])
-                
+
                 # Refresh 每個對象以確保數據同步
                 for article in inserted_articles_orm:
                     if article and not instance_state(article).detached: # 確保對象在 session 中
@@ -148,25 +151,25 @@ class ArticleService(BaseService[Articles]):
                 # 轉換結果中的 ORM 列表為 Schema 列表
                 inserted_schemas = [ArticleReadSchema.model_validate(a) for a in inserted_articles_orm]
                 updated_schemas = [ArticleReadSchema.model_validate(a) for a in updated_articles_orm]
-                
+
                 # 構建最終返回的結果字典
                 final_result_msg = repo_result.copy()
                 final_result_msg['inserted_articles'] = inserted_schemas
                 final_result_msg['updated_articles'] = updated_schemas
-                
+
                 message = (
                     f"批量處理文章完成：新增 {final_result_msg.get('success_count', 0)} 筆，"
                     f"更新 {final_result_msg.get('update_count', 0)} 筆，"
                     f"失敗 {final_result_msg.get('fail_count', 0)} 筆"
                 )
-                
+
                 success = final_result_msg.get('fail_count', 0) == 0
                 return {
                     'success': success,
                     'message': message,
-                    'resultMsg': final_result_msg 
+                    'resultMsg': final_result_msg
                 }
-        except ValidationError as e: 
+        except ValidationError as e:
             # Pydantic 驗證錯誤現在也可能在這裡觸發，但應該是轉換時的問題
             error_msg = f"批量創建文章時資料轉換或驗證失敗: {str(e)}"
             logger.error(error_msg, exc_info=True)
@@ -185,19 +188,38 @@ class ArticleService(BaseService[Articles]):
                 'resultMsg': None
             }
 
-    def find_all_articles(self, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
-        """獲取所有文章，返回包含 ArticleReadSchema 列表的字典"""
+    def find_all_articles(self,
+                          limit: Optional[int] = None,
+                          offset: Optional[int] = None,
+                          sort_by: Optional[str] = None,
+                          sort_desc: bool = False,
+                          is_preview: bool = False,
+                          preview_fields: Optional[List[str]] = None
+                          ) -> Dict[str, Any]:
+        """獲取所有文章，支援分頁、排序和預覽"""
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
-                
-                articles_orm = article_repo.get_all(limit=limit, offset=offset)
-                # 轉換 ORM 列表為 Schema 列表
-                articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_orm]
+
+                articles_result = article_repo.find_all(
+                    limit=limit,
+                    offset=offset,
+                    sort_by=sort_by,
+                    sort_desc=sort_desc,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
+                )
+
+                # 如果不是預覽模式，且結果是 ORM 列表，則轉換為 Schema
+                if not is_preview and articles_result and isinstance(articles_result[0], Articles):
+                    articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_result]
+                else:
+                    articles_schema = articles_result # 保持字典列表或空列表
+
                 return {
                     'success': True,
                     'message': '獲取所有文章成功',
-                    'articles': articles_schema # 返回 Schema 列表
+                    'articles': articles_schema
                 }
         except DatabaseOperationError as e:
             error_msg = f"獲取所有文章時資料庫操作失敗: {str(e)}"
@@ -217,7 +239,7 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
-                
+
                 article_orm = article_repo.get_by_id(article_id)
                 if article_orm:
                     article_schema = ArticleReadSchema.model_validate(article_orm) # 轉換為 Schema
@@ -249,7 +271,7 @@ class ArticleService(BaseService[Articles]):
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
-                
+
                 existing_article = article_repo.get_by_id(article_id)
                 if not existing_article:
                     return {
@@ -260,7 +282,7 @@ class ArticleService(BaseService[Articles]):
 
                 validated_data = self.validate_article_data(article_data, is_update=True)
                 updated_article = article_repo.update(article_id, validated_data)
-                
+
                 if updated_article:
                     session.flush()
                     session.refresh(updated_article)
@@ -275,7 +297,7 @@ class ArticleService(BaseService[Articles]):
                     session.refresh(existing_article) # 確保返回的是最新狀態
                     article_schema = ArticleReadSchema.model_validate(existing_article) # 轉換為 Schema
                     return {
-                        'success': True, 
+                        'success': True,
                         'message': '文章更新操作完成 (可能無實際變更)',
                         'article': article_schema # 返回 Schema (更新前的狀態)
                     }
@@ -307,7 +329,7 @@ class ArticleService(BaseService[Articles]):
                         'success': False,
                         'message': '無法取得資料庫存取器',
                     }
-                
+
                 success = article_repo.delete(article_id)
                 # Delete 不返回對象，無需 flush 或 refresh
                 return {
@@ -355,8 +377,16 @@ class ArticleService(BaseService[Articles]):
                 'article': None
             }
 
-    def get_articles_paginated(self, page: int, per_page: int, sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
-        """分頁獲取文章，返回包含 PaginatedArticleResponse 的字典"""
+    def find_articles_paginated(self,
+                                page: int,
+                                per_page: int,
+                                filter_criteria: Optional[Dict[str, Any]] = None,
+                                sort_by: Optional[str] = None,
+                                sort_desc: bool = False,
+                                is_preview: bool = False,
+                                preview_fields: Optional[List[str]] = None
+                               ) -> Dict[str, Any]:
+        """分頁獲取文章，支援過濾、排序和預覽"""
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
@@ -366,24 +396,30 @@ class ArticleService(BaseService[Articles]):
                         'message': '無法取得資料庫存取器',
                         'resultMsg': None
                     }
-                
-                repo_result: Dict[str, Any] = article_repo.get_paginated({}, page, per_page, sort_by, sort_desc)
-                
+
+                repo_result: Dict[str, Any] = article_repo.find_paginated(
+                    filter_criteria=filter_criteria or {},
+                    page=page,
+                    per_page=per_page,
+                    sort_by=sort_by,
+                    sort_desc=sort_desc,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
+                )
+
                 if not repo_result or 'items' not in repo_result:
+                    logger.warning("find_articles_paginated: repo.find_paginated 返回的結果結構不符合預期。")
                     return {
                         'success': False,
                         'message': '分頁獲取文章失敗 (內部錯誤或無數據)',
                         'resultMsg': None
                     }
 
-                # 轉換 items 列表中的 ORM 為 Schema
-                items_orm = repo_result.get('items', [])
-                items_schema = [ArticleReadSchema.model_validate(item) for item in items_orm]
-                
-                # 創建 PaginatedArticleResponse 實例
+                items_result = repo_result.get('items', [])
+
                 try:
                     paginated_response = PaginatedArticleResponse(
-                        items=items_schema,
+                        items=items_result,
                         page=repo_result.get("page", 1),
                         per_page=repo_result.get("per_page", per_page),
                         total=repo_result.get("total", 0),
@@ -391,14 +427,14 @@ class ArticleService(BaseService[Articles]):
                         has_next=repo_result.get("has_next", False),
                         has_prev=repo_result.get("has_prev", False)
                     )
-                except Exception as pydantic_error: # 捕捉可能的 Pydantic 驗證錯誤
+                except Exception as pydantic_error:
                     logger.error(f"創建 PaginatedArticleResponse 時出錯: {pydantic_error}", exc_info=True)
                     return {'success': False, 'message': f'分頁結果格式錯誤: {pydantic_error}', 'resultMsg': None}
 
                 return {
                     'success': True,
                     'message': '分頁獲取文章成功',
-                    'resultMsg': paginated_response # 返回 Schema 實例
+                    'resultMsg': paginated_response
                 }
         except Exception as e:
             error_msg = f"分頁獲取文章失敗: {str(e)}"
@@ -409,8 +445,15 @@ class ArticleService(BaseService[Articles]):
                 'resultMsg': None
             }
 
-    def get_ai_related_articles(self, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
-        """獲取所有AI相關的文章，返回包含 ArticleReadSchema 列表的字典"""
+    def find_ai_related_articles(self,
+                                 limit: Optional[int] = None,
+                                 offset: Optional[int] = None,
+                                 sort_by: Optional[str] = None,
+                                 sort_desc: bool = False,
+                                 is_preview: bool = False,
+                                 preview_fields: Optional[List[str]] = None
+                                 ) -> Dict[str, Any]:
+        """獲取所有AI相關的文章，支援分頁、排序和預覽"""
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
@@ -420,12 +463,26 @@ class ArticleService(BaseService[Articles]):
                         'message': '無法取得資料庫存取器',
                         'articles': []
                     }
-                articles_orm = article_repo.get_all({"is_ai_related": True}, limit=limit, offset=offset)
-                articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_orm] # 轉換
+
+                articles_result = article_repo.find_by_filter(
+                    filter_criteria={"is_ai_related": True},
+                    limit=limit,
+                    offset=offset,
+                    sort_by=sort_by,
+                    sort_desc=sort_desc,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
+                )
+
+                if not is_preview and articles_result and isinstance(articles_result[0], Articles):
+                    articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_result]
+                else:
+                    articles_schema = articles_result
+
                 return {
                     'success': True,
                     'message': '獲取AI相關文章成功',
-                    'articles': articles_schema # 返回 Schema 列表
+                    'articles': articles_schema
                 }
         except Exception as e:
             error_msg = f"獲取AI相關文章失敗: {str(e)}"
@@ -436,8 +493,16 @@ class ArticleService(BaseService[Articles]):
                  'articles': []
              }
 
-    def get_articles_by_category(self, category: str, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
-        """根據分類獲取文章，返回包含 ArticleReadSchema 列表的字典"""
+    def find_articles_by_category(self,
+                                  category: str,
+                                  limit: Optional[int] = None,
+                                  offset: Optional[int] = None,
+                                  sort_by: Optional[str] = None,
+                                  sort_desc: bool = False,
+                                  is_preview: bool = False,
+                                  preview_fields: Optional[List[str]] = None
+                                  ) -> Dict[str, Any]:
+        """根據分類獲取文章，支援分頁、排序和預覽"""
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
@@ -447,12 +512,23 @@ class ArticleService(BaseService[Articles]):
                         'message': '無法取得資料庫存取器',
                         'articles': []
                     }
-                articles_orm = article_repo.get_all({'category': category}, limit=limit, offset=offset)
-                articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_orm] # 轉換
+                articles_result = article_repo.find_by_filter(
+                    filter_criteria={'category': category},
+                    limit=limit,
+                    offset=offset,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
+                )
+
+                if not is_preview and articles_result and isinstance(articles_result[0], Articles):
+                    articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_result]
+                else:
+                    articles_schema = articles_result
+
                 return {
                     'success': True,
                     'message': '獲取分類文章成功',
-                    'articles': articles_schema # 返回 Schema 列表
+                    'articles': articles_schema
                 }
         except Exception as e:
             error_msg = f"獲取分類文章失敗, category={category}: {str(e)}"
@@ -463,38 +539,42 @@ class ArticleService(BaseService[Articles]):
                 'articles': []
             }
 
-    def get_articles_by_tags(self, tags: List[str], limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
-        """根據標籤獲取文章，返回包含 ArticleReadSchema 列表的字典"""
+    def find_articles_by_tags(self,
+                              tags: List[str],
+                              limit: Optional[int] = None,
+                              offset: Optional[int] = None,
+                              sort_by: Optional[str] = None,
+                              sort_desc: bool = False,
+                              is_preview: bool = False,
+                              preview_fields: Optional[List[str]] = None
+                              ) -> Dict[str, Any]:
+        """根據標籤獲取文章 (OR 邏輯)，支援分頁、排序和預覽"""
         if not tags:
             return {'success': False, 'message': '未提供標籤', 'articles': []}
         try:
-            with self._transaction() as session: 
-                article_repo = cast(ArticlesRepository, self._get_repository('Article', session)) 
-                
-                # 假設 find_by_tags 返回 ORM 列表
-                all_articles_orm = article_repo.find_by_tags(tags) 
+            with self._transaction() as session:
+                article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
 
-                if not all_articles_orm:
-                    articles_to_return_orm = []
-                elif offset is not None and limit is not None:
-                    articles_to_return_orm = all_articles_orm[offset:offset + limit]
-                elif limit is not None:
-                    articles_to_return_orm = all_articles_orm[:limit]
-                elif offset is not None:
-                    articles_to_return_orm = all_articles_orm[offset:]
+                articles_result = article_repo.find_by_filter(
+                    filter_criteria={'tags': {"$in": tags}},
+                    limit=limit,
+                    offset=offset,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
+                )
+
+                if not is_preview and articles_result and isinstance(articles_result[0], Articles):
+                    articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_result]
                 else:
-                    articles_to_return_orm = all_articles_orm
-
-                # 轉換為 Schema 列表
-                articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_to_return_orm]
+                    articles_schema = articles_result
 
                 return {
                     'success': True,
                     'message': f'獲取標籤 {tags} 的文章成功',
-                    'articles': articles_schema # 返回 Schema 列表
+                    'articles': articles_schema
                 }
         except AttributeError:
-             error_msg = "ArticleRepository 未實現 find_by_tags 方法"
+             error_msg = "ArticleRepository 未實現 find_by_tags 方法或參數不符"
              logger.error(error_msg)
              return {'success': False, 'message': error_msg, 'articles': []}
         except DatabaseOperationError as e:
@@ -521,27 +601,25 @@ class ArticleService(BaseService[Articles]):
                         'message': '無法取得資料庫存取器',
                         'resultMsg': None
                     }
-                
+
                 repo_result = article_repo.batch_update_by_link(article_data)
-                
+
                 if not repo_result:
                     return {
                         'success': False,
                         'message': '批量更新文章失敗 (內部錯誤)',
                         'resultMsg': None
                     }
-                
-                # 轉換結果中的 ORM 列表
+
                 updated_schemas = [ArticleReadSchema.model_validate(a) for a in repo_result.get('updated_articles', [])]
-                # failed_items 通常包含輸入數據和錯誤訊息，不需要轉換
-                
+
                 final_result_msg = repo_result.copy()
                 final_result_msg['updated_articles'] = updated_schemas
 
                 return {
-                    'success': True, # 即使有失敗，操作也算部分成功
+                    'success': True,
                     'message': f"批量更新文章完成: {final_result_msg.get('success_count', 0)} 筆成功, {final_result_msg.get('fail_count', 0)} 筆失敗",
-                    'resultMsg': final_result_msg # 返回包含 Schema 列表的結果
+                    'resultMsg': final_result_msg
                 }
         except ValidationError as e:
             error_msg = f"批量更新文章時資料驗證失敗: {str(e)}"
@@ -555,7 +633,6 @@ class ArticleService(BaseService[Articles]):
                 'message': error_msg,
                 'resultMsg': None
             }
-        
 
     def batch_update_articles_by_ids(self, article_ids: List[int], article_data: Dict[str, Any]) -> Dict[str, Any]:
         """批量更新文章 (依ID列表)，返回包含 ArticleReadSchema 列表的結果"""
@@ -568,10 +645,10 @@ class ArticleService(BaseService[Articles]):
                         'message': '無法取得資料庫存取器',
                         'resultMsg': None
                     }
-                
+
                 validated_data = self.validate_article_data(article_data, is_update=True)
                 repo_result = article_repo.batch_update_by_ids(article_ids, validated_data)
-                
+
                 if not repo_result:
                     return {
                         'success': False,
@@ -579,17 +656,15 @@ class ArticleService(BaseService[Articles]):
                         'resultMsg': None
                     }
 
-                # 轉換結果中的 ORM 列表
                 updated_schemas = [ArticleReadSchema.model_validate(a) for a in repo_result.get('updated_articles', [])]
-                # failed_ids 不需要轉換
-                
+
                 final_result_msg = repo_result.copy()
                 final_result_msg['updated_articles'] = updated_schemas
 
                 return {
-                    'success': True, # 即使有失敗，操作也算部分成功
+                    'success': True,
                     'message': f"批量更新文章完成: {final_result_msg.get('success_count', 0)} 筆成功, {final_result_msg.get('fail_count', 0)} 筆失敗",
-                    'resultMsg': final_result_msg # 返回包含 Schema 列表的結果
+                    'resultMsg': final_result_msg
                 }
         except ValidationError as e:
             error_msg = f"批量更新文章時資料驗證失敗: {str(e)}"
@@ -636,7 +711,7 @@ class ArticleService(BaseService[Articles]):
                 'message': '未提供文章ID，無需刪除',
                 'resultMsg': {'success_count': 0, 'fail_count': 0, 'missing_ids': [], 'failed_ids': []}
             }
-        
+
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
@@ -693,41 +768,47 @@ class ArticleService(BaseService[Articles]):
                         'message': '無法取得資料庫存取器',
                         'article': None
                     }
-                
-                tags_str = ','.join(tags)
+
+                tags_str = ','.join(tags) if tags else None
                 update_data = {"tags": tags_str}
 
-                updated_article_orm = article_repo.update(article_id, update_data)
-                article_to_return_orm = updated_article_orm # 預設返回更新後的
+                validated_data = self.validate_article_data(update_data, is_update=True)
 
-                if not updated_article_orm:
-                    # 如果更新返回 False/None，檢查文章是否存在
+                updated_article_orm = article_repo.update(article_id, validated_data)
+                article_to_return_orm = None
+                message = ''
+                success = False
+
+                if updated_article_orm:
+                    session.flush()
+                    session.refresh(updated_article_orm)
+                    article_to_return_orm = updated_article_orm
+                    message = '更新文章標籤成功'
+                    success = True
+                else:
                     existing_check_orm = article_repo.get_by_id(article_id)
                     if not existing_check_orm:
-                        return {
-                            'success': False,
-                            'message': '文章不存在，無法更新標籤',
-                            'article': None
-                        }
+                        message = '文章不存在，無法更新標籤'
+                        success = False
                     else:
-                        # 文章存在但未更新(可能標籤相同)，返回現有狀態
+                        session.refresh(existing_check_orm)
                         article_to_return_orm = existing_check_orm
                         message = '文章標籤更新成功 (或無變更)'
                         success = True
-                else:
-                    # 更新成功
-                    session.flush()
-                    session.refresh(article_to_return_orm)
-                    message = '更新文章標籤成功'
-                    success = True
 
-                # 無論更新是否成功(只要文章存在)，都轉換並返回 Schema
-                article_schema = ArticleReadSchema.model_validate(article_to_return_orm)
+                article_schema = None
+                if article_to_return_orm:
+                    article_schema = ArticleReadSchema.model_validate(article_to_return_orm)
+
                 return {
                     'success': success,
                     'message': message,
-                    'article': article_schema # 返回 Schema
+                    'article': article_schema
                 }
+        except ValidationError as e:
+            error_msg = f"更新文章標籤 ID={article_id} 時資料驗證失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {'success': False, 'message': error_msg, 'article': None}
         except Exception as e:
             error_msg = f"更新文章標籤失敗, ID={article_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
@@ -740,10 +821,9 @@ class ArticleService(BaseService[Articles]):
     def get_articles_statistics(self) -> Dict[str, Any]:
         """獲取文章統計信息"""
         try:
-           
-            with self._transaction() as session: 
+            with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
-                
+
                 stats = article_repo.get_statistics()
                 return {
                     'success': True,
@@ -767,7 +847,7 @@ class ArticleService(BaseService[Articles]):
                 'statistics': None
             }
 
-    def advanced_search_articles(
+    def find_articles_advanced(
         self,
         task_id: Optional[str] = None,
         keywords: Optional[str] = None,
@@ -775,94 +855,87 @@ class ArticleService(BaseService[Articles]):
         date_range: Optional[Tuple[datetime, datetime]] = None,
         is_ai_related: Optional[bool] = None,
         is_scraped: Optional[bool] = None,
-        scrape_status: Optional[ArticleScrapeStatus] = None, 
+        scrape_status: Optional[ArticleScrapeStatus] = None,
         tags: Optional[List[str]] = None,
         source: Optional[str] = None,
-        limit: Optional[int] = None,
-        offset: Optional[int] = None,
+        page: int = 1,
+        per_page: int = 10,
         sort_by: Optional[str] = None,
-        sort_desc: bool = False
+        sort_desc: bool = False,
+        is_preview: bool = False,
+        preview_fields: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """進階搜尋文章，返回包含 ArticleReadSchema 列表的字典"""
+        """進階搜尋文章 (分頁, 支援預覽)"""
         criteria = {}
         if task_id is not None: criteria['task_id'] = task_id
-        if keywords is not None: criteria['keywords'] = keywords
+        if keywords is not None: criteria['search_text'] = keywords
         if category is not None: criteria['category'] = category
-        if date_range is not None: criteria['date_range'] = date_range
+        if date_range is not None:
+            criteria['published_at'] = {"$gte": date_range[0], "$lte": date_range[1]}
         if is_ai_related is not None: criteria['is_ai_related'] = is_ai_related
         if scrape_status is not None:
             criteria['scrape_status'] = scrape_status
         elif is_scraped is not None:
              criteria['is_scraped'] = is_scraped
-        if tags is not None: criteria['tags'] = tags
+        if tags is not None:
+            if len(tags) == 1:
+                criteria['tags'] = tags[0]
+            elif len(tags) > 1:
+                 logger.warning("進階搜尋暫不支援多個標籤 (OR 邏輯)，只會使用第一個標籤 (若有)。")
+                 criteria['tags'] = tags[0]
         if source is not None: criteria['source'] = source
 
         try:
-            with self._transaction() as session: 
-                article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
-                
-                # 分開獲取文章列表 (帶分頁)
-                articles_orm = article_repo.get_all(
-                    filter_criteria=criteria, 
-                    limit=limit, 
-                    offset=offset, 
-                    sort_by=sort_by, 
-                    sort_desc=sort_desc
-                )
-                
-                # --- 修改: 分開獲取總數 (不帶分頁) ---
-                total_count = article_repo.count(filter_dict=criteria)
-                # --- 結束修改 ---
-                
-                # 轉換 ORM 列表為 Schema 列表
-                articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_orm]
-                
-                return {
-                    'success': True,
-                    'message': '進階搜尋文章成功',
-                    'articles': articles_schema, # 返回 Schema 列表
-                    'total_count': total_count # 返回正確的總數
-                }
-        except AttributeError as e:
-             error_msg = f"ArticleRepository 的 get_all 或 count 方法未實現或參數不符: {e}" # 更新錯誤訊息
-             logger.error(error_msg)
-             return {'success': False, 'message': error_msg, 'articles': [], 'total_count': 0}
-        except DatabaseOperationError as e:
-             error_msg = f"進階搜尋文章時資料庫操作失敗: {str(e)}"
-             logger.error(error_msg, exc_info=True)
-             return {'success': False, 'message': error_msg, 'articles': [], 'total_count': 0}
+            return self.find_articles_paginated(
+                page=page,
+                per_page=per_page,
+                filter_criteria=criteria,
+                sort_by=sort_by,
+                sort_desc=sort_desc,
+                is_preview=is_preview,
+                preview_fields=preview_fields
+            )
         except Exception as e:
             error_msg = f"進階搜尋文章失敗: {str(e)}"
-            logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
                 'message': error_msg,
-                'articles': [],
-                'total_count': 0
+                'resultMsg': None
             }
 
-    def search_articles_by_title(self, keyword: str, exact_match: bool = False, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
-        """根據標題搜尋文章，返回包含 ArticleReadSchema 列表的字典"""
+    def find_articles_by_title(self,
+                               keyword: str,
+                               exact_match: bool = False,
+                               limit: Optional[int] = None,
+                               offset: Optional[int] = None,
+                               is_preview: bool = False,
+                               preview_fields: Optional[List[str]] = None
+                               ) -> Dict[str, Any]:
+        """根據標題搜尋文章，支援分頁和預覽"""
         try:
-            with self._transaction() as session: 
+            with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
-                
-                # 假設 repo 返回 ORM 列表
-                articles_orm = article_repo.search_by_title(
-                    keyword=keyword, 
-                    exact_match=exact_match, 
-                    limit=limit, 
-                    offset=offset
+
+                articles_result = article_repo.search_by_title(
+                    keyword=keyword,
+                    exact_match=exact_match,
+                    limit=limit,
+                    offset=offset,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
                 )
-                # 轉換
-                articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_orm]
+                if not is_preview and articles_result and isinstance(articles_result[0], Articles):
+                    articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_result]
+                else:
+                    articles_schema = articles_result
+
                 return {
                     'success': True,
                     'message': '根據標題搜尋文章成功',
-                    'articles': articles_schema # 返回 Schema 列表
+                    'articles': articles_schema
                 }
         except AttributeError:
-             error_msg = "ArticleRepository 未實現 search_by_title 方法"
+             error_msg = "ArticleRepository 未實現 search_by_title 方法或參數不符"
              logger.error(error_msg)
              return {'success': False, 'message': error_msg, 'articles': []}
         except DatabaseOperationError as e:
@@ -878,27 +951,39 @@ class ArticleService(BaseService[Articles]):
                 'articles': []
             }
 
-    def search_articles_by_keywords(self, keywords: str, limit: Optional[int] = None, offset: Optional[int] = None) -> Dict[str, Any]:
-        """根據關鍵字搜尋文章(標題和內容)，返回包含 ArticleReadSchema 列表的字典"""
+    def find_articles_by_keywords(self,
+                                  keywords: str,
+                                  limit: Optional[int] = None,
+                                  offset: Optional[int] = None,
+                                  sort_by: Optional[str] = None,
+                                  sort_desc: bool = False,
+                                  is_preview: bool = False,
+                                  preview_fields: Optional[List[str]] = None
+                                  ) -> Dict[str, Any]:
+        """根據關鍵字搜尋文章(標題/內容/摘要)，支援分頁、排序和預覽"""
         try:
-            with self._transaction() as session: 
+            with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
-                
-                # 假設 repo 返回 ORM 列表
-                articles_orm = article_repo.search_by_keywords(
-                    keywords=keywords, 
-                    limit=limit, 
-                    offset=offset
+
+                articles_result = article_repo.search_by_keywords(
+                    keywords=keywords,
+                    limit=limit,
+                    offset=offset,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
                 )
-                # 轉換
-                articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_orm]
+                if not is_preview and articles_result and isinstance(articles_result[0], Articles):
+                    articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_result]
+                else:
+                    articles_schema = articles_result
+
                 return {
                     'success': True,
                     'message': '根據關鍵字搜尋文章成功',
-                    'articles': articles_schema # 返回 Schema 列表
+                    'articles': articles_schema
                 }
         except AttributeError:
-             error_msg = "ArticleRepository 未實現 search_by_keywords 方法"
+             error_msg = "ArticleRepository 未實現 search_by_keywords 方法或參數不符"
              logger.error(error_msg)
              return {'success': False, 'message': error_msg, 'articles': []}
         except DatabaseOperationError as e:
@@ -917,9 +1002,9 @@ class ArticleService(BaseService[Articles]):
     def get_source_statistics(self) -> Dict[str, Any]:
         """獲取來源統計信息"""
         try:
-            with self._transaction() as session: 
+            with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
-                
+
                 stats = article_repo.get_source_statistics()
                 return {
                     'success': True,
@@ -943,8 +1028,8 @@ class ArticleService(BaseService[Articles]):
                 'statistics': None
             }
 
-    def update_article_scrape_status(self, link: str, is_scraped: bool, scrape_status: ArticleScrapeStatus) -> Dict[str, Any]:
-        """更新文章爬取狀態 (依連結)"""
+    def update_article_scrape_status(self, link: str, is_scraped: bool, scrape_status: Optional[ArticleScrapeStatus] = None) -> Dict[str, Any]:
+        """更新文章爬取狀態 (依連結)，可選指定狀態"""
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
@@ -953,12 +1038,10 @@ class ArticleService(BaseService[Articles]):
                         'success': False,
                         'message': '無法取得資料庫存取器'
                     }
-
                 success = article_repo.update_scrape_status(link, is_scraped, scrape_status)
-                # 更新操作不返回對象
                 return {
                     'success': success,
-                    'message': '更新文章爬取狀態成功' if success else '更新文章爬取狀態失敗 (文章可能不存在)'
+                    'message': '更新文章爬取狀態成功' if success else '更新文章爬取狀態失敗 (文章可能不存在或無變更)'
                 }
         except Exception as e:
             error_msg = f"更新文章爬取狀態失敗, link={link}: {str(e)}"
@@ -968,8 +1051,14 @@ class ArticleService(BaseService[Articles]):
                 'message': error_msg
             }
 
-    def find_unscraped_articles(self, task_id: Optional[int] = None, limit: Optional[int] = 100, source: Optional[str] = None, is_preview: Optional[bool] = False) -> Dict[str, Any]:
-        """獲取未爬取的文章，返回包含 ArticleReadSchema 或預覽資訊列表的字典"""
+    def find_unscraped_articles(self,
+                                task_id: Optional[int] = None,
+                                limit: Optional[int] = 100,
+                                source: Optional[str] = None,
+                                is_preview: bool = False,
+                                preview_fields: Optional[List[str]] = None
+                                ) -> Dict[str, Any]:
+        """獲取未爬取的文章，支援預覽和排序"""
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
@@ -980,36 +1069,23 @@ class ArticleService(BaseService[Articles]):
                         'articles': []
                     }
 
-                filter_criteria: Dict[str, Any] = {'is_scraped': False}
-                if task_id is not None: # 新增 task_id 條件
-                    filter_criteria['task_id'] = task_id
-                if source:
-                    filter_criteria['source'] = source
-
-                articles_orm = article_repo.get_all(
-                    filter_criteria=filter_criteria,
+                articles_result = article_repo.find_unscraped_links(
                     limit=limit,
-                    sort_by='published_at', # 或其他合適排序
-                    sort_desc=False
+                    source=source,
+                    order_by_status=True,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
                 )
-                
-                # 根據 is_preview 決定返回的內容
-                articles_result = []
-                preview_fields = {'title', 'link', 'summary', 'source','published_at'} # 定義預覽欄位
-                for article in articles_orm:
-                    article_schema = ArticleReadSchema.model_validate(article)
-                    if is_preview:
-                        # 只包含預覽欄位
-                        articles_result.append(article_schema.model_dump(include=preview_fields))
-                    else:
-                        # 返回完整的 Schema
-                        articles_result.append(article_schema)
 
+                if not is_preview and articles_result and isinstance(articles_result[0], Articles):
+                    articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_result]
+                else:
+                    articles_schema = articles_result
 
                 return {
                     'success': True,
                     'message': '獲取未爬取文章成功',
-                    'articles': articles_result # 返回處理後的列表
+                    'articles': articles_schema
                 }
         except Exception as e:
             error_msg = f"獲取未爬取文章失敗: {str(e)}"
@@ -1020,8 +1096,14 @@ class ArticleService(BaseService[Articles]):
                 'articles': []
             }
 
-    def find_scraped_articles(self, task_id: Optional[int] = None, limit: Optional[int] = 100, source: Optional[str] = None, is_preview: Optional[bool] = False) -> Dict[str, Any]:
-        """獲取已爬取的文章，返回包含 ArticleReadSchema 或預覽資訊列表的字典"""
+    def find_scraped_articles(self,
+                              task_id: Optional[int] = None,
+                              limit: Optional[int] = 100,
+                              source: Optional[str] = None,
+                              is_preview: bool = False,
+                              preview_fields: Optional[List[str]] = None
+                              ) -> Dict[str, Any]:
+        """獲取已爬取的文章，支援預覽和排序"""
         try:
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
@@ -1032,35 +1114,22 @@ class ArticleService(BaseService[Articles]):
                         'articles': []
                     }
 
-                filter_criteria: Dict[str, Any] = {'is_scraped': True}
-                if task_id is not None: # 新增 task_id 條件
-                    filter_criteria['task_id'] = task_id
-                if source:
-                    filter_criteria['source'] = source
-
-                articles_orm = article_repo.get_all(
-                    filter_criteria=filter_criteria,
+                articles_result = article_repo.find_scraped_links(
                     limit=limit,
-                    sort_by='updated_at', # 或其他合適排序
-                    sort_desc=True
+                    source=source,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
                 )
-                
-                # 根據 is_preview 決定返回的內容
-                articles_result = []
-                preview_fields = {'title', 'link', 'summary', 'source'} # 定義預覽欄位
-                for article in articles_orm:
-                    article_schema = ArticleReadSchema.model_validate(article)
-                    if is_preview:
-                        # 只包含預覽欄位
-                        articles_result.append(article_schema.model_dump(include=preview_fields))
-                    else:
-                        # 返回完整的 Schema
-                        articles_result.append(article_schema)
+
+                if not is_preview and articles_result and isinstance(articles_result[0], Articles):
+                    articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_result]
+                else:
+                    articles_schema = articles_result
 
                 return {
                     'success': True,
                     'message': '獲取已爬取文章成功',
-                    'articles': articles_result # 返回處理後的列表
+                    'articles': articles_schema
                 }
         except Exception as e:
             error_msg = f"獲取已爬取文章失敗: {str(e)}"
@@ -1084,7 +1153,7 @@ class ArticleService(BaseService[Articles]):
                     }
 
                 filter_criteria: Dict[str, Any] = {'is_scraped': False}
-                if task_id is not None: # 新增 task_id 條件
+                if task_id is not None:
                     filter_criteria['task_id'] = task_id
                 if source:
                     filter_criteria['source'] = source
@@ -1117,7 +1186,7 @@ class ArticleService(BaseService[Articles]):
                     }
 
                 filter_criteria: Dict[str, Any] = {'is_scraped': True}
-                if task_id is not None: # 新增 task_id 條件
+                if task_id is not None:
                     filter_criteria['task_id'] = task_id
                 if source:
                     filter_criteria['source'] = source
@@ -1130,6 +1199,99 @@ class ArticleService(BaseService[Articles]):
                 }
         except Exception as e:
             error_msg = f"計算已爬取文章數量失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'count': 0
+            }
+
+    def find_articles_by_task_id(self,
+                                 task_id: int,
+                                 is_scraped: Optional[bool] = None,
+                                 limit: Optional[int] = None,
+                                 offset: Optional[int] = None,
+                                 sort_by: Optional[str] = None,
+                                 sort_desc: bool = False,
+                                 is_preview: bool = False,
+                                 preview_fields: Optional[List[str]] = None
+                                 ) -> Dict[str, Any]:
+        """根據任務ID查詢相關的文章，支援分頁、排序和預覽"""
+        try:
+            with self._transaction() as session:
+                article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
+
+                filter_criteria: Dict[str, Any] = {'task_id': task_id}
+                if is_scraped is not None:
+                    filter_criteria['is_scraped'] = is_scraped
+
+                articles_result = article_repo.find_by_filter(
+                    filter_criteria=filter_criteria,
+                    limit=limit,
+                    offset=offset,
+                    sort_by=sort_by,
+                    sort_desc=sort_desc,
+                    is_preview=is_preview,
+                    preview_fields=preview_fields
+                )
+
+                if not is_preview and articles_result and isinstance(articles_result[0], Articles):
+                    articles_schema = [ArticleReadSchema.model_validate(article) for article in articles_result]
+                else:
+                    articles_schema = articles_result
+
+                return {
+                    'success': True,
+                    'message': f'獲取任務 ID={task_id} 的文章成功',
+                    'articles': articles_schema
+                }
+        except ValueError as ve:
+            error_msg = f"獲取任務文章失敗: {str(ve)}"
+            logger.error(error_msg)
+            return {'success': False, 'message': error_msg, 'articles': []}
+        except AttributeError:
+             error_msg = f"ArticleRepository 未實現所需方法或參數不符 (task_id={task_id})"
+             logger.error(error_msg)
+             return {'success': False, 'message': error_msg, 'articles': []}
+        except DatabaseOperationError as e:
+             error_msg = f"根據任務 ID={task_id} 查詢文章時資料庫操作失敗: {str(e)}"
+             logger.error(error_msg, exc_info=True)
+             return {'success': False, 'message': error_msg, 'articles': []}
+        except Exception as e:
+            error_msg = f"根據任務 ID={task_id} 查詢文章失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {
+                'success': False,
+                'message': error_msg,
+                'articles': []
+            }
+
+    def count_articles_by_task_id(self, task_id: int, is_scraped: Optional[bool] = None) -> Dict[str, Any]:
+        """計算特定任務的文章數量"""
+        try:
+            with self._transaction() as session:
+                article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
+
+                count = article_repo.count_articles_by_task_id(task_id=task_id, is_scraped=is_scraped)
+                return {
+                    'success': True,
+                    'message': f'計算任務 ID={task_id} 的文章數量成功',
+                    'count': count
+                }
+        except ValueError as ve:
+            error_msg = f"計算任務文章數量失敗: {str(ve)}"
+            logger.error(error_msg)
+            return {'success': False, 'message': error_msg, 'count': 0}
+        except AttributeError:
+             error_msg = f"ArticleRepository 未實現 count_articles_by_task_id (task_id={task_id})"
+             logger.error(error_msg)
+             return {'success': False, 'message': error_msg, 'count': 0}
+        except DatabaseOperationError as e:
+             error_msg = f"計算任務 ID={task_id} 文章數量時資料庫操作失敗: {str(e)}"
+             logger.error(error_msg, exc_info=True)
+             return {'success': False, 'message': error_msg, 'count': 0}
+        except Exception as e:
+            error_msg = f"計算任務 ID={task_id} 文章數量失敗: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,
