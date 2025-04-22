@@ -26,7 +26,7 @@ class CrawlerFactory:
             raise ValueError("未提供文章服務或爬蟲服務")
         try:
             # 取得所有活動中的爬蟲
-            active_crawlers = cls._crawlers_service.get_active_crawlers()
+            active_crawlers = cls._crawlers_service.find_active_crawlers()
             if active_crawlers['success']:
                 # 註冊每個爬蟲
                 for crawler in active_crawlers['crawlers']:

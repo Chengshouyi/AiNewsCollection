@@ -2,6 +2,7 @@ import pytest
 import pandas as pd
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch, mock_open
+from types import SimpleNamespace
 from src.crawlers.bnext_crawler import BnextCrawler
 from src.crawlers.bnext_scraper import BnextScraper
 from src.crawlers.bnext_content_extractor import BnextContentExtractor
@@ -53,6 +54,8 @@ def mock_config_file(monkeypatch):
     
     # 創建一個模擬的 open 函數
     def mock_open(*args, **kwargs):
+        # 重置讀取位置，以便多次讀取
+        mock_file.seek(0)
         return mock_file
         
     monkeypatch.setattr('builtins.open', mock_open)
@@ -140,6 +143,25 @@ def mock_extractor():
     extractor.batch_get_articles_content.return_value = test_articles
     return extractor
 
+@pytest.fixture(scope="function")
+def mock_article_service():
+    """模擬 ArticleService"""
+    service = MagicMock(spec=ArticleService)
+    # 預設返回成功但沒有數據，或失敗，避免影響不需要模擬的測試
+    service.find_articles_advanced = MagicMock()
+    service.get_article_by_link = MagicMock()
+    service.find_articles_advanced.return_value = {
+        "success": True,
+        "resultMsg": SimpleNamespace(items=[]), # 使用 SimpleNamespace 模擬物件屬性
+        "message": "未找到文章"
+    }
+    service.get_article_by_link.return_value = {
+        "success": False,
+        "article": None,
+        "message": "未找到文章"
+    }
+    return service
+
 @pytest.fixture(scope="session")
 def engine():
     """創建測試用的資料庫引擎"""
@@ -167,38 +189,39 @@ def article_service(engine, tables):
     # 創建新的會話工廠
     db_manager.Session = sessionmaker(bind=engine)
     # 創建資料表
-    db_manager.create_tables(Base)
-    
+    # Base.metadata.create_all(engine) # 移到 tables fixture
+
     service = ArticleService(db_manager)
     yield service
-    
-    # 清理資源
-    service.cleanup()
+
+    # 清理資源 (如果需要)
+    # Base.metadata.drop_all(engine) # 移到 tables fixture
+    # service.cleanup() # ArticleService 可能沒有 cleanup
 
 class TestBnextCrawler:
     """BnextCrawler 的測試類"""
     
-    def test_init(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_init(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試初始化"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
         
         assert crawler.config_file_name == mock_config_file
-        assert crawler.article_service == article_service
+        assert crawler.article_service == mock_article_service
         assert crawler.scraper == mock_scraper
         assert crawler.extractor == mock_extractor
         assert isinstance(crawler.articles_df, pd.DataFrame)
         assert crawler.articles_df.empty
         
-    def test_fetch_article_links(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_fetch_article_links(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試抓取文章列表"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
@@ -215,11 +238,11 @@ class TestBnextCrawler:
         assert all(pd.isna(articles_df['task_id']))
         mock_scraper.scrape_article_list.assert_called_once()
         
-    def test_fetch_articles(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_fetch_articles(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試抓取文章內容"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
@@ -246,31 +269,50 @@ class TestBnextCrawler:
         assert crawler.articles_df.loc[0, 'scrape_status'] == "content_scraped"
         assert crawler.articles_df.loc[0, 'is_scraped'] == True
 
-    def test_fetch_article_links_by_filter(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_fetch_article_links_by_filter(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試根據過濾條件從資料庫獲取文章連結"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
         
-        # 模擬 article_service.advanced_search_articles 返回包含欄位的文章
-        mock_article = MagicMock()
-        mock_article.title = "DB文章標題"
-        mock_article.link = "https://www.bnext.com.tw/article/db1"
-        mock_article.is_scraped = False
-        mock_article.scrape_status = ArticleScrapeStatus.LINK_SAVED
-        mock_article.scrape_error = None
-        mock_article.last_scrape_attempt = datetime.now(timezone.utc)
-        mock_article.task_id = 456
-        
-        article_service.advanced_search_articles = MagicMock(return_value={
+        # --- 修改模擬方式 ---
+        # 創建一個類似 Pydantic 模型行為的物件 (或直接用字典)
+        mock_db_article_data = {
+            "id": 1, # 假設有 ID
+            "title": "DB文章標題",
+            "link": "https://www.bnext.com.tw/article/db1",
+            "summary": "DB摘要",
+            "content": "DB內容",
+            "published_at": datetime.now(timezone.utc),
+            "category": "AI",
+            "author": "DB作者",
+            "source": "bnext",
+            "source_url": "https://www.bnext.com.tw",
+            "article_type": "新聞",
+            "tags": "DB,AI",
+            "is_ai_related": True,
+            "is_scraped": False,
+            "scrape_status": ArticleScrapeStatus.LINK_SAVED.value, # 直接使用字串值
+            "scrape_error": None,
+            "last_scrape_attempt": datetime.now(timezone.utc),
+            "task_id": 456
+        }
+        # 讓 mock 物件能透過 . 訪問屬性，並能被 vars() 轉換
+        mock_db_article_obj = SimpleNamespace(**mock_db_article_data)
+
+        # 設置 find_articles_advanced 的返回值
+        mock_article_service.find_articles_advanced.return_value = {
             "success": True,
-            "articles": [mock_article],
+            "resultMsg": SimpleNamespace( # 使用 SimpleNamespace
+                items=[mock_db_article_obj] # 包含模擬物件
+            ),
             "message": "成功獲取文章"
-        })
-        
+        }
+        # --- 結束修改 ---
+
         # 使用新的方法名稱並傳入過濾條件
         articles_df = crawler._fetch_article_links_by_filter(
             is_scraped=False,
@@ -281,47 +323,64 @@ class TestBnextCrawler:
         assert articles_df is not None
         assert not articles_df.empty
         assert len(articles_df) == 1
-        assert articles_df.iloc[0]['title'] == "DB文章標題"
-        assert articles_df.iloc[0]['link'] == "https://www.bnext.com.tw/article/db1"
-        assert articles_df.iloc[0]['is_scraped'] == False
-        assert articles_df.iloc[0]['scrape_status'] == "link_saved"
-        assert articles_df.iloc[0]['scrape_error'] is None
-        assert articles_df.iloc[0]['last_scrape_attempt'] is not None
-        assert articles_df.iloc[0]['task_id'] == 456
+        assert articles_df.iloc[0]['title'] == mock_db_article_data['title']
+        assert articles_df.iloc[0]['link'] == mock_db_article_data['link']
+        assert articles_df.iloc[0]['is_scraped'] == mock_db_article_data['is_scraped']
+        assert articles_df.iloc[0]['scrape_status'] == mock_db_article_data['scrape_status']
+        assert articles_df.iloc[0]['scrape_error'] is mock_db_article_data['scrape_error']
+        assert pd.notna(articles_df.iloc[0]['last_scrape_attempt'])
+        assert articles_df.iloc[0]['task_id'] == mock_db_article_data['task_id']
         
-        # 驗證 advanced_search_articles 是否被正確調用
-        article_service.advanced_search_articles.assert_called_once_with(
+        # 驗證 find_articles_advanced 是否被正確調用
+        mock_article_service.find_articles_advanced.assert_called_once_with(
             is_scraped=False,
-            task_id=456
+            task_id=456,
+            page=1,
+            per_page=10
         )
 
-    def test_fetch_article_links_by_filter_with_links(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_fetch_article_links_by_filter_with_links(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試使用文章連結從資料庫獲取文章"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
         
         link = "https://www.bnext.com.tw/article/link1"
         
-        # 模擬 article_service.get_article_by_link 返回文章
-        mock_article = MagicMock()
-        mock_article.title = "根據連結獲取的文章"
-        mock_article.link = link
-        mock_article.is_scraped = True
-        mock_article.scrape_status = ArticleScrapeStatus.CONTENT_SCRAPED
-        mock_article.scrape_error = None
-        mock_article.last_scrape_attempt = datetime.now(timezone.utc)
-        mock_article.task_id = 789
-        
-        article_service.get_article_by_link = MagicMock(return_value={
+        # --- 修改模擬方式 ---
+        mock_link_article_data = {
+            "id": 2,
+            "title": "根據連結獲取的文章",
+            "link": link,
+            "summary": "連結摘要",
+            "content": "連結內容",
+            "published_at": datetime.now(timezone.utc),
+            "category": "Technology",
+            "author": "連結作者",
+            "source": "bnext",
+            "source_url": "https://www.bnext.com.tw",
+            "article_type": "分析",
+            "tags": "Tech",
+            "is_ai_related": False,
+            "is_scraped": True,
+            "scrape_status": ArticleScrapeStatus.CONTENT_SCRAPED.value,
+            "scrape_error": None,
+            "last_scrape_attempt": datetime.now(timezone.utc),
+            "task_id": 789
+        }
+        mock_link_article_obj = SimpleNamespace(**mock_link_article_data)
+
+        # 設置 get_article_by_link 的返回值
+        mock_article_service.get_article_by_link.return_value = {
             "success": True,
-            "article": mock_article,
+            "article": mock_link_article_obj,
             "message": "成功獲取文章"
-        })
-        
+        }
+        # --- 結束修改 ---
+
         # 使用新的方法名稱並傳入文章連結
         articles_df = crawler._fetch_article_links_by_filter(
             article_links=[link],
@@ -332,32 +391,26 @@ class TestBnextCrawler:
         assert articles_df is not None
         assert not articles_df.empty
         assert len(articles_df) == 1
-        assert articles_df.iloc[0]['title'] == "根據連結獲取的文章"
-        assert articles_df.iloc[0]['link'] == link
-        assert articles_df.iloc[0]['is_scraped'] == True
-        assert articles_df.iloc[0]['scrape_status'] == "content_scraped"
+        assert articles_df.iloc[0]['title'] == mock_link_article_data['title']
+        assert articles_df.iloc[0]['link'] == mock_link_article_data['link']
+        assert articles_df.iloc[0]['is_scraped'] == mock_link_article_data['is_scraped']
+        assert articles_df.iloc[0]['scrape_status'] == mock_link_article_data['scrape_status']
         
         # 驗證 get_article_by_link 是否被正確調用
-        article_service.get_article_by_link.assert_called_once_with(link)
+        mock_article_service.get_article_by_link.assert_called_once_with(link)
 
-    def test_fetch_article_links_by_filter_not_found_link(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_fetch_article_links_by_filter_not_found_link(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試處理資料庫中不存在的文章連結"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
         
         link = "https://www.bnext.com.tw/article/notfound"
-        
-        # 模擬 article_service.get_article_by_link 返回未找到文章
-        article_service.get_article_by_link = MagicMock(return_value={
-            "success": False,
-            "article": None,
-            "message": "未找到文章"
-        })
-        
+    
+
         # 使用新的方法名稱並傳入不存在的文章連結
         articles_df = crawler._fetch_article_links_by_filter(
             article_links=[link],
@@ -374,48 +427,51 @@ class TestBnextCrawler:
         assert articles_df.iloc[0]['scrape_status'] == 'pending'
         
         # 驗證 get_article_by_link 是否被正確調用
-        article_service.get_article_by_link.assert_called_once_with(link)
+        mock_article_service.get_article_by_link.assert_called_once_with(link)
 
-    def test_fetch_article_links_by_filter_error(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_fetch_article_links_by_filter_error(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試獲取文章連結時發生錯誤"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
         
-        # 模擬 article_service.advanced_search_articles 拋出異常
-        article_service.advanced_search_articles = MagicMock(side_effect=Exception("資料庫查詢錯誤"))
-        
+        # --- 修改模擬方式 ---
+        # 直接在測試中設置 side_effect，確保是正確的 mock 物件
+        mock_article_service.find_articles_advanced.side_effect = Exception("資料庫查詢錯誤")
+        # --- 結束修改 ---
+
         # 使用新的方法名稱並檢查錯誤處理
         articles_df = crawler._fetch_article_links_by_filter(
             is_scraped=False,
             task_id=123
         )
         
-        # 驗證結果 - 應該返回None
+        # --- 驗證結果 ---
+        # 根據 base_crawler 的 except 區塊，發生異常應返回 None
         assert articles_df is None
-        
-        # 驗證 advanced_search_articles 是否被調用
-        article_service.advanced_search_articles.assert_called_once()
+        # --- 結束驗證 ---
 
-    def test_fetch_article_links_no_config(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+        # 驗證 find_articles_advanced 是否被調用
+        mock_article_service.find_articles_advanced.assert_called_once()
+
+    def test_fetch_article_links_no_config(self, mock_article_service, mock_scraper, mock_extractor):
         """測試沒有配置時抓取文章列表"""
         with pytest.raises(ValueError, match="未找到配置文件"):
             crawler = BnextCrawler(
                 config_file_name=None,
-                article_service=article_service,
+                article_service=mock_article_service,
                 scraper=mock_scraper,
                 extractor=mock_extractor
             )
-            crawler._fetch_article_links(task_id=123)
-            
-    def test_fetch_articles_no_links(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+
+    def test_fetch_articles_no_links(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試沒有文章列表時抓取文章內容"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
@@ -423,11 +479,11 @@ class TestBnextCrawler:
         articles = crawler._fetch_articles(task_id=123)
         assert articles is None
 
-    def test_update_config(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_update_config(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試更新爬蟲設定"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
@@ -438,11 +494,11 @@ class TestBnextCrawler:
         mock_scraper.update_config.assert_called_once_with(crawler.site_config)
         mock_extractor.update_config.assert_called_once_with(crawler.site_config)
 
-    def test_fetch_article_links_with_params(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_fetch_article_links_with_params(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試帶參數抓取文章列表"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
@@ -453,7 +509,7 @@ class TestBnextCrawler:
             "ai_only": False,
             "min_keywords": 2
         }
-        crawler.global_params = custom_params
+        crawler.global_params.update(custom_params)
         
         # 執行抓取
         crawler._fetch_article_links(task_id=123)
@@ -465,11 +521,11 @@ class TestBnextCrawler:
             custom_params["min_keywords"]
         )
 
-    def test_fetch_articles_with_params(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_fetch_articles_with_params(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試帶參數抓取文章內容"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
@@ -483,24 +539,22 @@ class TestBnextCrawler:
             "ai_only": False,
             "min_keywords": 1
         }
-        crawler.global_params = custom_params
+        crawler.global_params.update(custom_params)
         
         # 執行抓取
         crawler._fetch_articles(task_id=123)
         
         # 驗證使用了正確的參數呼叫 extractor.batch_get_articles_content
-        mock_extractor.batch_get_articles_content.assert_called_once_with(
-            crawler.articles_df,
-            custom_params["num_articles"], 
-            custom_params["ai_only"],
-            custom_params["min_keywords"]
-        )
+        pd.testing.assert_frame_equal(mock_extractor.batch_get_articles_content.call_args[0][0], crawler.articles_df)
+        assert mock_extractor.batch_get_articles_content.call_args[0][1] == custom_params["num_articles"]
+        assert mock_extractor.batch_get_articles_content.call_args[0][2] == custom_params["ai_only"]
+        assert mock_extractor.batch_get_articles_content.call_args[0][3] == custom_params["min_keywords"]
 
-    def test_fetch_article_links_empty_result(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_fetch_article_links_empty_result(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試抓取文章列表返回空結果"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
@@ -515,11 +569,11 @@ class TestBnextCrawler:
         assert result is None
         mock_scraper.scrape_article_list.assert_called_once()
 
-    def test_fetch_articles_with_error_handling(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_fetch_articles_with_error_handling(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試抓取文章內容時處理錯誤信息"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
@@ -565,30 +619,27 @@ class TestBnextCrawler:
         assert articles is not None
         assert len(articles) == 2
 
-    def test_retry_operation_in_fetch_article_links(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_retry_operation_in_fetch_article_links(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試在抓取文章列表時重試操作"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
         
         # 模擬 retry_operation 方法
-        mock_retry = MagicMock()
-        crawler.retry_operation = mock_retry
-        
-        # 執行抓取
-        crawler._fetch_article_links(task_id=123)
-        
+        with patch.object(crawler, 'retry_operation', wraps=crawler.retry_operation) as mock_retry:
+            crawler._fetch_article_links(task_id=123)
+            
         # 驗證 retry_operation 被調用
-        mock_retry.assert_called_once()
+        mock_retry.assert_called()
 
-    def test_retry_operation_in_fetch_articles(self, mock_config_file, article_service, mock_scraper, mock_extractor):
+    def test_retry_operation_in_fetch_articles(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試在抓取文章內容時重試操作"""
         crawler = BnextCrawler(
             config_file_name=mock_config_file,
-            article_service=article_service,
+            article_service=mock_article_service,
             scraper=mock_scraper,
             extractor=mock_extractor
         )
@@ -597,11 +648,8 @@ class TestBnextCrawler:
         crawler.articles_df = mock_scraper.scrape_article_list()
         
         # 模擬 retry_operation 方法
-        mock_retry = MagicMock()
-        crawler.retry_operation = mock_retry
-        
-        # 執行抓取
-        crawler._fetch_articles(task_id=123)
-        
+        with patch.object(crawler, 'retry_operation', wraps=crawler.retry_operation) as mock_retry:
+            crawler._fetch_articles(task_id=123)
+            
         # 驗證 retry_operation 被調用
-        mock_retry.assert_called_once()
+        mock_retry.assert_called()

@@ -145,7 +145,7 @@ def sample_tasks(session, clean_db, sample_crawler):
 class TestCrawlerTasksRepository:
     """CrawlerTasksRepository 測試類"""
     
-    def test_find_by_crawler_id(self, crawler_tasks_repo, sample_tasks, sample_crawler):
+    def test_find_by_crawler_id(self, crawler_tasks_repo, sample_tasks, sample_crawler, clean_db):
         """測試根據爬蟲ID查詢任務 (包含is_active, limit, is_preview)"""
         crawler_id = sample_crawler.id
         active_count = sum(1 for t in sample_tasks if t.crawler_id == crawler_id and t.is_active)
@@ -180,7 +180,7 @@ class TestCrawlerTasksRepository:
         assert len(tasks_preview_invalid) == 1
         assert isinstance(tasks_preview_invalid[0], CrawlerTasks) # Returns full object
 
-    def test_find_auto_tasks(self, crawler_tasks_repo, sample_tasks):
+    def test_find_auto_tasks(self, crawler_tasks_repo, sample_tasks, clean_db):
         """測試查詢自動執行的任務 (包含is_active, limit, is_preview)"""
         active_auto_count = sum(1 for t in sample_tasks if t.is_auto and t.is_active)
         inactive_auto_count = sum(1 for t in sample_tasks if t.is_auto and not t.is_active)
@@ -208,7 +208,7 @@ class TestCrawlerTasksRepository:
         assert auto_tasks_preview[0]['is_auto'] is True
         assert auto_tasks_preview[0]['is_active'] is True
 
-    def test_find_scheduled_tasks(self, crawler_tasks_repo, sample_tasks):
+    def test_find_scheduled_tasks(self, crawler_tasks_repo, sample_tasks, clean_db):
         """測試查詢已排程的任務 (包含is_active, limit, is_preview)"""
         active_scheduled_count = sum(1 for t in sample_tasks if t.is_scheduled and t.is_active)
         inactive_scheduled_count = sum(1 for t in sample_tasks if t.is_scheduled and not t.is_active)
@@ -235,7 +235,7 @@ class TestCrawlerTasksRepository:
         assert list(scheduled_tasks_preview[0].keys()) == preview_fields
         assert scheduled_tasks_preview[0]['is_scheduled'] is True
 
-    def test_find_ai_only_tasks(self, crawler_tasks_repo, sample_tasks):
+    def test_find_ai_only_tasks(self, crawler_tasks_repo, sample_tasks, clean_db):
         """測試查詢AI相關的任務 (包含is_active, limit, is_preview)"""
         active_ai_count = sum(1 for t in sample_tasks if isinstance(t.task_args, dict) and t.task_args.get('ai_only') is True and t.is_active)
         inactive_ai_count = sum(1 for t in sample_tasks if isinstance(t.task_args, dict) and t.task_args.get('ai_only') is True and not t.is_active)
@@ -263,7 +263,7 @@ class TestCrawlerTasksRepository:
         assert isinstance(ai_tasks_preview[0]['task_args'], dict) # Should still be a dict
         assert ai_tasks_preview[0]['task_args'].get('ai_only') is True
 
-    def test_find_tasks_by_crawler_and_auto(self, crawler_tasks_repo, sample_tasks, sample_crawler):
+    def test_find_tasks_by_crawler_and_auto(self, crawler_tasks_repo, sample_tasks, sample_crawler, clean_db):
         """測試根據爬蟲ID和自動執行狀態查詢任務 (保持原有邏輯)"""
         # 使用現有方法並在 Python 中過濾 (或者改用 advanced_search)
         all_tasks_by_crawler = crawler_tasks_repo.find_tasks_by_crawler_id(sample_crawler.id, is_active=True)
@@ -273,7 +273,7 @@ class TestCrawlerTasksRepository:
         assert len(auto_tasks_active) == expected_count
         assert all(task.crawler_id == sample_crawler.id and task.is_auto and task.is_active for task in auto_tasks_active)
 
-    def test_toggle_auto_status(self, crawler_tasks_repo, sample_tasks, session):
+    def test_toggle_auto_status(self, crawler_tasks_repo, sample_tasks, session, clean_db):
         """測試切換自動執行狀態"""
         task = sample_tasks[0]
         original_status = task.is_auto
@@ -294,7 +294,7 @@ class TestCrawlerTasksRepository:
         assert updated_task.is_auto != original_status, "任務的自動執行狀態應已切換"
         assert updated_task.updated_at is not None, "updated_at 應已更新"
 
-    def test_toggle_scheduled_status(self, crawler_tasks_repo, sample_tasks, session):
+    def test_toggle_scheduled_status(self, crawler_tasks_repo, sample_tasks, session, clean_db):
         """測試切換排程狀態"""
         task = sample_tasks[0]
         original_status = task.is_scheduled
@@ -313,7 +313,7 @@ class TestCrawlerTasksRepository:
         assert updated_task.is_scheduled != original_status, "任務的排程狀態應已切換"
         assert updated_task.updated_at is not None, "updated_at 應已更新"
 
-    def test_update_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
+    def test_update_ai_only_status(self, crawler_tasks_repo, sample_tasks, session, clean_db):
         """測試更新 task_args 中的 ai_only 狀態 (模擬正確的 JSON 更新流程)"""
         # 選擇一個 ai_only 為 False 的活動任務
         task_to_update_orig = next((t for t in sample_tasks if isinstance(t.task_args, dict) and not t.task_args.get('ai_only') and t.is_active), None)
@@ -356,7 +356,7 @@ class TestCrawlerTasksRepository:
                 assert reloaded_task.task_args.get(key) == value, f"Key '{key}' in task_args should remain unchanged"
         print(f"--- Test finished successfully ---")
 
-    def test_update_notes(self, crawler_tasks_repo, sample_tasks, session):
+    def test_update_notes(self, crawler_tasks_repo, sample_tasks, session, clean_db):
         """測試更新備註"""
         task = sample_tasks[0]
         task_id = task.id
@@ -375,7 +375,7 @@ class TestCrawlerTasksRepository:
         assert updated_task.notes == new_notes, "任務的備註應已更新"
         assert updated_task.updated_at is not None, "updated_at 應已更新"
 
-    def test_find_tasks_with_notes(self, crawler_tasks_repo, sample_tasks):
+    def test_find_tasks_with_notes(self, crawler_tasks_repo, sample_tasks, clean_db):
         """測試查詢有備註的任務 (包含 limit, is_preview)"""
         expected_count = sum(1 for t in sample_tasks if t.notes is not None and t.notes != '')
         tasks = crawler_tasks_repo.find_tasks_with_notes()
@@ -384,18 +384,26 @@ class TestCrawlerTasksRepository:
 
         # Test limit
         tasks_limit = crawler_tasks_repo.find_tasks_with_notes(limit=1)
-    def test_find_tasks_by_multiple_crawlers(self, crawler_tasks_repo, sample_tasks, sample_crawler):
+        assert len(tasks_limit) == 1
+
+        # Test is_preview
+        preview_fields = ["id", "notes"]
+        tasks_preview = crawler_tasks_repo.find_tasks_with_notes(is_preview=True, preview_fields=preview_fields, limit=1)
+        assert len(tasks_preview) == 1
+
+
+    def test_find_tasks_by_multiple_crawlers(self, crawler_tasks_repo, sample_tasks, sample_crawler, clean_db):
         """測試根據多個爬蟲ID查詢任務"""
         tasks = crawler_tasks_repo.find_tasks_by_multiple_crawlers([sample_crawler.id])
         assert len(tasks) == 6
         assert all(task.crawler_id == sample_crawler.id for task in tasks)
 
-    def test_get_tasks_count_by_crawler(self, crawler_tasks_repo, sample_tasks, sample_crawler):
+    def test_get_tasks_count_by_crawler(self, crawler_tasks_repo, sample_tasks, sample_crawler, clean_db):
         """測試獲取特定爬蟲的任務數量"""
         count = crawler_tasks_repo.count_tasks_by_crawler(sample_crawler.id)
         assert count == 6
 
-    def test_find_tasks_by_cron_expression(self, crawler_tasks_repo, session, sample_crawler):
+    def test_find_tasks_by_cron_expression(self, crawler_tasks_repo, session, sample_crawler, clean_db):
         """測試根據 cron 表達式查詢任務"""
         # 建立測試資料
         tasks = [
@@ -443,7 +451,7 @@ class TestCrawlerTasksRepository:
             crawler_tasks_repo.find_tasks_by_cron_expression("invalid")
         assert "無效的 cron 表達式" in str(excinfo.value)
 
-    def test_find_pending_tasks(self, crawler_tasks_repo, session, sample_crawler):
+    def test_find_pending_tasks(self, crawler_tasks_repo, session, sample_crawler, clean_db):
         """測試查詢待執行的任務"""
         # 清除干擾資料
         session.query(CrawlerTasks).delete()
@@ -511,7 +519,7 @@ class TestCrawlerTasksRepository:
         assert task2.id not in found_ids, f"錯誤找到未超過1小時的任務 (ID: {task2.id})"
         assert len(pending_tasks) == 2, f"預期找到 2 個待執行任務，但實際找到 {len(pending_tasks)} 個"
 
-    def test_get_failed_tasks(self, crawler_tasks_repo, session, sample_crawler):
+    def test_get_failed_tasks(self, crawler_tasks_repo, session, sample_crawler, clean_db):
         """測試獲取失敗的任務"""
         # 清除干擾資料
         session.query(CrawlerTasks).delete()
@@ -559,7 +567,7 @@ class TestCrawlerTasksRepository:
         assert all(not task.last_run_success for task in failed_tasks)
         assert all(task.last_run_at >= datetime.now(timezone.utc) - timedelta(days=1) for task in failed_tasks)
 
-    def test_create_task_with_validation(self, crawler_tasks_repo, sample_crawler):
+    def test_create_task_with_validation(self, crawler_tasks_repo, sample_crawler, clean_db):
         """測試創建任務時的驗證規則"""
         # 測試缺少必填欄位
         with pytest.raises(ValidationError) as excinfo:
@@ -593,7 +601,7 @@ class TestCrawlerTasksRepository:
         assert task.cron_expression == "0 * * * *"
         assert task.task_args.get('ai_only') is False
 
-    def test_update_task_with_validation(self, crawler_tasks_repo, session, sample_crawler):
+    def test_update_task_with_validation(self, crawler_tasks_repo, session, sample_crawler, clean_db):
         """測試更新任務時的驗證規則"""
         # 創建新任務
         task = CrawlerTasks(
@@ -639,7 +647,7 @@ class TestCrawlerTasksRepository:
         assert updated_task.cron_expression == "0 * * * *"
         assert updated_task.task_args.get('ai_only') is True
 
-    def test_default_values(self, crawler_tasks_repo, sample_crawler):
+    def test_default_values(self, crawler_tasks_repo, sample_crawler, clean_db):
         """測試新建任務時的預設值"""
         task = crawler_tasks_repo.create({
             "task_name": "測試任務",
@@ -655,7 +663,7 @@ class TestCrawlerTasksRepository:
         assert task.task_args.get('retry_count') == 0
         assert task.task_args.get('scrape_mode') == ScrapeMode.FULL_SCRAPE.value
 
-    def test_find_tasks_by_id(self, crawler_tasks_repo, sample_tasks, session):
+    def test_find_tasks_by_id(self, crawler_tasks_repo, sample_tasks, session, clean_db):
         """測試根據任務ID查詢任務"""
         active_task = next(t for t in sample_tasks if t.is_active)
         inactive_task = next(t for t in sample_tasks if not t.is_active)
@@ -696,7 +704,7 @@ class TestCrawlerTasksRepository:
         found_task = crawler_tasks_repo.get_task_by_id(99999)
         assert found_task is None
 
-    def test_toggle_ai_only_status(self, crawler_tasks_repo, sample_tasks, session):
+    def test_toggle_ai_only_status(self, crawler_tasks_repo, sample_tasks, session, clean_db):
         """測試直接切換 AI 專用狀態 (需要手動 Commit)"""
         task_false_to_true = next((t for t in sample_tasks if isinstance(t.task_args, dict) and t.task_args.get('ai_only') is False and t.is_active), None)
         task_true_to_false = next((t for t in sample_tasks if isinstance(t.task_args, dict) and t.task_args.get('ai_only') is True and t.is_active), None)
@@ -778,7 +786,7 @@ class TestCrawlerTasksRepository:
         result_nonexistent = crawler_tasks_repo.toggle_ai_only_status(99999)
         assert result_nonexistent is None, "切換不存在的任務應返回 None"
 
-    def test_toggle_active_status(self, crawler_tasks_repo, sample_tasks, session):
+    def test_toggle_active_status(self, crawler_tasks_repo, sample_tasks, session, clean_db):
         """測試切換啟用狀態"""
         active_task = next((t for t in sample_tasks if t.is_active), None)
         inactive_task = next((t for t in sample_tasks if not t.is_active), None)
@@ -818,7 +826,7 @@ class TestCrawlerTasksRepository:
         result3 = crawler_tasks_repo.toggle_active_status(99999)
         assert result3 is None, "切換不存在的任務應返回 None"
 
-    def test_update_last_run(self, crawler_tasks_repo, sample_tasks, session):
+    def test_update_last_run(self, crawler_tasks_repo, sample_tasks, session, clean_db):
         """測試更新最後執行狀態"""
         task = sample_tasks[0]
         task_id = task.id
@@ -885,7 +893,7 @@ class TestCrawlerTasksRepository:
         result4 = crawler_tasks_repo.update_last_run(99999, success=True)
         assert result4 is None, "更新不存在的任務應返回 None"
 
-    def test_advanced_search(self, crawler_tasks_repo, sample_tasks, sample_crawler):
+    def test_advanced_search(self, crawler_tasks_repo, sample_tasks, sample_crawler, clean_db):
         """測試 advanced_search 方法"""
         total_tasks = len(sample_tasks)
 
@@ -1034,7 +1042,7 @@ class TestCrawlerTasksRepository:
 class TestCrawlerTasksConstraints:
     """測試CrawlerTasks的模型約束"""
     
-    def test_boolean_defaults(self, session, sample_crawler):
+    def test_boolean_defaults(self, session, sample_crawler, clean_db):
         """測試布林欄位的默認值"""
         task = CrawlerTasks(
             task_name="測試任務",
@@ -1056,7 +1064,7 @@ class TestCrawlerTasksConstraints:
 class TestModelStructure:
     """測試模型結構"""
     
-    def test_crawler_tasks_model_structure(self):
+    def test_crawler_tasks_model_structure(self, session, sample_crawler, clean_db):
         """測試CrawlerTasks模型結構"""
         model_info = get_model_info(CrawlerTasks)
         
@@ -1088,7 +1096,7 @@ class TestModelStructure:
 class TestSpecialCases:
     """測試特殊情況"""
     
-    def test_empty_database(self, crawler_tasks_repo, session):
+    def test_empty_database(self, crawler_tasks_repo, session, clean_db):
         """測試空數據庫的情況"""
         # 確保清空資料
         session.query(CrawlerTasks).delete()
@@ -1098,7 +1106,7 @@ class TestSpecialCases:
         assert crawler_tasks_repo.find_auto_tasks() == []
         assert crawler_tasks_repo.find_ai_only_tasks() == []
 
-    def test_invalid_operations(self, crawler_tasks_repo):
+    def test_invalid_operations(self, crawler_tasks_repo, session, clean_db):
         """測試無效操作"""
         # 測試不存在的任務ID
         assert crawler_tasks_repo.toggle_auto_status(999) is None, "toggle_auto_status on non-existent ID should return None"
@@ -1116,7 +1124,7 @@ class TestSpecialCases:
         with pytest.raises(ValidationError):
             crawler_tasks_repo.find_due_tasks("invalid")
 
-    def test_empty_cron_results(self, crawler_tasks_repo, session):
+    def test_empty_cron_results(self, crawler_tasks_repo, session, clean_db):
         """測試空的 cron 結果"""
         # 確保清空資料
         session.query(CrawlerTasks).delete()
@@ -1125,7 +1133,7 @@ class TestSpecialCases:
         assert crawler_tasks_repo.find_tasks_by_cron_expression("0 * * * *") == []
         assert crawler_tasks_repo.find_due_tasks("0 * * * *") == []
 
-    def test_cron_with_no_auto_tasks(self, crawler_tasks_repo, session, sample_crawler):
+    def test_cron_with_no_auto_tasks(self, crawler_tasks_repo, session, sample_crawler, clean_db):
         """測試沒有自動執行的 cron 任務"""
         # 確保清空資料
         session.query(CrawlerTasks).delete()
@@ -1146,24 +1154,25 @@ class TestSpecialCases:
 class TestCrawlerTasksRepositoryValidation:
     """CrawlerTasksRepository 驗證相關的測試類"""
     
-    def test_validate_data_create(self, crawler_tasks_repo, sample_crawler):
+    def test_validate_data_create(self, crawler_tasks_repo, sample_crawler, clean_db):
         """測試 validate_data 方法用於創建操作時的行為"""
         # 準備有效的數據
-        valid_data = {
+        valid_data1 = {
             "task_name": "測試驗證任務",
             "crawler_id": sample_crawler.id,
             "is_auto": True,
             "cron_expression": "0 * * * *",
-            "task_args": TASK_ARGS_DEFAULT,
+            "task_args": {**TASK_ARGS_DEFAULT, "scrape_mode": ScrapeMode.FULL_SCRAPE.value},
             "scrape_phase": ScrapePhase.INIT,
             "max_retries": 3,
             "retry_count": 0,
-            "scrape_mode": ScrapeMode.FULL_SCRAPE
+            "task_status": TaskStatus.INIT
         }
         
         # 執行驗證
-        validated_result = crawler_tasks_repo.validate_data(valid_data, SchemaType.CREATE)
-        
+        logger.info(f"valid_data1: {valid_data1}")
+        validated_result = crawler_tasks_repo.validate_data(valid_data1, SchemaType.CREATE)
+        logger.info(f"validated_result: {validated_result}")
         # 檢查驗證後的數據是否完整
         assert validated_result.get("task_name") == "測試驗證任務"
         assert validated_result.get("crawler_id") == sample_crawler.id
@@ -1172,6 +1181,7 @@ class TestCrawlerTasksRepositoryValidation:
         assert "task_args" in validated_result
         assert validated_result.get("scrape_phase") == ScrapePhase.INIT
         assert validated_result.get("task_args", {}).get("scrape_mode") == ScrapeMode.FULL_SCRAPE.value
+        assert validated_result.get("task_status") == TaskStatus.INIT
         # 測試無效數據
         invalid_data = {
             "task_name": "測試驗證任務",
@@ -1185,7 +1195,7 @@ class TestCrawlerTasksRepositoryValidation:
             crawler_tasks_repo.validate_data(invalid_data, SchemaType.CREATE)
         assert "以下必填欄位缺失或值為空/空白: crawler_id" in str(excinfo.value)
         
-    def test_validate_data_update(self, crawler_tasks_repo, sample_crawler):
+    def test_validate_data_update(self, crawler_tasks_repo, sample_crawler, clean_db):
         """測試 validate_data 方法用於更新操作時的行為"""
         # 準備有效的更新數據
         valid_update = {"notes": "新備註", "is_auto": False}
@@ -1208,7 +1218,7 @@ class TestCrawlerTasksRepositoryValidation:
             crawler_tasks_repo.validate_data(invalid_update, SchemaType.UPDATE)
         assert "不允許更新 crawler_id 欄位" in str(excinfo.value)
         
-    def test_exception_handling_create(self, crawler_tasks_repo, sample_crawler):
+    def test_exception_handling_create(self, crawler_tasks_repo, sample_crawler, clean_db):
         """測試創建時的異常處理"""
         # 準備測試數據
         test_data = {
@@ -1241,7 +1251,7 @@ class TestCrawlerTasksRepositoryValidation:
             assert "未預期錯誤" in str(excinfo.value)
             assert "意外錯誤" in str(excinfo.value.__cause__)
 
-    def test_exception_handling_update(self, crawler_tasks_repo, sample_tasks):
+    def test_exception_handling_update(self, crawler_tasks_repo, sample_tasks, clean_db):
         """測試更新時的異常處理"""
         # 準備測試數據
         task_id = sample_tasks[0].id
@@ -1268,12 +1278,12 @@ class TestCrawlerTasksRepositoryValidation:
             assert "未預期錯誤" in str(excinfo.value)
             assert "意外錯誤" in str(excinfo.value.__cause__)
 
-    def test_update_nonexistent_task(self, crawler_tasks_repo):
+    def test_update_nonexistent_task(self, crawler_tasks_repo, sample_tasks, clean_db):
         """測試更新不存在的任務"""
         result = crawler_tasks_repo.update(999, {"task_name": "新名稱"})
         assert result is None
         
-    def test_update_empty_data(self, crawler_tasks_repo, sample_tasks):
+    def test_update_empty_data(self, crawler_tasks_repo, sample_tasks, clean_db):
         """測試使用空數據更新任務"""
         task_id = sample_tasks[0].id
         original_name = sample_tasks[0].task_name
@@ -1289,7 +1299,7 @@ class TestCrawlerTasksRepositoryValidation:
 class TestComplexValidationScenarios:
     """測試複雜驗證場景"""
     
-    def test_create_with_string_enum(self, crawler_tasks_repo, sample_crawler, session):
+    def test_create_with_string_enum(self, crawler_tasks_repo, sample_crawler, session, clean_db):
         """測試使用字符串表示的枚舉創建任務 (包含持久化驗證)"""
         # 準備數據，使用小寫字符串
         create_data = {
@@ -1333,7 +1343,7 @@ class TestComplexValidationScenarios:
             })
         assert "scrape_phase: 無效的枚舉值" in str(excinfo.value)
 
-    def test_create_with_empty_result(self, crawler_tasks_repo, session):
+    def test_create_with_empty_result(self, crawler_tasks_repo, session, clean_db):
         """測試當資料庫操作未能返回實體時的情況"""
         # 使用 patch 讓 _create_internal 返回 None (模擬失敗但未拋出異常)
         with patch.object(crawler_tasks_repo, '_create_internal', return_value=None):

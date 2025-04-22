@@ -42,7 +42,7 @@ class TestCrawlerFactory:
         CrawlerFactory._crawler_names = {}
         
         # 模擬 get_active_crawlers 方法返回樣本數據
-        mock_crawlers_service.get_active_crawlers.return_value = {
+        mock_crawlers_service.find_active_crawlers.return_value = {
             'success': True,
             'crawlers': sample_crawlers
         }
@@ -76,7 +76,7 @@ class TestCrawlerFactory:
         CrawlerFactory.initialize(mock_service, article_service=mock_article_service)
         
         # 驗證是否調用了 get_active_crawlers
-        mock_service.get_active_crawlers.assert_called_once()
+        mock_service.find_active_crawlers.assert_called_once()
         
         # 驗證爬蟲是否被正確註冊
         assert "TestCrawler" in CrawlerFactory._crawler_names
@@ -89,7 +89,7 @@ class TestCrawlerFactory:
         mock_service = setup_crawler_factory
         
         # 模擬 get_active_crawlers 拋出異常
-        mock_service.get_active_crawlers.side_effect = Exception("測試異常")
+        mock_service.find_active_crawlers.side_effect = Exception("測試異常")
         
         # 驗證異常是否被正確傳播
         with pytest.raises(Exception) as excinfo:

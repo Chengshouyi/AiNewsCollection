@@ -137,7 +137,7 @@ class BaseCrawler(ABC):
         """根據過濾條件從資料庫獲取文章列表
         
         Args:
-            **filters: 可選的過濾條件，直接傳遞給advanced_search_articles方法
+            **filters: 可選的過濾條件，直接傳遞給find_articles_advanced方法
                 - task_id: 任務ID
                 - is_scraped: 是否已抓取內容
                 - article_links: 文章連結列表 (特殊處理)
@@ -145,8 +145,9 @@ class BaseCrawler(ABC):
                 - category: 文章分類
                 - is_ai_related: 是否AI相關
                 - source: 來源
-                - limit: 限制數量
-                - offset: 偏移量
+                - limit: 限制數量 (對應 find_articles_advanced 的 per_page)
+                - offset: 偏移量 (對應 find_articles_advanced 的 page 計算)
+                - page: 頁碼 (優先於 offset)
         
         Returns:
             pd.DataFrame: 包含文章列表的資料框，如果沒有找到則返回None
@@ -165,27 +166,25 @@ class BaseCrawler(ABC):
                     # 嘗試從資料庫獲取已存在的文章
                     article_response = self.article_service.get_article_by_link(link)
                     if article_response["success"] and article_response["article"]:
-                        # 如果文章已存在，使用資料庫中的資料
-                        article = article_response["article"]
-                        articles_data.append(BnextUtils.get_article_columns_dict(
-                            title=article.title,
-                            summary=article.summary,
-                            content=article.content,
-                            link=article.link,
-                            category=article.category,
-                            published_at=article.published_at,
-                            author=article.author,
-                            source=article.source,
-                            source_url=article.source_url,
-                            article_type=article.article_type,
-                            tags=article.tags,
-                            is_ai_related=article.is_ai_related,
-                            is_scraped=article.is_scraped,
-                            scrape_status=article.scrape_status.value if hasattr(article, 'scrape_status') and article.scrape_status else 'pending',
-                            scrape_error=article.scrape_error if hasattr(article, 'scrape_error') else None,
-                            last_scrape_attempt=article.last_scrape_attempt if hasattr(article, 'last_scrape_attempt') else None,
-                            task_id=article.task_id if hasattr(article, 'task_id') else None
-                        ))
+                        # 如果文章已存在，使用資料庫中的資料 (轉換為字典)
+                        article_schema = article_response["article"]
+                        # 使用 model_dump() 將 Pydantic 模型轉換為字典
+                        article_dict = article_schema.model_dump() if hasattr(article_schema, 'model_dump') else vars(article_schema)
+
+                        # 添加必要的轉換，例如將枚舉轉換為其值
+                        if 'scrape_status' in article_dict and hasattr(article_dict['scrape_status'], 'value'):
+                            article_dict['scrape_status'] = article_dict['scrape_status'].value
+
+                        # 確保所有需要的鍵都存在
+                        required_keys = BnextUtils.get_article_columns_dict().keys()
+                        for key in required_keys:
+                            if key not in article_dict:
+                                article_dict[key] = None # 或提供默認值
+
+                        # 使用 BnextUtils 確保欄位一致性 (如果需要)
+                        # articles_data.append(BnextUtils.get_article_columns_dict(**article_dict))
+                        # 或者直接使用字典，如果鍵已對應
+                        articles_data.append(article_dict)
                     else:
                         # 如果文章不存在，創建一個簡單記錄
                         articles_data.append({
@@ -195,47 +194,75 @@ class BaseCrawler(ABC):
                             'scrape_status': 'pending'
                         })
                 return pd.DataFrame(articles_data)
-            
-            # 設定默認的is_scraped值（如果未提供）
-            if 'is_scraped' not in filters:
-                filters['is_scraped'] = False
-            
-            # 設定默認的limit值（如果需要）
-            if 'limit' not in filters and 'num_articles' in self.global_params:
-                filters['limit'] = self.global_params.get('num_articles')
-            
-            # 使用advanced_search_articles獲取文章列表
-            articles_response = self.article_service.advanced_search_articles(**filters)
-            
-            if articles_response["success"] and articles_response["articles"]:
+
+            # 映射 BaseCrawler 的過濾條件到 ArticleService 的 find_articles_advanced 參數
+            advanced_filters = {}
+            # 處理分頁: page 優先於 offset
+            if 'page' in filters:
+                advanced_filters['page'] = filters.pop('page')
+                advanced_filters['per_page'] = filters.pop('limit', self.global_params.get('num_articles', 10)) # 使用 limit 作為 per_page
+                filters.pop('offset', None) # 移除 offset
+            elif 'offset' in filters:
+                limit = filters.pop('limit', self.global_params.get('num_articles', 10))
+                offset = filters.pop('offset')
+                advanced_filters['page'] = (offset // limit) + 1
+                advanced_filters['per_page'] = limit
+            else:
+                 advanced_filters['page'] = 1 # 預設為第1頁
+                 advanced_filters['per_page'] = filters.pop('limit', self.global_params.get('num_articles', 10)) # 使用 limit 作為 per_page
+
+            # 處理其他過濾器
+            if 'keywords' in filters: advanced_filters['keywords'] = filters.pop('keywords')
+            if 'category' in filters: advanced_filters['category'] = filters.pop('category')
+            if 'is_ai_related' in filters: advanced_filters['is_ai_related'] = filters.pop('is_ai_related')
+            if 'is_scraped' in filters: advanced_filters['is_scraped'] = filters.pop('is_scraped')
+            if 'scrape_status' in filters: advanced_filters['scrape_status'] = filters.pop('scrape_status')
+            if 'tags' in filters: advanced_filters['tags'] = filters.pop('tags') # 注意: find_articles_advanced 目前只支援單一標籤
+            if 'source' in filters: advanced_filters['source'] = filters.pop('source')
+            if 'task_id' in filters: advanced_filters['task_id'] = filters.pop('task_id')
+
+            # 處理排序
+            if 'sort_by' in filters: advanced_filters['sort_by'] = filters.pop('sort_by')
+            if 'sort_desc' in filters: advanced_filters['sort_desc'] = filters.pop('sort_desc')
+
+            # 如果還有未處理的過濾器，記錄警告
+            if filters:
+                logger.warning(f"發現未處理的過濾條件: {filters.keys()}，這些條件將被忽略。")
+
+
+            # --- 修改：調用 find_articles_advanced 並處理返回結果 ---
+            articles_response = self.article_service.find_articles_advanced(**advanced_filters)
+
+            if articles_response["success"] and articles_response.get("resultMsg") and articles_response["resultMsg"].items:
                 # 將文章列表轉換為DataFrame
                 articles_data = []
-                for article in articles_response["articles"]:
-                    articles_data.append(BnextUtils.get_article_columns_dict(
-                        title=article.title,
-                        summary=article.summary,
-                        content=article.content,
-                        link=article.link,
-                        category=article.category,
-                        published_at=article.published_at,
-                        author=article.author,
-                        source=article.source,
-                        source_url=article.source_url,
-                        article_type=article.article_type,
-                        tags=article.tags,
-                        is_ai_related=article.is_ai_related,
-                        is_scraped=article.is_scraped,
-                        scrape_status=article.scrape_status.value if hasattr(article, 'scrape_status') and article.scrape_status else 'pending',
-                        scrape_error=article.scrape_error if hasattr(article, 'scrape_error') else None,
-                        last_scrape_attempt=article.last_scrape_attempt if hasattr(article, 'last_scrape_attempt') else None,
-                        task_id=article.task_id if hasattr(article, 'task_id') else None
-                    ))
-                
+                # 從 PaginatedArticleResponse 中獲取文章列表
+                articles_list = articles_response["resultMsg"].items
+                for article_schema in articles_list:
+                    # 將 Pydantic Schema 轉換為字典
+                    article_dict = article_schema.model_dump() if hasattr(article_schema, 'model_dump') else vars(article_schema)
+
+                    # 添加必要的轉換，例如將枚舉轉換為其值
+                    if 'scrape_status' in article_dict and hasattr(article_dict['scrape_status'], 'value'):
+                        article_dict['scrape_status'] = article_dict['scrape_status'].value
+
+                    # 使用 BnextUtils 確保欄位一致性 (如果需要)
+                    # articles_data.append(BnextUtils.get_article_columns_dict(**article_dict))
+                    # 或者直接使用字典，如果鍵已對應
+                    articles_data.append(article_dict)
+
                 logger.debug(f"根據過濾條件獲取文章列表成功: {len(articles_data)}篇")
                 return pd.DataFrame(articles_data)
             else:
-                logger.warning(f"根據過濾條件獲取文章列表失敗: {articles_response['message']}")
-                return None
+                message = articles_response.get('message', '未知錯誤')
+                # 檢查是否是因為找不到數據而導致的 "失敗"
+                if articles_response.get("resultMsg") and not articles_response["resultMsg"].items:
+                    logger.info(f"根據過濾條件未找到任何文章。")
+                    return pd.DataFrame() # 返回空的 DataFrame
+                else:
+                    logger.warning(f"根據過濾條件獲取文章列表失敗: {message}")
+                    return None
+            # --- 結束修改 ---
         except Exception as e:
             logger.error(f"根據過濾條件獲取文章列表失敗: {str(e)}", exc_info=True)
             return None
@@ -270,20 +297,25 @@ class BaseCrawler(ABC):
                             
                 str_articles_data = [convert_hashable_dict_to_str_dict(article) for article in articles_data]
 
-                if self.global_params.get('get_links_by_task_id', False):
+                # --- 修改：調用 batch_update 或 batch_create ---
+                if self.global_params.get('get_links_by_task_id', False) or self.global_params.get('scrape_mode') == ScrapeMode.CONTENT_ONLY.value:
+                    # 如果是 CONTENT_ONLY 模式，或者 get_links_by_task_id 為 True，則執行更新
                     result = self.article_service.batch_update_articles_by_link(
                         article_data = str_articles_data
                     )
                 else:
+                    # 否則執行創建 (或更新，如果連結已存在)
                     result = self.article_service.batch_create_articles(
                         articles_data = str_articles_data
                     )
+                # --- 結束修改 ---
                 
                 if not result["success"]:
-                    logger.error(f"批量創建文章失敗: {result['message']}")
+                    logger.error(f"批量保存文章到資料庫失敗: {result['message']}")
+                    # 可以考慮從 result['resultMsg'] 中獲取更詳細的錯誤信息
                     return
                 
-                logger.info(f"批量創建文章成功: {result['message']}")
+                logger.info(f"批量保存文章到資料庫成功: {result['message']}")
                 
         except Exception as e:
             logger.error(f"保存到資料庫失敗: {str(e)}")

@@ -18,6 +18,7 @@ from src.crawlers.bnext_scraper import BnextUtils
 from src.database.database_manager import DatabaseManager
 from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
 from src.utils.enum_utils import ScrapeMode, ArticleScrapeStatus, ScrapePhase
+from src.models.articles_schema import ArticleReadSchema, PaginatedArticleResponse
 
 
 # 配置日誌
@@ -161,36 +162,34 @@ class MockCrawlerForTest(BaseCrawler):
         """測試用的實現"""
         try:
             # 使用 article_service 獲取未爬取的文章
-            result = self.article_service.advanced_search_articles(
+            result = self.article_service.find_articles_advanced(
                 is_scraped=False,
-                limit=100
+                per_page=100 # 使用 per_page 替代 limit
             )
             
-            if not result["success"] or not result["articles"]:
+            # --- 修改: 從 result['resultMsg'].items 獲取文章列表 ---
+            if not result["success"] or not result.get("resultMsg") or not result["resultMsg"].items:
                 return None
                 
             # 將文章列表轉換為 DataFrame
             articles_data = []
-            for article in result["articles"]:
-                articles_data.append({
-                    "title": article.title,
-                    "summary": article.summary,
-                    "content": article.content,
-                    "link": article.link,
-                    "category": article.category,
-                    "published_at": article.published_at,
-                    "author": article.author,
-                    "source": article.source,
-                    "source_url": article.source_url,
-                    "article_type": article.article_type,
-                    "tags": article.tags,
-                    "is_ai_related": article.is_ai_related,
-                    "is_scraped": article.is_scraped,
-                    "scrape_status": article.scrape_status.value if hasattr(article, 'scrape_status') and article.scrape_status else 'pending',
-                    "scrape_error": article.scrape_error if hasattr(article, 'scrape_error') else None,
-                    "last_scrape_attempt": article.last_scrape_attempt if hasattr(article, 'last_scrape_attempt') else None,
-                    "task_id": article.task_id if hasattr(article, 'task_id') else None
-                })
+            articles_list = result["resultMsg"].items # 從 PaginatedArticleResponse 獲取
+            for article_schema in articles_list:
+                # 將 Pydantic Schema 轉換為字典
+                article = article_schema.model_dump() if hasattr(article_schema, 'model_dump') else vars(article_schema)
+                
+                # 添加必要的轉換，例如將枚舉轉換為其值
+                if 'scrape_status' in article and hasattr(article['scrape_status'], 'value'):
+                    article['scrape_status'] = article['scrape_status'].value
+                    
+                # 使用 BnextUtils 確保欄位一致性 (如果需要)
+                # required_keys = BnextUtils.get_article_columns_dict().keys()
+                # final_article = {k: article.get(k) for k in required_keys}
+                # articles_data.append(final_article)
+                # 或者直接使用轉換後的字典，如果鍵已對應
+                articles_data.append(article)
+
+            # --- 結束修改 ---
                 
             return pd.DataFrame(articles_data)
             
@@ -283,7 +282,7 @@ class TestBaseCrawler:
             # 先清除資料庫中的所有文章，確保測試環境乾淨
             session.query(Articles).delete()
             session.commit()
-            
+            test_time = datetime.now(timezone.utc)
             crawler = MockCrawlerForTest(mock_config_file, article_service)
             task_id = 1
             task_args = {
@@ -333,11 +332,42 @@ class TestBaseCrawler:
             assert crawler.update_config_called
             
             # 驗證資料是否確實被保存到資料庫
-            db_result = article_service.get_all_articles()
+            db_result = article_service.find_all_articles() # 修正: 使用 find_all_articles
             assert db_result["success"] is True
             assert len(db_result["articles"]) == 2
-            assert db_result["articles"][0].title == "Test Article 2"
-            assert db_result["articles"][1].title == "Test Article 1"
+            # 注意: find_all_articles 預設可能按 ID 排序或其他，可能需要調整斷言順序或指定排序
+            # 為了穩定性，可以先按標題排序再斷言
+            articles_sorted = sorted(db_result["articles"], key=lambda x: x.title)
+            assert articles_sorted[0].title == "Test Article 1"
+            assert articles_sorted[1].title == "Test Article 2"
+            # 修正: 對所有欄位檢查使用排序後的列表
+            # 修正: 斷言應與 _fetch_articles 中的最終值匹配
+            assert articles_sorted[0].summary == "Summary of article 1"
+            assert articles_sorted[1].summary == "Summary of article 2"
+            assert articles_sorted[0].content == "Content of article 1"
+            assert articles_sorted[1].content == "Content of article 2"
+            assert articles_sorted[0].link == "https://example.com/1"
+            assert articles_sorted[1].link == "https://example.com/2"
+            assert articles_sorted[0].category == "Test Category"
+            assert articles_sorted[1].category == "Test Category"
+            # published_at 在保存前會被轉換，直接比較可能不穩定，可以只檢查是否存在
+            assert articles_sorted[0].published_at is not None 
+            assert articles_sorted[1].published_at is not None
+            assert articles_sorted[0].author == "Test Author"
+            assert articles_sorted[1].author == "Test Author"
+            # source 和 source_url 也是 _fetch_articles 中的值
+            assert articles_sorted[0].source == "Test Source" 
+            assert articles_sorted[1].source == "Test Source"
+            assert articles_sorted[0].source_url == "https://example.com/1"
+            assert articles_sorted[1].source_url == "https://example.com/2"
+            assert articles_sorted[0].article_type == "Test Article Type"
+            assert articles_sorted[1].article_type == "Test Article Type"
+            assert articles_sorted[0].tags == "Test Tags"
+            assert articles_sorted[1].tags == "Test Tags"
+            assert articles_sorted[0].is_ai_related is False
+            assert articles_sorted[1].is_ai_related is False
+            assert articles_sorted[0].is_scraped is True
+            assert articles_sorted[1].is_scraped is True
     
     def test_execute_task_no_articles(self, mock_config_file, article_service):
         """測試執行任務但沒有獲取到文章的情況"""
@@ -425,7 +455,7 @@ class TestBaseCrawler:
         """測試保存數據到資料庫"""
         crawler = MockCrawlerForTest(mock_config_file, article_service)
         
-        # 保存測試用的時間
+        # 保存測試用的時間 - 確保這行被包含
         test_time = datetime.now(timezone.utc)
         crawler.articles_df = pd.DataFrame({
             "title": ["Test Title 1", "Test Title 2"],
@@ -451,37 +481,41 @@ class TestBaseCrawler:
         crawler._save_to_database()
         
         # 驗證資料是否被保存到資料庫
-        result = article_service.get_all_articles()
+        result = article_service.find_all_articles() 
         assert result["success"] is True
         assert len(result["articles"]) == 2
         
         articles = result["articles"]
-        assert articles[0].title == "Test Title 1"
-        assert articles[1].title == "Test Title 2"
-        assert articles[0].summary == "Test Summary 1"
-        assert articles[1].summary == "Test Summary 2"
-        assert articles[0].content == "Test Content 1"
-        assert articles[1].content == "Test Content 2"
-        assert articles[0].link == "https://example.com/1"
-        assert articles[1].link == "https://example.com/2"
-        assert articles[0].category == "Test Category 1"
-        assert articles[1].category == "Test Category 2"
-        assert articles[0].published_at == test_time
-        assert articles[1].published_at == test_time
-        assert articles[0].author == "Test Author 1"
-        assert articles[1].author == "Test Author 2"
-        assert articles[0].source == "Test Source 1"
-        assert articles[1].source == "Test Source 2"
-        assert articles[0].source_url == "https://example.com/1"
-        assert articles[1].source_url == "https://example.com/2"
-        assert articles[0].article_type == "Test Article Type 1"
-        assert articles[1].article_type == "Test Article Type 2"
-        assert articles[0].tags == "Test Tags 1"
-        assert articles[1].tags == "Test Tags 2"
-        assert articles[0].is_ai_related is False
-        assert articles[1].is_ai_related is False
-        assert articles[0].is_scraped is False
-        assert articles[1].is_scraped is False
+        # 修正: 按標題排序後再斷言
+        articles_sorted = sorted(articles, key=lambda x: x.title)
+        # 修正: 使用排序後的列表進行斷言
+        assert articles_sorted[0].title == "Test Title 1"
+        assert articles_sorted[1].title == "Test Title 2"
+        # 修正: 對所有欄位檢查使用排序後的列表
+        assert articles_sorted[0].summary == "Test Summary 1"
+        assert articles_sorted[1].summary == "Test Summary 2"
+        assert articles_sorted[0].content == "Test Content 1"
+        assert articles_sorted[1].content == "Test Content 2"
+        assert articles_sorted[0].link == "https://example.com/1"
+        assert articles_sorted[1].link == "https://example.com/2"
+        assert articles_sorted[0].category == "Test Category 1"
+        assert articles_sorted[1].category == "Test Category 2"
+        assert articles_sorted[0].published_at == test_time
+        assert articles_sorted[1].published_at == test_time
+        assert articles_sorted[0].author == "Test Author 1"
+        assert articles_sorted[1].author == "Test Author 2"
+        assert articles_sorted[0].source == "Test Source 1"
+        assert articles_sorted[1].source == "Test Source 2"
+        assert articles_sorted[0].source_url == "https://example.com/1"
+        assert articles_sorted[1].source_url == "https://example.com/2"
+        assert articles_sorted[0].article_type == "Test Article Type 1"
+        assert articles_sorted[1].article_type == "Test Article Type 2"
+        assert articles_sorted[0].tags == "Test Tags 1"
+        assert articles_sorted[1].tags == "Test Tags 2"
+        assert articles_sorted[0].is_ai_related is False
+        assert articles_sorted[1].is_ai_related is False
+        assert articles_sorted[0].is_scraped is False
+        assert articles_sorted[1].is_scraped is False
     
     def test_save_to_database_with_get_links_by_task_id(self, mock_config_file, article_service, session):
         """測試從資料庫根據任務ID獲取文章"""
@@ -684,8 +718,8 @@ class TestBaseCrawler:
         """測試從資料庫獲取文章連結時發生錯誤的情況"""
         crawler = MockCrawlerForTest(mock_config_file, article_service)
         
-        # 模擬 article_service.advanced_search_articles 拋出異常
-        crawler.article_service.advanced_search_articles = MagicMock(side_effect=Exception("資料庫錯誤"))
+        # 模擬 article_service.find_articles_advanced 拋出異常
+        crawler.article_service.find_articles_advanced = MagicMock(side_effect=Exception("資料庫錯誤"))
         
         # 測試錯誤情況
         result_df = crawler._fetch_article_links_from_db()
@@ -772,11 +806,11 @@ class TestBaseCrawler:
         """測試根據過濾條件獲取文章連結時發生錯誤的情況"""
         crawler = MockCrawlerForTest(mock_config_file, article_service)
         
-        # 模擬 article_service.advanced_search_articles 拋出異常
-        crawler.article_service.advanced_search_articles = MagicMock(side_effect=Exception("過濾條件錯誤"))
+        # 模擬 article_service.find_articles_advanced 拋出異常
+        crawler.article_service.find_articles_advanced = MagicMock(side_effect=Exception("過濾條件錯誤"))
         crawler.article_service.get_article_by_link = MagicMock(side_effect=Exception("獲取文章錯誤"))
         
-        # 測試 advanced_search_articles 錯誤情況
+        # 測試 find_articles_advanced 錯誤情況
         result_df = crawler._fetch_article_links_by_filter(is_scraped=False)
         assert result_df is None
         
@@ -964,10 +998,26 @@ class TestBaseCrawler:
             )
         ]
         
-        # 模擬 article_service.advanced_search_articles 的返回值
-        crawler.article_service.advanced_search_articles = MagicMock(return_value={
+        # 修正: 在 validate 之前為測試物件添加 dummy id
+        test_articles[0].id = 1
+
+        # 模擬 article_service.find_articles_advanced 的返回值
+        # 注意: 返回值結構需要匹配 PaginatedArticleResponse
+        articles_schemas = [ArticleReadSchema.model_validate(a) for a in test_articles]
+        paginated_response = PaginatedArticleResponse(
+            items=articles_schemas, 
+            total=len(articles_schemas), 
+            page=1, 
+            per_page=100, 
+            total_pages=1,
+            has_next=False,  # 添加 missing argument
+            has_prev=False   # 添加 missing argument
+        )
+        
+        crawler.article_service.find_articles_advanced = MagicMock(return_value={
             "success": True,
-            "articles": test_articles
+            "resultMsg": paginated_response,
+            "message": "獲取成功"
         })
         
         # 模擬 retry_operation 
@@ -1618,12 +1668,13 @@ class TestBaseCrawler:
         # 模擬驗證方法，使其能夠設置全局參數
         def validate_and_update_mock(task_id, task_args):
             if 'scrape_mode' in task_args:
+                # 修正: 存儲 Enum 的 value
                 if task_args['scrape_mode'] == 'links_only':
-                    crawler.global_params['scrape_mode'] = ScrapeMode.LINKS_ONLY
+                    crawler.global_params['scrape_mode'] = ScrapeMode.LINKS_ONLY.value
                 elif task_args['scrape_mode'] == 'content_only':
-                    crawler.global_params['scrape_mode'] = ScrapeMode.CONTENT_ONLY
+                    crawler.global_params['scrape_mode'] = ScrapeMode.CONTENT_ONLY.value
                 elif task_args['scrape_mode'] == 'full_scrape':
-                    crawler.global_params['scrape_mode'] = ScrapeMode.FULL_SCRAPE
+                    crawler.global_params['scrape_mode'] = ScrapeMode.FULL_SCRAPE.value
             crawler.global_params['max_retries'] = 3
             crawler.global_params['retry_delay'] = 0.1
             return True

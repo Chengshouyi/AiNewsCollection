@@ -1158,25 +1158,36 @@ class ArticlesRepository(BaseRepository[Articles]):
         """
         # 創建副本以安全地修改
         remaining_criteria = filter_criteria.copy()
-        processed_query = query 
+        processed_query = query
 
         # 1. 處理 ArticlesRepository 特有的過濾鍵
         search_text = remaining_criteria.pop("search_text", None)
         tags_like = remaining_criteria.pop("tags", None) # 假設 'tags' 意指 LIKE 搜索
+        category_filter = remaining_criteria.pop("category", None) # <-- 攔截 category
+
         # is_ai_related 和 published_at Range 也可以在這裡處理，
         # 或者如果基類 _apply_filters 已能處理 bool 和 $gte/$lte，則讓基類處理
-        
+
         if search_text and isinstance(search_text, str):
             search_term = f"%{search_text}%"
             processed_query = processed_query.filter(or_(
                 self.model_class.title.like(search_term),
                 # 假設 content 和 summary 欄位存在於 Articles 模型
-                self.model_class.content.like(search_term), 
-                self.model_class.summary.like(search_term) 
+                self.model_class.content.like(search_term),
+                self.model_class.summary.like(search_term)
             ))
-            
+
         if tags_like and isinstance(tags_like, str):
             processed_query = processed_query.filter(self.model_class.tags.like(f'%{tags_like}%'))
+
+        # --- 新增 Category 處理 --- 
+        if category_filter is not None: # 只有在提供了 category 時才過濾
+            # 確保模型有 category 屬性 (雖然我們知道有)
+            if hasattr(self.model_class, 'category'):
+                processed_query = processed_query.filter(self.model_class.category == category_filter)
+            else:
+                logger.warning(f"嘗試按 category 過濾，但模型 {self.model_class.__name__} 沒有 'category' 欄位。")
+        # --- 結束 Category 處理 --- 
             
         # ... 可以繼續處理其他 Articles 特有的鍵 ...
 
