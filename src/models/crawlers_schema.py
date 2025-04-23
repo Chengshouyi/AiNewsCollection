@@ -36,6 +36,7 @@ class CrawlersCreateSchema(BaseCreateSchema):
 class CrawlersUpdateSchema(BaseUpdateSchema):
     """爬蟲更新模型"""
     crawler_name: Optional[CrawlerName] = None
+    crawler_type: Optional[CrawlerType] = None
     base_url: Optional[BaseUrl] = None
     is_active: Optional[IsActive] = None
     config_file_name: Optional[ConfigFileName] = None
@@ -49,11 +50,11 @@ class CrawlersUpdateSchema(BaseUpdateSchema):
         
     @classmethod
     def get_immutable_fields(cls):
-        return ['crawler_type'] + BaseUpdateSchema.get_immutable_fields()
+        return [] + BaseUpdateSchema.get_immutable_fields()
     
     @classmethod
     def get_updated_fields(cls):
-        return ['crawler_name', 'base_url', 'is_active', 'config_file_name'] + BaseUpdateSchema.get_updated_fields()
+        return ['crawler_name','crawler_type', 'base_url', 'is_active', 'config_file_name'] + BaseUpdateSchema.get_updated_fields()
     
 
 # --- 新增用於讀取/響應的 Schema ---

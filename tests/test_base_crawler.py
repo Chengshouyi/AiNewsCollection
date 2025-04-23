@@ -19,6 +19,7 @@ from src.database.database_manager import DatabaseManager
 from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
 from src.utils.enum_utils import ScrapeMode, ArticleScrapeStatus, ScrapePhase
 from src.models.articles_schema import ArticleReadSchema, PaginatedArticleResponse
+from src.models.crawler_tasks_model import CrawlerTasks
 
 
 # 配置日誌
@@ -2139,6 +2140,71 @@ class TestBaseCrawler:
         result = crawler._handle_task_cancellation(task_id)
         assert result['success'] is False
         assert result['message'] == '任務已取消'
+
+    def test_load_site_config(self, mock_config_file, article_service, monkeypatch):
+        """測試配置檔案讀取功能"""
+        # 創建測試用的配置檔案內容
+        test_config = {
+            "name": "Test Site",
+            "base_url": "https://test.com",
+            "list_url_template": "https://test.com/list/{page}",
+            "categories": ["test"],
+            "full_categories": ["Test Category"],  # 修改為列表格式
+            "selectors": {
+                "list": "//div[@class='article-list']",
+                "title": "//h1[@class='title']",
+                "content": "//div[@class='content']"
+            }
+        }
+        
+        # 設置 mock 配置檔案
+        def mock_open_file(*args, **kwargs):
+            class MockFile:
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    pass
+                def read(self):
+                    return json.dumps(test_config)
+            return MockFile()
+        
+        monkeypatch.setattr("builtins.open", mock_open_file)
+        
+        # 創建爬蟲實例
+        crawler = MockCrawlerForTest(config_file_name="test_config.json", article_service=article_service)
+        
+        # 驗證配置是否正確載入
+        assert crawler.config_data == test_config
+        assert crawler.site_config.name == test_config["name"]
+        assert crawler.site_config.base_url == test_config["base_url"]
+        assert crawler.site_config.list_url_template == test_config["list_url_template"]
+        assert crawler.site_config.categories == test_config["categories"]
+        assert crawler.site_config.full_categories == test_config["full_categories"]
+        assert crawler.site_config.selectors == test_config["selectors"]
+        
+    def test_load_site_config_file_not_found(self, article_service):
+        """測試配置檔案不存在的情況"""
+        with pytest.raises(ValueError, match="未找到配置文件"):
+            MockCrawlerForTest(config_file_name="non_existent.json", article_service=article_service)
+            
+    def test_load_site_config_invalid_json(self, mock_config_file, article_service, monkeypatch):
+        """測試配置檔案格式錯誤的情況"""
+        # 設置 mock 配置檔案返回無效的 JSON
+        def mock_open_file(*args, **kwargs):
+            class MockFile:
+                def __enter__(self):
+                    return self
+                def __exit__(self, *args):
+                    pass
+                def read(self):
+                    return "invalid json"
+            return MockFile()
+        
+        monkeypatch.setattr("builtins.open", mock_open_file)
+        
+        # 創建爬蟲實例，應該會使用預設配置
+        with pytest.raises(ValueError, match="未找到配置文件"):
+            MockCrawlerForTest(config_file_name="test_config.json", article_service=article_service)
 
 if __name__ == "__main__":
     pytest.main()

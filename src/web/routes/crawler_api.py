@@ -6,6 +6,7 @@ import logging
 from src.error.errors import ValidationError
 from typing import Dict, Any, Optional, List
 from src.models.crawlers_schema import CrawlerReadSchema, PaginatedCrawlerResponse # 引入 Schema
+import json
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -462,6 +463,64 @@ def get_filtered_crawlers():
 
         result['data'] = paginated_data.model_dump(mode='json')
 
+        return jsonify(result), 200
+    except Exception as e:
+        return handle_api_error(e)
+
+@crawler_bp.route('/<int:crawler_id>/config', methods=['GET'])
+def get_crawler_config(crawler_id):
+    """獲取爬蟲的配置檔案內容"""
+    try:
+        logger.info(f"開始獲取爬蟲配置，ID={crawler_id}")
+        service: CrawlersService = get_crawlers_service()
+        result = service.get_crawler_config(crawler_id)
+        
+        logger.info(f"獲取爬蟲配置結果: {result}")
+        
+        if not result.get('success'):
+            status_code = 404 if "不存在" in result.get('message', '') else 500
+            logger.error(f"獲取爬蟲配置失敗: {result.get('message')}")
+            return jsonify(result), status_code
+
+        return jsonify(result), 200
+    except Exception as e:
+        logger.error(f"獲取爬蟲配置時發生異常: {str(e)}", exc_info=True)
+        return handle_api_error(e)
+
+@crawler_bp.route('/<int:crawler_id>/config', methods=['PUT'])
+def update_crawler_config(crawler_id):
+    """更新爬蟲的配置檔案"""
+    try:
+        if 'config_file' not in request.files:
+            return jsonify({"success": False, "message": "未提供配置檔案"}), 400
+            
+        config_file = request.files['config_file']
+        if not config_file.filename:
+            return jsonify({"success": False, "message": "未選擇檔案"}), 400
+            
+        if not config_file.filename.endswith('.json'):
+            return jsonify({"success": False, "message": "配置檔案必須是 JSON 格式"}), 400
+            
+        # 獲取爬蟲資料
+        crawler_data = request.form.get('crawler_data')
+        if not crawler_data:
+            return jsonify({"success": False, "message": "未提供爬蟲資料"}), 400
+            
+        try:
+            crawler_data = json.loads(crawler_data)
+        except json.JSONDecodeError:
+            return jsonify({"success": False, "message": "爬蟲資料格式錯誤"}), 400
+            
+        service: CrawlersService = get_crawlers_service()
+        result = service.update_crawler_config(crawler_id, config_file, crawler_data)
+        
+        if not result.get('success'):
+            return jsonify(result), 500
+            
+        # 將 CrawlerReadSchema 轉換為字典
+        if result.get('crawler'):
+            result['crawler'] = result['crawler'].model_dump()
+            
         return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)

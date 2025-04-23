@@ -1,4 +1,4 @@
-from flask import Flask
+from flask import Flask, jsonify
 import logging
 from src.web.routes.crawler_api import crawler_bp
 from src.web.routes.tasks_api import tasks_bp
@@ -72,6 +72,17 @@ def handle_leave_room(data):
         logger.info(f'Client left room: {room}')
     else:
         logger.warning("Leave room request received without room specified.")
+
+@app.route('/debug/routes')
+def list_routes():
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append({
+            'endpoint': rule.endpoint,
+            'methods': list(rule.methods or set()),
+            'route': str(rule)
+        })
+    return jsonify(routes)
 
 # 主程式入口
 if __name__ == '__main__':

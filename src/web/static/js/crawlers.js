@@ -39,6 +39,11 @@ $(document).ready(function () {
         currentCrawlerId = $(this).data('id');
         $('#delete-modal').modal('show');
     });
+
+    // 在模態框關閉時清空檔案選擇器
+    $('#crawler-modal').on('hidden.bs.modal', function () {
+        $('#config-file').val('');
+    });
 });
 
 // 加載爬蟲列表
@@ -111,13 +116,38 @@ function showCrawlerModal(crawlerId) {
         $('#crawler-name').val(crawler.crawler_name);
         $('#crawler-website').val(crawler.base_url);
         $('#crawler-type').val(crawler.crawler_type);
-        $('#crawler-remark').val(crawler.remark || '');
 
-        // 根據爬蟲類型加載配置字段
-        updateConfigFields(crawler.crawler_type, crawler.config);
+        // 獲取並顯示配置檔案內容
+        $.ajax({
+            url: `/api/crawlers/${crawlerId}/config`,
+            method: 'GET',
+            success: function (response) {
+                console.log('API 回應:', response);
+                if (response.success) {
+                    $('#current-config-file').text(crawler.config_file_name);
+                    $('#config-content').val(JSON.stringify(response.config, null, 2));
+                    $('#config-edit-section').show();
+                } else {
+                    console.error('API 回應錯誤:', response.message);
+                    displayAlert('warning', response.message);
+                }
+            },
+            error: function (xhr, status, error) {
+                console.error('API 錯誤詳情:', {
+                    status: xhr.status,
+                    statusText: xhr.statusText,
+                    responseText: xhr.responseText,
+                    error: error,
+                    configFileName: crawler.config_file_name,
+                    url: `/api/crawlers/${crawlerId}/config`
+                });
+                displayAlert('danger', '獲取配置檔案失敗: ' + (xhr.responseJSON?.message || error));
+            }
+        });
     } else {
         // 新增模式
         $('#crawler-modal-label').text('新增爬蟲');
+        $('#config-edit-section').hide();
     }
 
     $('#crawler-modal').modal('show');
@@ -187,13 +217,14 @@ function resetCrawlerForm() {
 // 保存爬蟲
 function saveCrawler() {
     // 收集表單數據
+    const crawlerId = $('#crawler-id').val();
+    const isEdit = !!crawlerId;
+
     const crawlerData = {
         crawler_name: $('#crawler-name').val(),
         base_url: $('#crawler-website').val(),
-        crawler_type: $('#crawler-type').val(),
-        remark: $('#crawler-remark').val(),
         config_file_name: getConfigFileName(),
-        config: getConfigData()
+        crawler_type: $('#crawler-type').val()
     };
 
     // 表單驗證
@@ -202,21 +233,124 @@ function saveCrawler() {
         return;
     }
 
-    // 發送 AJAX 請求
+    // 處理配置檔案
+    const configFile = $('#config-file')[0].files[0];
+    if (configFile) {
+        // 如果有上傳新檔案，使用 FormData 傳送
+        const formData = new FormData();
+        formData.append('config_file', configFile);
+        formData.append('crawler_data', JSON.stringify(crawlerData));
+
+        const url = isEdit ? `/api/crawlers/${crawlerId}/config` : '/api/crawlers';
+        const method = isEdit ? 'PUT' : 'POST';
+
+        $.ajax({
+            url: url,
+            method: method,
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function (response) {
+                console.log('保存成功:', response);
+                $('#crawler-modal').modal('hide');
+                displayAlert('success', response.message || '保存成功');
+                loadCrawlers();
+                // 清空檔案選擇器
+                $('#config-file').val('');
+            },
+            error: function (xhr, status, error) {
+                console.error('保存失敗:', {
+                    status: xhr.status,
+                    statusText: xhr.statusText,
+                    responseText: xhr.responseText,
+                    error: error
+                });
+                displayAlert('danger', '保存失敗: ' + (xhr.responseJSON?.message || error));
+            }
+        });
+    } else if (isEdit && $('#config-content').val()) {
+        // 如果是編輯模式且修改了配置內容，使用修改後的內容
+        try {
+            console.log('當前配置內容:', $('#config-content').val());
+            const configContent = $('#config-content').val().trim();
+            if (!configContent) {
+                console.warn('配置內容為空');
+                displayAlert('warning', '配置內容不能為空');
+                return;
+            }
+            const config = JSON.parse(configContent);
+            console.log('解析後的配置:', config);
+
+            // 創建一個新的 Blob 對象作為配置檔案
+            const configBlob = new Blob([configContent], { type: 'application/json' });
+            const configFile = new File([configBlob], crawlerData.config_file_name, { type: 'application/json' });
+
+            // 使用 FormData 傳送
+            const formData = new FormData();
+            formData.append('config_file', configFile);
+            formData.append('crawler_data', JSON.stringify(crawlerData));
+
+            $.ajax({
+                url: `/api/crawlers/${crawlerId}/config`,
+                method: 'PUT',
+                data: formData,
+                processData: false,
+                contentType: false,
+                success: function (response) {
+                    console.log('保存成功:', response);
+                    $('#crawler-modal').modal('hide');
+                    displayAlert('success', response.message || '保存成功');
+                    loadCrawlers();
+                    // 清空檔案選擇器
+                    $('#config-file').val('');
+                },
+                error: function (xhr, status, error) {
+                    console.error('保存失敗:', {
+                        status: xhr.status,
+                        statusText: xhr.statusText,
+                        responseText: xhr.responseText,
+                        error: error
+                    });
+                    displayAlert('danger', '保存失敗: ' + (xhr.responseJSON?.message || error));
+                }
+            });
+        } catch (error) {
+            console.error('配置內容解析錯誤:', error);
+            console.error('原始配置內容:', $('#config-content').val());
+            displayAlert('danger', '配置內容格式錯誤，請確保是有效的 JSON 格式');
+        }
+    } else {
+        // 其他情況直接保存
+        saveCrawlerData(crawlerData);
+    }
+}
+
+// 保存爬蟲數據到後端
+function saveCrawlerData(crawlerData) {
+    console.log('準備保存的數據:', crawlerData);
+    const crawlerId = $('#crawler-id').val();
+    const url = crawlerId ? `/api/crawlers/${crawlerId}` : '/api/crawlers';
+    const method = crawlerId ? 'PUT' : 'POST';
+
     $.ajax({
-        url: isEdit ? `/api/crawlers/${crawlerId}` : '/api/crawlers',
-        method: isEdit ? 'PUT' : 'POST',
+        url: url,
+        method: method,
         contentType: 'application/json',
         data: JSON.stringify(crawlerData),
         success: function (response) {
-            // 關閉模態框並刷新列表
+            console.log('保存成功:', response);
             $('#crawler-modal').modal('hide');
-            displayAlert('success', isEdit ? '爬蟲更新成功' : '爬蟲新增成功');
+            displayAlert('success', response.message || '保存成功');
             loadCrawlers();
         },
         error: function (xhr, status, error) {
-            console.error('保存爬蟲失敗:', error);
-            displayAlert('danger', '保存失敗: ' + (xhr.responseJSON?.message || error), true);
+            console.error('保存失敗:', {
+                status: xhr.status,
+                statusText: xhr.statusText,
+                responseText: xhr.responseText,
+                error: error
+            });
+            displayAlert('danger', '保存失敗: ' + (xhr.responseJSON?.message || error));
         }
     });
 }
@@ -275,9 +409,17 @@ function getConfigData() {
 
 // 獲取配置檔案名稱
 function getConfigFileName() {
-    const type = $('#crawler-type').val();
+    const crawlerId = $('#crawler-id').val();
+    if (crawlerId) {
+        // 如果是編輯模式，保持原始檔名
+        const crawler = crawlers.find(c => c.id === parseInt(crawlerId));
+        if (crawler) {
+            return crawler.config_file_name;
+        }
+    }
+    // 如果是新增模式，使用預設檔名
     const name = $('#crawler-name').val().toLowerCase();
-    return `${name}_config.json`;
+    return `${name}_crawler_config.json`;
 }
 
 // 顯示提示訊息

@@ -11,6 +11,7 @@ from src.error.errors import ValidationError, DatabaseOperationError
 from src.database.database_manager import DatabaseManager
 from src.database.crawlers_repository import CrawlersRepository
 from src.models.crawlers_schema import CrawlerReadSchema
+import json
 
 # 固定測試時間
 MOCK_TIME = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
@@ -129,6 +130,34 @@ def valid_crawler_data():
         "is_active": True,
         "crawler_type": "bnext",
         "config_file_name": "bnext_crawler_config.json"
+    }
+
+@pytest.fixture
+def valid_config_file():
+    """提供有效的配置檔案內容"""
+    return {
+        "name": "test_crawler",
+        "base_url": "https://example.com",
+        "list_url_template": "{base_url}/categories/{category}",
+        "categories": ["test"],
+        "full_categories": ["test"],
+        "selectors": {
+            "get_article_links": {
+                "articles_container": "div.articles",
+                "category": "span.category",
+                "link": "a.link",
+                "title": "h2.title",
+                "summary": "div.summary"
+            },
+            "get_article_contents": {
+                "content_container": "div.content",
+                "published_date": "span.date",
+                "category": "span.category",
+                "title": "h1.title",
+                "summary": "div.summary",
+                "content": "div.article-content"
+            }
+        }
     }
 
 class TestCrawlersService:
@@ -322,7 +351,8 @@ class TestCrawlersService:
             "crawler_name": "更新後的爬蟲名稱",
             "base_url": "https://example.com/updated",
             "is_active": False,
-            "config_file_name": "bnext_crawler_config_updated.json" # 更新配置檔名
+            "config_file_name": "bnext_crawler_config_updated.json", # 更新配置檔名
+            "crawler_type": "bnext"  # 添加 crawler_type
         }
         
         result = crawlers_service.update_crawler(crawler_id, update_data)
@@ -519,7 +549,8 @@ class TestCrawlersService:
             "crawler_name": unique_name,
             "base_url": "https://example.com/updated",
             "is_active": False,
-            "config_file_name": "test_config_updated.json"
+            "config_file_name": "test_config_updated.json",
+            "crawler_type": "bnext"  # 添加 crawler_type
         }
         
         result = crawlers_service.create_or_update_crawler(update_data)
@@ -791,3 +822,136 @@ class TestCrawlersServiceTransactions:
         updated_result = crawlers_service.get_crawler_by_id(valid_id)
         assert updated_result['success'] is True
         assert updated_result['crawler'].is_active != original_status
+
+class TestCrawlersServiceConfigFile:
+    """測試爬蟲配置檔案相關功能"""
+    
+    def test_validate_config_file(self, crawlers_service, valid_config_file):
+        """測試配置檔案格式驗證"""
+        # 測試有效配置
+        assert crawlers_service.validate_config_file(valid_config_file) is True
+        
+        # 測試缺少必要欄位
+        invalid_config = valid_config_file.copy()
+        del invalid_config['name']
+        assert crawlers_service.validate_config_file(invalid_config) is False
+        
+        # 測試缺少 selectors
+        invalid_config = valid_config_file.copy()
+        del invalid_config['selectors']
+        assert crawlers_service.validate_config_file(invalid_config) is False
+        
+        # 測試缺少必要選擇器
+        invalid_config = valid_config_file.copy()
+        del invalid_config['selectors']['get_article_links']
+        assert crawlers_service.validate_config_file(invalid_config) is False
+    
+    def test_update_crawler_config(self, crawlers_service, sample_crawlers, valid_config_file, tmp_path):
+        """測試更新爬蟲配置檔案"""
+        # 創建臨時配置檔案
+        config_file = tmp_path / "test_config.json"
+        config_file.write_text(json.dumps(valid_config_file))
+        
+        # 獲取一個現有的爬蟲 ID
+        crawler_id = sample_crawlers[0]["id"]
+        
+        # 創建模擬的檔案對象
+        mock_file = MagicMock()
+        mock_file.filename = "test_config.json"
+        mock_file.read.return_value = json.dumps(valid_config_file).encode()
+        
+        # 準備爬蟲資料
+        crawler_data = {
+            "crawler_name": "測試爬蟲",
+            "base_url": "https://example.com",
+            "is_active": True,
+            "crawler_type": "test",
+            "config_file_name": "test_config.json"
+        }
+        
+        # 測試更新配置
+        result = crawlers_service.update_crawler_config(crawler_id, mock_file, crawler_data)
+        assert result['success'] is True
+        assert result['crawler'] is not None
+        assert result['crawler'].config_file_name == "test_config.json"
+        
+        # 驗證配置檔案是否已保存
+        config_path = os.path.join(
+            os.path.dirname(__file__), 
+            '..', 
+            'src', 
+            'crawlers', 
+            'configs', 
+            'test_config.json'
+        )
+        assert os.path.exists(config_path)
+        
+        # 驗證配置檔案內容
+        with open(config_path, 'r', encoding='utf-8') as f:
+            saved_config = json.load(f)
+        assert saved_config == valid_config_file
+        
+        # 清理測試檔案
+        os.remove(config_path)
+    
+    def test_update_crawler_config_invalid_json(self, crawlers_service, sample_crawlers, tmp_path):
+        """測試更新無效的 JSON 配置檔案"""
+        # 創建無效的 JSON 檔案
+        config_file = tmp_path / "invalid_config.json"
+        config_file.write_text("invalid json content")
+        
+        # 獲取一個現有的爬蟲 ID
+        crawler_id = sample_crawlers[0]["id"]
+        
+        # 創建模擬的檔案對象
+        mock_file = MagicMock()
+        mock_file.filename = "invalid_config.json"
+        mock_file.read.return_value = b"invalid json content"
+        
+        # 準備爬蟲資料
+        crawler_data = {
+            "crawler_name": "測試爬蟲",
+            "base_url": "https://example.com",
+            "is_active": True,
+            "crawler_type": "test",
+            "config_file_name": "invalid_config.json"
+        }
+        
+        # 測試更新無效配置
+        result = crawlers_service.update_crawler_config(crawler_id, mock_file, crawler_data)
+        assert result['success'] is False
+        assert "配置檔案不是有效的 JSON 格式" in result['message']
+    
+    def test_update_crawler_config_invalid_format(self, crawlers_service, sample_crawlers, tmp_path):
+        """測試更新格式不正確的配置檔案"""
+        # 創建格式不正確的配置檔案
+        invalid_config = {
+            "name": "test_crawler",
+            "base_url": "https://example.com"
+            # 缺少必要欄位
+        }
+        
+        config_file = tmp_path / "invalid_format_config.json"
+        config_file.write_text(json.dumps(invalid_config))
+        
+        # 獲取一個現有的爬蟲 ID
+        crawler_id = sample_crawlers[0]["id"]
+        
+        # 創建模擬的檔案對象
+        mock_file = MagicMock()
+        mock_file.filename = "invalid_format_config.json"
+        mock_file.read.return_value = json.dumps(invalid_config).encode()
+        
+        # 準備爬蟲資料
+        crawler_data = {
+            "crawler_name": "測試爬蟲",
+            "base_url": "https://example.com",
+            "is_active": True,
+            "crawler_type": "test",
+            "config_file_name": "invalid_format_config.json"
+        }
+        
+        # 測試更新格式不正確的配置
+        result = crawlers_service.update_crawler_config(crawler_id, mock_file, crawler_data)
+        assert result['success'] is False
+        assert "配置檔案格式不正確" in result['message']

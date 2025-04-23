@@ -91,7 +91,12 @@ class BaseCrawler(ABC):
         """載入爬蟲設定"""
         if self.config_file_name:
             try:
-                with open(f'src/crawlers/configs/{self.config_file_name}', 'r', encoding='utf-8') as f:
+                # 獲取專案根目錄
+                project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+                config_path = os.path.join(project_root, 'src', 'crawlers', 'configs', self.config_file_name)
+                logger.debug(f"嘗試讀取配置檔案路徑: {config_path}")
+                
+                with open(config_path, 'r', encoding='utf-8') as f:
                     file_config = json.load(f)
                     # 使用文件配置更新默認配置
                     self.config_data.update(file_config)
@@ -100,6 +105,7 @@ class BaseCrawler(ABC):
                 logger.debug(f"已載入爬蟲配置: {self.config_data}")
             except (json.JSONDecodeError, FileNotFoundError) as e:
                 logger.warning(f"載入配置文件失敗: {str(e)}，使用預設配置")
+                raise ValueError("未找到配置文件")
         else:
             logger.error(f"未找到配置文件")
             raise ValueError("未找到配置文件")  

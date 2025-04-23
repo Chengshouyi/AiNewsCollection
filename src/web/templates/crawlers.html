@@ -51,7 +51,7 @@
                         <label for="crawler-type" class="form-label">爬蟲類型</label>
                         <select class="form-select" id="crawler-type" name="crawler_type" required>
                             <option value="">請選擇...</option>
-                            <option value="bnext">Web</option>
+                            <option value="web">Web</option>
                             <option value="rss">RSS</option>
                             <option value="xpath">XPath</option>
                             <option value="custom">自訂</option>
@@ -62,8 +62,17 @@
                         <input type="file" class="form-control" id="config-file" name="config_file" accept=".json">
                         <div class="form-text">請上傳 JSON 格式的配置檔案</div>
                     </div>
-                    <div class="mb-3" id="config-fields-container">
-                        <!-- 依據所選類型動態生成配置欄位 -->
+                    <div id="config-edit-section" class="mb-3" style="display: none;">
+                        <div class="mb-2">
+                            <label class="form-label">當前配置檔案</label>
+                            <div id="current-config-file" class="form-text"></div>
+                        </div>
+                        <div class="mb-2">
+                            <label for="config-content" class="form-label">配置檔案內容</label>
+                            <textarea class="form-control" id="config-content" rows="10"
+                                style="font-family: monospace;"></textarea>
+                            <div class="form-text">您可以直接編輯配置檔案內容，或上傳新的配置檔案</div>
+                        </div>
                     </div>
                 </form>
             </div>
