@@ -11,8 +11,8 @@ ENV SHELL=/bin/bash
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
-# 更新apt-get
-RUN apt-get update && apt-get install -y \
+# 更新 apt-get 並升級已安裝套件，然後安裝必要工具
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     bash \
     git \
     curl \

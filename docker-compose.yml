@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ainews-web
+    restart: unless-stopped
+    command: gunicorn --workers 4 --bind 0.0.0.0:8000 src.web.app:create_app
+    volumes:
+      - news-data:/app/data
+    ports:
+      - "8001:8000"
+    environment:
+      - FLASK_ENV=production
+      - DATABASE_PATH=/app/data/news.db
+      - SECRET_KEY=your_very_strong_production_secret_key_here
+    depends_on:
+      - worker
+    networks:
+      - default
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ainews-worker
+    restart: unless-stopped
+    command: python run.py
+    volumes:
+      - news-data:/app/data
+    environment:
+      - DATABASE_PATH=/app/data/news.db
+      - SCHEDULE_RELOAD_INTERVAL_HR=4
+    networks:
+      - default
+
+volumes:
+  news-data:
+    driver: local

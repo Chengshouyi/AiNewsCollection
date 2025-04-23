@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}爬蟲管理 - AI 新聞收集器{% endblock %}
+
+{% block content %}
+<h1>爬蟲管理</h1>
+<!-- 爬蟲列表表格和操作按鈕將放在這裡 -->
+<p>這裡將顯示爬蟲列表，並提供新增、修改、刪除功能。</p>
+<div id="crawlers-list">
+    <!-- AJAX 內容將加載於此 -->
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/crawlers.js') }}"></script>
+{% endblock %}

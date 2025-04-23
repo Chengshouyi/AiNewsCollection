@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block title %}任務管理 - AI 新聞收集器{% endblock %}
+
+{% block content %}
+<h1>任務管理</h1>
+<!-- 任務列表表格和操作按鈕將放在這裡 -->
+<p>這裡將顯示任務列表，包含狀態、進度條，並提供新增、修改、刪除、手動執行功能。</p>
+<div id="tasks-list">
+    <!-- AJAX 內容將加載於此 -->
+    <!-- WebSocket 更新將作用於此 -->
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tasks.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}查看文章 - AI 新聞收集器{% endblock %}
+
+{% block content %}
+<h1>文章詳情</h1>
+<!-- 文章詳細內容將放在這裡 -->
+<p>這裡將顯示文章 ID 為 {{ article_id }} 的詳細內容。</p>
+<div id="article-content">
+    <!-- AJAX 內容將加載於此 -->
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/articles.js') }}"></script>
+<script>
+    // 頁面加載後，可以觸發 JS 函數來加載特定文章的內容
+    // 例如: loadArticle({{ article_id }}); // 假設 articles.js 中有此函數
+</script>
+{% endblock %}

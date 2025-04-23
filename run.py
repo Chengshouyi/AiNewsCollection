@@ -1,3 +1,4 @@
+import os
 import time
 import logging
 from src.services.article_service import ArticleService
@@ -50,33 +51,75 @@ def main():
         
         
     except Exception as e:
-        scheduler_service.stop_scheduler()
-        ServiceContainer.clear_instances()
-        db_manager.cleanup()
+        # 在初始化失敗時嘗試清理
         logging.error(f"初始化失敗: {e}", exc_info=True)
+        try:
+            scheduler_service.stop_scheduler()
+        except Exception as se:
+            logging.error(f"初始化失敗後停止排程器時發生錯誤: {se}", exc_info=True)
+        try:
+            ServiceContainer.clear_instances()
+        except Exception as ce:
+            logging.error(f"初始化失敗後清理服務實例時發生錯誤: {ce}", exc_info=True)
+        try:
+            db_manager.cleanup()
+        except Exception as de:
+            logging.error(f"初始化失敗後清理資料庫管理器時發生錯誤: {de}", exc_info=True)
+        # 初始化失敗通常意味著無法繼續，所以直接拋出
+        raise e
 
-def run_scheduled_tasks(interval_hr: int = 24):
-    """長期運行，定期執行排程任務"""
+def run_scheduled_tasks():
+    """長期運行，定期執行排程任務重新載入"""
+    # 從環境變數讀取間隔，若無則使用預設值 4 小時
+    try:
+        interval_hr = int(os.getenv('SCHEDULE_RELOAD_INTERVAL_HR', '4'))
+        if interval_hr <= 0:
+            interval_hr = 4 # 防止無效值
+        logging.info(f"排程任務重新載入間隔設定為: {interval_hr} 小時")
+    except ValueError:
+        interval_hr = 4
+        logging.warning(f"環境變數 SCHEDULE_RELOAD_INTERVAL_HR 設定無效，使用預設值: {interval_hr} 小時")
+
+    interval_sec = interval_hr * 3600
+
     while True:
         try:
-            # 執行排程任務          
+            # 執行排程任務重新載入
+            logging.info("開始重新載入排程任務...")
             get_scheduler_service().reload_scheduler()
-            time.sleep(interval_hr * 3600)
+            logging.info("排程任務重新載入完成。")
+            logging.info(f"下一次重新載入將在 {interval_hr} 小時後進行。")
+            time.sleep(interval_sec)
         except Exception as e:
-            get_scheduler_service().stop_scheduler()
-            logging.error(f"排程任務執行錯誤: {e}", exc_info=True)
-            time.sleep(10)
+            # 考慮是否在每次失敗後都停止排程器，或者只是記錄錯誤並繼續嘗試
+            # get_scheduler_service().stop_scheduler() # 暫時註解，取決於錯誤處理策略
+            logging.error(f"排程任務重新載入/執行錯誤: {e}", exc_info=True)
+            # 在出現錯誤後，短暫休眠避免快速連續失敗
+            logging.info("發生錯誤，將在 60 秒後重試...")
+            time.sleep(60)
 
 
 
 if __name__ == "__main__":
-    logging.info("開始執行")
+    logging.info("開始執行主程序...")
     try:
         main()
-        run_scheduled_tasks(4) # 每4小時執行一次排程任務重新載入
+        # 不再傳遞 interval_hr，函數內部會自行讀取
+        run_scheduled_tasks()
     except Exception as e:
         logging.error(f"程序異常退出: {e}", exc_info=True)
-        get_scheduler_service().stop_scheduler()
-        ServiceContainer.clear_instances()
-        get_db_manager().cleanup()
+        # 確保在任何頂層異常時都嘗試清理資源
+        try:
+            get_scheduler_service().stop_scheduler()
+        except Exception as se:
+            logging.error(f"停止排程器時發生錯誤: {se}", exc_info=True)
+        try:
+            ServiceContainer.clear_instances()
+        except Exception as ce:
+            logging.error(f"清理服務實例時發生錯誤: {ce}", exc_info=True)
+        try:
+            get_db_manager().cleanup()
+        except Exception as de:
+            logging.error(f"清理資料庫管理器時發生錯誤: {de}", exc_info=True)
+        # 重新引發原始異常，以便外部監控（如 systemd/supervisor）知道程序失敗
         raise e
