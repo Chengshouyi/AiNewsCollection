@@ -55,6 +55,7 @@ def crawler_task_history_repo(session):
 def sample_crawler(session):
     crawler = Crawlers(
         crawler_name="測試爬蟲",
+        module_name="test_module",
         base_url="https://example.com",
         is_active=True,
         crawler_type="bnext",
@@ -68,6 +69,7 @@ def sample_crawler(session):
 def sample_task(session, sample_crawler):
     task = CrawlerTasks(
         task_name="測試任務",
+        module_name="test_module",
         crawler_id=sample_crawler.id,
         is_auto=True,
         ai_only=True,

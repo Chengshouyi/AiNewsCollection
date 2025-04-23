@@ -52,6 +52,7 @@ def sample_crawlers(session, clean_db):
     crawlers = [
         Crawlers(
             crawler_name="新聞爬蟲1",
+            module_name="test_module",
             base_url="https://example.com/news1",
             is_active=True,
             created_at=(now - timedelta(days=1)),
@@ -60,6 +61,7 @@ def sample_crawlers(session, clean_db):
         ),
         Crawlers(
             crawler_name="新聞爬蟲2",
+            module_name="test_module",
             base_url="https://example.com/news2",
             is_active=False,
             crawler_type="web",
@@ -67,6 +69,7 @@ def sample_crawlers(session, clean_db):
         ),
         Crawlers(
             crawler_name="RSS爬蟲",
+            module_name="test_module",
             base_url="https://example.com/rss",
             is_active=True,
             crawler_type="rss",
@@ -110,6 +113,7 @@ class TestCrawlersRepository:
         # 準備測試資料
         crawler_data = {
             "crawler_name": "測試驗證爬蟲",
+            "module_name": "test_module",
             "base_url": "https://example.com/validate",
             "is_active": True,
             "crawler_type": "web",
@@ -265,6 +269,7 @@ class TestCrawlersRepository:
         """測試使用模式驗證創建爬蟲"""
         new_crawler_data_defaults = {
             "crawler_name": "測試預設值爬蟲",
+            "module_name": "test_module",
             "base_url": "https://example.com/defaults",
             "crawler_type": "web",
             "config_file_name": "test_crawler.json"
@@ -281,6 +286,7 @@ class TestCrawlersRepository:
 
         new_crawler_data_explicit = {
             "crawler_name": "測試明確狀態爬蟲",
+            "module_name": "test_module",
             "base_url": "https://example.com/explicit",
             "is_active": False, # 明確設置為 False
             "crawler_type": "web",
@@ -298,6 +304,7 @@ class TestCrawlersRepository:
         # ... 原有的驗證錯誤測試 ...
         invalid_data = {
             "crawler_name": "缺失欄位爬蟲",
+            "module_name": "test_module",
             "is_active": True
         }
         with pytest.raises(ValidationError):
@@ -309,6 +316,7 @@ class TestCrawlersRepository:
         # 嘗試創建重複名稱的爬蟲
         duplicate_data = {
             "crawler_name": "新聞爬蟲1",  # 已存在的名稱
+            "module_name": "test_module",
             "base_url": "https://example.com/duplicate",
             "is_active": True,
             "crawler_type": "web",
@@ -368,17 +376,6 @@ class TestCrawlersRepository:
         # 如果 update 內部有其他可能影響 session 的操作（即使找不到 ID），則可能需要 commit 或 rollback。
         # 假設找不到時直接返回 None，所以不需要額外 commit/rollback。
         assert result_nonexistent is None
-
-        # --- 測試嘗試更新不允許的欄位 ---
-        invalid_update = {
-            "crawler_name": "測試非法更新",
-            "crawler_type": "changed_type"  # 不允許更新類型
-        }
-
-        # 驗證 ValidationError 的測試不需要 commit，因為預期會引發異常，
-        # SQLAlchemy 的 session 在異常時通常會自動 rollback (或應在 repo 的錯誤處理中 rollback)。
-        with pytest.raises(ValidationError):
-            crawlers_repo.update(setting_id, invalid_update)
 
         # 可以選擇性地驗證 rollback 後的狀態
         session.rollback() # 確保 session 狀態乾淨
@@ -526,6 +523,7 @@ class TestCrawlersRepository:
         # --- 測試創建新記錄 ---
         new_data = {
             "crawler_name": "新記錄通過create_or_update",
+            "module_name": "test_module",
             "base_url": "https://example.com/new",
             "crawler_type": "api",
             "config_file_name": "test_crawler.json"
@@ -552,6 +550,7 @@ class TestCrawlersRepository:
         nonexistent_id_data = {
             "id": 999, # 提供一個不存在的 ID
             "crawler_name": "不存在的ID",
+            "module_name": "test_module",
             "base_url": "https://example.com/nonexistent",
             "crawler_type": "web",
             "config_file_name": "test_crawler.json"
@@ -674,6 +673,7 @@ class TestCrawlersPaginationViaBase:
         for i in range(6):
             new_setting = Crawlers(
                 crawler_name=f"額外爬蟲{i+1}",
+                module_name="test_module",
                 base_url=f"https://example.com/extra{i+1}",
                 is_active=True,
                 crawler_type="web",
@@ -797,6 +797,7 @@ class TestCrawlersFilteringAndPaginationViaBase:
         crawlers = [
             Crawlers(
                 crawler_name="新聞爬蟲Web1",
+                module_name="test_module",
                 base_url="https://example.com/news1",
                 is_active=True,
                 created_at=(now - timedelta(days=5)),
@@ -805,6 +806,7 @@ class TestCrawlersFilteringAndPaginationViaBase:
             ),
             Crawlers(
                 crawler_name="新聞爬蟲Web2",
+                module_name="test_module",
                 base_url="https://example.com/news2",
                 is_active=False,
                 created_at=(now - timedelta(days=3)),
@@ -813,6 +815,7 @@ class TestCrawlersFilteringAndPaginationViaBase:
             ),
             Crawlers(
                 crawler_name="RSS爬蟲1",
+                module_name="test_module",
                 base_url="https://example.com/rss1",
                 is_active=True,
                 created_at=(now - timedelta(days=2)),
@@ -821,6 +824,7 @@ class TestCrawlersFilteringAndPaginationViaBase:
             ),
             Crawlers(
                 crawler_name="RSS爬蟲2",
+                module_name="test_module",
                 base_url="https://example.com/rss2",
                 is_active=False,
                 created_at=(now - timedelta(days=1)),
@@ -829,6 +833,7 @@ class TestCrawlersFilteringAndPaginationViaBase:
             ),
             Crawlers(
                 crawler_name="API爬蟲",
+                module_name="test_module",
                 base_url="https://example.com/api",
                 is_active=True,
                 created_at=now,

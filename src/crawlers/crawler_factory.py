@@ -32,7 +32,7 @@ class CrawlerFactory:
                 for crawler in active_crawlers['crawlers']:
                     try:
                         # 動態導入爬蟲類別
-                        module_name = f"src.crawlers.{crawler.crawler_type.lower()}_crawler"
+                        module_name = f"src.crawlers.{crawler.module_name.lower()}_crawler"
                         class_name = crawler.crawler_name
                         
                         # 動態導入模組和類別

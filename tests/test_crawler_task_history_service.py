@@ -73,6 +73,7 @@ def sample_data(session):
 
     crawler = Crawlers(
         crawler_name="測試爬蟲",
+        module_name="test_module",
         base_url="https://test.com",
         is_active=True,
         crawler_type="RSS",
@@ -83,6 +84,7 @@ def sample_data(session):
 
     task = CrawlerTasks(
         task_name="測試任務",
+        module_name="test_module",
         crawler_id=crawler.id,
         schedule="0 0 * * *",
         is_active=True,

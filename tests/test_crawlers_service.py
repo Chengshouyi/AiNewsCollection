@@ -78,6 +78,7 @@ def sample_crawlers(db_manager, session):
     crawlers_data = [
         {
             "crawler_name": "數位時代爬蟲",
+            "module_name": "test_module",
             "base_url": "https://www.bnext.com.tw/articles",
             "is_active": True,
             "crawler_type": "bnext",
@@ -85,6 +86,7 @@ def sample_crawlers(db_manager, session):
         },
         {
             "crawler_name": "科技報導爬蟲",
+            "module_name": "test_module",
             "base_url": "https://technews.tw",
             "is_active": False,
             "crawler_type": "technews",
@@ -92,6 +94,7 @@ def sample_crawlers(db_manager, session):
         },
         {
             "crawler_name": "商業週刊爬蟲",
+            "module_name": "test_module",
             "base_url": "https://www.businessweekly.com.tw",
             "is_active": True,
             "crawler_type": "business",
@@ -104,6 +107,7 @@ def sample_crawlers(db_manager, session):
         with db_manager.session_scope() as session:
             crawler = Crawlers(
                 crawler_name=crawler_data["crawler_name"],
+                module_name=crawler_data["module_name"],
                 base_url=crawler_data["base_url"],
                 is_active=crawler_data["is_active"],
                 crawler_type=crawler_data["crawler_type"],
@@ -126,6 +130,7 @@ def valid_crawler_data():
     """提供有效的爬蟲資料用於測試"""
     return {
         "crawler_name": "測試爬蟲",
+        "module_name": "test_module",
         "base_url": "https://example.com/test",
         "is_active": True,
         "crawler_type": "bnext",
@@ -137,6 +142,7 @@ def valid_config_file():
     """提供有效的配置檔案內容"""
     return {
         "name": "test_crawler",
+        "module_name": "test_module",
         "base_url": "https://example.com",
         "list_url_template": "{base_url}/categories/{category}",
         "categories": ["test"],
@@ -547,6 +553,7 @@ class TestCrawlersService:
         update_data = {
             "id": existing_id,
             "crawler_name": unique_name,
+            "module_name": "test_module",
             "base_url": "https://example.com/updated",
             "is_active": False,
             "config_file_name": "test_config_updated.json",
@@ -569,6 +576,7 @@ class TestCrawlersService:
         
         new_data = {
             "crawler_name": new_unique_name,
+            "module_name": "test_module",
             "base_url": "https://example.com/new",
             "is_active": True,
             "crawler_type": "test_new",  # 創建時必須包含 crawler_type

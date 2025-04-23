@@ -61,6 +61,7 @@ def sample_tasks(session):
     with session.begin_nested():
         crawler = Crawlers(
             crawler_name="測試爬蟲",
+            module_name="test_module",
             base_url="https://test.com",
             is_active=True,
             crawler_type="RSS",
@@ -109,6 +110,7 @@ class TestCrawlerTaskService:
         with session.begin_nested():
              crawler = Crawlers(
                  crawler_name="Create Test Crawler",
+                 module_name="test_module",
                  base_url="http://create.test",
                  config_file_name="some_config.json"
              )
@@ -253,6 +255,7 @@ class TestCrawlerTaskService:
         with session.begin_nested():
              crawler = Crawlers(
                  crawler_name="Scrape Mode Test Crawler",
+                 module_name="test_module",
                  base_url="http://scrape.test",
                  config_file_name="some_config.json"
              )
@@ -287,6 +290,7 @@ class TestCrawlerTaskService:
         with session.begin_nested():
             crawler = Crawlers(
                 crawler_name="Validate Test Crawler",
+                module_name="test_module",
                 base_url="http://validate.test",
                 config_file_name="some_config.json"
             )

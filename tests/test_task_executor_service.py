@@ -83,6 +83,7 @@ def sample_crawler(session: Session):
     """創建一個測試用的爬蟲"""
     crawler = Crawlers(
         crawler_name="TestCrawler",
+        module_name="test_module",
         base_url="https://test.com",
         is_active=True,
         crawler_type="RSS",
@@ -97,6 +98,7 @@ def sample_task(session: Session, sample_crawler: Crawlers):
     """創建一個測試用的爬蟲任務"""
     task = CrawlerTasks(
         task_name="Test Task",
+        module_name="test_module",
         crawler_id=sample_crawler.id,
         cron_expression="0 0 * * *",
         is_auto=False, # 預設非自動，避免干擾調度器測試（如果有的話）

@@ -9,6 +9,7 @@ import logging
 
 # 通用字段定義
 CrawlerName = Annotated[str, BeforeValidator(validate_str("crawler_name", max_length=100, required=True))]
+ModuleName = Annotated[str, BeforeValidator(validate_str("module_name", max_length=100, required=True))]
 BaseUrl = Annotated[str, BeforeValidator(validate_url("base_url", max_length=1000, required=True))]
 CrawlerType = Annotated[str, BeforeValidator(validate_str("crawler_type", max_length=100, required=True))]
 IsActive = Annotated[bool, BeforeValidator(validate_boolean("is_active", required=True))]
@@ -16,6 +17,7 @@ ConfigFileName = Annotated[str, BeforeValidator(validate_str("config_file_name",
 
 class CrawlersCreateSchema(BaseCreateSchema):
     crawler_name: CrawlerName
+    module_name: ModuleName
     base_url: BaseUrl
     crawler_type: CrawlerType
     config_file_name: ConfigFileName
@@ -31,11 +33,12 @@ class CrawlersCreateSchema(BaseCreateSchema):
 
     @classmethod
     def get_required_fields(cls):
-        return ['crawler_name', 'base_url', 'crawler_type', 'config_file_name']
+        return ['crawler_name', 'module_name', 'base_url', 'crawler_type', 'config_file_name']
 
 class CrawlersUpdateSchema(BaseUpdateSchema):
     """爬蟲更新模型"""
     crawler_name: Optional[CrawlerName] = None
+    module_name: Optional[ModuleName] = None
     crawler_type: Optional[CrawlerType] = None
     base_url: Optional[BaseUrl] = None
     is_active: Optional[IsActive] = None
@@ -54,7 +57,7 @@ class CrawlersUpdateSchema(BaseUpdateSchema):
     
     @classmethod
     def get_updated_fields(cls):
-        return ['crawler_name','crawler_type', 'base_url', 'is_active', 'config_file_name'] + BaseUpdateSchema.get_updated_fields()
+        return ['crawler_name','module_name','crawler_type', 'base_url', 'is_active', 'config_file_name'] + BaseUpdateSchema.get_updated_fields()
     
 
 # --- 新增用於讀取/響應的 Schema ---
@@ -63,6 +66,7 @@ class CrawlerReadSchema(BaseModel):
     """用於 API 響應的爬蟲數據模型"""
     id: int
     crawler_name: str
+    module_name: str
     base_url: str
     crawler_type: str
     config_file_name: str

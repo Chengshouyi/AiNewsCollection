@@ -10,12 +10,14 @@ class TestCrawlersModel:
         """測試使用必填欄位創建 Crawlers"""
         crawler = Crawlers(
             crawler_name="test_crawler",
+            module_name="test_module",
             base_url="https://example.com",
             crawler_type="web",
             config_file_name="test_config.json"
         )
         
         assert crawler.crawler_name == "test_crawler"
+        assert crawler.module_name == "test_module"
         assert crawler.base_url == "https://example.com"
         assert crawler.is_active is True  # 測試默認值
         assert crawler.crawler_type == "web"
@@ -29,6 +31,7 @@ class TestCrawlersModel:
         """測試時間戳行為"""
         crawler = Crawlers(
             crawler_name="test_crawler",
+            module_name="test_module",
             base_url="https://example.com",
             crawler_type="web",
             config_file_name="test_config.json"
@@ -44,6 +47,7 @@ class TestCrawlersModel:
         crawler = Crawlers(
             id=1,
             crawler_name="test_crawler",
+            module_name="test_module",
             base_url="https://example.com",
             crawler_type="web",
             config_file_name="test_config.json"
@@ -53,6 +57,7 @@ class TestCrawlersModel:
         
         assert dict_data['id'] == 1
         assert dict_data['crawler_name'] == "test_crawler"
+        assert dict_data['module_name'] == "test_module"
         assert dict_data['base_url'] == "https://example.com"
         assert dict_data['crawler_type'] == "web"
         assert dict_data['is_active'] is True
@@ -63,12 +68,13 @@ class TestCrawlersModel:
         crawler = Crawlers(
             id=1,
             crawler_name="test_crawler",
+            module_name="test_module",
             base_url="https://example.com",
             crawler_type="web",
             config_file_name="test_config.json"
         )
         
-        expected_repr = "<Crawlers(id=1, crawler_name='test_crawler', base_url='https://example.com', crawler_type='web', config_file_name='test_config.json', is_active=True)>"
+        expected_repr = "<Crawlers(id=1, crawler_name='test_crawler', module_name='test_module', base_url='https://example.com', crawler_type='web', config_file_name='test_config.json', is_active=True)>"
         
         assert repr(crawler) == expected_repr
     
@@ -76,6 +82,7 @@ class TestCrawlersModel:
         """測試關聯關係行為"""
         crawler = Crawlers(
             crawler_name="test_crawler",
+            module_name="test_module",
             base_url="https://example.com",
             crawler_type="web",
             config_file_name="test_config.json"

@@ -10,6 +10,7 @@ class TestCrawlersCreateSchema:
         """測試有效的系統設定資料"""
         data = {
             "crawler_name": "test_crawler",
+            "module_name": "test_module",
             "base_url": "https://example.com",
             "is_active": True,
             "config_file_name": "test_config.json",
@@ -17,6 +18,7 @@ class TestCrawlersCreateSchema:
         }
         schema = CrawlersCreateSchema.model_validate(data)
         assert schema.crawler_name == "test_crawler"
+        assert schema.module_name == "test_module"
         assert schema.base_url == "https://example.com"
         assert schema.is_active is True
         assert schema.crawler_type == "web"
@@ -62,6 +64,7 @@ class TestCrawlersCreateSchema:
         # 過長
         data_too_long = {
             "crawler_name": "a" * 101,
+            "module_name": "test_module",
             "base_url": "https://example.com",
             "crawler_type": "web",
             "config_file_name": "test_config.json"
@@ -73,6 +76,7 @@ class TestCrawlersCreateSchema:
         # 邊界值
         data_min = {
             "crawler_name": "a",
+            "module_name": "test_module",
             "base_url": "https://example.com",
             "crawler_type": "web",
             "config_file_name": "test_config.json"
@@ -82,6 +86,7 @@ class TestCrawlersCreateSchema:
         
         data_max = {
             "crawler_name": "a" * 100,
+            "module_name": "test_module",
             "base_url": "https://example.com",
             "crawler_type": "web",
             "config_file_name": "test_config.json"
@@ -105,6 +110,7 @@ class TestCrawlersCreateSchema:
         # 過長
         data_too_long = {
             "crawler_name": "test_crawler",
+            "module_name": "test_module",
             "base_url": "http://example.com/" + "a" * 1000,
             "crawler_type": "web",
             "config_file_name": "test_config.json"
@@ -116,6 +122,7 @@ class TestCrawlersCreateSchema:
         # 邊界值
         data_max = {
             "crawler_name": "test_crawler",
+            "module_name": "test_module",
             "base_url": "http://example.com/" + "a" * 980,  # 確保總長度不超過1000
             "crawler_type": "web",
             "config_file_name": "test_config.json"
@@ -126,6 +133,7 @@ class TestCrawlersCreateSchema:
         # 無效的 URL 格式
         data_invalid_url = {
             "crawler_name": "test_crawler",
+            "module_name": "test_module",
             "base_url": "invalid_url",
             "crawler_type": "web",
             "config_file_name": "test_config.json"
@@ -139,6 +147,7 @@ class TestCrawlersCreateSchema:
         # 空值
         data_empty = {
             "crawler_name": "test_crawler",
+            "module_name": "test_module",
             "base_url": "https://example.com",
             "config_file_name": "test_config.json",
             "crawler_type": ""
@@ -150,6 +159,7 @@ class TestCrawlersCreateSchema:
         # 過長
         data_too_long = {
             "crawler_name": "test_crawler",
+            "module_name": "test_module",
             "base_url": "https://example.com",
             "config_file_name": "test_config.json",
             "crawler_type": "a" * 101
@@ -175,6 +185,7 @@ class TestCrawlersCreateSchema:
         # 非布林值
         data_not_bool = {
             "crawler_name": "test_crawler",
+            "module_name": "test_module",
             "base_url": "https://example.com",
             "crawler_type": "web",
             "config_file_name": "test_config.json",
@@ -199,6 +210,7 @@ class TestCrawlersCreateSchema:
         """測試crawler_name為空的驗證"""
         data = {
             "crawler_name": "",
+            "module_name": "test_module",
             "base_url": "https://example.com",
             "crawler_type": "rss",
             "config_file_name": "example_config.json"
@@ -211,6 +223,7 @@ class TestCrawlersCreateSchema:
         """測試base_url為空的驗證"""
         data = {
             "crawler_name": "Example Crawler",
+            "module_name": "test_module",
             "base_url": "",
             "crawler_type": "rss",
             "config_file_name": "example_config.json"
@@ -223,6 +236,7 @@ class TestCrawlersCreateSchema:
         """測試最少需要提供哪些字段"""
         data = {
             "crawler_name": "",  # 空字串
+            "module_name": "test_module",
             "base_url": "https://example.com",
             "crawler_type": "rss",
             "config_file_name": "example_config.json"
@@ -235,6 +249,7 @@ class TestCrawlersCreateSchema:
         """測試crawler_type為空的驗證"""
         data = {
             "crawler_name": "Example Crawler",
+            "module_name": "test_module",
             "base_url": "https://example.com",
             "crawler_type": "",
             "config_file_name": "example_config.json"
@@ -247,6 +262,7 @@ class TestCrawlersCreateSchema:
         """測試config_file_name為空的驗證"""
         data = {
             "crawler_name": "Example Crawler",
+            "module_name": "test_module",
             "base_url": "https://example.com",
             "crawler_type": "rss",
             "config_file_name": ""
@@ -262,26 +278,31 @@ class TestCrawlersUpdateSchema:
         """測試有效的系統設定更新資料"""
         data = {
             "crawler_name": "test_crawler",
+            "module_name": "test_module",
             "is_active": True
         }
         schema = CrawlersUpdateSchema.model_validate(data)
         assert schema.crawler_name == "test_crawler"
+        assert schema.module_name == "test_module"
         assert schema.is_active is True
     
     def test_crawlers_update_schema_with_partial_data(self):
         """測試部分欄位更新"""
         # 只更新 crawler_name
         data1 = {
-            "crawler_name": "updated_crawler"
+            "crawler_name": "updated_crawler",
+            "module_name": "test_module"
         }
         schema1 = CrawlersUpdateSchema.model_validate(data1)
         assert schema1.crawler_name == "updated_crawler"
+        assert schema1.module_name == "test_module"
         assert schema1.is_active is None
         
         
         # 只更新 is_active
         data3 = {
-            "is_active": False
+            "is_active": False,
+            "module_name": "test_module"
         }
         schema3 = CrawlersUpdateSchema.model_validate(data3)
         assert schema3.crawler_name is None
@@ -313,15 +334,7 @@ class TestCrawlersUpdateSchema:
         with pytest.raises(ValidationError) as exc_info:
             CrawlersUpdateSchema.model_validate(data2)
         assert "不允許更新 id 欄位" in str(exc_info.value)
-        
-        # 不允許更新 crawler_type
-        data3 = {
-            "crawler_name": "test_crawler",
-            "crawler_type": "mobile"
-        }
-        with pytest.raises(ValidationError) as exc_info:
-            CrawlersUpdateSchema.model_validate(data3)
-        assert "不允許更新 crawler_type 欄位" in str(exc_info.value)
+    
     
     def test_crawlers_update_crawler_name_validation(self):
         """測試更新爬蟲名稱的驗證"""

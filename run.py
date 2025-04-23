@@ -27,6 +27,7 @@ def initialize_default_crawler():
         # 定義默認爬蟲數據
         default_crawler = {
             'crawler_name': 'BnextCrawler',
+            'module_name': 'bnext',
             'base_url': 'https://www.bnext.com.tw',
             'is_active': True,
             'crawler_type': 'web',

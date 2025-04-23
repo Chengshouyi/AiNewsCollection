@@ -64,6 +64,7 @@ def clean_db(session):
 def sample_crawler(session, clean_db):
     crawler = Crawlers(
         crawler_name="測試爬蟲",
+        module_name="test_module",
         base_url="https://example.com",
         is_active=True,
         crawler_type="news",

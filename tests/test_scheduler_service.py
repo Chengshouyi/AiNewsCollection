@@ -113,6 +113,7 @@ def sample_crawler(session):
     """創建一個測試用的爬蟲"""
     crawler = Crawlers(
         crawler_name="TestCrawler",
+        module_name="test_module",
         base_url="https://test.com",
         is_active=True,
         crawler_type="RSS",
