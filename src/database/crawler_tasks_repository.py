@@ -719,8 +719,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
                 if start_date:
                     query = query.filter(self.model_class.last_run_at >= enforce_utc_datetime_transform(start_date))
                 if end_date:
-                    end_date_exclusive = enforce_utc_datetime_transform(end_date) + timedelta(days=1)
-                    query = query.filter(self.model_class.last_run_at < end_date_exclusive)
+                    query = query.filter(self.model_class.last_run_at <= enforce_utc_datetime_transform(end_date))
 
             if 'has_notes' in filters and filters['has_notes'] is not None:
                 if filters['has_notes'] is True:
@@ -787,8 +786,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
                 if start_date:
                     count_query = count_query.filter(self.model_class.last_run_at >= enforce_utc_datetime_transform(start_date))
                 if end_date:
-                    end_date_exclusive = enforce_utc_datetime_transform(end_date) + timedelta(days=1)
-                    count_query = count_query.filter(self.model_class.last_run_at < end_date_exclusive)
+                    count_query = count_query.filter(self.model_class.last_run_at <= enforce_utc_datetime_transform(end_date))
             if 'has_notes' in filters and filters['has_notes'] is not None:
                 if filters['has_notes'] is True:
                     count_query = count_query.filter(self.model_class.notes.isnot(None) & (self.model_class.notes != ''))
