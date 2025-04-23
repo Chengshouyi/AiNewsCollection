@@ -44,6 +44,13 @@ $(document).ready(function () {
     $('#crawler-modal').on('hidden.bs.modal', function () {
         $('#config-file').val('');
     });
+
+    // 綁定測試按鈕事件
+    $('#crawlers-table-body').on('click', '.test-crawler-btn', function () {
+        const crawlerId = $(this).data('id');
+        const crawlerName = $(this).data('crawler-name');
+        testCrawler(crawlerId, crawlerName);
+    });
 });
 
 // 加載爬蟲列表
@@ -91,6 +98,10 @@ function renderCrawlersTable(crawlers) {
                     </button>
                     <button class="btn btn-sm btn-outline-danger delete-crawler-btn" data-id="${crawler.id}">
                         <i class="bi bi-trash"></i> 刪除
+                    </button>
+                    <button class="btn btn-sm btn-outline-info test-crawler-btn" data-id="${crawler.id}" 
+                            data-crawler-name="${escapeHtml(crawler.crawler_name)}">
+                        <i class="bi bi-play"></i> 測試
                     </button>
                 </td>
             </tr>
@@ -465,4 +476,45 @@ function escapeHtml(unsafe) {
         .replace(/>/g, "&gt;")
         .replace(/"/g, "&quot;")
         .replace(/'/g, "&#039;");
+}
+
+// 新增測試爬蟲的函數
+function testCrawler(crawlerId, crawlerName) {
+    // 預設的測試參數
+    const testData = {
+        crawler_id: crawlerId,
+        crawler_name: crawlerName
+        //task_args: 會由API自動生成
+    };
+
+    // 顯示載入中提示
+    displayAlert('info', '正在測試爬蟲，請稍候...', true);
+
+    // 發送測試請求
+    $.ajax({
+        url: '/api/tasks/manual/test',
+        method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify(testData),
+        success: function (response) {
+            if (response.success) {
+                // 測試成功
+                let resultMessage = `測試成功：${response.message}`;
+                if (response.result) {
+                    // 如果有測試結果，顯示找到的連結數量
+                    const linksCount = response.result.links?.length || 0;
+                    resultMessage += `\n找到 ${linksCount} 個連結`;
+                }
+                displayAlert('success', resultMessage);
+            } else {
+                // 測試失敗
+                displayAlert('danger', `測試失敗：${response.message}`);
+            }
+        },
+        error: function (xhr, status, error) {
+            // 處理錯誤
+            const errorMsg = xhr.responseJSON?.message || error;
+            displayAlert('danger', `測試時發生錯誤：${errorMsg}`);
+        }
+    });
 }

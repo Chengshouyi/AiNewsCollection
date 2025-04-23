@@ -1,11 +1,13 @@
 from flask import Blueprint, jsonify, request
 from src.error.handle_api_error import handle_api_error
-from src.models.crawler_tasks_model import ScrapeMode
+from src.models.crawler_tasks_model import ScrapeMode, ScrapePhase, TaskStatus
 from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
 from typing import Dict, Any
 from src.services.crawler_task_service import CrawlerTaskService
 from src.services.service_container import get_scheduler_service, get_task_executor_service, get_crawler_task_service, get_article_service
 import logging
+from enum import Enum
+from src.error.errors import ValidationError
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -420,9 +422,9 @@ def get_scraped_task_results(task_id):
 def test_crawler():
     """測試爬蟲任務 (不會創建或執行實際任務)"""
     if not request.is_json:
-         return jsonify(success=False, message='請求必須是 application/json'), 415 # Unsupported Media Type
-    if not request.data: # 檢查是否有實際的請求體
-         return jsonify(success=False, message='缺少任務資料'), 400 # Bad Request
+         return jsonify(success=False, message='請求必須是 application/json'), 415
+    if not request.data:
+         return jsonify(success=False, message='缺少任務資料'), 400
     try:
         data = request.get_json() or {}
         if not data:
@@ -434,50 +436,79 @@ def test_crawler():
              logger.error(f"缺少 crawler_name: {data}")
              return jsonify({"success": False, "message": "缺少 crawler_name"}), 400
 
-        service = get_crawler_task_service() # 獲取 service 實例用於驗證
+        service = get_crawler_task_service()
 
         test_task_args = data.get('task_args', TASK_ARGS_DEFAULT).copy()
-        test_task_args.update({
+        test_task_args.update({**TASK_ARGS_DEFAULT,
             'scrape_mode': ScrapeMode.LINKS_ONLY.value,
             'is_test': True,
-            'max_pages': min(1, test_task_args.get('max_pages', 1)), # 最多1頁
-            'num_articles': min(5, test_task_args.get('num_articles', 5)), # 最多5篇
-            'save_to_csv': False, # 不保存
-            'save_to_database': False, # 不保存
-            'timeout': 30 # 短超時
+            'max_pages': min(1, test_task_args.get('max_pages', 1)),
+            'num_articles': min(5, test_task_args.get('num_articles', 5)),
+            'save_to_csv': False,
+            'save_to_database': False,
+            'timeout': 30,
+            'ai_only': test_task_args.get('ai_only', False)  
         })
         
-        # 構造完整的 task_data 以供驗證
         task_data_for_validation = {
             'crawler_id': data.get('crawler_id', 0),
-            'crawler_name': crawler_name, # 或 crawler_id 如果前端傳遞 ID
+            'crawler_name': crawler_name,
             'task_name': f"測試_{crawler_name}",
             'task_args': test_task_args,
-            'scrape_mode': ScrapeMode.LINKS_ONLY.value,
-            'is_auto': False
+            'scrape_phase': ScrapePhase.INIT.value,
+            'task_status': TaskStatus.INIT.value,
+            'is_auto': False,
+            'is_active': True,
+            'is_scheduled': False,
+            'retry_count': 0,
+            'notes': f"測試爬蟲 {crawler_name}",
+            'last_run_at': None,
+            'last_run_success': None,
         }
 
-        # 驗證模擬的任務數據 (非更新)
         logger.info(f"驗證模擬的任務數據: {task_data_for_validation}")
-        validated_result = service.validate_task_data(task_data_for_validation, is_update=False)
+        try:
+            validated_result = service.validate_task_data(task_data_for_validation, is_update=False)
+        except ValidationError as e:
+            return jsonify({
+                'success': False,
+                'message': str(e),
+                'errors': {}
+            }), 400
+        
+        # 如果驗證失敗，確保返回的錯誤訊息是可序列化的
         if not validated_result.get('success'):
-            # 如果驗證失敗，說明參數有問題
-            logger.error(f"驗證失敗: {validated_result}")
-            return jsonify(validated_result), 400
-            
-        # 獲取驗證後的參數 (主要是 task_args)
+            return jsonify({
+                'success': False,
+                'message': str(validated_result.get('message', '驗證失敗')),
+                'errors': validated_result.get('errors')
+            }), 400
+
+        # 獲取驗證後的參數
         validated_test_params = validated_result.get('data', {}).get('task_args', {})
 
         # 執行測試
         task_executor = get_task_executor_service()
-        # test_crawler 服務方法接收爬蟲名稱和測試參數 (task_args)
         executor_result = task_executor.test_crawler(crawler_name, validated_test_params)
         
-        # test_crawler 返回: {'success': bool, 'message': str, 'result': Dict}
-        status_code = 200 if executor_result.get('success') else 500
-        return jsonify(executor_result), status_code
+        # 確保返回的結果是可序列化的
+        response_data = {
+            'success': executor_result.get('success', False),
+            'message': str(executor_result.get('message', '')),
+            'result': {
+                k: str(v) if isinstance(v, Enum) else v  # 將所有枚舉值轉換為字串
+                for k, v in (executor_result.get('result', {}) or {}).items()
+            }
+        }
+        
+        status_code = 200 if response_data['success'] else 500
+        return jsonify(response_data), status_code
     except Exception as e:
-        return handle_api_error(e)
+        logger.error(f"測試爬蟲時發生錯誤: {str(e)}", exc_info=True)
+        return jsonify({
+            'success': False,
+            'message': f"測試時發生錯誤: {str(e)}"
+        }), 500
 
 # 通用任務端點
 @tasks_bp.route('/<int:task_id>/cancel', methods=['POST'])

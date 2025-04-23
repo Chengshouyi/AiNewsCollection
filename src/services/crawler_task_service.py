@@ -85,7 +85,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             raise ValidationError(f"task_args: {str(e)}")
         
         # 根據抓取模式處理相關參數(業務特殊邏輯)
-        if data.get('scrape_mode') == ScrapeMode.CONTENT_ONLY.value:
+        if task_args.get('scrape_mode') == ScrapeMode.CONTENT_ONLY.value:
             if 'get_links_by_task_id' not in task_args:
                 task_args['get_links_by_task_id'] = True
                 
@@ -96,8 +96,16 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         # 更新 task_args
         data['task_args'] = task_args
         schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
-        return self.validate_data('CrawlerTask', data, schema_type)
-        
+        try:
+            validated_data = self.validate_data('CrawlerTask', data, schema_type)
+        except ValidationError as e:
+            raise ValidationError(f"task_args: {str(e)}")
+        return {
+            'success': True,
+            'message': '任務資料驗證成功',
+            'data': validated_data
+        }
+    
     def create_task(self, task_data: Dict) -> Dict:
         """創建新任務"""
         validated_data = self.validate_task_data(task_data, is_update=False)
