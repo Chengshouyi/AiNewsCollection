@@ -83,6 +83,7 @@ class CrawlerMock:
     def __init__(self, data):
         self.id = data.get('id')
         self.crawler_name = data.get('crawler_name')
+        self.module_name = data.get('module_name')
         self.base_url = data.get('base_url')
         self.crawler_type = data.get('crawler_type')
         self.config_file_name = data.get('config_file_name')
@@ -100,6 +101,7 @@ class CrawlerMock:
         return {
             'id': self.id,
             'crawler_name': self.crawler_name,
+            'module_name': self.module_name,
             'base_url': self.base_url,
             'crawler_type': self.crawler_type,
             'config_file_name': self.config_file_name,
@@ -114,17 +116,17 @@ def sample_crawlers_data():
     now = datetime.now(timezone.utc)
     return [
         {
-            'id': 1, 'crawler_name': 'TestCrawler1', 'base_url': 'https://example1.com',
+            'id': 1, 'crawler_name': 'TestCrawler1', 'module_name': 'test_module', 'base_url': 'https://example1.com',
             'crawler_type': 'web', 'config_file_name': 'test1.json', 'is_active': True,
             'created_at': now, 'updated_at': now
         },
         {
-            'id': 2, 'crawler_name': 'TestCrawler2', 'base_url': 'https://example2.com',
+            'id': 2, 'crawler_name': 'TestCrawler2', 'module_name': 'test_module', 'base_url': 'https://example2.com',
             'crawler_type': 'web', 'config_file_name': 'test2.json', 'is_active': False,
             'created_at': now, 'updated_at': now
         },
         {
-            'id': 3, 'crawler_name': 'TestCrawler3', 'base_url': 'https://example3.com',
+            'id': 3, 'crawler_name': 'TestCrawler3', 'module_name': 'test_module', 'base_url': 'https://example3.com',
             'crawler_type': 'rss', 'config_file_name': 'test3.json', 'is_active': True,
             'created_at': now, 'updated_at': now
         }
@@ -492,6 +494,7 @@ class TestCrawlerApiRoutes:
         """測試新增爬蟲設定"""
         new_crawler_data = {
             'crawler_name': 'NewWebCrawler',
+            'module_name': 'test_module',
             'base_url': 'https://newsite.com',
             'crawler_type': 'web',
             'config_file_name': 'new_web.json',
@@ -524,7 +527,8 @@ class TestCrawlerApiRoutes:
     def test_create_crawler_validation_error(self, client, mock_crawlers_service):
         """測試新增爬蟲設定時的驗證錯誤 (由 Service 層處理)"""
         invalid_data = {
-            'crawler_name': 'IncompleteCrawler'
+            'crawler_name': 'IncompleteCrawler',
+            'module_name': 'test_module',
             # 缺少 base_url, crawler_type, config_file_name
         }
         response = client.post(
@@ -536,7 +540,7 @@ class TestCrawlerApiRoutes:
         result = json.loads(response.data)
 
         assert result['success'] is False
-        assert '驗證失敗' in result['message'] # 檢查 Service 返回的錯誤訊息
+        assert '缺少必要欄位' in result['message'] # 檢查 Service 返回的錯誤訊息
         # 這裡不再檢查 details 或特定欄位，因為 Service 的錯誤訊息格式可能變化
         assert result.get('crawler') is None # 確保沒有返回 crawler 物件
 

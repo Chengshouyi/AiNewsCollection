@@ -42,16 +42,24 @@ def get_crawlers():
 def create_crawler():
     """新增一個爬蟲設定"""
     if not request.is_json:
-         return jsonify(success=False, message='請求必須是 application/json'), 415 # Unsupported Media Type
-    if not request.data: # 檢查是否有實際的請求體
-         return jsonify(success=False, message='缺少任務資料'), 400 # Bad Request
+         return jsonify(success=False, message='請求必須是 application/json'), 415
+    if not request.data:
+         return jsonify(success=False, message='缺少任務資料'), 400
     service: CrawlersService = get_crawlers_service()
     try:
         data = request.get_json()
-        if not data: # 檢查是否有請求體
+        if not data:
             return jsonify({"success": False, "message": "請求體為空或非 JSON 格式"}), 400
 
-        # 直接調用 Service 的 create 方法，驗證在 Service 內部進行
+        # 確保必要欄位存在
+        required_fields = ['crawler_name', 'module_name', 'base_url', 'crawler_type']
+        missing_fields = [field for field in required_fields if field not in data]
+        if missing_fields:
+            return jsonify({
+                "success": False, 
+                "message": f"缺少必要欄位: {', '.join(missing_fields)}"
+            }), 400
+
         result = service.create_crawler(data)
 
         if not result.get('success'):
@@ -508,6 +516,14 @@ def update_crawler_config(crawler_id):
             
         try:
             crawler_data = json.loads(crawler_data)
+            # 確保必要欄位存在
+            required_fields = ['crawler_name', 'module_name', 'base_url', 'crawler_type']
+            missing_fields = [field for field in required_fields if field not in crawler_data]
+            if missing_fields:
+                return jsonify({
+                    "success": False, 
+                    "message": f"缺少必要欄位: {', '.join(missing_fields)}"
+                }), 400
         except json.JSONDecodeError:
             return jsonify({"success": False, "message": "爬蟲資料格式錯誤"}), 400
             

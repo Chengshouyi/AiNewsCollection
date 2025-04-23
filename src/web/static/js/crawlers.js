@@ -69,7 +69,7 @@ function renderCrawlersTable(crawlers) {
     tableBody.empty();
 
     if (crawlers.length === 0) {
-        tableBody.append('<tr><td colspan="6" class="text-center">暫無爬蟲，請點擊「新增爬蟲」按鈕添加。</td></tr>');
+        tableBody.append('<tr><td colspan="7" class="text-center">暫無爬蟲，請點擊「新增爬蟲」按鈕添加。</td></tr>');
         return;
     }
 
@@ -81,6 +81,7 @@ function renderCrawlersTable(crawlers) {
             <tr data-id="${crawler.id}">
                 <td>${crawler.id}</td>
                 <td>${escapeHtml(crawler.crawler_name)}</td>
+                <td>${escapeHtml(crawler.module_name)}</td>
                 <td>${escapeHtml(crawler.base_url)}</td>
                 <td>${escapeHtml(crawler.crawler_type)}</td>
                 <td><span class="${statusBadgeClass}">${statusText}</span></td>
@@ -114,6 +115,7 @@ function showCrawlerModal(crawlerId) {
         $('#crawler-modal-label').text('編輯爬蟲');
         $('#crawler-id').val(crawler.id);
         $('#crawler-name').val(crawler.crawler_name);
+        $('#module-name').val(crawler.module_name);
         $('#crawler-website').val(crawler.base_url);
         $('#crawler-type').val(crawler.crawler_type);
 
@@ -208,6 +210,7 @@ function updateConfigFields(type, configValues = {}) {
 function resetCrawlerForm() {
     $('#crawler-id').val('');
     $('#crawler-name').val('');
+    $('#module-name').val('');
     $('#crawler-website').val('');
     $('#crawler-type').val('');
     $('#crawler-remark').val('');
@@ -222,6 +225,7 @@ function saveCrawler() {
 
     const crawlerData = {
         crawler_name: $('#crawler-name').val(),
+        module_name: $('#module-name').val(),
         base_url: $('#crawler-website').val(),
         config_file_name: getConfigFileName(),
         crawler_type: $('#crawler-type').val()

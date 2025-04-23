@@ -16,6 +16,7 @@
             <tr>
                 <th scope="col">ID</th>
                 <th scope="col">名稱</th>
+                <th scope="col">模組</th>
                 <th scope="col">網站</th>
                 <th scope="col">類型</th>
                 <th scope="col">狀態</th>
@@ -42,6 +43,11 @@
                     <div class="mb-3">
                         <label for="crawler-name" class="form-label">爬蟲名稱</label>
                         <input type="text" class="form-control" id="crawler-name" name="crawler_name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="module-name" class="form-label">模組名稱</label>
+                        <input type="text" class="form-control" id="module-name" name="module_name" required>
+                        <div class="form-text">請輸入爬蟲模組的名稱，例如：bnext_crawler</div>
                     </div>
                     <div class="mb-3">
                         <label for="crawler-website" class="form-label">目標網站</label>
