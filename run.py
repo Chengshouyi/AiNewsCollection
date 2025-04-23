@@ -5,7 +5,8 @@ from src.services.article_service import ArticleService
 from src.services.scheduler_service import SchedulerService
 from src.models.base_model import Base
 from src.config import get_db_manager
-from src.services.service_container import ServiceContainer, get_scheduler_service, get_task_executor_service, get_crawler_task_service, get_article_service
+from src.services.service_container import ServiceContainer, get_scheduler_service, get_task_executor_service, get_crawler_task_service, get_article_service, get_crawlers_service
+from datetime import datetime, timezone
 
 # 配置日誌
 logging.basicConfig(
@@ -16,6 +17,37 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+
+def initialize_default_crawler():
+    """初始化默認的爬蟲數據，如果不存在則創建"""
+    try:
+        # 獲取爬蟲服務
+        crawlers_service = get_crawlers_service()
+        
+        # 定義默認爬蟲數據
+        default_crawler = {
+            'crawler_name': 'BnextCrawler',
+            'base_url': 'https://www.bnext.com.tw',
+            'is_active': True,
+            'crawler_type': 'web',
+            'config_file_name': 'bnext_crawler_config.json',
+        }
+        
+        # 檢查爬蟲是否已存在
+        existing_crawler_result = crawlers_service.get_crawler_by_exact_name(default_crawler['crawler_name'])
+        
+        # 如果不存在，創建新爬蟲
+        if not existing_crawler_result['success'] or existing_crawler_result['crawler'] is None:
+            result = crawlers_service.create_crawler(default_crawler)
+            if result['success']:
+                logging.info(f"已成功初始化默認爬蟲: {default_crawler['crawler_name']}")
+            else:
+                logging.error(f"初始化默認爬蟲失敗: {result['message']}")
+        else:
+            logging.info(f"默認爬蟲 {default_crawler['crawler_name']} 已存在，無需創建")
+    
+    except Exception as e:
+        logging.error(f"初始化默認爬蟲時發生錯誤: {e}", exc_info=True)
 
 def main():
     try:
@@ -40,6 +72,9 @@ def main():
         # 創建資料庫表格
         db_manager.create_tables(Base)
         logging.info("資料庫初始化完成")
+        
+        # 初始化默認爬蟲數據
+        initialize_default_crawler()
         
         if __debug__:
             # 測試資料庫存取

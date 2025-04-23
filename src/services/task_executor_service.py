@@ -16,7 +16,7 @@ from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.database.base_repository import SchemaType
 from src.utils.enum_utils import TaskStatus
 from src.models.crawler_tasks_schema import CrawlerTaskReadSchema
-from src.web.app import socketio
+from src.web.socket_instance import socketio
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 

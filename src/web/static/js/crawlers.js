@@ -75,9 +75,9 @@ function renderCrawlersTable(crawlers) {
         const row = `
             <tr data-id="${crawler.id}">
                 <td>${crawler.id}</td>
-                <td>${escapeHtml(crawler.name)}</td>
-                <td>${escapeHtml(crawler.website)}</td>
-                <td>${escapeHtml(crawler.type)}</td>
+                <td>${escapeHtml(crawler.crawler_name)}</td>
+                <td>${escapeHtml(crawler.base_url)}</td>
+                <td>${escapeHtml(crawler.crawler_type)}</td>
                 <td><span class="${statusBadgeClass}">${statusText}</span></td>
                 <td>
                     <button class="btn btn-sm btn-outline-primary edit-crawler-btn" data-id="${crawler.id}">
@@ -108,13 +108,13 @@ function showCrawlerModal(crawlerId) {
 
         $('#crawler-modal-label').text('編輯爬蟲');
         $('#crawler-id').val(crawler.id);
-        $('#crawler-name').val(crawler.name);
-        $('#crawler-website').val(crawler.website);
-        $('#crawler-type').val(crawler.type);
+        $('#crawler-name').val(crawler.crawler_name);
+        $('#crawler-website').val(crawler.base_url);
+        $('#crawler-type').val(crawler.crawler_type);
         $('#crawler-remark').val(crawler.remark || '');
 
         // 根據爬蟲類型加載配置字段
-        updateConfigFields(crawler.type, crawler.config);
+        updateConfigFields(crawler.crawler_type, crawler.config);
     } else {
         // 新增模式
         $('#crawler-modal-label').text('新增爬蟲');
@@ -187,19 +187,17 @@ function resetCrawlerForm() {
 // 保存爬蟲
 function saveCrawler() {
     // 收集表單數據
-    const crawlerId = $('#crawler-id').val();
-    const isEdit = !!crawlerId;
-
     const crawlerData = {
-        name: $('#crawler-name').val(),
-        website: $('#crawler-website').val(),
-        type: $('#crawler-type').val(),
+        crawler_name: $('#crawler-name').val(),
+        base_url: $('#crawler-website').val(),
+        crawler_type: $('#crawler-type').val(),
         remark: $('#crawler-remark').val(),
+        config_file_name: getConfigFileName(),
         config: getConfigData()
     };
 
     // 表單驗證
-    if (!crawlerData.name || !crawlerData.website || !crawlerData.type) {
+    if (!crawlerData.crawler_name || !crawlerData.base_url || !crawlerData.crawler_type) {
         displayAlert('warning', '請填寫必填欄位');
         return;
     }
@@ -273,6 +271,13 @@ function getConfigData() {
     }
 
     return config;
+}
+
+// 獲取配置檔案名稱
+function getConfigFileName() {
+    const type = $('#crawler-type').val();
+    const name = $('#crawler-name').val().toLowerCase();
+    return `${name}_config.json`;
 }
 
 // 顯示提示訊息

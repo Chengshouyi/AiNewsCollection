@@ -41,27 +41,29 @@
                     <input type="hidden" id="crawler-id">
                     <div class="mb-3">
                         <label for="crawler-name" class="form-label">爬蟲名稱</label>
-                        <input type="text" class="form-control" id="crawler-name" required>
+                        <input type="text" class="form-control" id="crawler-name" name="crawler_name" required>
                     </div>
                     <div class="mb-3">
                         <label for="crawler-website" class="form-label">目標網站</label>
-                        <input type="text" class="form-control" id="crawler-website" required>
+                        <input type="text" class="form-control" id="crawler-website" name="base_url" required>
                     </div>
                     <div class="mb-3">
                         <label for="crawler-type" class="form-label">爬蟲類型</label>
-                        <select class="form-select" id="crawler-type" required>
+                        <select class="form-select" id="crawler-type" name="crawler_type" required>
                             <option value="">請選擇...</option>
+                            <option value="bnext">Web</option>
                             <option value="rss">RSS</option>
                             <option value="xpath">XPath</option>
                             <option value="custom">自訂</option>
                         </select>
                     </div>
+                    <div class="mb-3">
+                        <label for="config-file" class="form-label">配置檔案</label>
+                        <input type="file" class="form-control" id="config-file" name="config_file" accept=".json">
+                        <div class="form-text">請上傳 JSON 格式的配置檔案</div>
+                    </div>
                     <div class="mb-3" id="config-fields-container">
                         <!-- 依據所選類型動態生成配置欄位 -->
-                    </div>
-                    <div class="mb-3">
-                        <label for="crawler-remark" class="form-label">備註</label>
-                        <textarea class="form-control" id="crawler-remark" rows="3"></textarea>
                     </div>
                 </form>
             </div>

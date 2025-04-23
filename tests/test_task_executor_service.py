@@ -151,6 +151,14 @@ class MockCrawler:
              # Add logic here if needed
         return True # Indicate cancellation attempt was acknowledged
 
+    def get_progress(self, task_id):
+        """模擬取得進度的方法"""
+        return {
+            'progress': 50,
+            'scrape_phase': ScrapePhase.LINK_COLLECTION,
+            'message': f'MockCrawler task {task_id} in progress'
+        }
+
 
 # --- Test Class ---
 
@@ -158,7 +166,8 @@ class TestTaskExecutorService:
     """測試任務執行服務"""
 
     @patch('src.crawlers.crawler_factory.CrawlerFactory.get_crawler')
-    def test_execute_task_async_success(self, mock_get_crawler, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks, session: Session):
+    @patch('src.web.socket_instance.socketio.emit')
+    def test_execute_task_async_success(self, mock_emit, mock_get_crawler, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks, session: Session):
         """測試異步執行任務成功"""
         mock_crawler_instance = MockCrawler(success=True, message="異步成功", articles_count=10)
         mock_get_crawler.return_value = mock_crawler_instance
@@ -198,8 +207,12 @@ class TestTaskExecutorService:
         assert task_id not in task_executor_service.running_tasks
         assert task_id not in task_executor_service.running_crawlers
 
+        # 驗證 WebSocket 事件發送
+        assert mock_emit.call_count >= 3  # 至少調用了三次 (開始、完成進度、結束事件)
+
     @patch('src.crawlers.crawler_factory.CrawlerFactory.get_crawler')
-    def test_execute_task_async_failure(self, mock_get_crawler, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks, session: Session):
+    @patch('src.web.socket_instance.socketio.emit')
+    def test_execute_task_async_failure(self, mock_emit, mock_get_crawler, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks, session: Session):
         """測試異步執行任務失敗"""
         mock_crawler_instance = MockCrawler(success=False, message="異步失敗", articles_count=0, raise_exception=ValueError("爬蟲內部錯誤"))
         mock_get_crawler.return_value = mock_crawler_instance
@@ -250,8 +263,23 @@ class TestTaskExecutorService:
         assert task_id not in task_executor_service.running_tasks
         assert task_id not in task_executor_service.running_crawlers
 
+        # 驗證 WebSocket 事件發送
+        assert mock_emit.call_count == 2  # 失敗時只發送兩次：task_progress (失敗) 和 task_finished
+        # 驗證事件內容
+        calls = mock_emit.call_args_list
+        assert len(calls) == 2
+        # 驗證第一個調用是 task_progress
+        assert calls[0][0][0] == 'task_progress'  # 事件名稱
+        assert calls[0][0][1]['status'] == TaskStatus.FAILED.value  # 狀態
+        assert calls[0][0][1]['scrape_phase'] == ScrapePhase.FAILED.value  # 階段
+        # 驗證第二個調用是 task_finished
+        assert calls[1][0][0] == 'task_finished'  # 事件名稱
+        assert calls[1][0][1]['task_id'] == task_id  # 任務ID
+        assert calls[1][0][1]['status'] == TaskStatus.FAILED.value  # 狀態
+
     @patch('src.crawlers.crawler_factory.CrawlerFactory.get_crawler')
-    def test_execute_task_sync_success(self, mock_get_crawler, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks, session: Session):
+    @patch('src.web.socket_instance.socketio.emit')
+    def test_execute_task_sync_success(self, mock_emit, mock_get_crawler, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks, session: Session):
         """測試同步執行任務成功"""
         mock_crawler_instance = MockCrawler(success=True, message="同步成功", articles_count=8)
         mock_get_crawler.return_value = mock_crawler_instance
@@ -284,6 +312,9 @@ class TestTaskExecutorService:
         assert task_id not in task_executor_service.running_tasks
         assert task_id not in task_executor_service.running_crawlers # 內部函數執行完畢應清除
 
+        # 驗證 WebSocket 事件發送
+        assert mock_emit.call_count >= 3  # 至少調用了三次 (開始、完成進度、結束事件)
+
     def test_execute_task_already_running(self, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks):
         """測試執行已在運行的任務"""
         task_id = sample_task.id
@@ -304,7 +335,8 @@ class TestTaskExecutorService:
         assert result['message'] == '任務不存在'
 
     @patch('src.crawlers.crawler_factory.CrawlerFactory.get_crawler')
-    def test_cancel_task_success(self, mock_get_crawler, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks, session: Session):
+    @patch('src.web.socket_instance.socketio.emit')
+    def test_cancel_task_success(self, mock_emit, mock_get_crawler, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks, session: Session):
         """測試成功取消正在執行的任務"""
         mock_crawler_instance = MockCrawler()
         mock_get_crawler.return_value = mock_crawler_instance
@@ -353,7 +385,11 @@ class TestTaskExecutorService:
         assert task_id not in task_executor_service.running_tasks
         assert task_id not in task_executor_service.running_crawlers
 
-    def test_cancel_task_not_running(self, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks, session: Session):
+        # 驗證 WebSocket 事件發送
+        assert mock_emit.call_count >= 2  # 至少調用了兩次 (取消狀態和任務結束)
+
+    @patch('src.web.socket_instance.socketio.emit')
+    def test_cancel_task_not_running(self, mock_emit, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks, session: Session):
         """測試取消未在執行的任務"""
         task_id = sample_task.id
         # 確保任務不在 running_tasks 中
@@ -373,19 +409,30 @@ class TestTaskExecutorService:
         assert db_task.task_status != TaskStatus.CANCELLED
         assert db_task.scrape_phase != ScrapePhase.CANCELLED
 
-    def test_get_task_status_running(self, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks):
+        # 驗證沒有 WebSocket 事件發送
+        mock_emit.assert_not_called()
+
+    @patch('src.web.socket_instance.socketio.emit')
+    def test_get_task_status_running(self, mock_emit, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks):
         """測試獲取正在運行任務的狀態 (從內存)"""
         task_id = sample_task.id
         # 模擬任務正在運行
         task_executor_service.running_tasks[task_id] = Future()
+        
+        # 添加模擬爬蟲以獲取進度
+        mock_crawler = MockCrawler()
+        task_executor_service.running_crawlers[task_id] = mock_crawler
 
         status_result = task_executor_service.get_task_status(task_id)
         assert status_result['success'] is True
         assert status_result['task_status'] == TaskStatus.RUNNING.value # 確認返回 Enum 值
-        assert f'任務 {task_id} 正在執行中' in status_result['message']
+        assert status_result['scrape_phase'] == ScrapePhase.LINK_COLLECTION.value
+        assert status_result['progress'] == 50  # 從 mock_crawler.get_progress 獲取
+        assert f'MockCrawler task {task_id} in progress' in status_result['message']
 
         # 清理
         del task_executor_service.running_tasks[task_id]
+        del task_executor_service.running_crawlers[task_id]
 
     def test_get_task_status_completed_from_db(self, task_executor_service: TaskExecutorService, sample_task: CrawlerTasks, session: Session):
         """測試獲取已完成任務的狀態 (從DB)"""
