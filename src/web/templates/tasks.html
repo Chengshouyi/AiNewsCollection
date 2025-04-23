@@ -3,12 +3,152 @@
 {% block title %}任務管理 - AI 新聞收集器{% endblock %}
 
 {% block content %}
-<h1>任務管理</h1>
-<!-- 任務列表表格和操作按鈕將放在這裡 -->
-<p>這裡將顯示任務列表，包含狀態、進度條，並提供新增、修改、刪除、手動執行功能。</p>
-<div id="tasks-list">
-    <!-- AJAX 內容將加載於此 -->
-    <!-- WebSocket 更新將作用於此 -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>任務管理</h1>
+    <button type="button" class="btn btn-primary" id="add-task-btn">
+        <i class="bi bi-plus-circle"></i> 新增任務
+    </button>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th scope="col">ID</th>
+                <th scope="col">名稱</th>
+                <th scope="col">爬蟲</th>
+                <th scope="col">類型</th>
+                <th scope="col">週期</th>
+                <th scope="col">狀態</th>
+                <th scope="col">進度</th>
+                <th scope="col">執行時間</th>
+                <th scope="col">操作</th>
+            </tr>
+        </thead>
+        <tbody id="tasks-table-body">
+            <!-- AJAX 內容將加載於此 -->
+        </tbody>
+    </table>
+</div>
+
+<!-- 任務新增/修改表單模態框 -->
+<div class="modal fade" id="task-modal" tabindex="-1" aria-labelledby="task-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="task-modal-label">新增任務</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="task-form">
+                    <input type="hidden" id="task-id">
+                    <div class="mb-3">
+                        <label for="task-name" class="form-label">任務名稱</label>
+                        <input type="text" class="form-control" id="task-name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="crawler-id" class="form-label">選擇爬蟲</label>
+                        <select class="form-select" id="crawler-id" required>
+                            <option value="">請選擇...</option>
+                            <!-- 爬蟲選項將由 JS 動態加載 -->
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="task-type" class="form-label">任務類型</label>
+                        <select class="form-select" id="task-type" required>
+                            <option value="">請選擇...</option>
+                            <option value="auto">自動執行</option>
+                            <option value="manual">手動執行</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="schedule-container">
+                        <!-- 自動執行時顯示排程設定 -->
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" id="is-ai-related">
+                            <label class="form-check-label" for="is-ai-related">
+                                AI 相關（自動分類文章是否與 AI 相關）
+                            </label>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="task-remark" class="form-label">備註</label>
+                        <textarea class="form-control" id="task-remark" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="save-task-btn">儲存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 確認刪除模態框 -->
+<div class="modal fade" id="delete-task-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">確認刪除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                確定要刪除此任務嗎？此操作無法撤銷。
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirm-delete-task-btn">確認刪除</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 手動爬取連結選擇模態框 -->
+<div class="modal fade" id="manual-links-modal" tabindex="-1" aria-labelledby="manual-links-modal-label"
+    aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="manual-links-modal-label">選擇要爬取的連結</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6>已抓取的連結列表</h6>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" id="select-all-links">全選</button>
+                            <button class="btn btn-sm btn-outline-secondary" id="deselect-all-links">取消全選</button>
+                        </div>
+                    </div>
+                    <div class="links-container" style="max-height: 60vh; overflow-y: auto;">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th scope="col" style="width: 50px;">選擇</th>
+                                    <th scope="col">標題</th>
+                                    <th scope="col">連結</th>
+                                    <th scope="col">發布日期</th>
+                                </tr>
+                            </thead>
+                            <tbody id="manual-links-table-body">
+                                <!-- 連結列表將動態加載 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="manual-links-status">
+                    已選擇 <span id="selected-links-count">0</span> 個連結。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="start-fetch-articles-btn">開始爬取文章</button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 

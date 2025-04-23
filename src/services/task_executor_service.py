@@ -16,6 +16,7 @@ from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.database.base_repository import SchemaType
 from src.utils.enum_utils import TaskStatus
 from src.models.crawler_tasks_schema import CrawlerTaskReadSchema
+from src.web.app import socketio
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -196,46 +197,18 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
         # 檢查是否有異常
         if future.exception():
             error_info = future.exception()
-            logger.error(f"任務 {task_id} 執行失敗: {error_info}", exc_info=True)
-            try:
-                # 更新任務狀態為失敗 (在新的事務中)
-                with self._transaction() as session:
-                    tasks_repo = cast(CrawlerTasksRepository, self._get_repository('CrawlerTask', session))
-                    history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('TaskHistory', session))
-
-                    if tasks_repo:
-                        task_data = {
-                            'task_status': TaskStatus.FAILED.value,
-                            'scrape_phase': ScrapePhase.FAILED.value
-                        }
-                        # 檢查更新操作的結果
-                        updated_task = tasks_repo.update(task_id, task_data)
-                        if not updated_task:
-                            logger.error(f"回調中更新任務 {task_id} 狀態為 FAILED 失敗 (tasks_repo.update 返回 None)")
-
-
-                    # 同時更新對應的歷史記錄為失敗
-                    # 使用 cast 解決類型提示問題
-                    latest_history_orm = cast(Optional[CrawlerTaskHistory], history_repo.get_latest_history(task_id, is_preview=False)) # 明確指定 is_preview=False
-                    if latest_history_orm and latest_history_orm.task_status == TaskStatus.RUNNING.value and not latest_history_orm.end_time:
-                        history_data = {
-                            'end_time': datetime.now(timezone.utc),
-                            'task_status': TaskStatus.FAILED.value,
-                            'message': f"任務執行失敗: {error_info}"
-                        }
-                        validated_history_data = history_repo.validate_data(history_data, SchemaType.UPDATE)
-                        # 檢查更新操作的結果
-                        updated_history = history_repo.update(latest_history_orm.id, validated_history_data)
-                        if updated_history:
-                            logger.info(f"已更新任務 {task_id} 的歷史記錄 {latest_history_orm.id} 狀態為失敗")
-                        else:
-                            logger.error(f"回調中更新歷史記錄 {latest_history_orm.id} 狀態為 FAILED 失敗 (history_repo.update 返回 None)")
-                    else:
-                         logger.warning(f"找不到任務 {task_id} 對應的運行中歷史記錄進行失敗狀態更新。")
-
-                    session.flush()
-            except Exception as e:
-                logger.error(f"異步任務回調中更新失敗狀態失敗: {str(e)}")
+            error_msg = f"任務 {task_id} 執行失敗: {error_info}"
+            room_name = f'task_{task_id}'
+            fail_data = {
+                'task_id': task_id,
+                'progress': 100,
+                'status': TaskStatus.FAILED.value,
+                'scrape_phase': ScrapePhase.FAILED.value,
+                'message': error_msg
+            }
+            socketio.emit('task_progress', fail_data, namespace='/tasks', to=room_name)
+            socketio.emit('task_finished', {'task_id': task_id, 'status': TaskStatus.FAILED.value}, namespace='/tasks', to=room_name)
+            logger.info(f"異步任務回調: 已發送 WebSocket 事件: task_progress (失敗) 和 task_finished 至 room {room_name}")
 
     def _execute_task_internal(self, task_id: int, history_id: Optional[int], **kwargs) -> Dict[str, Any]:
         """內部任務執行函數 (工作線程)
@@ -378,6 +351,32 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                     del self.running_crawlers[task_id]
 
             result['task_status'] = task_status_enum.value
+
+            # 在 _execute_task_internal 方法中，任務開始時
+            room_name = f'task_{task_id}'
+            start_data = {
+                'task_id': task_id,
+                'progress': 5,  # 進度 5% 表示開始
+                'status': TaskStatus.RUNNING.value,
+                'scrape_phase': ScrapePhase.INIT.value,
+                'message': f'任務 {task_id} 開始執行 (爬蟲: {crawler_name})'
+            }
+            socketio.emit('task_progress', start_data, namespace='/tasks', to=room_name)
+            logger.info(f"已發送 WebSocket 事件: task_progress (開始) 至 room {room_name}")
+
+            # 在 _execute_task_internal 方法中，任務成功/失敗時
+            final_data = {
+                'task_id': task_id,
+                'progress': 100,
+                'status': task_status_enum.value,
+                'scrape_phase': scrape_phase_enum.value,
+                'message': message,
+                'articles_count': articles_count # 添加文章數量
+            }
+            socketio.emit('task_progress', final_data, namespace='/tasks', to=room_name)
+            socketio.emit('task_finished', {'task_id': task_id, 'status': task_status_enum.value}, namespace='/tasks', to=room_name)
+            logger.info(f"已發送 WebSocket 事件: task_progress (完成/失敗) 和 task_finished 至 room {room_name}")
+
             return result
         except Exception as e:
             # --- 通用異常處理 --- 
@@ -427,6 +426,19 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
             with self.task_lock:
                 if task_id in self.running_crawlers:
                     del self.running_crawlers[task_id]
+
+            # 在 _execute_task_internal 方法的異常處理塊中，發送失敗事件
+            error_data = {
+                'task_id': task_id,
+                'progress': 100, # 進度設為 100 表示已結束
+                'status': TaskStatus.FAILED.value,
+                'scrape_phase': ScrapePhase.FAILED.value,
+                'message': error_msg
+            }
+            room_name = f'task_{task_id}'
+            socketio.emit('task_progress', error_data, namespace='/tasks', to=room_name)
+            socketio.emit('task_finished', {'task_id': task_id, 'status': TaskStatus.FAILED.value}, namespace='/tasks', to=room_name)
+            logger.info(f"異常處理: 已發送 WebSocket 事件: task_progress (失敗) 和 task_finished 至 room {room_name}")
 
             return {
                 'success': False,
@@ -568,6 +580,20 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 if task_id in self.running_crawlers:
                     del self.running_crawlers[task_id]
             
+            # 在 cancel_task 方法中，如果取消成功，發送取消事件
+            if cancelled:
+                room_name = f'task_{task_id}'
+                cancel_data = {
+                    'task_id': task_id,
+                    'progress': 100, # 取消也視為結束
+                    'status': TaskStatus.CANCELLED.value,
+                    'scrape_phase': ScrapePhase.CANCELLED.value,
+                    'message': '任務已被使用者取消'
+                }
+                socketio.emit('task_progress', cancel_data, namespace='/tasks', to=room_name)
+                socketio.emit('task_finished', {'task_id': task_id, 'status': TaskStatus.CANCELLED.value}, namespace='/tasks', to=room_name)
+                logger.info(f"任務取消: 已發送 WebSocket 事件: task_progress (取消) 和 task_finished 至 room {room_name}")
+
             return {
                 'success': success,
                 'message': message

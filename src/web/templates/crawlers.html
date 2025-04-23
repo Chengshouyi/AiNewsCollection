@@ -3,11 +3,93 @@
 {% block title %}爬蟲管理 - AI 新聞收集器{% endblock %}
 
 {% block content %}
-<h1>爬蟲管理</h1>
-<!-- 爬蟲列表表格和操作按鈕將放在這裡 -->
-<p>這裡將顯示爬蟲列表，並提供新增、修改、刪除功能。</p>
-<div id="crawlers-list">
-    <!-- AJAX 內容將加載於此 -->
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>爬蟲管理</h1>
+    <button type="button" class="btn btn-primary" id="add-crawler-btn">
+        <i class="bi bi-plus-circle"></i> 新增爬蟲
+    </button>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th scope="col">ID</th>
+                <th scope="col">名稱</th>
+                <th scope="col">網站</th>
+                <th scope="col">類型</th>
+                <th scope="col">狀態</th>
+                <th scope="col">操作</th>
+            </tr>
+        </thead>
+        <tbody id="crawlers-table-body">
+            <!-- AJAX 內容將加載於此 -->
+        </tbody>
+    </table>
+</div>
+
+<!-- 爬蟲新增/修改表單模態框 -->
+<div class="modal fade" id="crawler-modal" tabindex="-1" aria-labelledby="crawler-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="crawler-modal-label">新增爬蟲</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="crawler-form">
+                    <input type="hidden" id="crawler-id">
+                    <div class="mb-3">
+                        <label for="crawler-name" class="form-label">爬蟲名稱</label>
+                        <input type="text" class="form-control" id="crawler-name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="crawler-website" class="form-label">目標網站</label>
+                        <input type="text" class="form-control" id="crawler-website" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="crawler-type" class="form-label">爬蟲類型</label>
+                        <select class="form-select" id="crawler-type" required>
+                            <option value="">請選擇...</option>
+                            <option value="rss">RSS</option>
+                            <option value="xpath">XPath</option>
+                            <option value="custom">自訂</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="config-fields-container">
+                        <!-- 依據所選類型動態生成配置欄位 -->
+                    </div>
+                    <div class="mb-3">
+                        <label for="crawler-remark" class="form-label">備註</label>
+                        <textarea class="form-control" id="crawler-remark" rows="3"></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="save-crawler-btn">儲存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 確認刪除模態框 -->
+<div class="modal fade" id="delete-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">確認刪除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                確定要刪除此爬蟲嗎？此操作無法撤銷。
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirm-delete-btn">確認刪除</button>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}
 
