@@ -10,7 +10,15 @@
     </button>
 </div>
 
-<div class="table-responsive">
+<!-- 將錯誤提示改為一個更友好的信息，告知用戶無需擔心，移除d-none使其預設顯示 -->
+<div class="alert alert-info alert-dismissible fade show" role="alert" id="no-tasks-alert">
+    <h4 class="alert-heading">暫無任務</h4>
+    <p>目前資料庫中沒有任何任務，您可以點擊右上角的「新增任務」按鈕來添加。</p>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+
+<!-- 使用固定的最小高度來避免表格載入時的畫面跳動 -->
+<div class="table-responsive" style="min-height: 200px;">
     <table class="table table-striped table-hover">
         <thead>
             <tr>
@@ -64,10 +72,94 @@
                     <div class="mb-3" id="schedule-container">
                         <!-- 自動執行時顯示排程設定 -->
                     </div>
+
+                    <!-- 爬蟲參數區域 -->
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span>爬蟲參數設定</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="toggle-advanced-params">
+                                <i class="bi bi-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="card-body" id="advanced-params-container">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="max-pages" class="form-label">最大頁數</label>
+                                    <input type="number" class="form-control" id="max-pages" min="1" value="10">
+                                    <div class="form-text">爬取頁面的最大數量</div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="num-articles" class="form-label">文章數量</label>
+                                    <input type="number" class="form-control" id="num-articles" min="1" value="10">
+                                    <div class="form-text">最多爬取的文章數量</div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="max-retries" class="form-label">最大重試次數</label>
+                                    <input type="number" class="form-control" id="max-retries" min="0" value="3">
+                                    <div class="form-text">請求失敗時的重試次數</div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="retry-delay" class="form-label">重試延遲 (秒)</label>
+                                    <input type="number" class="form-control" id="retry-delay" min="0" step="0.5"
+                                        value="2.0">
+                                    <div class="form-text">重試間隔時間</div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="timeout" class="form-label">超時時間 (秒)</label>
+                                    <input type="number" class="form-control" id="timeout" min="1" value="10">
+                                    <div class="form-text">請求超時時間</div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="min-keywords" class="form-label">最小關鍵字數</label>
+                                    <input type="number" class="form-control" id="min-keywords" min="1" value="3">
+                                    <div class="form-text">關鍵字提取的最小數量</div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="scrape-mode" class="form-label">爬取模式</label>
+                                    <select class="form-select" id="scrape-mode">
+                                        <option value="full_scrape">完整爬取</option>
+                                        <option value="links_only">僅爬取連結</option>
+                                        <option value="content_only">僅爬取內容</option>
+                                    </select>
+                                    <div class="form-text">選擇爬取的內容範圍</div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <div class="form-check mt-4">
+                                        <input class="form-check-input" type="checkbox" id="save-to-csv">
+                                        <label class="form-check-label" for="save-to-csv">
+                                            儲存到CSV文件
+                                        </label>
+                                    </div>
+                                    <div id="csv-prefix-container" class="d-none">
+                                        <label for="csv-file-prefix" class="form-label">CSV檔案前綴</label>
+                                        <input type="text" class="form-control" id="csv-file-prefix" placeholder="可選">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-12">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="save-partial-results"
+                                            checked>
+                                        <label class="form-check-label" for="save-partial-results">
+                                            取消時保存部分結果
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="mb-3">
                         <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="is-ai-related">
-                            <label class="form-check-label" for="is-ai-related">
+                            <input class="form-check-input" type="checkbox" id="ai-only">
+                            <label class="form-check-label" for="ai-only">
                                 AI 相關（自動分類文章是否與 AI 相關）
                             </label>
                         </div>
