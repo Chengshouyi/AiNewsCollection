@@ -18,6 +18,7 @@ from src.utils.enum_utils import TaskStatus
 from src.models.crawler_tasks_schema import CrawlerTaskReadSchema
 from src.web.socket_instance import socketio, generate_session_id
 from src.services.service_container import get_crawlers_service, get_article_service
+from src.interface.progress_reporter import ProgressListener
 
 
 # 設定 logger
@@ -25,8 +26,8 @@ logging.basicConfig(level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-class TaskExecutorService(BaseService[CrawlerTasks]):
-    """統一的任務執行服務，處理所有類型的任務執行"""
+class TaskExecutorService(BaseService[CrawlerTasks], ProgressListener):
+    """統一的任務執行服務，處理所有類型的任務執行，同時監聽爬蟲進度"""
 
     def __init__(self, db_manager=None, max_workers=10):
         """初始化任務執行服務
@@ -51,6 +52,31 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
             'TaskHistory': (CrawlerTaskHistoryRepository, CrawlerTaskHistory)
         }
 
+    # 實現 ProgressListener 接口方法
+    def on_progress_update(self, task_id: int, progress_data: Dict[str, Any]) -> None:
+        """
+        接收爬蟲進度更新並處理
+        
+        Args:
+            task_id: 任務ID
+            progress_data: 進度數據，包含progress、message、scrape_phase等
+        """
+        # 進度資料存儲到本地狀態
+        with self.task_lock:
+            if task_id not in self.task_execution_status:
+                self.task_execution_status[task_id] = {}
+            
+            self.task_execution_status[task_id].update({
+                'progress': progress_data.get('progress', 0),
+                'message': progress_data.get('message', '無訊息'),
+                'scrape_phase': progress_data.get('scrape_phase', ScrapePhase.UNKNOWN.value)
+            })
+        
+        # 如果需要，可以在此處發送即時更新到前端或其他系統
+        logger.debug(f"任務 {task_id} 進度更新: {progress_data.get('progress')}%, {progress_data.get('message')}")
+        
+        # 可選：如果需要保存到資料庫，可以在這裡實現
+        # self._save_progress_to_database(task_id, progress_data)
 
     def execute_task(self, task_id: int, is_async: bool = True, **kwargs) -> Dict[str, Any]:
         """執行指定的爬蟲任務
@@ -325,6 +351,9 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 from src.crawlers.crawler_factory import CrawlerFactory
                 crawler_instance = CrawlerFactory.get_crawler(crawler_name)
                 
+                # 註冊監聽者
+                crawler_instance.add_progress_listener(task_id, self)
+
                 # 儲存爬蟲實例以便取消任務時使用
                 with self.task_lock:
                     self.running_crawlers[task_id] = crawler_instance
@@ -489,6 +518,9 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 'message': error_msg,
                 'task_status': TaskStatus.FAILED.value # 返回失敗狀態
             }
+        finally:
+            # 清理監聽者
+            crawler_instance.remove_progress_listener(task_id, self)
 
     def cancel_task(self, task_id: int) -> Dict[str, Any]:
         """取消正在執行的任務
@@ -688,8 +720,20 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
         """
         with self.task_lock:
             is_running_in_memory = task_id in self.running_tasks
+            has_status_in_memory = task_id in self.task_execution_status
 
-        # 優先檢查內存狀態
+        # 優先使用內存中的進度狀態（來自監聽器更新）
+        if is_running_in_memory and has_status_in_memory:
+            status_data = self.task_execution_status.get(task_id, {})
+            return {
+                'success': True,
+                'task_status': TaskStatus.RUNNING.value,
+                'scrape_phase': status_data.get('scrape_phase', ScrapePhase.UNKNOWN.value),
+                'progress': status_data.get('progress', 0),
+                'message': status_data.get('message', '任務執行中')
+            }
+        
+        # 如果沒有內存狀態但任務仍在運行，嘗試從爬蟲實例獲取
         if is_running_in_memory:
             # 嘗試獲取更詳細的運行時信息 (如果爬蟲支持)
             progress = 50 # 默認進度

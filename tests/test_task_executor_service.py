@@ -122,6 +122,7 @@ class MockCrawler:
         self.raise_exception = raise_exception
         self.cancelled = False
         self.global_params = {} # For cancellation testing
+        self.progress_listeners = {} # 儲存每個任務的進度監聽器
 
     def execute_task(self, task_id, task_args):
         logger.info(f"MockCrawler executing task {task_id} with args {task_args}")
@@ -160,6 +161,29 @@ class MockCrawler:
             'scrape_phase': ScrapePhase.LINK_COLLECTION,
             'message': f'MockCrawler task {task_id} in progress'
         }
+    
+    def add_progress_listener(self, task_id, listener):
+        """添加進度監聽器
+        
+        Args:
+            task_id: 任務ID
+            listener: 實現 ProgressListener 介面的物件
+        """
+        logger.info(f"MockCrawler: 添加任務 {task_id} 的進度監聽器")
+        if task_id not in self.progress_listeners:
+            self.progress_listeners[task_id] = []
+        self.progress_listeners[task_id].append(listener)
+    
+    def remove_progress_listener(self, task_id, listener):
+        """移除進度監聽器
+        
+        Args:
+            task_id: 任務ID
+            listener: 要移除的監聽器實例
+        """
+        logger.info(f"MockCrawler: 移除任務 {task_id} 的進度監聽器")
+        if task_id in self.progress_listeners and listener in self.progress_listeners[task_id]:
+            self.progress_listeners[task_id].remove(listener)
 
 
 # --- Test Class ---

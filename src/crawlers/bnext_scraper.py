@@ -10,6 +10,7 @@ from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
 from datetime import datetime, timezone
+from src.utils.enum_utils import ArticleScrapeStatus
 
 # 設置日誌記錄器(校正用)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -224,7 +225,7 @@ class BnextScraper:
                 tags='',
                 is_ai_related=ai_only,
                 is_scraped=False,
-                scrape_status='link_saved',
+                scrape_status=ArticleScrapeStatus.LINK_SAVED.value,
                 scrape_error=None,
                 last_scrape_attempt=datetime.now(timezone.utc),
                 task_id=None
@@ -289,7 +290,7 @@ class BnextScraper:
                             tags='',
                             is_ai_related=ai_only,
                             is_scraped=False,
-                            scrape_status='link_saved',
+                            scrape_status=ArticleScrapeStatus.LINK_SAVED.value,
                             scrape_error=None,
                             last_scrape_attempt=datetime.now(timezone.utc),
                             task_id=None

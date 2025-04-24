@@ -13,7 +13,8 @@ from src.services.article_service import ArticleService
 from src.utils.model_utils import validate_positive_int, validate_boolean, validate_str, validate_task_args
 from src.utils.transform_utils import convert_hashable_dict_to_str_dict
 from src.error.errors import ValidationError
-from src.utils.enum_utils import ScrapePhase, ScrapeMode
+from src.utils.enum_utils import ScrapePhase, ScrapeMode, ArticleScrapeStatus
+from src.interface.progress_reporter import ProgressReporter, ProgressListener
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -54,6 +55,9 @@ class BaseCrawler(ABC):
         for task_id in self.scrape_phase:
             if ScrapePhase.CANCELLED.value in self.scrape_phase[task_id]:
                 self.scrape_phase[task_id][ScrapePhase.CANCELLED.value] = False
+
+        # 添加進度報告器
+        self.progress_reporter = ProgressReporter()
 
     @abstractmethod # 抓取文章列表
     def _fetch_article_links(self, task_id: int) -> Optional[pd.DataFrame]:
@@ -395,19 +399,19 @@ class BaseCrawler(ABC):
                     
             # 更新抓取相關標記
             successful_links = [article['link'] for article in articles_content 
-                               if article.get('scrape_status') == 'content_scraped']
+                               if article.get('scrape_status') == ArticleScrapeStatus.CONTENT_SCRAPED.value]
             failed_links = [article['link'] for article in articles_content 
-                           if article.get('scrape_status') == 'failed']
+                           if article.get('scrape_status') == ArticleScrapeStatus.FAILED.value]
             
             # 更新成功抓取的文章
             if successful_links:
                 merged_df.loc[merged_df['link'].isin(successful_links), 'is_scraped'] = True
-                merged_df.loc[merged_df['link'].isin(successful_links), 'scrape_status'] = 'content_scraped'
+                merged_df.loc[merged_df['link'].isin(successful_links), 'scrape_status'] = ArticleScrapeStatus.CONTENT_SCRAPED.value
             
             # 更新失敗的文章
             if failed_links:
                 merged_df.loc[merged_df['link'].isin(failed_links), 'is_scraped'] = False
-                merged_df.loc[merged_df['link'].isin(failed_links), 'scrape_status'] = 'failed'
+                merged_df.loc[merged_df['link'].isin(failed_links), 'scrape_status'] = ArticleScrapeStatus.FAILED.value
                 # 對於失敗的文章，保留錯誤信息和最後嘗試時間，這些已經在原始內容中設置
             
             return merged_df
@@ -953,6 +957,10 @@ class BaseCrawler(ABC):
                 logger.info(f"任務 {task_id} {scrape_phase.value}: {progress}%, {message}")
             else:
                 logger.debug(f"任務進度更新 (ID={task_id}): {progress}%, {message}")
+            
+            # 新增：通知監聽者
+            progress_data = self.get_scrape_phase(task_id)
+            self.progress_reporter.notify_progress(task_id, progress_data)
     
     def get_scrape_phase(self, task_id: int):
         """獲取任務狀態"""
@@ -1074,7 +1082,7 @@ class BaseCrawler(ABC):
                         complete_articles = self.articles_df[self.articles_df['is_scraped'] == True].copy()
                         if not complete_articles.empty:
                             # 標記為部分保存
-                            complete_articles['scrape_status'] = 'partial_saved'
+                            complete_articles['scrape_status'] = ArticleScrapeStatus.PARTIAL_SAVED.value
                             
                             # 臨時替換 articles_df 進行保存
                             original_df = self.articles_df
@@ -1103,6 +1111,19 @@ class BaseCrawler(ABC):
             'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase'),
             'partial_data_saved': partial_data_saved
         }
+
+    # 添加監聽者管理方法
+    def add_progress_listener(self, task_id: int, listener: ProgressListener) -> None:
+        """添加進度監聽者"""
+        self.progress_reporter.add_listener(task_id, listener)
+        
+    def remove_progress_listener(self, task_id: int, listener: ProgressListener) -> None:
+        """移除進度監聽者"""
+        self.progress_reporter.remove_listener(task_id, listener)
+        
+    def clear_progress_listeners(self, task_id: int) -> None:
+        """清除指定任務的所有監聽者"""
+        self.progress_reporter.clear_listeners(task_id)
 
 
 

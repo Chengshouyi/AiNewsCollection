@@ -9,6 +9,7 @@ from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
 from src.utils import datetime_utils
 from datetime import datetime, timezone
+from src.utils.enum_utils import ArticleScrapeStatus
 
 # 設置日誌記錄器(校正用)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -35,145 +36,72 @@ class BnextContentExtractor:
         else:
             self.site_config = config
 
-    def batch_get_articles_content(self, articles_df, num_articles=0, ai_only=True, min_keywords=3) -> List[Dict[str, Any]]:
+    def batch_get_articles_content(self, articles_df: pd.DataFrame, num_articles: Optional[int] = None, 
+                                   ai_only: bool = True, min_keywords: int = 3) -> List[Dict[str, Any]]:
         """批量獲取文章內容
         
         Args:
-            articles_df: 包含文章資訊的DataFrame
-            num_articles: 要處理的文章數量，0表示處理所有文章
+            articles_df: 文章DataFrame
+            num_articles: 最大處理文章數量，None表示處理所有
             ai_only: 是否只處理AI相關文章
-            min_keywords: AI相關關鍵字最小匹配數
-        """
-        start_time = time.time()
-        
-        logger.debug("開始批量獲取文章內容")
-        logger.debug(f"參數設置: num_articles={num_articles}, ai_only={ai_only}, min_keywords={min_keywords}")
-        logger.debug(f"待處理文章數量: {len(articles_df)}")
-        
-        # 根據num_articles決定要處理的文章
-        articles_to_process = articles_df if num_articles == 0 else articles_df.head(num_articles)
-        total_articles = len(articles_to_process)
-        
-        article_contents = []
-        successful_count = 0
-        ai_related_count = 0
-        non_ai_related_count = 0
-        failed_count = 0
-        
-        try:
-            for i, (_, article) in enumerate(articles_to_process.iterrows(), 1):
-                logger.debug(f"處理第 {i}/{total_articles} 篇文章")
-                logger.debug(f"文章標題: {article['title']}")
-                logger.debug(f"文章連結: {article['link']}")
-                
-                try:
-                    content_data = self._get_article_content(
-                        article['link'], 
-                        ai_only=ai_only, 
-                        min_keywords=min_keywords
-                    )
-                    
-                    if content_data is None:
-                        failed_count += 1
-                        logger.warning(f"文章內容獲取失敗: {article['title']}")
-                        
-                        # 準備當前時間作為最後抓取嘗試時間
-                        current_time = datetime.now(timezone.utc)
-                        
-                        # 創建失敗狀態記錄
-                        error_record = BnextUtils.get_article_columns_dict(
-                            title=article.get('title'),
-                            summary=article.get('summary'),
-                            content=article.get('content'),
-                            link=article['link'],
-                            category=article.get('category'),
-                            published_at=article.get('published_at'),
-                            author=article.get('author'),
-                            source=self.site_config.name,
-                            source_url=self.site_config.base_url,
-                            article_type=article.get('article_type'),
-                            tags=article.get('tags'),
-                            is_ai_related=article.get('is_ai_related', False),
-                            is_scraped=False,
-                            scrape_status="failed",
-                            scrape_error="文章內容獲取失敗",
-                            last_scrape_attempt=current_time,
-                            task_id=article.get('task_id')
-                        )
-                        article_contents.append(error_record)
-                        continue
-                    
-                    # 檢查是否為 AI 相關文章
-                    if content_data.get('is_ai_related', False):
-                        ai_related_count += 1
-                    else:
-                        non_ai_related_count += 1
-                        
-                        # 如果設置了僅處理 AI 相關文章，且該文章不是 AI 相關的
-                        if ai_only and content_data.get('scrape_error') == "文章不符合 AI 相關條件":
-                            logger.debug(f"文章不符合 AI 相關條件: {article['title']}")
-                    
-                    article_contents.append(content_data)
-                    successful_count += 1
-                    
-                    # 記錄進度
-                    if i % 5 == 0 or i == total_articles:
-                        elapsed_time = time.time() - start_time
-                        avg_time = elapsed_time / i
-                        logger.debug(f"進度報告:")
-                        logger.debug(f"- 已處理: {i}/{total_articles}")
-                        logger.debug(f"- 成功數: {successful_count}")
-                        logger.debug(f"- AI相關: {ai_related_count}")
-                        logger.debug(f"- 非AI相關: {non_ai_related_count}")
-                        logger.debug(f"- 失敗數: {failed_count}")
-                        logger.debug(f"- 平均處理時間: {avg_time:.2f}秒/篇")
-                
-                except Exception as e:
-                    failed_count += 1
-                    logger.error(f"處理文章時發生錯誤: {str(e)}", exc_info=True)
-                    
-                    # 準備當前時間作為最後抓取嘗試時間
-                    current_time = datetime.now(timezone.utc)
-                    
-                    # 創建錯誤狀態記錄
-                    error_record = BnextUtils.get_article_columns_dict(
-                        title=article.get('title'),
-                        summary=article.get('summary'),
-                        content=article.get('content'),
-                        link=article['link'],
-                        category=article.get('category'),
-                        published_at=article.get('published_at'),
-                        author=article.get('author'),
-                        source=self.site_config.name,
-                        source_url=self.site_config.base_url,
-                        article_type=article.get('article_type'),
-                        tags=article.get('tags'),
-                        is_ai_related=article.get('is_ai_related', False),
-                        is_scraped=False,
-                        scrape_status="failed",
-                        scrape_error=str(e),
-                        last_scrape_attempt=current_time,
-                        task_id=article.get('task_id')
-                    )
-                    article_contents.append(error_record)
-        
-        finally:
-            # 最終統計
-            end_time = time.time()
-            total_time = end_time - start_time
+            min_keywords: AI關鍵字最小匹配數量
             
-            logger.debug("爬取任務完成")
-            logger.debug(f"總耗時: {total_time:.2f}秒")
-            logger.debug(f"處理統計:")
-            logger.debug(f"- 總處理文章: {total_articles}")
-            logger.debug(f"- 成功獲取: {successful_count}")
-            logger.debug(f"- AI相關文章: {ai_related_count}")
-            logger.debug(f"- 非AI相關文章: {non_ai_related_count}")
-            logger.debug(f"- 處理失敗: {failed_count}")
-            if successful_count > 0:
-                logger.debug(f"- 平均處理時間: {total_time/successful_count:.2f}秒/篇")
+        Returns:
+            List[Dict[str, Any]]: 文章內容列表
+        """
+        result = []
         
-        return article_contents
+        # 如果限制數量，只處理指定數量的文章
+        if num_articles is not None:
+            articles_df = articles_df.head(num_articles)
+        
+        for _, article in articles_df.iterrows():
+            try:
+                # 獲取文章內容
+                article_content = self._get_article_content(article['link'])
+                
+                if article_content:
+                    # 如果設置了 ai_only，檢查文章是否AI相關
+                    if ai_only and not article_content.get('is_ai_related', False):
+                        # 如果需要AI相關但文章不符合，標記為非AI相關並跳過
+                        article_content.update({
+                            'is_scraped': True,
+                            'scrape_status': ArticleScrapeStatus.CONTENT_SCRAPED.value,
+                            'scrape_error': '文章不符合 AI 相關條件',
+                            'last_scrape_attempt': datetime.now(timezone.utc)
+                        })
+                    else:
+                        # 正常處理AI相關文章
+                        article_content.update({
+                            'is_scraped': True,
+                            'scrape_status': ArticleScrapeStatus.CONTENT_SCRAPED.value,
+                            'scrape_error': None,
+                            'last_scrape_attempt': datetime.now(timezone.utc)
+                        })
+                    
+                    result.append(article_content)
+                else:
+                    # 如果獲取失敗，添加錯誤信息
+                    result.append({
+                        'title': article.get('title', ''),
+                        'link': article['link'],
+                        'is_scraped': False,
+                        'scrape_status': ArticleScrapeStatus.FAILED.value,
+                        'scrape_error': '無法獲取文章內容',
+                        'last_scrape_attempt': datetime.now(timezone.utc)
+                    })
+            except Exception as e:
+                # 處理異常
+                result.append({
+                    'title': article.get('title', ''),
+                    'link': article['link'],
+                    'is_scraped': False,
+                    'scrape_status': ArticleScrapeStatus.FAILED.value,
+                    'scrape_error': str(e),
+                    'last_scrape_attempt': datetime.now(timezone.utc)
+                })
+        
+        return result
 
     def _get_article_content(self, article_url: str, ai_only: bool = True, min_keywords: int = 3) -> Optional[Dict]:
         """獲取文章詳細內容"""
@@ -205,7 +133,7 @@ class BnextContentExtractor:
                 logger.error(f"無法找到文章container: {article_url}")
                 return None
             #logger.debug(f"article_content_container: {article_content_container}")
-            article_content = self._extract_article_parts(article_content_container, soup, get_article_contents_selectors, article_url, ai_only)
+            article_content = self._extract_article_parts(article_content_container, soup, get_article_contents_selectors, article_url, ai_only, min_keywords)
             if article_content is None:
                 logger.error(f"文章內容提取失敗: {article_url}")
                 return None
@@ -213,7 +141,7 @@ class BnextContentExtractor:
             # AI 相關性檢查
             if ai_only:
                 is_ai_related = ArticleAnalyzer().is_ai_related(article_content, min_keywords=min_keywords)
-                logger.debug(f"AI相關性檢查: {'通過' if is_ai_related else '未通過'}")
+                logger.debug(f"AI相關性檢查 (最小匹配關鍵字數: {min_keywords}): {'通過' if is_ai_related else '未通過'}")
                 if not is_ai_related:
                     # 準備當前時間作為最後抓取嘗試時間
                     current_time = datetime.now(timezone.utc)
@@ -222,8 +150,8 @@ class BnextContentExtractor:
                     non_ai_record = article_content.copy()
                     non_ai_record.update({
                         'is_ai_related': False,
-                        'is_scraped': True,  # 內容已爬取，但不符合 AI 相關條件
-                        'scrape_status': "content_scraped",
+                        'is_scraped': True,
+                        'scrape_status': ArticleScrapeStatus.CONTENT_SCRAPED.value,
                         'scrape_error': "文章不符合 AI 相關條件",
                         'last_scrape_attempt': current_time
                     })
@@ -238,7 +166,7 @@ class BnextContentExtractor:
             logger.error(f"獲取文章內容失敗: {str(e)}", exc_info=True)
             return None
 
-    def _extract_article_parts(self, article_content_container, soup, get_article_contents_selectors, article_url: str, ai_only: bool = True):
+    def _extract_article_parts(self, article_content_container, soup, get_article_contents_selectors, article_url: str, ai_only: bool = True, min_keywords: int = 3):
         """提取文章各個部分"""
         logger.debug("開始提取文章各部分內容")
         
@@ -284,7 +212,7 @@ class BnextContentExtractor:
             if not tag_container:
                 logger.debug(f"該文章沒有標籤容器: {article_url}")
             else:
-                logger.debug(f"找到標籤容器數量: {len(tag_container)}")
+                logger.debug(f"找到標籤容器")
                 for container in tag_container.find_all(get_article_contents_selectors.get("tags").get("tag"), recursive=False):
                     tag_text = container.get_text(strip=True)
                     logger.debug(f"找到Tag: {tag_text}")
@@ -337,7 +265,7 @@ class BnextContentExtractor:
                 tags=",".join(tags),
                 is_ai_related=ai_only,
                 is_scraped=True,
-                scrape_status="content_scraped",
+                scrape_status=ArticleScrapeStatus.CONTENT_SCRAPED.value,
                 scrape_error=None,
                 last_scrape_attempt=current_time,
                 task_id=None  # 將在 base_crawler 中填充
@@ -363,9 +291,8 @@ class BnextContentExtractor:
                 tags=None,
                 is_ai_related=False,
                 is_scraped=False,
-                scrape_status="failed",
+                scrape_status=ArticleScrapeStatus.FAILED.value,
                 scrape_error=str(e),
                 last_scrape_attempt=current_time,
                 task_id=None  # 將在 base_crawler 中填充
             )
-

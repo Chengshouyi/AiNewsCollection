@@ -247,14 +247,40 @@ class TestBnextCrawler:
             extractor=mock_extractor
         )
         
+        # 設置 batch_get_articles_content 的返回值，提供兩篇文章
+        current_time = datetime.now(timezone.utc)
+        mock_extractor.batch_get_articles_content.return_value = [
+            {
+                'title': '測試文章1',
+                'link': 'https://example.com/1',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'scrape_error': None,
+                'last_scrape_attempt': current_time,
+                'task_id': 123,
+                'is_ai_related': True  # 添加測試中需要驗證的欄位
+            },
+            {
+                'title': '測試文章2',
+                'link': 'https://example.com/2',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'scrape_error': None,
+                'last_scrape_attempt': current_time,
+                'task_id': 123,
+                'is_ai_related': True
+            }
+        ]
+        
         # 設置文章列表資料
         crawler.articles_df = mock_scraper.scrape_article_list()
         
         # 測試抓取文章內容
         articles_content = crawler._fetch_articles(task_id=123)
         
+        # 驗證結果
         assert articles_content is not None
-        assert len(articles_content) == 2
+        assert len(articles_content) == 2  # 現在應該能通過這個測試
         assert articles_content[0]['title'] == "測試文章1"
         assert articles_content[0]['is_ai_related'] == True
         assert articles_content[0]['is_scraped'] == True
@@ -263,11 +289,17 @@ class TestBnextCrawler:
         assert articles_content[0]['last_scrape_attempt'] is not None
         assert articles_content[0]['task_id'] == 123
         
+        # 驗證第二篇文章
+        assert articles_content[1]['title'] == "測試文章2"
+        
+        # 驗證 batch_get_articles_content 被調用
         mock_extractor.batch_get_articles_content.assert_called_once()
         
-        # 檢查 articles_df 是否更新了爬取狀態
+        # 檢查 DataFrame 更新
         assert crawler.articles_df.loc[0, 'scrape_status'] == "content_scraped"
         assert crawler.articles_df.loc[0, 'is_scraped'] == True
+        assert crawler.articles_df.loc[1, 'scrape_status'] == "content_scraped"
+        assert crawler.articles_df.loc[1, 'is_scraped'] == True
 
     def test_fetch_article_links_by_filter(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試根據過濾條件從資料庫獲取文章連結"""
@@ -530,6 +562,19 @@ class TestBnextCrawler:
             extractor=mock_extractor
         )
         
+        # 設置返回值
+        mock_extractor.batch_get_articles_content.return_value = [
+            {
+                'title': '測試文章1',
+                'link': 'https://example.com/1',
+                'is_scraped': True,
+                'scrape_status': 'content_scraped',
+                'scrape_error': None,
+                'last_scrape_attempt': datetime.now(timezone.utc),
+                'task_id': 123
+            }
+        ]
+        
         # 設置文章列表資料
         crawler.articles_df = mock_scraper.scrape_article_list()
         
@@ -544,11 +589,13 @@ class TestBnextCrawler:
         # 執行抓取
         crawler._fetch_articles(task_id=123)
         
-        # 驗證使用了正確的參數呼叫 extractor.batch_get_articles_content
-        pd.testing.assert_frame_equal(mock_extractor.batch_get_articles_content.call_args[0][0], crawler.articles_df)
-        assert mock_extractor.batch_get_articles_content.call_args[0][1] == custom_params["num_articles"]
-        assert mock_extractor.batch_get_articles_content.call_args[0][2] == custom_params["ai_only"]
-        assert mock_extractor.batch_get_articles_content.call_args[0][3] == custom_params["min_keywords"]
+        # 驗證調用參數
+        mock_extractor.batch_get_articles_content.assert_called_once_with(
+            crawler.articles_df,
+            num_articles=custom_params["num_articles"],
+            ai_only=custom_params["ai_only"],
+            min_keywords=custom_params["min_keywords"]
+        )
 
     def test_fetch_article_links_empty_result(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
         """測試抓取文章列表返回空結果"""
@@ -587,7 +634,7 @@ class TestBnextCrawler:
             {
                 "title": "測試文章1",
                 "link": "https://www.bnext.com.tw/article/1",
-                "is_scraped": True,
+                "is_scraped": True,  # 使用 Python 布林值
                 "scrape_status": "content_scraped",
                 "scrape_error": None,
                 "last_scrape_attempt": current_time,
@@ -608,11 +655,11 @@ class TestBnextCrawler:
         articles = crawler._fetch_articles(task_id=123)
         
         # 驗證文章狀態正確更新到 DataFrame
-        assert crawler.articles_df.loc[0, 'scrape_status'] == "content_scraped"
+        assert crawler.articles_df.loc[0, 'scrape_status'] == ArticleScrapeStatus.CONTENT_SCRAPED.value
         assert crawler.articles_df.loc[0, 'is_scraped'] == True
         assert crawler.articles_df.loc[0, 'scrape_error'] is None
         
-        assert crawler.articles_df.loc[1, 'scrape_status'] == "scrape_failed"
+        assert crawler.articles_df.loc[1, 'scrape_status'] == ArticleScrapeStatus.FAILED.value
         assert crawler.articles_df.loc[1, 'is_scraped'] == False
         assert crawler.articles_df.loc[1, 'scrape_error'] == "無法抓取內容"
         
@@ -644,12 +691,21 @@ class TestBnextCrawler:
             extractor=mock_extractor
         )
         
+        # 設置 mock_extractor 在第一次調用時拋出異常，第二次成功
+        mock_extractor.batch_get_articles_content.side_effect = [
+            Exception("測試異常"),
+            [{'title': '測試文章1', 'is_scraped': True}]
+        ]
+        
         # 設置文章列表資料
         crawler.articles_df = mock_scraper.scrape_article_list()
         
-        # 模擬 retry_operation 方法
-        with patch.object(crawler, 'retry_operation', wraps=crawler.retry_operation) as mock_retry:
-            crawler._fetch_articles(task_id=123)
-            
+        # 執行抓取
+        articles = crawler._fetch_articles(task_id=123)
+        
         # 驗證 retry_operation 被調用
-        mock_retry.assert_called()
+        assert mock_extractor.batch_get_articles_content.call_count == 2
+        assert articles is not None
+        assert len(articles) == 1
+        assert articles[0]['title'] == '測試文章1'
+        assert articles[0]['is_scraped'] == True
