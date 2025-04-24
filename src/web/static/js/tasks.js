@@ -401,8 +401,8 @@ function loadCrawlers() {
         method: 'GET',
         success: function (response) {
             crawlers = response.data || [];
-            // 更新爬蟲選擇下拉框
-            const select = $('#crawler-select');
+            // 修正：使用正確的選擇器 ID 'crawler-id'
+            const select = $('#crawler-id');
             select.find('option:not(:first)').remove(); // 保留第一個選項 (請選擇...)
 
             if (crawlers.length === 0) {
@@ -418,7 +418,7 @@ function loadCrawlers() {
         error: function (xhr, status, error) {
             console.error('加載爬蟲列表失敗:', error);
             // 在錯誤情況下顯示警告訊息
-            const select = $('#crawler-select');
+            const select = $('#crawler-id'); // 修正：使用正確的選擇器 ID
             select.find('option:not(:first)').remove();
             select.append(`<option value="" disabled>加載爬蟲列表失敗</option>`);
             displayAlert('warning', '加載爬蟲列表失敗: ' + (xhr.responseJSON?.message || error), true);
@@ -539,7 +539,7 @@ function showTaskModal(taskId) {
         $('#task-form').data('is-edit', true);
         $('#task-form').data('task-id', task.id);
         $('#task-name').val(task.task_name);
-        $('#crawler-select').val(task.crawler_id);
+        $('#crawler-id').val(task.crawler_id);
 
         // 設置任務類型單選按鈕
         $(`input[name="taskType"][value="${task.type}"]`).prop('checked', true);
@@ -607,7 +607,7 @@ function setAdvancedParams(taskArgs) {
 function resetTaskForm() {
     $('#task-id').val('');
     $('#task-name').val('');
-    $('#crawler-select').val('');
+    $('#crawler-id').val('');
     $('#task-type').val('');
     $('#ai-only').prop('checked', false);
     $('#task-remark').val('');
@@ -620,8 +620,8 @@ function saveTask() {
     const isEdit = $('#task-form').data('is-edit') === true;
     const taskId = $('#task-form').data('task-id');
     const taskName = $('#task-name').val().trim();
-    const crawlerId = $('#crawler-select').val();
-    const taskType = $('input[name="taskType"]:checked').val();
+    const crawlerId = $('#crawler-id').val();
+    const taskType = $('#task-type').val();
     const taskRemark = $('#task-remark').val().trim();
 
     // 獲取高級參數
