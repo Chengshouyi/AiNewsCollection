@@ -2,10 +2,7 @@
     "base_url": "https://www.bnext.com.tw",
     "categories": [
         "ai",
-        "tech",
-        "iot",
-        "smartmedical",
-        "smartcity"
+        "tech"
     ],
     "date_format": "%Y-%m-%d",
     "full_categories": [

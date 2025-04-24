@@ -69,16 +69,10 @@ $(document).ready(function () {
     $('#tasks-table-body').on('click', '.run-task-btn', function () {
         const button = $(this);
         const taskId = button.data('task-id');
-        const taskType = button.data('task-type');
         if (!taskId) return;
 
-        if (taskType === 'manual') {
-            // 手動爬取流程，先抓取連結
-            startManualLinksFetch(taskId);
-        } else {
-            // 自動任務直接執行
-            runAutoTask(taskId, button);
-        }
+        // 不管是什麼類型的任務，都直接執行
+        executeTask(taskId, button);
     });
 
     // 綁定取消任務按鈕事件
@@ -240,7 +234,6 @@ function getAllVisibleTaskIds() {
 }
 
 function updateTaskUI(taskId, progress, status, scrapePhase, message, articlesCount, sessionId) {
-    // 實現邏輯：找到對應 task_id 的 UI 元素並更新
     const taskRow = $(`.task-row[data-task-id="${taskId}"]`);
     if (taskRow.length) {
         // 如果提供了會話ID，將其存儲在行元素上，以便後續使用
@@ -249,38 +242,50 @@ function updateTaskUI(taskId, progress, status, scrapePhase, message, articlesCo
         }
 
         // 更新進度條
-        const progressBar = taskRow.find('.progress .progress-bar'); // 選擇更精確
+        const progressBar = taskRow.find('.progress .progress-bar');
         if (progressBar.length) {
+            // 設置進度百分比
             progressBar.css('width', progress + '%').text(progress + '%');
-            // 根據狀態改變進度條顏色 (可選)
-            progressBar.removeClass('bg-success bg-warning bg-danger bg-info');
-            if (status === 'COMPLETED') {
+
+            // 根據狀態改變進度條顏色 - 確保這些類名與您的 CSS 框架匹配
+            progressBar.removeClass('bg-success bg-warning bg-danger bg-info bg-secondary');
+
+            // 將狀態轉為大寫以匹配枚舉值
+            const upperStatus = status ? status.toUpperCase() : '';
+
+            if (upperStatus === 'COMPLETED') {
                 progressBar.addClass('bg-success');
-            } else if (status === 'RUNNING') {
+            } else if (upperStatus === 'RUNNING') {
                 progressBar.addClass('bg-info');
-            } else if (status === 'FAILED' || status === 'CANCELLED') {
+            } else if (upperStatus === 'FAILED' || upperStatus === 'CANCELLED') {
                 progressBar.addClass('bg-danger');
+            } else if (upperStatus === 'PENDING') {
+                progressBar.addClass('bg-warning');
             } else {
                 progressBar.addClass('bg-secondary'); // 其他狀態
             }
+
+            // 添加調試日誌
+            console.log(`更新任務 ${taskId} 進度條: ${progress}%, 狀態: ${status}, 添加的類: bg-${status.toLowerCase() === 'completed' ? 'success' : status.toLowerCase() === 'running' ? 'info' : 'secondary'}`);
         }
 
         // 更新狀態文本
-        const statusBadge = taskRow.find('.task-status-badge'); // 使用徽章 class
+        const statusBadge = taskRow.find('.task-status-badge');
         if (statusBadge.length) {
             statusBadge.text(status);
             // 根據狀態改變徽章顏色
-            statusBadge.removeClass('badge-success badge-warning badge-danger badge-info badge-secondary');
-            if (status === 'COMPLETED') {
-                statusBadge.addClass('badge-success');
-            } else if (status === 'RUNNING') {
-                statusBadge.addClass('badge-info');
-            } else if (status === 'FAILED' || status === 'CANCELLED') {
-                statusBadge.addClass('badge-danger');
-            } else if (status === 'PENDING') {
-                statusBadge.addClass('badge-warning');
+            statusBadge.removeClass('badge-success badge-warning badge-danger badge-info badge-secondary bg-success bg-warning bg-danger bg-info bg-secondary');
+
+            if (status === 'COMPLETED' || status === 'completed') {
+                statusBadge.addClass('bg-success badge-success');
+            } else if (status === 'RUNNING' || status === 'running') {
+                statusBadge.addClass('bg-info badge-info');
+            } else if (status === 'FAILED' || status === 'failed' || status === 'CANCELLED' || status === 'cancelled') {
+                statusBadge.addClass('bg-danger badge-danger');
+            } else if (status === 'PENDING' || status === 'pending') {
+                statusBadge.addClass('bg-warning badge-warning');
             } else {
-                statusBadge.addClass('badge-secondary');
+                statusBadge.addClass('bg-secondary badge-secondary');
             }
         }
 
@@ -305,14 +310,16 @@ function updateTaskUI(taskId, progress, status, scrapePhase, message, articlesCo
         // 根據狀態啟用/禁用按鈕
         const runButton = taskRow.find('.run-task-btn');
         const cancelButton = taskRow.find('.cancel-task-btn');
-        if (status === 'RUNNING') {
-            runButton.prop('disabled', true);
+
+        // 使用大小寫不敏感的比較
+        const statusLower = status ? status.toLowerCase() : '';
+        if (statusLower === 'running') {
+            runButton.prop('disabled', true).text('啟動中...');
             cancelButton.prop('disabled', false);
         } else {
-            runButton.prop('disabled', false);
+            runButton.prop('disabled', false).text('執行');
             cancelButton.prop('disabled', true);
         }
-
     } else {
         console.warn(`找不到 Task ID 為 ${taskId} 的 UI 元素`);
     }
@@ -328,12 +335,13 @@ function markTaskAsFinished(taskId, status, sessionId) {
 
         // 例如：改變樣式，禁用按鈕等
         taskRow.removeClass('task-running').addClass('task-finished'); // 移除運行中樣式
+
         // 確保最終狀態的 UI 被正確設置 (特別是進度條和按鈕)
         const finalProgress = (status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED') ? 100 : 0;
         updateTaskUI(taskId, finalProgress, status, null, null, null, sessionId); // 使用 null 表示不更新這些字段
 
-        // 任務完成後禁用取消按鈕，啟用執行按鈕
-        taskRow.find('.run-task-btn').prop('disabled', false);
+        // 任務完成後禁用取消按鈕，啟用執行按鈕，並恢復按鈕文字
+        taskRow.find('.run-task-btn').prop('disabled', false).text('執行');  // 添加 .text('執行') 重置按鈕文字
         taskRow.find('.cancel-task-btn').prop('disabled', true);
 
         // 可以添加視覺提示，例如閃爍或短暫高亮
@@ -716,8 +724,15 @@ function saveTask() {
         data: JSON.stringify(taskData),
         success: function (response) {
             console.log('保存任務成功，API響應:', response);
-            // 關閉模態框並刷新列表
+
+            // 關閉模態框
             $('#task-modal').modal('hide');
+
+            // 將焦點移到「新增任務」按鈕上
+            setTimeout(function () {
+                $('#add-task-btn').focus();
+            }, 100);
+
             displayAlert('success', isEdit ? '任務更新成功' : '任務新增成功');
             loadTasks(); // 確保在成功後立即調用任務列表刷新
         },
@@ -797,6 +812,12 @@ function deleteTask(taskId) {
         method: 'DELETE',
         success: function (response) {
             $('#delete-task-modal').modal('hide');
+
+            // 將焦點移到適當的元素上
+            setTimeout(function () {
+                $('#add-task-btn').focus();
+            }, 100);
+
             displayAlert('success', '任務已刪除');
             loadTasks();
         },
@@ -808,16 +829,16 @@ function deleteTask(taskId) {
     });
 }
 
-// --- 自動任務執行 ---
-function runAutoTask(taskId, button) {
-    console.log(`開始執行自動任務: ${taskId}`);
+// --- 執行任務 ---
+function executeTask(taskId, button) {
+    console.log(`開始執行任務: ${taskId}`);
     button.prop('disabled', true).text('啟動中...'); // 禁用按鈕並顯示提示
 
     $.ajax({
-        url: `/api/tasks/${taskId}/run_manual`,
+        url: `/api/tasks/${taskId}/run`,
         method: 'POST',
         success: function (response) {
-            console.log('自動任務啟動響應:', response);
+            console.log('任務啟動響應:', response);
             if (response.success) {
                 // API 快速返回 202 Accepted
                 // 後續進度將通過 WebSocket 更新

@@ -348,7 +348,10 @@ class TaskExecutorService(BaseService[CrawlerTasks], ProgressListener):
                 
                 # --- 獲取爬蟲實例並執行 --- 
                 logger.info(f"開始執行任務 {task_id} (爬蟲: {crawler_name})")
+                crawlers_service = get_crawlers_service()
+                article_service = get_article_service()
                 from src.crawlers.crawler_factory import CrawlerFactory
+                CrawlerFactory.initialize(crawlers_service, article_service)
                 crawler_instance = CrawlerFactory.get_crawler(crawler_name)
                 
                 # 註冊監聽者

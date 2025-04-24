@@ -548,8 +548,8 @@ def get_task_history(task_id):
     except Exception as e:
         return handle_api_error(e)
 
-@tasks_bp.route('/<int:task_id>/run_manual', methods=['POST'])
-def run_manual_task(task_id):
+@tasks_bp.route('/<int:task_id>/run', methods=['POST'])
+def run_task(task_id):
     """手動執行特定任務的API端點。允許客戶端請求立即執行任務。"""
     try:
         service = get_task_executor_service()
