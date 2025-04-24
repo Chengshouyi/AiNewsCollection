@@ -107,6 +107,11 @@ $(document).ready(function () {
 
         startFetchArticles(currentTaskId, selectedLinks);
     });
+
+    // 綁定爬取模式變更事件
+    $('#scrape-mode').change(function () {
+        toggleContentOnlyLinksInput();
+    });
 });
 
 // --- WebSocket 處理 --- 
@@ -458,11 +463,11 @@ function renderTasksTable(tasks) {
     tasks.forEach(task => {
         // 兼容不同的字段命名
         const taskStatus = task.status || task.task_status || 'UNKNOWN';
-        const taskType = task.type || 'manual';
+        const taskType = task.is_auto ? 'auto' : 'manual';
         const taskName = task.task_name || task.name || `任務 ${task.id}`;
         const cronExpression = task.cron_expression || '';
 
-        console.log(`渲染任務: ID=${task.id}, 名稱=${taskName}, 狀態=${taskStatus}`);
+        console.log(`渲染任務: ID=${task.id}, 名稱=${taskName}, 狀態=${taskStatus}, 類型=${taskType}`);
 
         // 根據狀態設置徽章樣式
         let statusBadgeClass = 'badge bg-secondary'; // 默認
@@ -536,7 +541,7 @@ function renderTasksTable(tasks) {
 
 // 顯示任務新增/編輯模態框
 function showTaskModal(taskId) {
-    resetTaskForm(); // 清空表單，這會確保爬蟲選擇是啟用的
+    resetTaskForm(); // 清空表單
 
     if (taskId) {
         // 編輯模式
@@ -585,21 +590,19 @@ function showTaskModal(taskId) {
         // --- 修正爬蟲選擇器設置 (異步處理) ---
         loadCrawlers(function () {
             if (task.crawler_id !== null && task.crawler_id !== undefined) {
-                const crawlerSelect = $('#crawler-id'); // 取得 select 元素
+                const crawlerSelect = $('#crawler-id');
                 crawlerSelect.val(task.crawler_id);
-                console.log(`爬蟲列表加載完成，嘗試設置爬蟲 ID 為: ${task.crawler_id}`);
                 if (crawlerSelect.val() != task.crawler_id) {
-                    console.warn(`設置爬蟲 ID ${task.crawler_id} 失敗，可能是下拉列表中沒有此 ID 的選項，或者值類型不匹配。當前選中值: ${crawlerSelect.val()}`);
+                    console.warn(`設置爬蟲 ID ${task.crawler_id} 失敗...`);
                 }
-                // --- 修改點：禁用爬蟲選擇 ---
                 crawlerSelect.prop('disabled', true);
-                console.log("爬蟲選擇已禁用 (編輯模式)");
-                // --- 修改結束 ---
             } else {
                 console.warn("任務數據中缺少有效的 crawler_id");
-                // 即使沒有 crawler_id，仍然禁用，避免用戶選擇
                 $('#crawler-id').prop('disabled', true);
             }
+            // --- 修改點：編輯模式下也需要觸發一次顯示邏輯 ---
+            toggleContentOnlyLinksInput();
+            // --- 修改結束 ---
         });
 
     } else {
@@ -607,12 +610,13 @@ function showTaskModal(taskId) {
         $('#task-modal-label').text('新增任務');
         $('#task-form').data('is-edit', false);
         $('#task-form').data('task-id', '');
-        setAdvancedParams(null); // 設置預設參數
-        // --- 確保爬蟲選擇是啟用的 ---
-        // resetTaskForm 已經處理了，這裡加載列表即可
+        setAdvancedParams(null);
         loadCrawlers();
         $('#task-type').val('manual');
         updateScheduleFields('manual');
+        // --- 修改點：新增模式下觸發一次顯示邏輯 ---
+        toggleContentOnlyLinksInput(); // 確保 scrape-mode 預設值對應的 UI 正確
+        // --- 修改結束 ---
     }
 
     $('#task-modal').modal('show');
@@ -656,6 +660,11 @@ function setAdvancedParams(taskArgs) {
     } else {
         $('#csv-prefix-container').addClass('d-none');
     }
+
+    // --- 修改點：設置完 scrape-mode 後觸發一次顯示邏輯 ---
+    // 注意：這裡需要在 showTaskModal 調用後再根據 isEdit 狀態決定是否顯示
+    // toggleContentOnlyLinksInput(); // 移到 showTaskModal 末尾調用更可靠
+    // --- 修改結束 ---
 }
 
 // 重置表單
@@ -740,6 +749,36 @@ function saveTask() {
         cancel_interrupt_interval: 5,
         cancel_timeout: 60
     };
+
+    // --- 新增：根據模式和編輯狀態處理 article_links ---
+    if (scrapeMode === 'content_only') {
+        if (!isEdit) {
+            // 新增模式 + CONTENT_ONLY: 從 textarea 獲取連結
+            const linksText = $('#article-links-input').val().trim();
+            if (!linksText) {
+                displayAlert('warning', '「僅爬取內容」模式下，請在「文章連結」欄位提供至少一個連結。', true);
+                return;
+            }
+            const parsedLinks = linksText.split('\n')
+                .map(link => link.trim())
+                .filter(link => link !== '');
+            if (parsedLinks.length === 0) {
+                displayAlert('warning', '請在「文章連結」欄位提供有效的連結。', true);
+                return;
+            }
+            taskData.task_args.article_links = parsedLinks;
+            taskData.task_args.get_links_by_task_id = false; // 新增時明確指定不從DB獲取
+        } else {
+            // 編輯模式 + CONTENT_ONLY: 標記從 DB 獲取連結
+            taskData.task_args.article_links = []; // 清空，以防萬一
+            taskData.task_args.get_links_by_task_id = true; // 告訴後端需要從DB加載
+        }
+    } else {
+        // 其他模式，確保 article_links 為空且不從 DB 獲取
+        taskData.task_args.article_links = [];
+        taskData.task_args.get_links_by_task_id = false;
+    }
+    // --- 新增結束 ---
 
     // --- 修正 cron_expression 設置 ---
     if (taskData.is_auto) {
@@ -1169,5 +1208,20 @@ function updateScheduleFields(taskType, cronExpression = '') { // 修改參數�
                 </div>
             </div>
         `);
+    }
+}
+
+// 新增：控制 CONTENT_ONLY 連結輸入框的顯示/隱藏
+function toggleContentOnlyLinksInput() {
+    const scrapeMode = $('#scrape-mode').val();
+    const isEdit = $('#task-form').data('is-edit') === true;
+    const container = $('#content-only-links-container');
+    const inputArea = $('#article-links-input');
+
+    if (scrapeMode === 'content_only' && !isEdit) {
+        container.removeClass('d-none');
+    } else {
+        container.addClass('d-none');
+        inputArea.val(''); // 清空內容
     }
 }

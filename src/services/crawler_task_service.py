@@ -26,6 +26,7 @@ from src.utils.datetime_utils import enforce_utc_datetime_transform
 from sqlalchemy import desc, asc
 from src.services.scheduler_service import SchedulerService
 from src.services.task_executor_service import TaskExecutorService
+from src.services.service_container import get_article_service, get_scheduler_service
 from sqlalchemy.orm.attributes import flag_modified
 
 # 設定 logger
@@ -72,6 +73,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 message: 消息
                 data: 任務資料
         """
+        
         try:
             if data.get('is_auto') is True:
                 if data.get('cron_expression') is None:
@@ -194,15 +196,12 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             }
     
     def update_task(self, task_id: int, task_data: Dict) -> Dict:
-        """更新任務數據，包含對 task_args 的特殊處理
-        
-        Args:
-            task_id: 任務ID
-            task_data: 要更新的任務數據
-            
-        Returns:
-            Dict: 包含更新結果的字典
-        """
+        """更新任務數據，並在成功後處理自動任務的排程更新"""
+        updated_task: Optional[CrawlerTasks] = None
+        task_schema: Optional[CrawlerTaskReadSchema] = None
+        is_auto_task: bool = False
+        final_update_result = {}
+
         try:
             # ***** 使用新的更新模式 *****
             with self._transaction() as session:
@@ -224,43 +223,55 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'task': None
                     }
 
-                # 2. 驗證傳入的數據 (使用 repo 的 schema 驗證)
-                #    注意：validate_data 返回的是驗證清理後的字典
-                #    ** BaseService.validate_data 需要在事務內，這裡已經是
+                # 記錄更新前的 is_auto 狀態
+                original_is_auto = task.is_auto
+
+                # --- 移除更新時不允許修改的欄位 (例如 crawler_id) ---
+                if 'crawler_id' in task_data:
+                    logger.warning(f"更新任務 {task_id} 時嘗試修改 crawler_id，將被忽略。")
+                    del task_data['crawler_id']
+                # --- 移除結束 ---
+
+                # 2. 驗證傳入的數據
                 validated_result = self.validate_task_data(task_data, is_update=True)
                 if not validated_result['success']:
+                    # 直接返回驗證錯誤，無需包裝在最終結果中
                     return validated_result
                 validated_data = validated_result['data']
-                
+
+                # --- CONTENT_ONLY 檢查 (保持不變) ---
+                new_scrape_mode_str = validated_data.get('task_args', {}).get('scrape_mode')
+                if new_scrape_mode_str == ScrapeMode.CONTENT_ONLY.value:
+                    article_service = get_article_service()
+                    check_links_result = article_service.count_unscraped_articles(task_id=task_id)
+                    if not check_links_result.get('success') or not check_links_result.get('count'):
+                        # 沒有找到未抓取的文章
+                        return {"success": False, "message": f"無法將任務 {task_id} 更新為 CONTENT_ONLY 模式，因為資料庫中沒有找到該任務關聯的未抓取文章連結。"}
+                    # 確保 task_args 中的 article_links 被清空或忽略，並設置 get_links_by_task_id (雖然前端JS已處理，這裡可做雙重保險)
+                    if 'task_args' in validated_data:
+                        validated_data['task_args']['article_links'] = []
+                        validated_data['task_args']['get_links_by_task_id'] = True
+                # --- CONTENT_ONLY 檢查結束 ---
+
+
+
+
                 entity_modified = False
                 task_args_updated = False
                 new_task_args = None
 
-                # 3. 遍歷驗證後的數據，區分 task_args 和其他欄位
+                # 3. 遍歷驗證後的數據，更新 task 對象
                 for key, value in validated_data.items():
                     if key == 'task_args':
-                        # --- 特殊處理 task_args --- 
-                        if task.task_args is None:
-                            task.task_args = {} # 初始化
-                            # flag_modified(task, 'task_args') # 初始化本身不算修改，後續賦值時再標記
-                        
+                        if task.task_args is None: task.task_args = {}
                         current_task_args = task.task_args
-                        # 需要比較整個字典是否不同
-                        if current_task_args != value: 
-                            logger.info(f"Task {task_id}: Updating task_args.")
-                            logger.debug(f"  Old: {current_task_args}")
-                            logger.debug(f"  New: {value}")
-                            new_task_args = value # 保存新的字典，稍後賦值
-                            task_args_updated = True 
+                        if current_task_args != value:
+                            new_task_args = value
+                            task_args_updated = True
                             entity_modified = True
-                        else:
-                            logger.info(f"Task {task_id}: task_args 資料相同，跳過更新。")
-
                     elif hasattr(task, key):
-                        # --- 處理其他欄位 --- 
                         current_value = getattr(task, key)
                         if current_value != value:
-                            logger.info(f"Task {task_id}: Updating field '{key}' from '{current_value}' to '{value}'.")
                             setattr(task, key, value)
                             entity_modified = True
                 
@@ -268,45 +279,76 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 if task_args_updated and new_task_args is not None:
                     logger.info(f"Task {task_id}: Applying flag_modified and re-assignment for task_args.")
                     flag_modified(task, 'task_args')
-                    task.task_args = new_task_args # 賦予新的字典
+                    task.task_args = new_task_args
 
-                # 5. 檢查是否有任何修改發生
                 if not entity_modified:
                     logger.info(f"任務 {task_id} 無需更新，提供的資料與當前狀態相同。")
-                    session.refresh(task) # 確保返回的是最新狀態
-                    task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換
-                    return {
+                    session.refresh(task) # 確保是最新狀態
+                    updated_task = task # 將 task 賦值給 updated_task
+                    #無需提交，直接準備返回
+                    final_update_result = {
                         'success': True,
-                        'message': '任務無需更新',
-                        'task': task_schema # 返回 Schema
+                        'message': '任務無需更新'
                     }
+                    # 跳出 with 區塊前，記錄 is_auto 狀態
+                    is_auto_task = updated_task.is_auto if updated_task else False
+                else:
+                    logger.info(f"任務 {task_id} 已在 Session 中更新，等待提交。")
+                    # _transaction() 會自動處理 commit
+                    # 在提交前 flush 和 refresh 以獲取最新狀態
+                    session.flush()
+                    session.refresh(task)
+                    updated_task = task # 將更新後的 task 賦值給 updated_task
+                    final_update_result = {
+                        'success': True,
+                        'message': '任務更新成功'
+                    }
+                    # 跳出 with 區塊前，記錄 is_auto 狀態
+                    is_auto_task = updated_task.is_auto if updated_task else False
 
-                # _transaction() 會自動處理 commit
-                logger.info(f"任務 {task_id} 已在 Session 中更新，等待提交。")
-                session.flush() # 確保更新寫入
-                session.refresh(task) # 獲取 DB 最新狀態 (可能包含觸發器等)
-                task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換
-                return {
-                    'success': True,
-                    'message': '任務更新成功',
-                    'task': task_schema # 返回更新後的 Schema
-                }
+                # 將 SQLAlchemy 對象轉換為 Pydantic Schema (在 session 關閉後仍可訪問加載的屬性)
+                if updated_task:
+                    task_schema = CrawlerTaskReadSchema.model_validate(updated_task)
+                    final_update_result['task'] = task_schema # 在結果中加入 task schema
+
+             # --- 在事務提交成功後，處理排程器 ---
+            if final_update_result.get('success') and is_auto_task and task_schema:
+                try:
+                    scheduler = get_scheduler_service()
+                    # 注意：傳遞 Pydantic Schema 對象給排程器
+                    scheduler_result = scheduler.add_or_update_task_to_scheduler(task_schema)
+                    if not scheduler_result.get('success'):
+                        logger.error(f"任務 {task_id} 已更新但更新排程器失敗: {scheduler_result.get('message')}")
+                        # 修改成功消息，追加排程器失敗信息
+                        final_update_result['message'] = f"{final_update_result['message']}, 但更新排程器失敗: {scheduler_result.get('message')}"
+                        # 仍然認為主要操作是成功的，但帶有警告
+                    else:
+                        logger.info(f"任務 {task_id} 的排程器已成功更新。")
+                        final_update_result['message'] += ", 排程器更新成功" # 可以選擇性地添加成功信息
+
+                except Exception as scheduler_e:
+                    logger.error(f"任務 {task_id} 更新後，調用排程器時發生錯誤: {scheduler_e}", exc_info=True)
+                    final_update_result['message'] = f"{final_update_result['message']}, 但調用排程器時發生錯誤: {str(scheduler_e)}"
+                    
+            # 如果 task_schema 沒有被賦值 (例如更新失敗)，確保返回的字典中 task 為 None
+            if 'task' not in final_update_result:
+                 final_update_result['task'] = None
+
+            return final_update_result
         except ValidationError as e:
             error_msg = f"更新任務資料驗證失敗, ID={task_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return {
-                'success': False,
-                'message': error_msg,
-                'task': None
-            }
+            return {'success': False, 'message': error_msg, 'task': None}
+        except (DatabaseOperationError, InvalidOperationError) as e:
+             error_msg = f"更新任務操作失敗, ID={task_id}: {str(e)}"
+             logger.error(error_msg, exc_info=True)
+             return {'success': False, 'message': error_msg, 'task': None}
         except Exception as e:
             error_msg = f"更新任務失敗, ID={task_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
-            return {
-                'success': False,
-                'message': error_msg,
-                'task': None
-            }
+            return {'success': False, 'message': error_msg, 'task': None}
+
+       
 
     def delete_task(self, task_id: int) -> Dict:
         """刪除任務"""

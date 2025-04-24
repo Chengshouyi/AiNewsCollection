@@ -606,16 +606,16 @@ def _setup_validate_task_data(task_data: Dict[str, Any], service: CrawlerTaskSer
     if 'scrape_mode' not in task_data['task_args']:
          task_data['task_args']['scrape_mode'] = scrape_mode
 
-    # 確保 get_links_by_task_id 顯式設置為布爾值
-    if 'get_links_by_task_id' not in task_data['task_args']:
-        task_data['task_args']['get_links_by_task_id'] = False
-    else:
-        # 確保值為布爾類型
-        task_data['task_args']['get_links_by_task_id'] = bool(task_data['task_args']['get_links_by_task_id'])
-         
-    # 確保 article_links 存在且為列表
-    if 'article_links' not in task_data['task_args']:
-        task_data['task_args']['article_links'] = []
+    # --- 修改點：移除 get_links_by_task_id 和 article_links 的預設設置 ---
+    # 這些應由前端根據模式傳遞，或由 service 層在更新時處理
+    # if 'get_links_by_task_id' not in task_data['task_args']:
+    #     task_data['task_args']['get_links_by_task_id'] = False
+    # else:
+    #     task_data['task_args']['get_links_by_task_id'] = bool(task_data['task_args']['get_links_by_task_id'])
+    #
+    # if 'article_links' not in task_data['task_args']:
+    #     task_data['task_args']['article_links'] = []
+    # --- 修改結束 ---
 
     # 設置基本必要字段
     task_data['scrape_mode'] = scrape_mode
@@ -638,15 +638,15 @@ def _setup_validate_task_data(task_data: Dict[str, Any], service: CrawlerTaskSer
     return validation_result
 
 # 對可能有嵌套scrape_phase的結果進行處理
-def _normalize_response(response_data):
-    if 'result' in response_data and 'scrape_phase' in response_data['result']:
-        scrape_phase = response_data['result']['scrape_phase']
-        if isinstance(scrape_phase, dict):
-            # 扁平化嵌套結構
-            response_data['result']['progress'] = scrape_phase.get('progress', 0)
-            response_data['result']['phase_message'] = scrape_phase.get('message', '')
-            response_data['result']['scrape_phase'] = scrape_phase.get('scrape_phase', 'unknown')
-    return response_data
+# def _normalize_response(response_data):
+#     if 'result' in response_data and 'scrape_phase' in response_data['result']:
+#         scrape_phase = response_data['result']['scrape_phase']
+#         if isinstance(scrape_phase, dict):
+#             # 扁平化嵌套結構
+#             response_data['result']['progress'] = scrape_phase.get('progress', 0)
+#             response_data['result']['phase_message'] = scrape_phase.get('message', '')
+#             response_data['result']['scrape_phase'] = scrape_phase.get('scrape_phase', 'unknown')
+#     return response_data
 
 # 通用任務端點
 @tasks_bp.route('', methods=['POST'])
@@ -661,7 +661,7 @@ def create_task():
         task_service = get_crawler_task_service()
         
         # 根據任務類型設置is_auto
-        is_auto = data.get('type') == 'auto'
+        is_auto = data.get('is_auto') == 'auto'
         
         # 從task_args中獲取scrape_mode，如果沒有則使用默認值FULL_SCRAPE
         scrape_mode = data.get('task_args', {}).get('scrape_mode', ScrapeMode.FULL_SCRAPE.value)
@@ -733,57 +733,57 @@ def update_task(task_id):
     try:
         service = get_crawler_task_service()
 
-        # 獲取當前任務資料
-        get_task_result = service.get_task_by_id(task_id, is_active=True)
-        if not get_task_result.get('success'):
-            return jsonify({"success": False, "message": get_task_result.get('message', '找不到任務')}), 404
+        # # 獲取當前任務資料
+        # get_task_result = service.get_task_by_id(task_id, is_active=True)
+        # if not get_task_result.get('success'):
+        #     return jsonify({"success": False, "message": get_task_result.get('message', '找不到任務')}), 404
 
-        db_task = get_task_result.get('task')
-        if not db_task: # 再次確認 task 是否真的存在
-             return jsonify({"success": False, "message": "找不到任務對象"}), 404
+        # db_task = get_task_result.get('task')
+        # if not db_task: # 再次確認 task 是否真的存在
+        #      return jsonify({"success": False, "message": "找不到任務對象"}), 404
 
-        # --- 準備驗證數據 ---
-        # 創建一個請求數據的副本以進行修改
-        data_for_validation = data.copy()
+        # # --- 準備驗證數據 ---
+        # # 創建一個請求數據的副本以進行修改
+        # data_for_validation = data.copy()
 
-        # 根據任務類型設置is_auto
-        is_auto = data_for_validation.get('is_auto', db_task.is_auto)
+        # # 根據任務類型設置is_auto
+        # is_auto = data_for_validation.get('is_auto', db_task.is_auto)
 
-        # 獲取現有的task_args並合併
-        db_task_args = db_task.task_args or {}
-        new_task_args = data_for_validation.get('task_args', {})
-        merged_task_args = db_task_args.copy()
-        merged_task_args.update(new_task_args)
-        data_for_validation['task_args'] = merged_task_args # 更新副本中的 task_args
+        # # 獲取現有的task_args並合併
+        # db_task_args = db_task.task_args or {}
+        # new_task_args = data_for_validation.get('task_args', {})
+        # merged_task_args = db_task_args.copy()
+        # merged_task_args.update(new_task_args)
+        # data_for_validation['task_args'] = merged_task_args # 更新副本中的 task_args
 
-        # 設置默認的抓取模式
-        scrape_mode = merged_task_args.get('scrape_mode', ScrapeMode.FULL_SCRAPE.value)
+        # # 設置默認的抓取模式
+        # scrape_mode = merged_task_args.get('scrape_mode', ScrapeMode.FULL_SCRAPE.value)
 
-        # --- 修改點：在驗證 *前* 移除 crawler_id ---
-        # 因為 _setup_validate_task_data 會調用 service.validate_task_data(..., is_update=True)
-        # 我們假設 validate_task_data 不允許在更新時傳入 crawler_id
-        if 'crawler_id' in data_for_validation:
-            logger.info(f"從任務 {task_id} 的驗證數據中移除 crawler_id (因為是更新操作)")
-            del data_for_validation['crawler_id']
-        # --- 修改結束 ---
+        # # --- 修改點：在驗證 *前* 移除 crawler_id ---
+        # # 因為 _setup_validate_task_data 會調用 service.validate_task_data(..., is_update=True)
+        # # 我們假設 validate_task_data 不允許在更新時傳入 crawler_id
+        # if 'crawler_id' in data_for_validation:
+        #     logger.info(f"從任務 {task_id} 的驗證數據中移除 crawler_id (因為是更新操作)")
+        #     del data_for_validation['crawler_id']
+        # # --- 修改結束 ---
 
-        # 使用處理過的 data_for_validation 進行驗證
-        validated_result = _setup_validate_task_data(
-            task_data=data_for_validation, # 傳遞移除了 crawler_id 的數據
-            service=service,
-            scrape_mode=scrape_mode,
-            is_auto=is_auto,
-            is_update=True
-        )
-        if not validated_result.get('success'):
-            # 驗證失敗，直接返回 400 和驗證結果
-            return jsonify(validated_result), 400
+        # # 使用處理過的 data_for_validation 進行驗證
+        # validated_result = _setup_validate_task_data(
+        #     task_data=data_for_validation, # 傳遞移除了 crawler_id 的數據
+        #     service=service,
+        #     scrape_mode=scrape_mode,
+        #     is_auto=is_auto,
+        #     is_update=True
+        # )
+        # if not validated_result.get('success'):
+        #     # 驗證失敗，直接返回 400 和驗證結果
+        #     return jsonify(validated_result), 400
 
-        # 獲取驗證後的數據 (現在應該不包含 crawler_id 了)
-        update_data_for_service = validated_result.get('data', {})
+        # # 獲取驗證後的數據 (現在應該不包含 crawler_id 了)
+        # update_data_for_service = validated_result.get('data', {})
 
         # 更新任務
-        update_result = service.update_task(task_id, update_data_for_service)
+        update_result = service.update_task(task_id, data)
         if not update_result.get('success'):
             status_code = 404 if "不存在" in update_result.get('message', '') else 500
             return jsonify(update_result), status_code
@@ -792,32 +792,35 @@ def update_task(task_id):
         updated_task = update_result.get('task')
         task_data = _prepare_task_for_response(updated_task)
 
-        # 如果是自動任務，更新排程器
-        if is_auto and updated_task:
-            scheduler = get_scheduler_service()
-            scheduler_result = scheduler.add_or_update_task_to_scheduler(updated_task)
-            if not scheduler_result.get('success'):
-                logger.error(f"任務 {task_id} 已更新但更新排程器失敗: {scheduler_result.get('message')}")
-                response_message = f"{update_result.get('message', '任務更新成功')}, 但更新排程器失敗: {scheduler_result.get('message')}"
-                return jsonify({
-                    "success": True,
-                    "message": response_message,
-                    "task": task_data
-                }), 200
+        # # 如果是自動任務，更新排程器
+        # if is_auto and updated_task:
+        #     scheduler = get_scheduler_service()
+        #     scheduler_result = scheduler.add_or_update_task_to_scheduler(updated_task)
+        #     if not scheduler_result.get('success'):
+        #         logger.error(f"任務 {task_id} 已更新但更新排程器失敗: {scheduler_result.get('message')}")
+        #         response_message = f"{update_result.get('message', '任務更新成功')}, 但更新排程器失敗: {scheduler_result.get('message')}"
+        #         return jsonify({
+        #             "success": True,
+        #             "message": response_message,
+        #             "task": task_data
+        #         }), 200
 
-        # 更新成功
+        # 成功處理 (包括排程器可能失敗但主要更新成功的情況)
+        # 從 service update_result 中獲取最終的 task 數據 (已經是 schema 或 dict)
+        final_task_data = _prepare_task_for_response(update_result.get('task'))
         return jsonify({
             "success": True,
             "message": update_result.get('message', '任務更新成功'),
-            "task": task_data
+            "task": final_task_data
         }), 200
     except ValidationError as ve: # 捕獲特定的驗證錯誤
-         logger.error(f"更新任務 {task_id} 時資料驗證失敗: {ve}", exc_info=True)
+         error_message = f"更新任務 {task_id} 時資料驗證失敗: {ve}"
+         logger.error(error_message, exc_info=True)
          # 檢查錯誤是否與 crawler_id 相關 (雖然理論上不應該再發生)
-         if 'crawler_id' in str(ve).lower(): # 不區分大小寫檢查
-              error_message = "資料驗證失敗: 更新 crawler_id 欄位時出錯"
-         else:
-              error_message = f"資料驗證失敗: {ve}"
+        #  if 'crawler_id' in str(ve).lower(): # 不區分大小寫檢查
+        #       error_message = "資料驗證失敗: 更新 crawler_id 欄位時出錯"
+        #  else:
+        #       error_message = f"資料驗證失敗: {ve}"
          return jsonify({"success": False, "message": error_message}), 400
     except Exception as e:
         logger.exception(f"更新任務 {task_id} 時出錯: {str(e)}")
