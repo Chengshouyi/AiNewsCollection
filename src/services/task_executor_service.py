@@ -236,7 +236,7 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
             logger.info(f"異步任務回調: 已發送 WebSocket 事件: task_progress (失敗) 和 task_finished 至 room {room_name}")
 
     def _execute_task_internal(self, task_id: int, history_id: Optional[int], **kwargs) -> Dict[str, Any]:
-        """內部任務執行函數 (工作線程)
+        """內部任務執行函數 (工作緒)
 
         Args:
             task_id: 任務ID
@@ -248,6 +248,15 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
         """
         crawler_name = None
         task: Optional[CrawlerTasks] = None # 初始化 task
+        
+        # 初始化 session_id 變數，確保在異常處理中也可以使用
+        session_id = None
+        with self.task_lock:
+            if task_id in self.task_session_ids:
+                session_id = self.task_session_ids[task_id]
+        
+        # 構建房間名稱
+        room_name = f'task_{task_id}_{session_id}' if session_id else f'task_{task_id}'
 
         try:
             # 在工作緒的事務中重新獲取任務和爬蟲信息
@@ -377,15 +386,6 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
 
             result['task_status'] = task_status_enum.value
 
-            # 獲取會話ID
-            session_id = None
-            with self.task_lock:
-                if task_id in self.task_session_ids:
-                    session_id = self.task_session_ids[task_id]
-            
-            # 構建房間名稱
-            room_name = f'task_{task_id}_{session_id}' if session_id else f'task_{task_id}'
-
             # 在 _execute_task_internal 方法中，任務開始時
             start_data = {
                 'task_id': task_id,
@@ -474,7 +474,8 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 'scrape_phase': ScrapePhase.FAILED.value,
                 'message': error_msg
             }
-            room_name = f'task_{task_id}_{session_id}' if session_id else f'task_{task_id}'
+            
+            # 由於我們已經在方法開頭獲取了 session_id 和構建了 room_name，這裡直接使用
             socketio.emit('task_progress', error_data, namespace='/tasks', to=room_name)
             socketio.emit('task_finished', {
                 'task_id': task_id, 
