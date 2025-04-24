@@ -637,12 +637,12 @@ function saveTask() {
     const scrapeMode = $('#scrape-mode').val();
     const savePartialResults = $('#save-partial-results').is(':checked');
 
+    // 確保必填欄位為正確類型
     const taskData = {
-        name: taskName,
-        task_name: taskName, // 確保同時設置task_name和name
+        task_name: taskName, // 確保設置 task_name 作為主要鍵
         crawler_id: parseInt(crawlerId),
-        type: taskType,
-        remark: taskRemark
+        is_auto: taskType === 'auto', // 直接設置為布爾值，而不是字符串'auto'/'manual'
+        notes: taskRemark
     };
 
     // 添加高級參數
@@ -668,6 +668,17 @@ function saveTask() {
         cancel_timeout: 60
     };
 
+    // 如果是自動執行任務，添加 cron_expression
+    if (taskType === 'auto') {
+        taskData.cron_expression = $('#cron-expression').val().trim();
+    }
+
+    // 設置 scrape_phase 初始值
+    taskData.scrape_phase = 'init';
+
+    // 設置 is_active 為 true
+    taskData.is_active = true;
+
     // 輸出表單數據到控制台以便調試
     console.log('準備保存的任務數據:', taskData);
 
@@ -682,13 +693,8 @@ function saveTask() {
         errorMessages.push('請選擇爬蟲');
     }
 
-    if (!taskData.type) {
-        errorMessages.push('請選擇任務類型');
-    }
-
     // 如果是自動執行，需要添加排程設定
-    if (taskType === 'auto') {
-        taskData.cron_expression = $('#cron-expression').val().trim();
+    if (taskData.is_auto) {
         if (!taskData.cron_expression) {
             errorMessages.push('自動執行的任務需要填寫排程表達式');
         }
