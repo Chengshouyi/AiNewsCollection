@@ -478,7 +478,7 @@ function renderTasksTable(tasks) {
         const scheduleDisplay = cronExpression || (taskType === 'manual' ? '手動執行' : '-');
 
         const row = `
-            <tr class="task-row" data-task-id="${task.id}">
+            <tr class="task-row" data-task-id="${task.id}" data-crawler-id="${task.crawler_id}">
                 <td>${task.id}</td>
                 <td>${escapeHtml(taskName)}</td>
                 <td>${escapeHtml(crawlerName)}</td>
@@ -874,8 +874,13 @@ function startManualLinksFetch(taskId) {
 
     // 發送請求開始抓取連結
     $.ajax({
-        url: `/api/tasks/${taskId}/run_manual_links`,
+        url: `/api/tasks/manual/collect-links`,
         method: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({
+            crawler_id: parseInt($('.task-row[data-task-id="' + taskId + '"]').data('crawler-id') || 0),
+            task_name: "手動抓取連結_" + new Date().toISOString()
+        }),
         success: function (response) {
             console.log('抓取連結請求響應:', response);
             if (response.success) {
@@ -977,12 +982,16 @@ function startFetchArticles(taskId, selectedLinks) {
 
     // 準備要發送的數據
     const data = {
-        links: selectedLinks.map(link => link.url)
+        task_args: {
+            article_links: selectedLinks.map(link => link.url)
+        }
     };
+
+    console.log('準備發送抓取文章請求:', data);
 
     // 發送請求開始爬取文章
     $.ajax({
-        url: `/api/tasks/${taskId}/run_manual_articles`,
+        url: `/api/tasks/manual/${taskId}/fetch-content`,
         method: 'POST',
         contentType: 'application/json',
         data: JSON.stringify(data),
