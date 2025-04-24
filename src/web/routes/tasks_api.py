@@ -741,51 +741,57 @@ def update_task(task_id):
         db_task = get_task_result.get('task')
         if not db_task: # 再次確認 task 是否真的存在
              return jsonify({"success": False, "message": "找不到任務對象"}), 404
-             
+
+        # --- 準備驗證數據 ---
+        # 創建一個請求數據的副本以進行修改
+        data_for_validation = data.copy()
+
         # 根據任務類型設置is_auto
-        is_auto = data.get('type', db_task.type) == 'auto'
-        
-        # 獲取現有的task_args
+        is_auto = data_for_validation.get('is_auto', db_task.is_auto)
+
+        # 獲取現有的task_args並合併
         db_task_args = db_task.task_args or {}
-        new_task_args = data.get('task_args', {})
-        
-        # 合併 task_args
+        new_task_args = data_for_validation.get('task_args', {})
         merged_task_args = db_task_args.copy()
         merged_task_args.update(new_task_args)
-        data['task_args'] = merged_task_args
-        
-        # 從task_args中獲取ai_only的值並設置is_ai_related以保持兼容性
-        ai_only = data['task_args'].get('ai_only', False)
-        #data['is_ai_related'] = ai_only
-        
-        # 如果需要更新scrape_phase，確保使用字符串值
-        if 'scrape_phase' in data and isinstance(data['scrape_phase'], ScrapePhase):
-            data['scrape_phase'] = data['scrape_phase'].value
-        
-        # 設置默認的抓取模式 (保持現有模式或使用默認值)
+        data_for_validation['task_args'] = merged_task_args # 更新副本中的 task_args
+
+        # 設置默認的抓取模式
         scrape_mode = merged_task_args.get('scrape_mode', ScrapeMode.FULL_SCRAPE.value)
 
-        # 驗證更新後的數據
+        # --- 修改點：在驗證 *前* 移除 crawler_id ---
+        # 因為 _setup_validate_task_data 會調用 service.validate_task_data(..., is_update=True)
+        # 我們假設 validate_task_data 不允許在更新時傳入 crawler_id
+        if 'crawler_id' in data_for_validation:
+            logger.info(f"從任務 {task_id} 的驗證數據中移除 crawler_id (因為是更新操作)")
+            del data_for_validation['crawler_id']
+        # --- 修改結束 ---
+
+        # 使用處理過的 data_for_validation 進行驗證
         validated_result = _setup_validate_task_data(
-            task_data=data,
+            task_data=data_for_validation, # 傳遞移除了 crawler_id 的數據
             service=service,
             scrape_mode=scrape_mode,
             is_auto=is_auto,
             is_update=True
         )
         if not validated_result.get('success'):
+            # 驗證失敗，直接返回 400 和驗證結果
             return jsonify(validated_result), 400
 
+        # 獲取驗證後的數據 (現在應該不包含 crawler_id 了)
+        update_data_for_service = validated_result.get('data', {})
+
         # 更新任務
-        update_result = service.update_task(task_id, validated_result['data'])
+        update_result = service.update_task(task_id, update_data_for_service)
         if not update_result.get('success'):
             status_code = 404 if "不存在" in update_result.get('message', '') else 500
             return jsonify(update_result), status_code
-            
+
         # 從結果中獲取更新的任務對象 (Pydantic Schema)
         updated_task = update_result.get('task')
         task_data = _prepare_task_for_response(updated_task)
-        
+
         # 如果是自動任務，更新排程器
         if is_auto and updated_task:
             scheduler = get_scheduler_service()
@@ -798,13 +804,21 @@ def update_task(task_id):
                     "message": response_message,
                     "task": task_data
                 }), 200
-        
+
         # 更新成功
         return jsonify({
             "success": True,
             "message": update_result.get('message', '任務更新成功'),
             "task": task_data
         }), 200
+    except ValidationError as ve: # 捕獲特定的驗證錯誤
+         logger.error(f"更新任務 {task_id} 時資料驗證失敗: {ve}", exc_info=True)
+         # 檢查錯誤是否與 crawler_id 相關 (雖然理論上不應該再發生)
+         if 'crawler_id' in str(ve).lower(): # 不區分大小寫檢查
+              error_message = "資料驗證失敗: 更新 crawler_id 欄位時出錯"
+         else:
+              error_message = f"資料驗證失敗: {ve}"
+         return jsonify({"success": False, "message": error_message}), 400
     except Exception as e:
         logger.exception(f"更新任務 {task_id} 時出錯: {str(e)}")
         return handle_api_error(e)

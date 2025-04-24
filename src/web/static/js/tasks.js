@@ -403,33 +403,39 @@ function loadTasks() {
 }
 
 // 加載爬蟲列表 (用於任務編輯)
-function loadCrawlers() {
+function loadCrawlers(callback) {
     $.ajax({
         url: '/api/crawlers',
         method: 'GET',
         success: function (response) {
             crawlers = response.data || [];
-            // 修正：使用正確的選擇器 ID 'crawler-id'
             const select = $('#crawler-id');
             select.find('option:not(:first)').remove(); // 保留第一個選項 (請選擇...)
 
             if (crawlers.length === 0) {
                 console.warn('爬蟲列表為空，請先創建爬蟲');
-                // 添加一個禁用的選項提示用戶
                 select.append(`<option value="" disabled>爬蟲列表為空，請先創建爬蟲</option>`);
             } else {
                 crawlers.forEach(crawler => {
+                    // 確保使用正確的 crawler id 作為 value
                     select.append(`<option value="${crawler.id}">${escapeHtml(crawler.name || crawler.crawler_name)}</option>`);
                 });
+            }
+            // 如果提供了回調函數，則執行它
+            if (typeof callback === 'function') {
+                callback();
             }
         },
         error: function (xhr, status, error) {
             console.error('加載爬蟲列表失敗:', error);
-            // 在錯誤情況下顯示警告訊息
             const select = $('#crawler-id'); // 修正：使用正確的選擇器 ID
             select.find('option:not(:first)').remove();
             select.append(`<option value="" disabled>加載爬蟲列表失敗</option>`);
             displayAlert('warning', '加載爬蟲列表失敗: ' + (xhr.responseJSON?.message || error), true);
+            // 錯誤情況下也可以執行回調
+            if (typeof callback === 'function') {
+                callback();
+            }
         }
     });
 }
@@ -530,46 +536,83 @@ function renderTasksTable(tasks) {
 
 // 顯示任務新增/編輯模態框
 function showTaskModal(taskId) {
-    resetTaskForm(); // 清空表單
-
-    // 每次開啟模態框時重新加載爬蟲列表，確保列表是最新的
-    loadCrawlers();
+    resetTaskForm(); // 清空表單，這會確保爬蟲選擇是啟用的
 
     if (taskId) {
         // 編輯模式
         const task = tasks.find(t => t.id === taskId);
         if (!task) {
             console.error('找不到ID為', taskId, '的任務');
+            displayAlert('danger', `找不到任務 ID: ${taskId}`);
             return;
         }
+
+        console.log("找到的任務:", JSON.parse(JSON.stringify(task)));
 
         $('#task-modal-label').text('編輯任務');
         $('#task-form').data('is-edit', true);
         $('#task-form').data('task-id', task.id);
         $('#task-name').val(task.task_name);
-        $('#crawler-id').val(task.crawler_id);
 
-        // 設置任務類型單選按鈕
-        $(`input[name="taskType"][value="${task.type}"]`).prop('checked', true);
-
-        // 從task_args中讀取ai_only
-        $('#ai-only').prop('checked', task.task_args?.ai_only || false);
-        $('#task-remark').val(task.remark || '');
-
-        // 根據任務類型更新排程字段
-        updateScheduleFields(task.type, task.cron_expression);
-
-        // 設置高級參數
-        if (task.task_args) {
-            setAdvancedParams(task.task_args);
+        // --- 修正任務類型 ---
+        const taskType = task.is_auto ? 'auto' : 'manual'; // 根據 is_auto 決定類型
+        $('#task-type').val(taskType); // 直接設置 <select> 的值
+        console.log(`任務類型設置為: ${taskType}`);
+        // 驗證是否設置成功
+        if ($('#task-type').val() !== taskType) {
+            console.warn(`設置任務類型下拉選單值為 "${taskType}" 失敗。當前值: ${$('#task-type').val()}`);
         }
+
+        $('#ai-only').prop('checked', task.task_args?.ai_only || false);
+        $('#task-remark').val(task.notes || '');
+
+        // --- 修正排程欄位更新 ---
+        updateScheduleFields(taskType, task.cron_expression); // 使用轉換後的 taskType
+
+        // --- 調試高級參數 ---
+        console.log("任務參數 (task_args):", JSON.parse(JSON.stringify(task.task_args)));
+        if (task.task_args) {
+            console.log("準備調用 setAdvancedParams，傳入:", task.task_args);
+            setAdvancedParams(task.task_args);
+            console.log("setAdvancedParams 調用後，檢查表單值:");
+            console.log("Max Pages:", $('#max-pages').val());
+            console.log("Num Articles:", $('#num-articles').val());
+        } else {
+            console.warn("任務參數 (task_args) 不存在，使用預設值。");
+            setAdvancedParams(null);
+        }
+
+        // --- 修正爬蟲選擇器設置 (異步處理) ---
+        loadCrawlers(function () {
+            if (task.crawler_id !== null && task.crawler_id !== undefined) {
+                const crawlerSelect = $('#crawler-id'); // 取得 select 元素
+                crawlerSelect.val(task.crawler_id);
+                console.log(`爬蟲列表加載完成，嘗試設置爬蟲 ID 為: ${task.crawler_id}`);
+                if (crawlerSelect.val() != task.crawler_id) {
+                    console.warn(`設置爬蟲 ID ${task.crawler_id} 失敗，可能是下拉列表中沒有此 ID 的選項，或者值類型不匹配。當前選中值: ${crawlerSelect.val()}`);
+                }
+                // --- 修改點：禁用爬蟲選擇 ---
+                crawlerSelect.prop('disabled', true);
+                console.log("爬蟲選擇已禁用 (編輯模式)");
+                // --- 修改結束 ---
+            } else {
+                console.warn("任務數據中缺少有效的 crawler_id");
+                // 即使沒有 crawler_id，仍然禁用，避免用戶選擇
+                $('#crawler-id').prop('disabled', true);
+            }
+        });
+
     } else {
         // 新增模式
         $('#task-modal-label').text('新增任務');
         $('#task-form').data('is-edit', false);
         $('#task-form').data('task-id', '');
-        // 設置預設參數
-        setAdvancedParams(null);
+        setAdvancedParams(null); // 設置預設參數
+        // --- 確保爬蟲選擇是啟用的 ---
+        // resetTaskForm 已經處理了，這裡加載列表即可
+        loadCrawlers();
+        $('#task-type').val('manual');
+        updateScheduleFields('manual');
     }
 
     $('#task-modal').modal('show');
@@ -577,6 +620,7 @@ function showTaskModal(taskId) {
 
 // 設置高級參數
 function setAdvancedParams(taskArgs) {
+    console.log("setAdvancedParams 接收到的參數:", JSON.parse(JSON.stringify(taskArgs)));
     // 如果沒有傳入參數，則使用預設值
     const args = taskArgs || {
         max_pages: 10,
@@ -588,10 +632,12 @@ function setAdvancedParams(taskArgs) {
         scrape_mode: 'full_scrape',
         save_to_csv: false,
         csv_file_prefix: '',
-        save_partial_results_on_cancel: true
+        save_partial_results_on_cancel: true,
+        ai_only: false // 確保預設值包含所有相關欄位
     };
+    console.log("setAdvancedParams 實際使用的參數 (args):", args);
 
-    // 填充表單
+    // 填充表單 (請確保以下 ID 與 HTML 一致)
     $('#max-pages').val(args.max_pages);
     $('#num-articles').val(args.num_articles);
     $('#max-retries').val(args.max_retries);
@@ -599,12 +645,13 @@ function setAdvancedParams(taskArgs) {
     $('#timeout').val(args.timeout);
     $('#min-keywords').val(args.min_keywords);
     $('#scrape-mode').val(args.scrape_mode);
-    $('#save-to-csv').prop('checked', args.save_to_csv);
+    $('#save-to-csv').prop('checked', args.save_to_csv || false); // 確保布爾值
     $('#csv-file-prefix').val(args.csv_file_prefix || '');
-    $('#save-partial-results').prop('checked', args.save_partial_results_on_cancel);
+    $('#save-partial-results').prop('checked', args.save_partial_results_on_cancel || false); // 確保布爾值
+    // ai_only 的填充在 showTaskModal 中已處理，這裡可以不用重複設置
 
     // 根據儲存到CSV的設定顯示/隱藏前綴欄位
-    if (args.save_to_csv) {
+    if ($('#save-to-csv').is(':checked')) {
         $('#csv-prefix-container').removeClass('d-none');
     } else {
         $('#csv-prefix-container').addClass('d-none');
@@ -620,6 +667,12 @@ function resetTaskForm() {
     $('#ai-only').prop('checked', false);
     $('#task-remark').val('');
     $('#schedule-container').empty();
+    // --- 修改點：確保爬蟲選擇啟用 ---
+    $('#crawler-id').prop('disabled', false);
+    console.log("爬蟲選擇已啟用 (表單重置)");
+    // --- 修改結束 ---
+    // 重置高級參數為預設值
+    setAdvancedParams(null);
 }
 
 // 保存任務
@@ -629,7 +682,8 @@ function saveTask() {
     const taskId = $('#task-form').data('task-id');
     const taskName = $('#task-name').val().trim();
     const crawlerId = $('#crawler-id').val();
-    const taskType = $('#task-type').val();
+    // --- 修正任務類型獲取 ---
+    const taskType = $('#task-type').val(); // 從 <select> 獲取值 ('auto' 或 'manual')
     const taskRemark = $('#task-remark').val().trim();
 
     // 獲取高級參數
@@ -647,11 +701,22 @@ function saveTask() {
 
     // 確保必填欄位為正確類型
     const taskData = {
-        task_name: taskName, // 確保設置 task_name 作為主要鍵
+        task_name: taskName,
         crawler_id: parseInt(crawlerId),
-        is_auto: taskType === 'auto', // 直接設置為布爾值，而不是字符串'auto'/'manual'
+        // --- 修正 is_auto 設置 ---
+        is_auto: taskType === 'auto', // 將 'auto'/'manual' 轉回布林值
         notes: taskRemark
     };
+
+    if (isNaN(taskData.crawler_id)) {
+        displayAlert('warning', '請選擇有效的爬蟲', true);
+        return;
+    }
+    // --- 新增：驗證任務類型是否已選擇 ---
+    if (!taskType) {
+        displayAlert('warning', '請選擇任務類型', true);
+        return;
+    }
 
     // 添加高級參數
     taskData.task_args = {
@@ -664,21 +729,23 @@ function saveTask() {
         scrape_mode: scrapeMode,
         ai_only: aiOnly,
         save_to_csv: saveToCsv,
-        save_to_database: true, // 預設總是保存到資料庫
+        save_to_database: true,
         csv_file_prefix: csvFilePrefix,
         save_partial_results_on_cancel: savePartialResults,
         save_partial_to_database: savePartialResults,
-        is_test: false, // 非測試模式
-        article_links: [], // 初始為空，手動任務執行時會填充
-        get_links_by_task_id: false, // 確保此屬性為布爾值false而非缺失
+        is_test: false,
+        article_links: [],
+        get_links_by_task_id: false,
         max_cancel_wait: 30,
         cancel_interrupt_interval: 5,
         cancel_timeout: 60
     };
 
-    // 如果是自動執行任務，添加 cron_expression
-    if (taskType === 'auto') {
+    // --- 修正 cron_expression 設置 ---
+    if (taskData.is_auto) {
         taskData.cron_expression = $('#cron-expression').val().trim();
+    } else {
+        taskData.cron_expression = null;
     }
 
     // 設置 scrape_phase 初始值
@@ -697,7 +764,7 @@ function saveTask() {
         errorMessages.push('請填寫任務名稱');
     }
 
-    if (!taskData.crawler_id || isNaN(taskData.crawler_id)) {
+    if (isNaN(taskData.crawler_id)) {
         errorMessages.push('請選擇爬蟲');
     }
 
@@ -715,7 +782,7 @@ function saveTask() {
 
     // 發送 AJAX 請求
     const apiUrl = isEdit ? `/api/tasks/${taskId}` : '/api/tasks';
-    console.log(`發送${isEdit ? '更新' : '創建'}請求到: ${apiUrl}`);
+    console.log(`發送${isEdit ? '更新' : '創建'}請求到: ${apiUrl}，數據:`, JSON.stringify(taskData));
 
     $.ajax({
         url: apiUrl,
@@ -1086,18 +1153,20 @@ function escapeHtml(unsafe) {
 }
 
 // 根據任務類型更新排程字段
-function updateScheduleFields(type, cronExpression = '') {
+function updateScheduleFields(taskType, cronExpression = '') { // 修改參數名
     const container = $('#schedule-container');
     container.empty();
 
-    if (type === 'auto') {
+    if (taskType === 'auto') { // 使用 taskType 判斷
         container.append(`
-            <label for="cron-expression" class="form-label">排程 (Cron 表達式)</label>
-            <input type="text" class="form-control" id="cron-expression" name="cron_expression" 
-                   value="${escapeHtml(cronExpression)}" required
-                   placeholder="例如: 0 0 * * * (每天凌晨12點)">
-            <div class="form-text">
-                Cron 表達式格式: 分鐘 小時 日期 月份 星期 (0-59 0-23 1-31 1-12 0-7)
+            <div class="mb-3"> <!-- 添加 mb-3 增加間距 -->
+                <label for="cron-expression" class="form-label">排程 (Cron 表達式)</label>
+                <input type="text" class="form-control" id="cron-expression" name="cron_expression"
+                       value="${escapeHtml(cronExpression)}" required
+                       placeholder="例如: 0 0 * * * (每天凌晨12點)">
+                <div class="form-text">
+                    Cron 表達式格式: 分鐘 小時 日期 月份 星期 (0-59 0-23 1-31 1-12 0-7)
+                </div>
             </div>
         `);
     }

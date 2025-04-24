@@ -61,6 +61,9 @@ class TaskExecutorService(BaseService[CrawlerTasks], ProgressListener):
             task_id: 任務ID
             progress_data: 進度數據，包含progress、message、scrape_phase等
         """
+        # 添加詳細日誌
+        logger.info(f"收到進度更新: 任務 {task_id}, 進度 {progress_data.get('progress', 0)}%, 階段 {progress_data.get('scrape_phase', 'unknown')}, 訊息: {progress_data.get('message', '無訊息')}")
+        
         # 進度資料存儲到本地狀態
         with self.task_lock:
             if task_id not in self.task_execution_status:
@@ -72,11 +75,28 @@ class TaskExecutorService(BaseService[CrawlerTasks], ProgressListener):
                 'scrape_phase': progress_data.get('scrape_phase', ScrapePhase.UNKNOWN.value)
             })
         
-        # 如果需要，可以在此處發送即時更新到前端或其他系統
-        logger.debug(f"任務 {task_id} 進度更新: {progress_data.get('progress')}%, {progress_data.get('message')}")
+        # 獲取會話ID
+        session_id = None
+        with self.task_lock:
+            if task_id in self.task_session_ids:
+                session_id = self.task_session_ids[task_id]
         
-        # 可選：如果需要保存到資料庫，可以在這裡實現
-        # self._save_progress_to_database(task_id, progress_data)
+        # 構建房間名稱
+        room_name = f'task_{task_id}_{session_id}' if session_id else f'task_{task_id}'
+        
+        # 準備發送到前端的數據
+        socketio_data = {
+            'task_id': task_id,
+            'progress': progress_data.get('progress', 0),
+            'status': TaskStatus.RUNNING.value,
+            'scrape_phase': progress_data.get('scrape_phase', ScrapePhase.UNKNOWN.value),
+            'message': progress_data.get('message', '無訊息'),
+            'session_id': session_id
+        }
+        
+        # 通過WebSocket發送進度更新
+        socketio.emit('task_progress', socketio_data, namespace='/tasks', to=room_name)
+        logger.info(f"已發送WebSocket進度更新: {socketio_data['progress']}%, {socketio_data['message']} 到房間 {room_name}")
 
     def execute_task(self, task_id: int, is_async: bool = True, **kwargs) -> Dict[str, Any]:
         """執行指定的爬蟲任務

@@ -11,6 +11,7 @@ from src.crawlers.bnext_utils import BnextUtils
 from src.utils.log_utils import LoggerSetup
 from datetime import datetime, timezone
 from src.utils.enum_utils import ArticleScrapeStatus
+from src.utils.enum_utils import ScrapePhase
 
 # 設置日誌記錄器(校正用)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -100,7 +101,8 @@ class BnextScraper:
                         
                         all_article_links_list.extend(current_page_article_links_list)
                         logger.debug(f"共爬取 {len(all_article_links_list)} 篇文章連結")
-                        
+                                        # 在爬取每個頁面後報告進度
+                       
                         # 檢查是否有下一頁
                         next_page = soup.select_one('.pagination .next, .pagination a[rel="next"]')
                         if next_page and 'href' in next_page.attrs:
