@@ -11,6 +11,7 @@ from src.models.crawler_tasks_schema import CrawlerTaskReadSchema
 from src.models.crawler_task_history_schema import CrawlerTaskHistoryReadSchema
 from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
 import enum
+from typing import Dict, Any
 
 @pytest.fixture
 def app():
@@ -178,65 +179,99 @@ def mock_task_service(monkeypatch, sample_tasks_data, sample_history_data):
             self.next_history_id = max(all_history_ids or [100]) + 1
 
 
-        def validate_task_data(self, data, is_update=False):
-            # 簡單模擬：檢查必需字段
+        def validate_task_data(self, data: Dict[str, Any], is_update=False) -> Dict[str, Any]:
+            # 模擬CrawlerTaskService.validate_task_data的行為
+            
+            # 檢查自動任務是否有cron表達式
+            if data.get('is_auto') is True:
+                if data.get('cron_expression') is None:
+                    return {
+                        'success': False,
+                        'message': "資料驗證失敗：cron_expression: 當設定為自動執行時,此欄位不能為空",
+                        'data': None
+                    }
+            
+            # 驗證task_args
+            task_args = data.get('task_args', {})
+            
+            # 根據抓取模式處理相關參數(業務特殊邏輯)
+            if task_args.get('scrape_mode') == ScrapeMode.CONTENT_ONLY.value:
+                if 'get_links_by_task_id' not in task_args:
+                    task_args['get_links_by_task_id'] = True
+                    
+                if not task_args.get('get_links_by_task_id'):
+                    if 'article_links' not in task_args:
+                        return {
+                            'success': False,
+                            'message': "資料驗證失敗：內容抓取模式需要提供 article_links",
+                            'data': None
+                        }
+            
+            # 模擬基本字段驗證
             errors = {}
             if not is_update:
-                 if 'task_name' not in data or not data['task_name']:
-                     errors['task_name'] = '必需'
-                 # 修正：crawler_id 應為 int
-                 crawler_id = data.get('crawler_id')
-                 if crawler_id is None or not isinstance(crawler_id, int) or crawler_id <= 0: # 假設 ID > 0
-                     errors['crawler_id'] = '必需且為正整數'
+                if 'task_name' not in data or not data['task_name']:
+                    errors['task_name'] = '此欄位不能為空'
+                # 修正：crawler_id 應為 int
+                crawler_id = data.get('crawler_id')
+                if crawler_id is None or not isinstance(crawler_id, int) or crawler_id <= 0:
+                    errors['crawler_id'] = '此欄位不能為空且必須為正整數'
+            
             # 模擬 ScrapeMode 驗證
             if 'scrape_mode' in data and data['scrape_mode']:
-                 try:
-                     ScrapeMode(data['scrape_mode'])
-                 except ValueError:
-                     errors['scrape_mode'] = f"無效的抓取模式: {data['scrape_mode']}"
+                try:
+                    ScrapeMode(data['scrape_mode'])
+                except ValueError:
+                    errors['scrape_mode'] = f"無效的抓取模式: {data['scrape_mode']}"
             
-            # 模擬 is_auto 和 cron_expression
-            if data.get('is_auto') and not data.get('cron_expression'):
-                errors['cron_expression'] = '自動任務必須提供 cron 表達式'
-
-
             if errors:
-                 # 返回更接近實際的驗證錯誤格式
-                 error_messages = [f"{field}: {msg}" for field, msg in errors.items()]
-                 # 嘗試匹配 BaseService 的 ValidationError 消息格式
-                 error_summary = "以下必填欄位缺失或值為空/空白: " + ", ".join(errors.keys()) if any(msg == '必需' for msg in errors.values()) else "資料驗證失敗"
-                 return {'success': False, 'message': error_summary, 'errors': {'Validation Error': error_messages}}
-
-
-            # 模擬成功，返回驗證後的數據在 data 鍵下
-            # 這裡只返回輸入數據，實際服務會返回 Schema 驗證後的數據
-            return {'success': True, 'data': data}
+                # 格式化錯誤消息
+                error_details = ", ".join([f"{field}: {msg}" for field, msg in errors.items()])
+                return {
+                    'success': False,
+                    'message': f"資料驗證失敗：{error_details}",
+                    'data': None
+                }
+            
+            # 模擬成功，返回驗證後的數據
+            data['task_args'] = task_args  # 更新task_args
+            return {
+                'success': True,
+                'message': '資料驗證成功',
+                'data': data
+            }
 
         def create_task(self, data):
-            # 使用驗證過的 data
-            task_id = self.next_id
+            # 驗證資料
+            validated_result = self.validate_task_data(data, is_update=False)
+            if not validated_result['success']:
+                return validated_result
+            
+            validated_data = validated_result['data']
+            
             # 確保枚舉值正確
-            scrape_mode_value = data.get('scrape_mode', ScrapeMode.FULL_SCRAPE.value)
+            scrape_mode_value = validated_data.get('task_args', {}).get('scrape_mode', ScrapeMode.FULL_SCRAPE.value)
             try:
                 scrape_mode_enum = ScrapeMode(scrape_mode_value)
             except ValueError:
                 scrape_mode_enum = ScrapeMode.FULL_SCRAPE # 預設
 
+            task_id = self.next_id
             task_data_full = {
                 'id': task_id,
-                'task_name': data['task_name'],
-                'crawler_id': data['crawler_id'],
-                'is_auto': data.get('is_auto', False),
-                'is_active': data.get('is_active', True),
-                'ai_only': data.get('ai_only', False),
-                'task_args': data.get('task_args', {}),
-                'notes': data.get('notes'),
-                'cron_expression': data.get('cron_expression'),
+                'task_name': validated_data['task_name'],
+                'crawler_id': validated_data['crawler_id'],
+                'is_auto': validated_data.get('is_auto', False),
+                'is_active': validated_data.get('is_active', True),
+                'ai_only': validated_data.get('ai_only', False),
+                'task_args': validated_data.get('task_args', {}),
+                'notes': validated_data.get('notes'),
+                'cron_expression': validated_data.get('cron_expression'),
                 # is_scheduled 通常由 SchedulerService 更新，這裡創建時設為 False
                 'is_scheduled': False,
                 'task_status': TaskStatus.INIT, # 新創建任務為 INIT
                 'scrape_phase': ScrapePhase.INIT,
-                'max_retries': data.get('task_args', {}).get('max_retries', TASK_ARGS_DEFAULT.get('max_retries', 3)), # 從 task_args 或默認值獲取
+                'max_retries': validated_data.get('task_args', {}).get('max_retries', TASK_ARGS_DEFAULT.get('max_retries', 3)), # 從 task_args 或默認值獲取
                 'retry_count': 0,
                 'scrape_mode': scrape_mode_enum, # 使用枚舉
                 'created_at': datetime.now(timezone.utc),
@@ -909,9 +944,9 @@ class TestTasksApiRoutes:
         data = json.loads(response.data)
         assert data['success'] is False
         # 檢查來自 mock validate_task_data 的消息
-        assert '以下必填欄位缺失或值為空/空白: crawler_id' in data['message'] or '必需且為正整數' in str(data['errors'])
-        assert 'errors' in data
-        assert 'Validation Error' in data['errors'] or 'crawler_id' in str(data['errors'])
+        assert '資料驗證失敗' in data['message']
+        assert 'crawler_id' in data['message']
+        assert '此欄位不能為空' in data['message'] or '必須為正整數' in data['message']
 
     def test_validation_error_on_update(self, client, mock_task_service):
         """測試更新任務時數據驗證失敗"""
@@ -921,7 +956,11 @@ class TestTasksApiRoutes:
             if is_update:
                  if 'cron_expression' in data and data['cron_expression'] == '無效的表達式':
                      # 返回接近實際錯誤的結構
-                     return {'success': False, 'message': '資料驗證失敗', 'errors': {'Validation Error': ['cron_expression: Cron 格式無效']}}
+                     return {
+                         'success': False,
+                         'message': '資料驗證失敗：cron_expression: Cron 格式無效',
+                         'data': None
+                     }
             return original_validate(data, is_update)
         mock_task_service.validate_task_data = failing_validate
 
@@ -931,9 +970,8 @@ class TestTasksApiRoutes:
         data = json.loads(response.data)
         assert data['success'] is False
         assert '資料驗證失敗' in data['message']
-        assert 'errors' in data
-        assert 'Validation Error' in data['errors']
-        assert 'Cron 格式無效' in str(data['errors'])
+        assert 'cron_expression' in data['message']
+        assert 'Cron 格式無效' in data['message']
 
         # 恢復原始的 validate_task_data
         mock_task_service.validate_task_data = original_validate

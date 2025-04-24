@@ -17,6 +17,8 @@ from src.database.base_repository import SchemaType
 from src.utils.enum_utils import TaskStatus
 from src.models.crawler_tasks_schema import CrawlerTaskReadSchema
 from src.web.socket_instance import socketio
+from src.services.service_container import get_crawlers_service, get_article_service
+
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -838,8 +840,12 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
             test_params['num_articles'] = min(5, test_params.get('num_articles', 5))
             test_params['save_to_csv'] = False
             test_params['save_to_database'] = False
+            test_params['get_links_by_task_id'] = False
             test_params['timeout'] = 30
             
+            crawlers_service = get_crawlers_service()
+            article_service = get_article_service()
+            CrawlerFactory.initialize(crawlers_service, article_service)
             crawler = CrawlerFactory.get_crawler(crawler_name)
             
             # 執行測試，明確將返回值轉換為字典

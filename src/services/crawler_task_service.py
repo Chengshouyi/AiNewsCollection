@@ -60,55 +60,81 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
     
     
     def validate_task_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
-        """驗證任務資料
+        """驗證任務資料，因此介面公開給API使用，因此一律包裝成字典返回，供前端使用
         
         Args:
             data: 要驗證的資料
             is_update: 是否為更新操作
             
         Returns:
-            Dict[str, Any]: 驗證後的資料
+            Dict[str, Any]: 驗證的訊息及資料
                 success: 是否成功
                 message: 消息
                 data: 任務資料
         """
-
-        if data.get('is_auto') is True:
-            if data.get('cron_expression') is None:
-                raise ValidationError("cron_expression: 當設定為自動執行時,此欄位不能為空")
-
-        task_args = data.get('task_args', TASK_ARGS_DEFAULT)
-        # 驗證 task_args 參數
         try:
-            validate_task_args('task_args', required=True)(task_args)
-        except ValidationError as e:
-            raise ValidationError(f"task_args: {str(e)}")
-        
-        # 根據抓取模式處理相關參數(業務特殊邏輯)
-        if task_args.get('scrape_mode') == ScrapeMode.CONTENT_ONLY.value:
-            if 'get_links_by_task_id' not in task_args:
-                task_args['get_links_by_task_id'] = True
-                
-            if not task_args.get('get_links_by_task_id'):
-                if 'article_links' not in task_args:
-                    raise ValidationError("內容抓取模式需要提供 article_links")
-        
-        # 更新 task_args
-        data['task_args'] = task_args
-        schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
-        try:
-            validated_data = self.validate_data('CrawlerTask', data, schema_type)
-        except ValidationError as e:
-            raise ValidationError(f"task_args: {str(e)}")
-        return {
-            'success': True,
-            'message': '任務資料驗證成功',
-            'data': validated_data
-        }
+            if data.get('is_auto') is True:
+                if data.get('cron_expression') is None:
+                    return {
+                        'success': False,
+                        'message': "資料驗證失敗：cron_expression: 當設定為自動執行時,此欄位不能為空",
+                        'data': None
+                    }
+
+            task_args = data.get('task_args', TASK_ARGS_DEFAULT)
+            # 驗證 task_args 參數
+            try:
+                validate_task_args('task_args', required=True)(task_args)
+            except ValidationError as e:
+                return {
+                    'success': False,
+                    'message': f"資料驗證失敗：task_args: {str(e)}",
+                    'data': None
+                }
+            
+            # 根據抓取模式處理相關參數(業務特殊邏輯)
+            if task_args.get('scrape_mode') == ScrapeMode.CONTENT_ONLY.value:
+                if 'get_links_by_task_id' not in task_args:
+                    task_args['get_links_by_task_id'] = True
+                    
+                if not task_args.get('get_links_by_task_id'):
+                    if 'article_links' not in task_args:
+                        return {
+                            'success': False,
+                            'message': "資料驗證失敗：內容抓取模式需要提供 article_links，或get_links_by_task_id=True由任務ID獲取文章連結",
+                            'data': None
+                        }
+            
+            # 更新 task_args
+            data['task_args'] = task_args
+            schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
+            try:
+                validated_data = self.validate_data('CrawlerTask', data, schema_type)
+            except ValidationError as e:
+                return {
+                    'success': False,
+                    'message': f"資料驗證失敗：task_args: {str(e)}",
+                    'data': None
+                }
+            return {
+                'success': True,
+                'message': '資料驗證成功',
+                'data': validated_data
+            }
+        except Exception as e:
+            return {
+                'success': False,
+                'message': f"資料驗證失敗：{str(e)}",
+                'data': None
+            }
     
     def create_task(self, task_data: Dict) -> Dict:
         """創建新任務"""
-        validated_data = self.validate_task_data(task_data, is_update=False)
+        validated_result = self.validate_task_data(task_data, is_update=False)
+        if not validated_result['success']:
+            return validated_result
+        validated_data = validated_result['data']
+        
         try:
             with self._transaction() as session:
                 # 1. 驗證資料 (必須在事務內)
@@ -168,7 +194,15 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             }
     
     def update_task(self, task_id: int, task_data: Dict) -> Dict:
-        """更新任務數據，包含對 task_args 的特殊處理"""
+        """更新任務數據，包含對 task_args 的特殊處理
+        
+        Args:
+            task_id: 任務ID
+            task_data: 要更新的任務數據
+            
+        Returns:
+            Dict: 包含更新結果的字典
+        """
         try:
             # ***** 使用新的更新模式 *****
             with self._transaction() as session:
@@ -193,7 +227,10 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 # 2. 驗證傳入的數據 (使用 repo 的 schema 驗證)
                 #    注意：validate_data 返回的是驗證清理後的字典
                 #    ** BaseService.validate_data 需要在事務內，這裡已經是
-                validated_data = self.validate_task_data(task_data, is_update=True)
+                validated_result = self.validate_task_data(task_data, is_update=True)
+                if not validated_result['success']:
+                    return validated_result
+                validated_data = validated_result['data']
                 
                 entity_modified = False
                 task_args_updated = False

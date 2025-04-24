@@ -309,10 +309,12 @@ class TestCrawlerTaskService:
         }
 
         try:
-            validated = crawler_task_service.validate_task_data(valid_data.copy())
-            assert isinstance(validated, dict)
-            assert "task_name" in validated
-            assert validated["task_args"]["scrape_mode"] == ScrapeMode.FULL_SCRAPE.value
+            validated_result = crawler_task_service.validate_task_data(valid_data.copy())
+            assert validated_result['success'] is True
+            assert isinstance(validated_result, dict)
+            validated_data = validated_result['data']
+            assert "task_name" in validated_data
+            assert validated_data["task_args"]["scrape_mode"] == ScrapeMode.FULL_SCRAPE.value
         except ValidationError as e:
             pytest.fail(f"驗證應該通過，但卻失敗了: {e}")
 
@@ -325,8 +327,9 @@ class TestCrawlerTaskService:
             "scrape_phase": ScrapePhase.INIT.value
         }
 
-        with pytest.raises(ValidationError, match="cron_expression"):
-            crawler_task_service.validate_task_data(invalid_data_no_cron.copy())
+        invalid_result = crawler_task_service.validate_task_data(invalid_data_no_cron.copy())
+        assert invalid_result['success'] is False
+        assert "資料驗證失敗：cron_expression: 當設定為自動執行時,此欄位不能為空" in invalid_result['message']
 
     def test_find_due_tasks(self, crawler_task_service, sample_tasks, session):
         """測試查詢待執行任務 (需要模擬時間和上次執行狀態)"""

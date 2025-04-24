@@ -93,7 +93,7 @@ class TestCrawlerTasksModel:
         assert task.task_args['csv_file_prefix'] == ''
         assert task.task_args['save_to_database'] is True
         assert task.task_args['scrape_mode'] == ScrapeMode.FULL_SCRAPE.value
-        assert task.task_args['get_links_by_task_id'] is True
+        assert task.task_args['get_links_by_task_id'] is False
         assert isinstance(task.task_args['article_links'], list)
         assert len(task.task_args['article_links']) == 0
         

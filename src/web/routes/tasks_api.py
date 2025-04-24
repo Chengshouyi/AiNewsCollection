@@ -422,9 +422,9 @@ def get_scraped_task_results(task_id):
 def test_crawler():
     """測試爬蟲任務 (不會創建或執行實際任務)"""
     if not request.is_json:
-         return jsonify(success=False, message='請求必須是 application/json'), 415
+         return jsonify({"success": False, "message": "請求必須是 application/json"}), 415
     if not request.data:
-         return jsonify(success=False, message='缺少任務資料'), 400
+         return jsonify({"success": False, "message": "缺少任務資料"}), 400
     try:
         data = request.get_json() or {}
         if not data:
@@ -446,6 +446,7 @@ def test_crawler():
             'num_articles': min(5, test_task_args.get('num_articles', 5)),
             'save_to_csv': False,
             'save_to_database': False,
+            'get_links_by_task_id': False,
             'timeout': 30,
             'ai_only': test_task_args.get('ai_only', False)  
         })
@@ -469,19 +470,17 @@ def test_crawler():
         logger.info(f"驗證模擬的任務數據: {task_data_for_validation}")
         try:
             validated_result = service.validate_task_data(task_data_for_validation, is_update=False)
-        except ValidationError as e:
+        except Exception as e:
             return jsonify({
                 'success': False,
-                'message': str(e),
-                'errors': {}
+                'message': str(e)
             }), 400
         
         # 如果驗證失敗，確保返回的錯誤訊息是可序列化的
         if not validated_result.get('success'):
             return jsonify({
                 'success': False,
-                'message': str(validated_result.get('message', '驗證失敗')),
-                'errors': validated_result.get('errors')
+                'message': str(validated_result.get('message', '驗證失敗'))
             }), 400
 
         # 獲取驗證後的參數
@@ -563,7 +562,6 @@ def _setup_validate_task_data(task_data: Dict[str, Any], service: CrawlerTaskSer
         Dict[str, Any]: 包含驗證結果的字典
             success: bool
             message: str
-            errors: Optional[Dict]
             data: Optional[Dict] - 驗證通過的數據
     """
     if 'task_args' not in task_data or not task_data['task_args']:
@@ -573,15 +571,11 @@ def _setup_validate_task_data(task_data: Dict[str, Any], service: CrawlerTaskSer
     if 'scrape_mode' not in task_data['task_args']:
          task_data['task_args']['scrape_mode'] = scrape_mode
          
-    # task_data 的頂層也需要 scrape_mode 和 is_auto 供驗證器使用
+
     task_data['scrape_mode'] = scrape_mode
     task_data['is_auto'] = is_auto
     
     # 調用服務進行驗證
     validation_result = service.validate_task_data(task_data, is_update=is_update)
-    
-    # 清理掉臨時加到頂層的 scrape_mode 和 is_auto (如果驗證成功且返回了 data)
-    # service.validate_task_data 現在返回的 data 應該已經是清理過的 Pydantic 模型字典
-    # 無需手動 pop
 
     return validation_result
