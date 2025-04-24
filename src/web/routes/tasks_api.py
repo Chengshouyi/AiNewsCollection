@@ -548,6 +548,41 @@ def get_task_history(task_id):
     except Exception as e:
         return handle_api_error(e)
 
+@tasks_bp.route('/<int:task_id>/run_manual', methods=['POST'])
+def run_manual_task(task_id):
+    """手動執行特定任務的API端點。允許客戶端請求立即執行任務。"""
+    try:
+        service = get_task_executor_service()
+        
+        # 執行任務
+        result = service.execute_task(task_id, is_async=True)
+        
+        if not result['success']:
+            return jsonify(result), 400
+            
+        # 獲取會話ID (如果有的話)
+        session_id = None
+        if hasattr(service, 'task_session_ids') and task_id in service.task_session_ids:
+            session_id = service.task_session_ids[task_id]
+            
+        # 增強結果響應，包含會話ID
+        enhanced_result = {
+            'success': True,
+            'message': result['message'],
+            'task_id': task_id,
+            'session_id': session_id,  # 返回會話ID給前端
+            'room': f"task_{task_id}_{session_id}" if session_id else f"task_{task_id}"
+        }
+        
+        return jsonify(enhanced_result), 202  # Accepted
+    except Exception as e:
+        logger.exception(f"執行任務 {task_id} 時出錯: {str(e)}")
+        return jsonify({
+            'success': False, 
+            'message': f'執行任務時出錯: {str(e)}',
+            'task_id': task_id
+        }), 500
+
 def _setup_validate_task_data(task_data: Dict[str, Any], service: CrawlerTaskService, scrape_mode: str, is_auto: bool, is_update: bool = False) -> Dict[str, Any]:
     """設置並驗證任務資料
 
@@ -579,3 +614,14 @@ def _setup_validate_task_data(task_data: Dict[str, Any], service: CrawlerTaskSer
     validation_result = service.validate_task_data(task_data, is_update=is_update)
 
     return validation_result
+
+# 對可能有嵌套scrape_phase的結果進行處理
+def _normalize_response(response_data):
+    if 'result' in response_data and 'scrape_phase' in response_data['result']:
+        scrape_phase = response_data['result']['scrape_phase']
+        if isinstance(scrape_phase, dict):
+            # 扁平化嵌套結構
+            response_data['result']['progress'] = scrape_phase.get('progress', 0)
+            response_data['result']['phase_message'] = scrape_phase.get('message', '')
+            response_data['result']['scrape_phase'] = scrape_phase.get('scrape_phase', 'unknown')
+    return response_data

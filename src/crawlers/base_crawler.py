@@ -541,7 +541,7 @@ class BaseCrawler(ABC):
                 'success': False,
                 'message': '任務參數驗證失敗',
                 'articles_count': 0,
-                'scrape_phase': self.get_scrape_phase(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
             }
         if self._check_if_cancelled(task_id):
             return self._handle_task_cancellation(task_id)
@@ -573,7 +573,7 @@ class BaseCrawler(ABC):
                 'success': False,
                 'message': f'任務失敗: {str(e)}',
                 'articles_count': 0,
-                'scrape_phase': self.get_scrape_phase(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
             }
 
     def _execute_content_only_task(self, task_id: int, max_retries: int, retry_delay: float):
@@ -613,7 +613,7 @@ class BaseCrawler(ABC):
                     'success': False,
                     'message': '從資料庫未獲取到任何文章連結',
                     'articles_count': 0,
-                    'scrape_phase': self.get_scrape_phase(task_id)
+                    'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
                 }
         else:
             # 獲取要抓取的文章連結
@@ -626,7 +626,7 @@ class BaseCrawler(ABC):
                     'success': False,
                     'message': '沒有提供要抓取內容的文章連結',
                     'articles_count': 0,
-                    'scrape_phase': self.get_scrape_phase(task_id)
+                    'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
                 }
             if self._check_if_cancelled(task_id):
                 return self._handle_task_cancellation(task_id)
@@ -648,7 +648,7 @@ class BaseCrawler(ABC):
                 'success': False,
                 'message': '沒有獲取到要抓取內容的文章資訊',
                 'articles_count': 0,
-                'scrape_phase': self.get_scrape_phase(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
             }
         
         # 步驟1：抓取文章詳細內容
@@ -677,7 +677,7 @@ class BaseCrawler(ABC):
                 'success': True,
                 'message': '沒有獲取到任何文章內容，但已保存連結',
                 'articles_count': articles_count,
-                'scrape_phase': self.get_scrape_phase(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
             }
         
         # 記錄成功獲取的文章內容數量
@@ -705,7 +705,7 @@ class BaseCrawler(ABC):
             'success': True,
             'message': '任務完成',
             'articles_count': len(self.articles_df) if hasattr(self, 'articles_df') and not self.articles_df.empty else 0,
-            'scrape_phase': self.get_scrape_phase(task_id)
+            'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
         }
 
     def _execute_links_only_task(self, task_id: int, max_retries: int, retry_delay: float):
@@ -734,7 +734,7 @@ class BaseCrawler(ABC):
                 'success': False,
                 'message': '沒有獲取到任何文章連結',
                 'articles_count': 0,
-                'scrape_phase': self.get_scrape_phase(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
             }
         
         # 記錄找到的文章數量
@@ -755,7 +755,7 @@ class BaseCrawler(ABC):
             'success': True,
             'message': '文章連結收集完成',
             'articles_count': articles_count,
-            'scrape_phase': self.get_scrape_phase(task_id)
+            'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
         }
 
     def _execute_full_scrape_task(self, task_id: int, max_retries: int, retry_delay: float):
@@ -784,7 +784,7 @@ class BaseCrawler(ABC):
                 'success': False,
                 'message': '沒有獲取到任何文章連結',
                 'articles_count': 0,
-                'scrape_phase': self.get_scrape_phase(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
             }
         
         # 記錄找到的文章數量
@@ -819,7 +819,7 @@ class BaseCrawler(ABC):
                 'success': True,
                 'message': '沒有獲取到任何文章內容，但已保存連結',
                 'articles_count': articles_count,
-                'scrape_phase': self.get_scrape_phase(task_id)
+                'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
             }
         
         # 記錄成功獲取的文章內容數量
@@ -847,7 +847,7 @@ class BaseCrawler(ABC):
             'success': True,
             'message': '任務完成',
             'articles_count': len(self.articles_df) if hasattr(self, 'articles_df') and not self.articles_df.empty else 0,
-            'scrape_phase': self.get_scrape_phase(task_id)
+            'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
         }
 
     def _fetch_article_list(self, task_id: int, max_retries: int = 3, retry_delay: float = 2.0) -> Optional[pd.DataFrame]:
@@ -1100,7 +1100,7 @@ class BaseCrawler(ABC):
             'success': False,
             'message': '任務已取消' + ('並保存部分數據' if partial_data_saved else ''),
             'articles_count': 0,
-            'scrape_phase': self.get_scrape_phase(task_id),
+            'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase'),
             'partial_data_saved': partial_data_saved
         }
 

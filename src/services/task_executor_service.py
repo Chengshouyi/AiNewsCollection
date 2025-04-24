@@ -16,7 +16,7 @@ from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.database.base_repository import SchemaType
 from src.utils.enum_utils import TaskStatus
 from src.models.crawler_tasks_schema import CrawlerTaskReadSchema
-from src.web.socket_instance import socketio
+from src.web.socket_instance import socketio, generate_session_id
 from src.services.service_container import get_crawlers_service, get_article_service
 
 
@@ -41,6 +41,7 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
         self.running_crawlers = {}  # 執行中的爬蟲實例 {task_id: crawler}
         self.task_lock = threading.Lock()  # 用於同步訪問 running_tasks
         self.task_execution_status = {}  # 任務執行狀態 {task_id: {'task_status': TaskStatus, 'scrape_phase': ScrapePhase}}
+        self.task_session_ids = {}  # 任務對應的會話ID {task_id: session_id}
         
     def _get_repository_mapping(self) -> Dict[str, Tuple[Type[BaseRepository], Type[Base]]]:
         """提供儲存庫映射"""
@@ -69,6 +70,16 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                     'success': False,
                     'message': '任務已在執行中'
                 }
+
+        # 為該任務生成唯一的會話ID
+        session_id = generate_session_id()
+        # 儲存任務與會話的對應關係
+        with self.task_lock:
+            self.task_session_ids[task_id] = session_id
+
+        # 記錄房間ID (同時包含任務ID和會話ID)
+        room_name = f'task_{task_id}_{session_id}'
+        logger.info(f"為任務 {task_id} 創建唯一會話房間: {room_name}")
 
         history_id = None # 初始化 history_id
         task_orm_for_sync = None # 初始化用於同步執行的 ORM 對象
@@ -187,6 +198,8 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
             task_id: 任務ID
             future: Future對象
         """
+        # 獲取會話ID
+        session_id = None
         with self.task_lock:
             if task_id in self.running_tasks:
                 logger.info(f"清除執行中的任務 {task_id}")
@@ -195,21 +208,31 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
             if task_id in self.running_crawlers:
                 logger.info(f"清除爬蟲實例 {task_id}")
                 del self.running_crawlers[task_id]
+            # 獲取會話ID
+            if task_id in self.task_session_ids:
+                session_id = self.task_session_ids[task_id]
+
+        # 構建房間名稱
+        room_name = f'task_{task_id}_{session_id}' if session_id else f'task_{task_id}'
 
         # 檢查是否有異常
         if future.exception():
             error_info = future.exception()
             error_msg = f"任務 {task_id} 執行失敗: {error_info}"
-            room_name = f'task_{task_id}'
             fail_data = {
                 'task_id': task_id,
                 'progress': 100,
                 'status': TaskStatus.FAILED.value,
                 'scrape_phase': ScrapePhase.FAILED.value,
-                'message': error_msg
+                'message': error_msg,
+                'session_id': session_id  # 添加會話ID便於客戶端識別
             }
             socketio.emit('task_progress', fail_data, namespace='/tasks', to=room_name)
-            socketio.emit('task_finished', {'task_id': task_id, 'status': TaskStatus.FAILED.value}, namespace='/tasks', to=room_name)
+            socketio.emit('task_finished', {
+                'task_id': task_id, 
+                'status': TaskStatus.FAILED.value,
+                'session_id': session_id
+            }, namespace='/tasks', to=room_name)
             logger.info(f"異步任務回調: 已發送 WebSocket 事件: task_progress (失敗) 和 task_finished 至 room {room_name}")
 
     def _execute_task_internal(self, task_id: int, history_id: Optional[int], **kwargs) -> Dict[str, Any]:
@@ -227,7 +250,7 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
         task: Optional[CrawlerTasks] = None # 初始化 task
 
         try:
-            # 在工作線程的事務中重新獲取任務和爬蟲信息
+            # 在工作緒的事務中重新獲取任務和爬蟲信息
             with self._transaction() as session:
                 tasks_repo = cast(CrawlerTasksRepository, self._get_repository('CrawlerTask', session))
                 history_repo = cast(CrawlerTaskHistoryRepository, self._get_repository('TaskHistory', session))
@@ -354,14 +377,23 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
 
             result['task_status'] = task_status_enum.value
 
+            # 獲取會話ID
+            session_id = None
+            with self.task_lock:
+                if task_id in self.task_session_ids:
+                    session_id = self.task_session_ids[task_id]
+            
+            # 構建房間名稱
+            room_name = f'task_{task_id}_{session_id}' if session_id else f'task_{task_id}'
+
             # 在 _execute_task_internal 方法中，任務開始時
-            room_name = f'task_{task_id}'
             start_data = {
                 'task_id': task_id,
                 'progress': 5,  # 進度 5% 表示開始
                 'status': TaskStatus.RUNNING.value,
                 'scrape_phase': ScrapePhase.INIT.value,
-                'message': f'任務 {task_id} 開始執行 (爬蟲: {crawler_name})'
+                'message': f'任務 {task_id} 開始執行 (爬蟲: {crawler_name})',
+                'session_id': session_id  # 添加會話ID便於客戶端識別
             }
             socketio.emit('task_progress', start_data, namespace='/tasks', to=room_name)
             logger.info(f"已發送 WebSocket 事件: task_progress (開始) 至 room {room_name}")
@@ -373,10 +405,15 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 'status': task_status_enum.value,
                 'scrape_phase': scrape_phase_enum.value,
                 'message': message,
-                'articles_count': articles_count # 添加文章數量
+                'articles_count': articles_count, # 添加文章數量
+                'session_id': session_id  # 添加會話ID便於客戶端識別
             }
             socketio.emit('task_progress', final_data, namespace='/tasks', to=room_name)
-            socketio.emit('task_finished', {'task_id': task_id, 'status': task_status_enum.value}, namespace='/tasks', to=room_name)
+            socketio.emit('task_finished', {
+                'task_id': task_id, 
+                'status': task_status_enum.value,
+                'session_id': session_id
+            }, namespace='/tasks', to=room_name)
             logger.info(f"已發送 WebSocket 事件: task_progress (完成/失敗) 和 task_finished 至 room {room_name}")
 
             return result
@@ -437,9 +474,13 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 'scrape_phase': ScrapePhase.FAILED.value,
                 'message': error_msg
             }
-            room_name = f'task_{task_id}'
+            room_name = f'task_{task_id}_{session_id}' if session_id else f'task_{task_id}'
             socketio.emit('task_progress', error_data, namespace='/tasks', to=room_name)
-            socketio.emit('task_finished', {'task_id': task_id, 'status': TaskStatus.FAILED.value}, namespace='/tasks', to=room_name)
+            socketio.emit('task_finished', {
+                'task_id': task_id, 
+                'status': TaskStatus.FAILED.value,
+                'session_id': session_id
+            }, namespace='/tasks', to=room_name)
             logger.info(f"異常處理: 已發送 WebSocket 事件: task_progress (失敗) 和 task_finished 至 room {room_name}")
 
             return {
@@ -582,19 +623,37 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
                 if task_id in self.running_crawlers:
                     del self.running_crawlers[task_id]
             
+            # 獲取會話ID
+            session_id = None
+            with self.task_lock:
+                if task_id in self.task_session_ids:
+                    session_id = self.task_session_ids[task_id]
+
+            # 構建房間名稱
+            room_name = f'task_{task_id}_{session_id}' if session_id else f'task_{task_id}'
+
             # 在 cancel_task 方法中，如果取消成功，發送取消事件
             if cancelled:
-                room_name = f'task_{task_id}'
                 cancel_data = {
                     'task_id': task_id,
                     'progress': 100, # 取消也視為結束
                     'status': TaskStatus.CANCELLED.value,
                     'scrape_phase': ScrapePhase.CANCELLED.value,
-                    'message': '任務已被使用者取消'
+                    'message': '任務已被使用者取消',
+                    'session_id': session_id  # 添加會話ID便於客戶端識別
                 }
                 socketio.emit('task_progress', cancel_data, namespace='/tasks', to=room_name)
-                socketio.emit('task_finished', {'task_id': task_id, 'status': TaskStatus.CANCELLED.value}, namespace='/tasks', to=room_name)
+                socketio.emit('task_finished', {
+                    'task_id': task_id, 
+                    'status': TaskStatus.CANCELLED.value,
+                    'session_id': session_id
+                }, namespace='/tasks', to=room_name)
                 logger.info(f"任務取消: 已發送 WebSocket 事件: task_progress (取消) 和 task_finished 至 room {room_name}")
+
+            # 清理會話ID
+            with self.task_lock:
+                if task_id in self.task_session_ids:
+                    del self.task_session_ids[task_id]
 
             return {
                 'success': success,
@@ -851,15 +910,33 @@ class TaskExecutorService(BaseService[CrawlerTasks]):
             # 執行測試，明確將返回值轉換為字典
             test_result = crawler.execute_task(0, test_params) # task_id 設為 0 表示測試
             
-            # 確保返回字典
-            if test_result is None:
-                test_result = {}
-            
-            return {
+            # 扁平化返回結構
+            response = {
                 'success': test_result.get('success', False),
                 'message': test_result.get('message', '爬蟲測試完成'),
-                'result': test_result
             }
+            
+            # 提取及扁平化關鍵信息
+            if 'scrape_phase' in test_result:
+                if isinstance(test_result['scrape_phase'], dict):
+                    # 如果是字典，提取關鍵字段到頂層
+                    response['progress'] = test_result['scrape_phase'].get('progress', 0)
+                    response['scrape_phase'] = test_result['scrape_phase'].get('scrape_phase', ScrapePhase.UNKNOWN.value)
+                    response['phase_message'] = test_result['scrape_phase'].get('message', '')
+                else:
+                    # 如果是字符串或其他值，直接使用
+                    response['scrape_phase'] = test_result['scrape_phase']
+            
+            # 添加其他關鍵信息
+            if 'articles_count' in test_result:
+                response['links_count'] = test_result['articles_count']
+            elif 'links' in test_result:
+                response['links_count'] = len(test_result['links'])
+            
+            # 將完整結果作為子對象
+            response['result'] = test_result
+            
+            return response
         except Exception as e:
             error_msg = f"測試爬蟲 {crawler_name} 時發生錯誤: {str(e)}"
             logger.exception(error_msg)

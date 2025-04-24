@@ -69,6 +69,15 @@ class BnextCrawler(BaseCrawler):
         ai_only = self.global_params.get("ai_only", True)
         min_keywords = self.global_params.get("min_keywords", 3)
         
+        # 處理測試單一類別的情況
+        is_test = self.global_params.get("is_test", False)
+        if is_test and categories and len(categories) > 0:
+            # 只使用第一個類別進行測試
+            categories = categories[:1]
+            # 更新site_config中的類別
+            self.site_config.categories = categories
+            logger.info(f"測試模式：只使用第一個類別 {categories[0]} 進行測試")
+        
         logger.debug(f"抓取文章列表參數設定：最大頁數: {max_pages}, 文章類別: {categories}, AI 相關文章: {ai_only}")
         logger.debug(f"抓取文章列表中...")
         article_links_df = self.retry_operation(

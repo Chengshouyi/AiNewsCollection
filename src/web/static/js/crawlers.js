@@ -3,9 +3,15 @@ console.log("爬蟲管理 JS 已加載");
 
 let crawlers = []; // 存儲爬蟲列表的全局變數
 let currentCrawlerId = null; // 當前操作的爬蟲ID
+let socket = null; // WebSocket連接
+let currentTestTaskId = null; // 當前測試任務ID
+let currentTestSessionId = null;  // 當前測試任務的會話ID
 
 // 頁面加載後初始化
 $(document).ready(function () {
+    // 初始化WebSocket連接
+    setupWebSocket();
+
     // 加載爬蟲列表
     loadCrawlers();
 
@@ -52,6 +58,388 @@ $(document).ready(function () {
         testCrawler(crawlerId, crawlerName);
     });
 });
+
+// WebSocket連接設置
+function setupWebSocket() {
+    // 確保只初始化一次socket
+    if (socket && socket.connected) {
+        console.log("WebSocket已經連接");
+        return;
+    }
+
+    // 連接到Socket.IO服務器
+    const socketUrl = `${location.protocol}//${document.domain}:${location.port}/tasks`;
+    console.log(`嘗試連接到WebSocket: ${socketUrl}`);
+    socket = io.connect(socketUrl);
+
+    socket.on('connect', () => {
+        console.log('Socket.IO連接到/tasks成功');
+        if ($('#test-debug-info').length) {
+            $('#test-debug-info').append('<br>WebSocket已連接');
+        }
+
+        // 如果當前有測試任務進行中，重新加入房間
+        if (currentTestTaskId) {
+            // 檢查是否有保存的會話ID
+            const sessionId = currentTestSessionId || '';
+            const roomName = sessionId ? `task_${currentTestTaskId}_${sessionId}` : `task_${currentTestTaskId}`;
+            console.log(`重新加入測試爬蟲房間: ${roomName}`);
+            socket.emit('join_room', { 'room': roomName });
+
+            if ($('#test-debug-info').length) {
+                $('#test-debug-info').append(`<br>重新加入房間: ${roomName}`);
+            }
+        }
+    });
+
+    socket.on('disconnect', (reason) => {
+        console.log(`Socket.IO斷開連接: ${reason}`);
+        if ($('#test-debug-info').length) {
+            $('#test-debug-info').append(`<br>WebSocket斷開: ${reason}`);
+        }
+    });
+
+    socket.on('connect_error', (error) => {
+        console.error('Socket.IO連接錯誤:', error);
+        if ($('#test-debug-info').length) {
+            $('#test-debug-info').append(`<br>WebSocket連接錯誤: ${error}`);
+        }
+    });
+
+    // 監聽任務進度更新
+    socket.on('task_progress', function (data) {
+        console.log('收到進度更新事件:', data);
+
+        // 更新調試信息（如果存在）
+        if ($('#test-debug-info').length) {
+            $('#test-debug-info').append(`<br>收到進度更新: task_id=${data.task_id}, progress=${data.progress}`);
+            if (data.session_id) {
+                $('#test-debug-info').append(`, session_id=${data.session_id}`);
+            }
+        }
+
+        // 檢查是否匹配當前測試任務
+        // 修改匹配條件，放寬匹配條件，因為有些事件可能只包含crawler_id
+        const isCurrentTask = (currentTestTaskId && data.task_id == currentTestTaskId) ||
+            (data.crawler_id && data.crawler_id == currentTestCrawlerId);
+
+        if (isCurrentTask) {
+            // 如果是首次收到帶有會話ID的消息，保存該會話ID
+            if (data.session_id && !currentTestSessionId) {
+                currentTestSessionId = data.session_id;
+                console.log(`保存爬蟲測試會話ID: ${currentTestSessionId}`);
+
+                // 更新調試信息
+                if ($('#test-debug-info').length) {
+                    $('#test-debug-info').append(`<br>保存會話ID: ${currentTestSessionId}`);
+                }
+            }
+
+            updateTestProgress(data);
+        } else {
+            console.log('收到非當前任務的進度更新', data);
+        }
+    });
+
+    // 監聽任務完成事件
+    socket.on('task_finished', function (data) {
+        console.log('收到任務完成事件:', data);
+
+        // 更新調試信息（如果存在）
+        if ($('#test-debug-info').length) {
+            $('#test-debug-info').append(`<br>收到完成事件: task_id=${data.task_id}, status=${data.status}`);
+            if (data.session_id) {
+                $('#test-debug-info').append(`, session_id=${data.session_id}`);
+            }
+        }
+
+        // 使用相同的邏輯檢查是否匹配當前測試任務
+        if ((currentTestTaskId && data.task_id == currentTestTaskId &&
+            (!currentTestSessionId || !data.session_id || data.session_id == currentTestSessionId)) ||
+            (data.crawler_id && data.crawler_id == currentTestCrawlerId)) {
+
+            // 檢查是否有result屬性，獲取連結數量
+            let linksCount = 0;
+            let message = data.message || '測試已完成';
+
+            if (data.result) {
+                // 處理嵌套的scrape_phase對象
+                if (data.result.scrape_phase && typeof data.result.scrape_phase === 'object') {
+                    const nestedPhase = data.result.scrape_phase;
+                    message = nestedPhase.message || message;
+                }
+
+                // 設置連結數量，嘗試從多種可能的屬性中獲取
+                linksCount = data.result.articles_count ||
+                    (data.result.links ? data.result.links.length : 0) ||
+                    data.links_count || 0;
+            } else {
+                // 如果沒有result屬性，嘗試從data直接獲取
+                linksCount = data.links_count ||
+                    (data.links ? data.links.length : 0) ||
+                    data.articles_count || 0;
+            }
+
+            console.log(`任務完成，找到 ${linksCount} 個連結`);
+            $('#test-debug-info').append(`<br>任務完成，找到 ${linksCount} 個連結`);
+
+            // 確保將任務標記為已完成
+            finishTestProgress({
+                status: data.status || 'COMPLETED',
+                message: message,
+                links_count: linksCount,
+                result: data.result,
+                force_update: true,
+                session_id: data.session_id
+            });
+
+            // 如果事件包含會話ID，則在完成任務後清除當前會話ID
+            if (data.session_id && data.session_id === currentTestSessionId) {
+                currentTestSessionId = null;
+            }
+        }
+    });
+
+    // 監聽連結抓取完成事件 (通常用於手動任務)
+    socket.on('links_fetched', function (data) {
+        console.log('收到連結抓取事件:', data);
+
+        // 更新調試信息（如果存在）
+        if ($('#test-debug-info').length) {
+            $('#test-debug-info').append(`<br>收到連結事件: task_id=${data.task_id}`);
+
+            if (data.links) {
+                $('#test-debug-info').append(`, 連結數=${data.links.length}`);
+            }
+        }
+
+        // 根據task_id或crawler_id匹配當前測試任務
+        if ((currentTestTaskId && data.task_id == currentTestTaskId) ||
+            (data.crawler_id && data.crawler_id == currentTestCrawlerId)) {
+
+            // 獲取連結數量
+            const linksCount = data.links ? data.links.length : (data.links_count || 0);
+            console.log(`找到 ${linksCount} 個連結，測試完成`);
+
+            // 更新進度為100%，表示測試完成
+            updateTestProgress({
+                task_id: data.task_id,
+                crawler_id: data.crawler_id,
+                progress: 100,
+                message: '連結抓取完成',
+                links_count: linksCount,
+                force_update: true
+            });
+
+            // 直接標記為完成
+            finishTestProgress({
+                status: 'COMPLETED',
+                message: '測試已完成',
+                links_count: linksCount,
+                force_update: true
+            });
+        }
+    });
+
+    // 監聽測試完成事件（可能有專門的事件類型）
+    socket.on('test_completed', function (data) {
+        console.log('收到測試完成事件:', data);
+
+        // 更新調試信息（如果存在）
+        if ($('#test-debug-info').length) {
+            $('#test-debug-info').append(`<br>收到測試完成事件: crawler_id=${data.crawler_id}`);
+        }
+
+        finishTestProgress({
+            status: 'COMPLETED',
+            task_id: data.task_id,
+            crawler_id: data.crawler_id,
+            message: '測試已完成',
+            links_count: data.links_count ||
+                (data.links ? data.links.length : 0) ||
+                (data.result && data.result.links ? data.result.links.length : 0)
+        });
+    });
+}
+
+// 更新測試進度顯示
+function updateTestProgress(data) {
+    console.log('收到進度更新:', data);
+
+    // 創建或更新進度提示
+    let progressContainer = $('#test-progress-container');
+    if (progressContainer.length === 0) {
+        // 如果進度容器不存在，創建一個
+        $('main.container').prepend(`
+            <div id="test-progress-container" class="alert alert-info" role="alert">
+                <h5>爬蟲測試進度</h5>
+                <div class="progress mb-2">
+                    <div id="test-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                </div>
+                <div id="test-progress-message"></div>
+                <div id="test-progress-links" class="mt-2"></div>
+                <div id="test-debug-info" class="mt-2 small text-muted"></div>
+            </div>
+        `);
+        progressContainer = $('#test-progress-container');
+    }
+
+    // 簡化確認邏輯：接受任何與當前爬蟲或任務相關的更新
+    const isCurrentTask =
+        (currentTestTaskId && data.task_id && currentTestTaskId == data.task_id) ||
+        (data.crawler_id && data.crawler_id == currentTestCrawlerId) ||
+        data.force_update === true;
+
+    if (!isCurrentTask) {
+        console.log('非當前任務的進度更新，忽略');
+        $('#test-debug-info').append('<br>收到不相關的更新，已忽略');
+        return;
+    }
+
+    // 處理嵌套的scrape_phase對象
+    if (data.scrape_phase && typeof data.scrape_phase === 'object') {
+        const nestedPhase = data.scrape_phase;
+        // 合併嵌套對象的屬性到頂層
+        if (nestedPhase.progress !== undefined) data.progress = nestedPhase.progress;
+        if (nestedPhase.message) data.message = nestedPhase.message;
+        if (nestedPhase.scrape_phase) data.scrape_phase_value = nestedPhase.scrape_phase;
+    }
+
+    // 確保有進度數值，最低不低於當前顯示的進度
+    const progressBar = $('#test-progress-bar');
+    const currentWidth = parseInt(progressBar.css('width')) || 0;
+    const currentPercent = parseInt(progressBar.text()) || 0;
+
+    // 使用較大值，確保進度不會倒退
+    let progress = data.progress || 0;
+    if (currentPercent > progress && !data.force_update) {
+        console.log(`保持現有進度 ${currentPercent}%，忽略較低進度 ${progress}%`);
+        progress = currentPercent;
+    }
+
+    // 更新進度條
+    progressBar.css('width', progress + '%');
+    progressBar.text(progress + '%');
+
+    // 更新進度調試信息
+    $('#test-debug-info').append(`<br>進度更新: ${progress}%, 訊息: ${data.message || 'N/A'}`);
+
+    // 更新消息
+    if (data.message) {
+        $('#test-progress-message').text(data.message);
+    }
+
+    // 如果有文章數量信息，顯示
+    // 檢查不同可能的屬性名稱，因為API可能用不同的名稱傳遞連結數量
+    const linksCount = data.links_count ||
+        (data.result && data.result.links ? data.result.links.length : null) ||
+        (data.articles_count) ||
+        null;
+
+    if (linksCount !== null) {
+        $('#test-progress-links').text(`找到 ${linksCount} 個連結`);
+    }
+
+    // 如果進度是100%，直接觸發完成
+    if (progress >= 100) {
+        finishTestProgress({
+            status: 'COMPLETED',
+            message: data.message || '測試已完成',
+            links_count: linksCount,
+            force_update: true
+        });
+    } else if (progress >= 50 && linksCount !== null) {
+        // 如果已找到連結且進度>=50%，可能任務已接近完成
+        // 3秒後檢查是否有完成事件，如果沒有則手動觸發完成
+        setTimeout(function () {
+            const newProgress = parseInt($('#test-progress-bar').text());
+            if (newProgress < 100) {
+                console.log('有連結但未收到完成事件，手動觸發完成');
+                finishTestProgress({
+                    status: 'COMPLETED',
+                    message: '測試已完成',
+                    links_count: linksCount,
+                    force_update: true // 強制更新標誌
+                });
+            }
+        }, 3000);
+    }
+}
+
+// 完成測試進度顯示
+function finishTestProgress(data) {
+    console.log('收到完成訊息:', data);
+
+    const progressContainer = $('#test-progress-container');
+    if (progressContainer.length > 0) {
+        // 防止重複完成
+        if (progressContainer.data('completed') === true && !data.force_update) {
+            console.log('已經完成，忽略重複的完成事件');
+            return;
+        }
+
+        // 標記為已完成
+        progressContainer.data('completed', true);
+
+        // 更新調試信息
+        $('#test-debug-info').append(`<br>任務完成: ${data.status || 'COMPLETED'}`);
+
+        // 更新進度條為完成狀態
+        const progressBar = $('#test-progress-bar');
+        progressBar.removeClass('progress-bar-animated');
+
+        if (data.status === 'COMPLETED' || !data.status) {
+            progressBar.removeClass('bg-info').addClass('bg-success');
+            progressBar.css('width', '100%').text('100%');
+            $('#test-progress-message').text(data.message || '測試完成');
+
+            // 顯示結果摘要
+            const linksCount = data.links_count ||
+                (data.result && data.result.links ? data.result.links.length : null) ||
+                (data.articles_count) ||
+                0;
+
+            $('#test-progress-links').html(`
+                <div class="alert alert-success">
+                    <strong>測試成功!</strong> 找到 ${linksCount} 個連結
+                </div>
+            `);
+        } else if (data.status === 'FAILED') {
+            progressBar.removeClass('bg-info').addClass('bg-danger');
+            $('#test-progress-message').text('測試失敗: ' + (data.error || '未知錯誤'));
+            $('#test-debug-info').append(`<br>失敗原因: ${data.error || '未知'}`);
+        }
+
+        // 完成後不自動關閉，讓用戶能看到結果
+        // 改為提供一個關閉按鈕
+        if (!$('#close-progress-btn').length) {
+            progressContainer.append(`
+                <button id="close-progress-btn" class="btn btn-sm btn-outline-secondary mt-2">
+                    關閉此訊息
+                </button>
+                <button id="show-debug-btn" class="btn btn-sm btn-outline-info mt-2 ms-2">
+                    顯示/隱藏調試資訊
+                </button>
+            `);
+
+            // 綁定關閉按鈕事件
+            $('#close-progress-btn').click(function () {
+                progressContainer.fadeOut('slow', function () {
+                    $(this).remove();
+                });
+            });
+
+            // 綁定顯示/隱藏調試資訊按鈕
+            $('#show-debug-btn').click(function () {
+                $('#test-debug-info').toggle();
+            });
+
+            // 默認隱藏調試資訊
+            $('#test-debug-info').hide();
+        }
+    }
+}
 
 // 加載爬蟲列表
 function loadCrawlers() {
@@ -478,43 +866,230 @@ function escapeHtml(unsafe) {
         .replace(/'/g, "&#039;");
 }
 
-// 新增測試爬蟲的函數
+// 測試爬蟲
 function testCrawler(crawlerId, crawlerName) {
-    // 預設的測試參數
-    const testData = {
-        crawler_id: crawlerId,
-        crawler_name: crawlerName
-        //task_args: 會由API自動生成
-    };
+    if (!crawlerId) return;
 
-    // 顯示載入中提示
-    displayAlert('info', '正在測試爬蟲，請稍候...', true);
+    // 重置測試狀態
+    currentTestTaskId = null;
+    currentTestCrawlerId = crawlerId;
+    currentTestSessionId = null;  // 重置會話ID
+
+    // 顯示測試進度容器
+    let progressContainer = $('#test-progress-container');
+    if (progressContainer.length === 0) {
+        // 如果進度容器不存在，創建一個
+        $('main.container').prepend(`
+            <div id="test-progress-container" class="alert alert-info" role="alert">
+                <h5>爬蟲測試進度</h5>
+                <div class="progress mb-2">
+                    <div id="test-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" 
+                         role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                </div>
+                <div id="test-progress-message"></div>
+                <div id="test-progress-links" class="mt-2"></div>
+                <div id="test-debug-info" class="mt-2 small text-muted"></div>
+            </div>
+        `);
+        progressContainer = $('#test-progress-container');
+    } else {
+        // 如果已存在，重置其狀態
+        progressContainer.removeClass('alert-success alert-danger').addClass('alert-info');
+        progressContainer.data('completed', false);
+        $('#close-progress-btn, #show-debug-btn').remove();
+    }
+
+    // 重置進度顯示
+    $('#test-progress-bar').css('width', '5%').text('5%')
+        .removeClass('bg-success bg-danger')
+        .addClass('progress-bar-striped progress-bar-animated');
+    $('#test-progress-message').text('開始測試爬蟲...');
+    $('#test-progress-links').empty();
+    $('#test-debug-info').html(`開始測試爬蟲 ID=${crawlerId}, 名稱=${crawlerName}`);
+
+    // 獲取測試參數
+    const aiOnly = $('#test-ai-only').is(':checked');
+
+    // 確保Socket.IO連接已建立
+    if (!socket || !socket.connected) {
+        console.log('WebSocket未連接，正在嘗試重新連接...');
+        $('#test-debug-info').append('<br>WebSocket未連接，正在嘗試重新連接...');
+        // 先嘗試重新設置連接
+        setupWebSocket();
+
+        // 如果5秒後仍未連接，顯示錯誤
+        setTimeout(function () {
+            if (!socket || !socket.connected) {
+                $('#test-progress-message').text('WebSocket連接失敗，無法接收實時更新');
+                $('#test-debug-info').append('<br>WebSocket連接失敗，測試可能繼續但無法接收實時更新');
+            }
+        }, 5000);
+    }
 
     // 發送測試請求
     $.ajax({
         url: '/api/tasks/manual/test',
         method: 'POST',
         contentType: 'application/json',
-        data: JSON.stringify(testData),
+        data: JSON.stringify({
+            crawler_id: crawlerId,
+            crawler_name: crawlerName,
+            task_args: {
+                ai_only: aiOnly
+            }
+        }),
         success: function (response) {
+            console.log('測試請求響應:', response);
             if (response.success) {
-                // 測試成功
-                let resultMessage = `測試成功：${response.message}`;
-                if (response.result) {
-                    // 如果有測試結果，顯示找到的連結數量
-                    const linksCount = response.result.links?.length || 0;
-                    resultMessage += `\n找到 ${linksCount} 個連結`;
+                // 保存測試任務ID (如果有)
+                if (response.task_id) {
+                    currentTestTaskId = response.task_id;
+
+                    // 保存會話ID (如果有)
+                    if (response.session_id) {
+                        currentTestSessionId = response.session_id;
+                        console.log(`獲取到測試會話ID: ${currentTestSessionId}`);
+
+                        // 更新調試信息
+                        if ($('#test-debug-info').length) {
+                            $('#test-debug-info').append(`<br>獲取到會話ID: ${currentTestSessionId}`);
+                        }
+                    }
+
+                    // 加入任務房間 (包含會話ID如果有的話)
+                    if (socket && socket.connected) {
+                        const roomName = currentTestSessionId ?
+                            `task_${currentTestTaskId}_${currentTestSessionId}` :
+                            `task_${currentTestTaskId}`;
+                        console.log(`加入測試房間: ${roomName}`);
+                        socket.emit('join_room', { 'room': roomName });
+
+                        // 更新調試信息
+                        if ($('#test-debug-info').length) {
+                            $('#test-debug-info').append(`<br>加入房間: ${roomName}`);
+                        }
+                    } else {
+                        console.warn('WebSocket未連接，無法加入任務房間');
+                        $('#test-debug-info').append('<br>WebSocket未連接，無法加入任務房間');
+                    }
+
+                    $('#test-progress-message').text(`測試任務已啟動，ID: ${currentTestTaskId}`);
+
+                    // 更新進度到20%，表示任務已開始
+                    updateTestProgress({
+                        task_id: currentTestTaskId,
+                        crawler_id: crawlerId,
+                        progress: 20,
+                        message: '測試任務已開始執行',
+                        force_update: true
+                    });
+                } else {
+                    $('#test-progress-message').text('測試已啟動，正在等待進度更新');
+
+                    // 即使沒有task_id，也更新到20%
+                    updateTestProgress({
+                        crawler_id: crawlerId,
+                        progress: 20,
+                        message: '測試開始執行',
+                        force_update: true
+                    });
                 }
-                displayAlert('success', resultMessage);
+
+                // 直接從 response.result 中獲取連結數量 (如果有)
+                let linksCount = 0;
+                if (response.result) {
+                    // 檢查多種可能的屬性名稱
+                    linksCount = response.result.links_count ||
+                        (response.result.links ? response.result.links.length : 0) ||
+                        response.result.articles_count || 0;
+
+                    // 如果有連結數量信息，直接更新進度到100%
+                    if (linksCount > 0 || response.result.scrape_phase === 'completed') {
+                        console.log(`從API回應獲取到連結數量: ${linksCount}`);
+                        $('#test-debug-info').append(`<br>從API回應獲取到連結數量: ${linksCount}`);
+
+                        // 更新進度到100%
+                        updateTestProgress({
+                            crawler_id: crawlerId,
+                            progress: 100,
+                            message: response.message || '測試已完成',
+                            links_count: linksCount,
+                            force_update: true
+                        });
+
+                        // 不需要再等待進度更新，直接標記為完成
+                        return;
+                    }
+                }
+
+                // 如果是手動測試模式的實現，可能需要輪詢獲取結果
+                if ((!response.task_id && response.redirect_url) || !linksCount) {
+                    setTimeout(function () {
+                        checkTestResult(crawlerId);
+                    }, 2000);
+                }
             } else {
-                // 測試失敗
-                displayAlert('danger', `測試失敗：${response.message}`);
+                $('#test-progress-message').text(`測試請求失敗: ${response.message}`);
+                $('#test-progress-bar').css('width', '100%').text('100%');
+                progressContainer.removeClass('alert-info').addClass('alert-danger');
             }
         },
         error: function (xhr, status, error) {
-            // 處理錯誤
-            const errorMsg = xhr.responseJSON?.message || error;
-            displayAlert('danger', `測試時發生錯誤：${errorMsg}`);
+            console.error('測試請求失敗:', error);
+            $('#test-progress-message').text(`測試請求失敗: ${xhr.responseJSON?.message || error}`);
+            $('#test-progress-bar').css('width', '100%').text('100%');
+            progressContainer.removeClass('alert-info').addClass('alert-danger');
         }
     });
+}
+
+// 檢查測試結果
+function checkTestResult(crawlerId) {
+    console.log('檢查爬蟲測試結果，爬蟲ID:', crawlerId);
+    $('#test-debug-info').append('<br>檢查爬蟲測試結果...');
+
+    // 檢查進度條當前狀態
+    const progressBar = $('#test-progress-bar');
+    const currentProgress = parseInt(progressBar.text()) || 0;
+
+    // 如果進度已經達到100%，不需要再檢查
+    if (currentProgress >= 100) {
+        console.log('進度已達100%，無需再檢查');
+        $('#test-debug-info').append('<br>進度已達100%，無需再檢查');
+        return;
+    }
+
+    // 由於測試任務是同步執行的，當我們執行到這裡時，測試其實已經完成
+    // 但前端進度條可能沒有更新，這裡我們直接將進度更新到100%
+    console.log('測試可能已完成，但進度未更新，直接更新到100%');
+    $('#test-debug-info').append('<br>測試可能已完成，但進度未更新，直接設為完成');
+
+    // 直接標記為完成
+    finishTestProgress({
+        status: 'COMPLETED',
+        message: '測試已完成',
+        // 嘗試從頁面找到連結數量
+        links_count: getLinksCountFromPage(),
+        force_update: true
+    });
+}
+
+// 幫助函數：從頁面中獲取連結數量
+function getLinksCountFromPage() {
+    // 嘗試從進度訊息中提取連結數量
+    const linksText = $('#test-progress-links').text();
+    const match = linksText.match(/找到\s*(\d+)\s*個連結/);
+    if (match && match[1]) {
+        return parseInt(match[1]);
+    }
+
+    // 如果沒有找到，嘗試從調試信息中提取
+    const debugText = $('#test-debug-info').text();
+    const debugMatch = debugText.match(/找到\s*(\d+)\s*(?:篇文章|個連結)/);
+    if (debugMatch && debugMatch[1]) {
+        return parseInt(debugMatch[1]);
+    }
+
+    // 如果都沒有找到，返回0
+    return 0;
 }

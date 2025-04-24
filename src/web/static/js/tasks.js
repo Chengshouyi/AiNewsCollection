@@ -136,14 +136,34 @@ function setupWebSocket() {
 
     socket.on('task_progress', function (data) {
         console.log('Progress update:', data);
-        updateTaskUI(data.task_id, data.progress, data.status, data.scrape_phase, data.message, data.articles_count);
+        // 獲取任務ID和會話ID（如果有）
+        const taskId = data.task_id;
+        const sessionId = data.session_id;
+
+        // 更新UI，傳入會話ID以便在需要時使用
+        updateTaskUI(taskId, data.progress, data.status, data.scrape_phase, data.message, data.articles_count, sessionId);
     });
 
     socket.on('task_finished', function (data) {
         console.log('Task finished:', data);
-        markTaskAsFinished(data.task_id, data.status);
-        // 可以選擇性地從房間離開，但通常保持連接以接收後續更新（如果有的話）
-        // socket.emit('leave_room', {'room': `task_${data.task_id}`});
+        const taskId = data.task_id;
+        const sessionId = data.session_id;
+
+        // 標記任務完成，傳入會話ID以便在需要時使用
+        markTaskAsFinished(taskId, data.status, sessionId);
+
+        // 可以選擇性地從房間離開
+        // 如果有會話ID，應該包含在房間名稱中
+        if (sessionId) {
+            const roomName = `task_${taskId}_${sessionId}`;
+            socket.emit('leave_room', { 'room': roomName });
+            console.log(`離開房間: ${roomName}`);
+        } else {
+            // 向下兼容：如果沒有會話ID，使用舊的命名方式
+            const roomName = `task_${taskId}`;
+            socket.emit('leave_room', { 'room': roomName });
+            console.log(`離開房間: ${roomName}`);
+        }
     });
 
     socket.on('links_fetched', function (data) {
@@ -160,11 +180,33 @@ function joinVisibleTaskRooms() {
     const taskIds = getAllVisibleTaskIds();
     taskIds.forEach(taskId => {
         if (taskId) { // 確保 taskId 有效
+            // 使用舊的命名方式，因為頁面上僅標示了taskId
+            // 這裡不能使用session_id，因為頁面加載時不知道任務可能的會話ID
             const roomName = `task_${taskId}`;
             console.log(`加入房間: ${roomName}`);
             socket.emit('join_room', { 'room': roomName });
         }
     });
+}
+
+// 新增：加入特定會話的房間
+function joinTaskSessionRoom(taskId, sessionId) {
+    if (!socket || !socket.connected) {
+        console.error('WebSocket未連接，無法加入房間');
+        return;
+    }
+
+    // 如果提供了會話ID，使用新的命名方式
+    if (sessionId) {
+        const roomName = `task_${taskId}_${sessionId}`;
+        console.log(`加入特定會話房間: ${roomName}`);
+        socket.emit('join_room', { 'room': roomName });
+    } else {
+        // 向下兼容：如果沒有會話ID，使用舊的命名方式
+        const roomName = `task_${taskId}`;
+        console.log(`加入任務房間: ${roomName}`);
+        socket.emit('join_room', { 'room': roomName });
+    }
 }
 
 // --- 輔助函數 --- 
@@ -182,10 +224,15 @@ function getAllVisibleTaskIds() {
     return ids;
 }
 
-function updateTaskUI(taskId, progress, status, scrapePhase, message, articlesCount) {
+function updateTaskUI(taskId, progress, status, scrapePhase, message, articlesCount, sessionId) {
     // 實現邏輯：找到對應 task_id 的 UI 元素並更新
     const taskRow = $(`.task-row[data-task-id="${taskId}"]`);
     if (taskRow.length) {
+        // 如果提供了會話ID，將其存儲在行元素上，以便後續使用
+        if (sessionId) {
+            taskRow.attr('data-session-id', sessionId);
+        }
+
         // 更新進度條
         const progressBar = taskRow.find('.progress .progress-bar'); // 選擇更精確
         if (progressBar.length) {
@@ -256,14 +303,19 @@ function updateTaskUI(taskId, progress, status, scrapePhase, message, articlesCo
     }
 }
 
-function markTaskAsFinished(taskId, status) {
+function markTaskAsFinished(taskId, status, sessionId) {
     const taskRow = $(`.task-row[data-task-id="${taskId}"]`);
     if (taskRow.length) {
+        // 如果提供了sessionId，存儲在行元素上
+        if (sessionId) {
+            taskRow.attr('data-session-id', sessionId);
+        }
+
         // 例如：改變樣式，禁用按鈕等
         taskRow.removeClass('task-running').addClass('task-finished'); // 移除運行中樣式
         // 確保最終狀態的 UI 被正確設置 (特別是進度條和按鈕)
         const finalProgress = (status === 'COMPLETED' || status === 'FAILED' || status === 'CANCELLED') ? 100 : 0;
-        updateTaskUI(taskId, finalProgress, status, null, null, null); // 使用 null 表示不更新這些字段
+        updateTaskUI(taskId, finalProgress, status, null, null, null, sessionId); // 使用 null 表示不更新這些字段
 
         // 任務完成後禁用取消按鈕，啟用執行按鈕
         taskRow.find('.run-task-btn').prop('disabled', false);
@@ -535,11 +587,23 @@ function runAutoTask(taskId, button) {
             if (response.success) {
                 // API 快速返回 202 Accepted
                 // 後續進度將通過 WebSocket 更新
-                // 確保加入對應的 room (如果 WebSocket 已連接)
+
+                // 檢查是否返回了會話ID
+                const sessionId = response.session_id;
+                const roomName = response.room || `task_${taskId}`;
+
+                // 如果 WebSocket 已連接，加入相應房間
                 if (socket && socket.connected) {
-                    const roomName = `task_${taskId}`;
                     console.log(`啟動後加入房間: ${roomName}`);
                     socket.emit('join_room', { 'room': roomName });
+
+                    // 保存會話ID到按鈕或行元素上，以便後續使用
+                    if (sessionId) {
+                        const taskRow = $(`.task-row[data-task-id="${taskId}"]`);
+                        if (taskRow.length) {
+                            taskRow.attr('data-session-id', sessionId);
+                        }
+                    }
                 }
             } else {
                 button.prop('disabled', false).text('執行');
