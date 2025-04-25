@@ -28,6 +28,7 @@ from src.services.scheduler_service import SchedulerService
 from src.services.task_executor_service import TaskExecutorService
 from src.services.service_container import get_article_service, get_scheduler_service
 from sqlalchemy.orm.attributes import flag_modified
+from sqlalchemy.orm import Session
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
@@ -139,10 +140,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         
         try:
             with self._transaction() as session:
-                # 1. 驗證資料 (必須在事務內)
-
-                
-                # 2. 獲取儲存庫
+     
+                # 獲取儲存庫
                 tasks_repo = cast(CrawlerTasksRepository, self._get_repository('CrawlerTask', session))
                 if not tasks_repo:
                     return {
@@ -151,28 +150,48 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         'task': None
                     }
                 
-                # 3. 創建任務 (使用驗證後的資料)
+                # 創建任務 (使用驗證後的資料)
                 task = tasks_repo.create(validated_data)
                 
                 if task:
-                    # --- Add flush and refresh here ---
                     session.flush()  # Ensure the task is flushed to DB to get the ID
                     session.refresh(task) # Refresh the task object with the generated ID
-                    # --- End of addition ---
 
-                    # 重新加載排程 (這裡的邏輯可能需要調整，取決於 SchedulerService 如何運作)
+                    task_schema = CrawlerTaskReadSchema.model_validate(task) 
+
                     if task.is_auto:
-                        # scheduler_service = SchedulerService() # 假設可以這樣獲取實例
-                        # scheduler_service.reload_schedule() # 觸發排程重新加載
-                        logger.info(f"自動任務 {task.id} 已創建，排程可能需要重新加載。")
-
-                    task_schema = CrawlerTaskReadSchema.model_validate(task) # 轉換
-                    return {
-                        'success': True,
-                        'message': '任務創建成功',
-                        'task': task_schema # 返回 Schema
-                    }
+                        try:
+                            scheduler_result = self._set_task_schedule(task_schema, session)
+                            if scheduler_result.get('success'):
+                                return {
+                                    'success': True,
+                                    'message': '任務新增及排程器新增成功',
+                                    'task': task_schema
+                                }
+                            else:
+                                error_msg = f"任務新增成功，但更新排程器失敗，事務已回滾: {scheduler_result.get('message')}"
+                                logger.error(error_msg)
+                                return {
+                                    'success': False,
+                                    'message': error_msg,
+                                    'task': None 
+                                }
+                        except Exception as scheduler_e:
+                            error_msg = f"任務新增成功，但調用排程器時發生錯誤，事務已回滾: {scheduler_e}"
+                            logger.error(error_msg, exc_info=True)
+                            return {
+                                'success': False,
+                                'message': error_msg,
+                                'task': None
+                            }
+                    else:
+                        return {
+                            'success': True,
+                            'message': '任務創建成功', 
+                            'task': task_schema
+                        }
                 else:
+                     # Task creation failed in the repository
                      return {
                         'success': False,
                         'message': '任務創建失敗 (repo.create 返回 None)',
@@ -186,6 +205,10 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 'message': error_msg,
                 'task': None
             }
+        except (DatabaseOperationError, InvalidOperationError) as e: # Ensure these exceptions are caught
+             error_msg = f"創建任務失敗: {str(e)}"
+             logger.error(error_msg, exc_info=True)
+             return {'success': False, 'message': error_msg, 'task': None}
         except Exception as e:
             error_msg = f"創建任務失敗: {str(e)}"
             logger.error(error_msg, exc_info=True)
@@ -311,21 +334,14 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 # --- 處理排程器 ---
                 if final_update_result.get('success') and is_auto_task and task_schema:
                     try:
-                        scheduler = get_scheduler_service()
-                        # 修正：傳遞 session 參數給排程器
-                        scheduler_result = scheduler.add_or_update_task_to_scheduler(task_schema, session)
-                        if not scheduler_result.get('success'):
-                            logger.error(f"任務 {task_id} 更新後，更新排程器失敗: {scheduler_result.get('message')}")
-                            # 修改成功消息，追加排程器失敗信息
-                            final_update_result['message'] = f"{final_update_result['message']}, 但更新排程器失敗: {scheduler_result.get('message')}"
-                            # 仍然認為主要操作是成功的，但帶有警告
-                        else:
-                            logger.info(f"任務 {task_id} 的排程器已成功更新。")
-                            final_update_result['message'] += ", 排程器更新成功" # 可以選擇性地添加成功信息
+                        result = self._set_task_schedule(task_schema, session, is_update=True)
+                        if not result.get('success'):
+                            final_update_result['message'] = f"{final_update_result['message']}, 任務 {task_id} 更新後，但更新排程器失敗: {result.get('message')}"
 
                     except Exception as scheduler_e:
-                        logger.error(f"任務 {task_id} 更新後，調用排程器時發生錯誤: {scheduler_e}", exc_info=True)
-                        final_update_result['message'] = f"{final_update_result['message']}, 但調用排程器時發生錯誤: {str(scheduler_e)}"
+                        error_msg = f"任務 {task_id} 更新後，調用排程器時發生錯誤: {scheduler_e}"
+                        logger.error(error_msg, exc_info=True)
+                        final_update_result['message'] = f"{final_update_result['message']}, {error_msg}"
                         
                 # 如果 task_schema 沒有被賦值 (例如更新失敗)，確保返回的字典中 task 為 None
                 if 'task' not in final_update_result:
@@ -345,8 +361,32 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             logger.error(error_msg, exc_info=True)
             return {'success': False, 'message': error_msg, 'task': None}
 
-   
-
+    def _set_task_schedule(self, task_schema: CrawlerTaskReadSchema, session: Session, is_update: bool = False) -> Dict:
+        """設置任務排程"""
+        # --- 處理排程器 ---
+        try:
+            scheduler = get_scheduler_service()
+            result = {}
+            # 修正：傳遞 session 參數給排程器
+            scheduler_result = scheduler.add_or_update_task_to_scheduler(task_schema, session)
+            if not scheduler_result.get('success'):
+                error_msg = f"更新排程器失敗: {scheduler_result.get('message')}"
+                logger.error(error_msg)
+                # 修改成功消息，追加排程器失敗信息
+                result['message'] = error_msg
+                result['success'] = False
+            else:
+                logger.info(f"任務的排程器已成功更新。")
+                result['message'] = "排程器更新成功" if is_update else "排程器新增成功"
+                result['success'] = True
+        except Exception as scheduler_e:
+            error_msg = f"調用排程器時發生錯誤: {str(scheduler_e)}"
+            logger.error(error_msg)
+            result['message'] = error_msg
+            result['success'] = False
+        finally:
+            return result
+    
     def delete_task(self, task_id: int) -> Dict:
         """刪除任務"""
         try:

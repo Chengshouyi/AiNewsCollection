@@ -284,13 +284,13 @@ class SchedulerService(BaseService[CrawlerTasks]):
             self.cron_scheduler.add_job(
                 func=self._trigger_task,
                 trigger=trigger,
-                args=[task.id, task.task_args],
+                args=[task.id],
                 id=job_id,
                 name=task.task_name,
                 replace_existing=True,
-                misfire_grace_time=3600,  # 允許 1 小時的誤差
-                kwargs={'task_args': task.task_args, 'update_at': task.updated_at},
-                jobstore='default'  # 使用默認的 SQLAlchemyJobStore
+                misfire_grace_time=1800,
+                kwargs={'task_args': task.task_args},
+                jobstore='default'
             )
             
             logger.info(f"已排程任務 {task.id}，cron 表達式: {task.cron_expression}")

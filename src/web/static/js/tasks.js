@@ -13,11 +13,13 @@ $(document).ready(function () {
     // 頁面加載時初始化 WebSocket 連接
     setupWebSocket();
 
-    // 加載任務列表
-    loadTasks();
-
-    // 加載爬蟲列表 (用於新增/編輯任務時選擇)
-    loadCrawlers();
+    // --- 修改：先加載爬蟲列表，成功後再加載任務列表 ---
+    loadCrawlers(function () {
+        // 爬蟲加載成功後的回調
+        console.log("爬蟲列表加載完成，現在開始加載任務列表...");
+        loadTasks(); // 在這裡調用 loadTasks
+    });
+    // --- 修改結束 ---
 
     // 綁定新增任務按鈕事件
     $('#add-task-btn').click(function () {
@@ -110,7 +112,23 @@ $(document).ready(function () {
 
     // 綁定爬取模式變更事件
     $('#scrape-mode').change(function () {
-        toggleContentOnlyLinksInput();
+        const scrapeMode = $(this).val();
+        toggleContentOnlyLinksInput(); // 這個函數處理連結輸入框
+
+        // 新增：處理其他欄位的顯示/隱藏
+        const maxPagesContainer = $('#max-pages').closest('.col-md-6.mb-3');
+        const numArticlesContainer = $('#num-articles').closest('.col-md-6.mb-3');
+        const aiOnlyContainer = $('#ai-only').closest('.mb-3'); // 找到 AI checkbox 的 mb-3 父容器
+
+        if (scrapeMode === 'content_only') {
+            maxPagesContainer.addClass('d-none');
+            numArticlesContainer.addClass('d-none');
+            aiOnlyContainer.addClass('d-none');
+        } else {
+            maxPagesContainer.removeClass('d-none');
+            numArticlesContainer.removeClass('d-none');
+            aiOnlyContainer.removeClass('d-none');
+        }
     });
 });
 
@@ -387,11 +405,11 @@ function loadTasks() {
             // 先判斷是否有任務
             if (tasks.length > 0) {
                 // 有任務時隱藏提示框
-                $('#no-tasks-alert').hide();
+                $('#no-tasks-alert').addClass('d-none');
                 renderTasksTable(tasks);
             } else {
                 // 無任務時顯示提示框並渲染空表格
-                $('#no-tasks-alert').show();
+                $('#no-tasks-alert').removeClass('d-none');
                 renderTasksTable([]);
             }
         },
@@ -399,7 +417,7 @@ function loadTasks() {
             console.error('加載任務列表失敗:', error, xhr.responseText);
 
             // API調用失敗時，仍顯示暫無任務的友好提示
-            $('#no-tasks-alert').show();
+            $('#no-tasks-alert').removeClass('d-none');
 
             // 顯示空的任務表格，以便用戶仍可以新增任務
             renderTasksTable([]);
@@ -617,6 +635,23 @@ function showTaskModal(taskId) {
         // --- 修改點：新增模式下觸發一次顯示邏輯 ---
         toggleContentOnlyLinksInput(); // 確保 scrape-mode 預設值對應的 UI 正確
         // --- 修改結束 ---
+        // --- 新增：根據初始 scrape-mode 設置欄位可見性 ---
+        const initialScrapeMode = $('#scrape-mode').val();
+        const maxPagesContainer = $('#max-pages').closest('.col-md-6.mb-3');
+        const numArticlesContainer = $('#num-articles').closest('.col-md-6.mb-3');
+        const aiOnlyContainer = $('#ai-only').closest('.mb-3');
+
+        if (initialScrapeMode === 'content_only') {
+            maxPagesContainer.addClass('d-none');
+            numArticlesContainer.addClass('d-none');
+            aiOnlyContainer.addClass('d-none');
+        } else {
+            // 確保在非 content_only 模式下是可見的
+            maxPagesContainer.removeClass('d-none');
+            numArticlesContainer.removeClass('d-none');
+            aiOnlyContainer.removeClass('d-none');
+        }
+        // --- 新增結束 ---
     }
 
     $('#task-modal').modal('show');
@@ -682,6 +717,13 @@ function resetTaskForm() {
     // --- 修改結束 ---
     // 重置高級參數為預設值
     setAdvancedParams(null);
+    // --- 新增：確保相關欄位在重置時可見 ---
+    $('#max-pages').closest('.col-md-6.mb-3').removeClass('d-none');
+    $('#num-articles').closest('.col-md-6.mb-3').removeClass('d-none');
+    $('#ai-only').closest('.mb-3').removeClass('d-none');
+    // 確保 content_only 的容器也隱藏
+    $('#content-only-links-container').addClass('d-none');
+    // --- 新增結束 ---
 }
 
 // 保存任務
@@ -1161,8 +1203,22 @@ function displayAlert(type, message, inModal = false) {
 
     if (inModal) {
         // 在模態框中顯示提示
-        const modalBody = $('.modal-body').first();
-        modalBody.prepend(alertHtml);
+        const modalBody = $('#task-modal .modal-body');
+        const modalElement = $('#task-modal');
+
+        if (modalBody.length > 0 && modalElement.length > 0) {
+            // --- 新增：移除模態框中已存在的提示 --- 
+            modalBody.find('.alert').remove();
+            // --- 新增結束 ---
+            modalBody.prepend(alertHtml);
+            // --- 修改：嘗試捲動整個模態框元素 ---
+            modalElement.scrollTop(0);
+            // --- 修改結束 ---
+        } else {
+            console.error("找不到 #task-modal 或其 .modal-body 來顯示提示訊息");
+            // 作為備用，嘗試顯示在頁面頂部
+            displayAlert(type, message, false);
+        }
     } else {
         // 在頁面頂部顯示提示
         const alertContainer = $('#alert-container');
@@ -1171,6 +1227,10 @@ function displayAlert(type, message, inModal = false) {
             $('main.container').prepend('<div id="alert-container"></div>');
         }
         $('#alert-container').html(alertHtml);
+
+        // --- 新增：滾動到提示訊息位置 ---
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+        // --- 新增結束 ---
 
         // 5秒後自動消失
         setTimeout(() => {
@@ -1217,11 +1277,31 @@ function toggleContentOnlyLinksInput() {
     const isEdit = $('#task-form').data('is-edit') === true;
     const container = $('#content-only-links-container');
     const inputArea = $('#article-links-input');
+    const editNotice = $('#content-only-edit-notice');
+    const linksLabel = $('#content-only-links-label');
+    const linksFormText = $('#content-only-links-form-text');
 
-    if (scrapeMode === 'content_only' && !isEdit) {
-        container.removeClass('d-none');
+    if (scrapeMode === 'content_only') {
+        container.removeClass('d-none'); // 顯示容器
+        if (isEdit) {
+            // 編輯模式：隱藏輸入相關，顯示提示
+            linksLabel.addClass('d-none');
+            inputArea.addClass('d-none');
+            linksFormText.addClass('d-none');
+            editNotice.removeClass('d-none');
+            inputArea.val(''); // 清空可能存在的輸入
+        } else {
+            // 新增模式：顯示輸入相關，隱藏提示
+            linksLabel.removeClass('d-none');
+            inputArea.removeClass('d-none');
+            linksFormText.removeClass('d-none');
+            editNotice.addClass('d-none');
+        }
     } else {
+        // 其他模式：隱藏容器即可
         container.addClass('d-none');
-        inputArea.val(''); // 清空內容
+        // 確保提示也隱藏 (以防萬一)
+        editNotice.addClass('d-none');
+        inputArea.val(''); // 清空可能存在的輸入
     }
 }

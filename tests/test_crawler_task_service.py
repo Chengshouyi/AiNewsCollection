@@ -135,7 +135,7 @@ class TestCrawlerTaskService:
         assert isinstance(result["task"], CrawlerTaskReadSchema)
         task_id = result["task"].id
         assert task_id is not None
-        assert result["message"] == "任務創建成功"
+        assert result["message"] == "任務新增及排程器新增成功"
 
         get_result = crawler_task_service.get_task_by_id(task_id)
         assert get_result["success"] is True

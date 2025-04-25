@@ -429,10 +429,7 @@ def validate_task_args(field_name: str, required: bool = False):
 
             # 必要欄位及其類型定義
             required_fields = {
-                'scrape_mode': str,
-                'max_pages': int,
-                'ai_only': bool,
-                'num_articles': int,
+                'scrape_mode': str, 
                 'min_keywords': int,
                 'max_retries': int,
                 'retry_delay': (int, float),
@@ -448,6 +445,9 @@ def validate_task_args(field_name: str, required: bool = False):
 
             # 可選欄位及其類型定義
             optional_fields = {
+                'ai_only': bool,
+                'max_pages': int,
+                'num_articles': int,
                 'csv_file_prefix': str,
                 'max_cancel_wait': int,
                 'cancel_interrupt_interval': int,
