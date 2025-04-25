@@ -11,6 +11,11 @@ sys.path.append(str(Path(__file__).parent.parent))
 
 from src.models.base_model import Base
 from src.models.crawlers_model import Crawlers
+from src.models.crawler_tasks_model import CrawlerTasks
+from src.models.articles_model import Articles
+from src.models.crawler_task_history_model import CrawlerTaskHistory
+
+import os
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -64,8 +69,17 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    # Read DATABASE_URL from environment variable
+    db_url = os.environ.get('DATABASE_URL')
+    if not db_url:
+        raise ValueError("DATABASE_URL environment variable not set")
+
+    # Create a configuration dictionary for engine_from_config
+    # We only need sqlalchemy.url here
+    engine_config = {"sqlalchemy.url": db_url}
+
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        engine_config, # Use the dict with env var URL
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

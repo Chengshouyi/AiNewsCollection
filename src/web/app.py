@@ -8,28 +8,30 @@ from src.web.socket_instance import socketio, init_app
 from flask_socketio import join_room, leave_room
 from src.models.base_model import Base
 from src.config import get_db_manager
-from run import initialize_default_crawler
-from src.services.service_container import get_scheduler_service
+from src.services.service_container import get_scheduler_service, get_crawlers_service
+import os
 
 # 設定 Logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+
+
 # 初始化資料庫和默認數據
 def initialize_app(app):
     with app.app_context():
         # 初始化資料庫表格
-        db_manager = get_db_manager()
-        db_manager.create_tables(Base)
-        logger.info("資料庫初始化完成")
+        # db_manager = get_db_manager()
+        # db_manager.create_tables(Base)
+        # logger.info("資料庫初始化完成")
         
-        # 初始化默認爬蟲數據
-        initialize_default_crawler()
-        logger.info("默認數據初始化完成")
+        # 初始化默認爬蟲數據，移到 run.py 中
+        # initialize_default_crawler()
+        # logger.info("默認數據初始化完成")
 
 # 初始化 Flask 應用和 SocketIO
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your_secret_key'  # 記得更換為安全的密鑰
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'a_default_secret_key_for_dev_if_needed')
 
 # 初始化 socketio，綁定到 app
 init_app(app)

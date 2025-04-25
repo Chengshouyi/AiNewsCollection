@@ -52,8 +52,7 @@ def initialize_default_crawler():
 
 def main():
     try:
-        # 初始化資料庫存取
-        db_manager = get_db_manager()
+       
 
         # 初始化排程服務（使用單體模式）
         scheduler_service = get_scheduler_service()
@@ -70,9 +69,11 @@ def main():
         # 啟動排程服務
         scheduler_service.start_scheduler()
         
-        # 創建資料庫表格
-        db_manager.create_tables(Base)
-        logging.info("資料庫初始化完成")
+         # 初始化資料庫存取
+        # db_manager = get_db_manager()
+        # 創建資料庫表格，完全依賴 alembic upgrade head 來管理資料庫結構
+        # db_manager.create_tables(Base)
+        # logging.info("資料庫初始化完成")
         
         # 初始化默認爬蟲數據
         initialize_default_crawler()

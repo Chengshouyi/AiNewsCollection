@@ -1,41 +1,76 @@
+# docker-compose.yml
+# Base configuration, suitable for production-like environments
+
 version: '3.8'
 
 services:
+  db:
+    image: postgres:15 # 使用明確的版本號
+    container_name: ainews-postgres
+    restart: unless-stopped
+    environment:
+      # --- 安全性警告 ---
+      # 不要在生產環境硬編碼密碼！請改用環境變數注入或 Docker Secrets。
+      POSTGRES_DB: ${POSTGRES_DB:-ainews} # 可從 .env 文件讀取，預設為 ainews
+      POSTGRES_USER: ${POSTGRES_USER:-ainews_user} # 可從 .env 文件讀取，預設為 ainews_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-your_strong_password} # 應從 .env 文件讀取!
+    volumes:
+      - postgres-data:/var/lib/postgresql/data # 資料持久化
+    networks:
+      - default
+    healthcheck:
+      # 可選：增加健康檢查，確保資料庫可用
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ainews_user} -d ${POSTGRES_DB:-ainews}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   web:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile # 指定 Dockerfile 路徑
     container_name: ainews-web
     restart: unless-stopped
-    command: gunicorn --workers 4 --bind 0.0.0.0:8000 src.web.app:create_app
-    volumes:
-      - news-data:/app/data
-    ports:
-      - "8001:8000"
+    command: gunicorn --workers 4 --bind 0.0.0.0:8000 src.web.app:app # 生產環境指令
     environment:
-      - FLASK_ENV=production
-      - DATABASE_PATH=/app/data/news.db
-      - SECRET_KEY=your_very_strong_production_secret_key_here
+      - FLASK_ENV=production # 生產環境模式
+      # --- 安全性警告 ---
+      # 使用 ${VAR_NAME:-default} 語法可以從 .env 文件讀取變數
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-ainews_user}:${POSTGRES_PASSWORD:-your_strong_password}@db:5432/${POSTGRES_DB:-ainews}
+      - SECRET_KEY=${SECRET_KEY:-your_very_strong_production_secret_key_here} # 應從 .env 文件讀取!
     depends_on:
-      - worker
+      db:
+        condition: service_healthy # 依賴 db 的健康檢查 (如果定義了 healthcheck)
+        # condition: service_started # 或者只等待 db 啟動 (如果沒有 healthcheck)
+    ports:
+      - "8001:8000" # 將主機的 8001 映射到容器的 8000
     networks:
       - default
 
   worker:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile # 指定 Dockerfile 路徑
     container_name: ainews-worker
     restart: unless-stopped
-    command: python run.py
-    volumes:
-      - news-data:/app/data
+    command: python run.py # 生產環境指令
     environment:
-      - DATABASE_PATH=/app/data/news.db
-      - SCHEDULE_RELOAD_INTERVAL_HR=4
+      # --- 安全性警告 ---
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-ainews_user}:${POSTGRES_PASSWORD:-your_strong_password}@db:5432/${POSTGRES_DB:-ainews}
+      - SCHEDULE_RELOAD_INTERVAL_HR=${SCHEDULE_RELOAD_INTERVAL_HR:-4} # 可從 .env 文件讀取，預設為 4
+    depends_on:
+      db:
+        condition: service_healthy # 依賴 db 的健康檢查 (如果定義了 healthcheck)
+        # condition: service_started # 或者只等待 db 啟動 (如果沒有 healthcheck)
     networks:
       - default
 
 volumes:
-  news-data:
+  postgres-data:
+    # 定義 PostgreSQL 資料的 volume
     driver: local
+
+networks:
+  # 定義預設網路
+  default:
+    driver: bridge

@@ -1,56 +1,55 @@
 FROM python:3.9-slim
 
-# 系統環境設定
+# 系統環境設定 (保持不變)
+ENV PYTHONDONTWRITEBYTECODE 1
+ENV PYTHONUNBUFFERED 1
 ENV DEBIAN_FRONTEND=noninteractive
-# 確保 Python 輸出立即顯示
-ENV PYTHONUNBUFFERED=1           
-# 避免生成 .pyc 文件
-ENV PYTHONDONTWRITEBYTECODE=1    
+ENV SHELL=/bin/bash
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
 
-# 創建非 root 用戶和組
+# 創建非 root 用戶和組 (保持不變)
 ARG USERNAME=appuser
 ARG USER_UID=1001
 ARG USER_GID=$USER_UID
 RUN groupadd --gid $USER_GID $USERNAME && \
     useradd --uid $USER_UID --gid $USER_GID -m $USERNAME
 
-# 安裝應用運行所需的最少工具 (移除 git, curl)
+# 更新 apt-get 並安裝基礎工具
+# 如果生產環境需要 psql，請取消註解下一行
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     bash \
+    # postgresql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# 設定工作目錄
+# 設定工作目錄 (保持不變)
 WORKDIR /app
 
-# 創建資料庫目錄並賦予權限給新用戶
-# 注意: /app 目錄本身由 WORKDIR 創建，所有權默認為 root
-# 我們需要確保非 root 用戶可以寫入掛載點 /app/data
-# 創建目錄並更改所有權
-RUN mkdir -p /app/data && chown ${USERNAME}:${USERNAME} /app/data
+# --- 移除 ---
+# 不再需要為 SQLite 資料庫建立 /app/data 目錄
+# RUN mkdir -p /app/data && chown ${USERNAME}:${USERNAME} /app/data
+# --- 移除結束 ---
 
-# 複製依賴文件
+# 複製依賴文件 (確保 requirements.txt 包含 psycopg2-binary)
 COPY --chown=${USERNAME}:${USERNAME} requirements.txt .
 
 # 切換到非 root 用戶安裝依賴
 USER $USERNAME
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
 
-# 安裝 requirements.txt 中的套件
-RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
-
-# 切換回 root 用戶複製程式碼 (避免後續 chown 整個 /app 的開銷)
-# 或者，如果不需要其他 root 操作，可以保持 USER $USERNAME
+# 切換回 root 以複製程式碼並設定正確的擁有者
+# (或者保持 appuser 並確保所有複製的檔案擁有者正確)
 # USER root
+# COPY --chown=${USERNAME}:${USERNAME} . /app
+# USER $USERNAME
 
-# 將程式碼複製到工作目錄，並設定所有權
-# 如果保持 USER $USERNAME，則不需要 --chown
-COPY --chown=${USERNAME}:${USERNAME} . .
+# 複製應用程式碼 (建議在安裝依賴後複製，以更好利用快取)
+# 確保複製的檔案擁有者是 appuser
+COPY --chown=${USERNAME}:${USERNAME} . /app
 
-# 切換回非 root 用戶作為容器運行的默認用戶
+# 設定最終用戶 (保持不變)
 USER $USERNAME
 
-# 暴露 Gunicorn 將使用的端口 (將在 compose 中實際映射)
-EXPOSE 8000
-
-# 不設置 ENTRYPOINT 或 CMD，由 docker-compose.yml 指定
+# 設定預設指令 (web 服務會在 docker-compose.yml 中覆蓋此指令)
+CMD ["python", "src/web/app.py"]
