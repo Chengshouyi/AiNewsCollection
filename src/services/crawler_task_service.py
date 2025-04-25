@@ -224,7 +224,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     }
 
                 # 記錄更新前的 is_auto 狀態
-                original_is_auto = task.is_auto
+                # original_is_auto = task.is_auto
 
                 # --- 移除更新時不允許修改的欄位 (例如 crawler_id) ---
                 if 'crawler_id' in task_data:
@@ -252,9 +252,6 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                         validated_data['task_args']['article_links'] = []
                         validated_data['task_args']['get_links_by_task_id'] = True
                 # --- CONTENT_ONLY 檢查結束 ---
-
-
-
 
                 entity_modified = False
                 task_args_updated = False
@@ -311,30 +308,30 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     task_schema = CrawlerTaskReadSchema.model_validate(updated_task)
                     final_update_result['task'] = task_schema # 在結果中加入 task schema
 
-             # --- 在事務提交成功後，處理排程器 ---
-            if final_update_result.get('success') and is_auto_task and task_schema:
-                try:
-                    scheduler = get_scheduler_service()
-                    # 注意：傳遞 Pydantic Schema 對象給排程器
-                    scheduler_result = scheduler.add_or_update_task_to_scheduler(task_schema)
-                    if not scheduler_result.get('success'):
-                        logger.error(f"任務 {task_id} 已更新但更新排程器失敗: {scheduler_result.get('message')}")
-                        # 修改成功消息，追加排程器失敗信息
-                        final_update_result['message'] = f"{final_update_result['message']}, 但更新排程器失敗: {scheduler_result.get('message')}"
-                        # 仍然認為主要操作是成功的，但帶有警告
-                    else:
-                        logger.info(f"任務 {task_id} 的排程器已成功更新。")
-                        final_update_result['message'] += ", 排程器更新成功" # 可以選擇性地添加成功信息
+                # --- 處理排程器 ---
+                if final_update_result.get('success') and is_auto_task and task_schema:
+                    try:
+                        scheduler = get_scheduler_service()
+                        # 修正：傳遞 session 參數給排程器
+                        scheduler_result = scheduler.add_or_update_task_to_scheduler(task_schema, session)
+                        if not scheduler_result.get('success'):
+                            logger.error(f"任務 {task_id} 更新後，更新排程器失敗: {scheduler_result.get('message')}")
+                            # 修改成功消息，追加排程器失敗信息
+                            final_update_result['message'] = f"{final_update_result['message']}, 但更新排程器失敗: {scheduler_result.get('message')}"
+                            # 仍然認為主要操作是成功的，但帶有警告
+                        else:
+                            logger.info(f"任務 {task_id} 的排程器已成功更新。")
+                            final_update_result['message'] += ", 排程器更新成功" # 可以選擇性地添加成功信息
 
-                except Exception as scheduler_e:
-                    logger.error(f"任務 {task_id} 更新後，調用排程器時發生錯誤: {scheduler_e}", exc_info=True)
-                    final_update_result['message'] = f"{final_update_result['message']}, 但調用排程器時發生錯誤: {str(scheduler_e)}"
-                    
-            # 如果 task_schema 沒有被賦值 (例如更新失敗)，確保返回的字典中 task 為 None
-            if 'task' not in final_update_result:
-                 final_update_result['task'] = None
+                    except Exception as scheduler_e:
+                        logger.error(f"任務 {task_id} 更新後，調用排程器時發生錯誤: {scheduler_e}", exc_info=True)
+                        final_update_result['message'] = f"{final_update_result['message']}, 但調用排程器時發生錯誤: {str(scheduler_e)}"
+                        
+                # 如果 task_schema 沒有被賦值 (例如更新失敗)，確保返回的字典中 task 為 None
+                if 'task' not in final_update_result:
+                    final_update_result['task'] = None
 
-            return final_update_result
+                return final_update_result
         except ValidationError as e:
             error_msg = f"更新任務資料驗證失敗, ID={task_id}: {str(e)}"
             logger.error(error_msg, exc_info=True)
@@ -348,7 +345,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             logger.error(error_msg, exc_info=True)
             return {'success': False, 'message': error_msg, 'task': None}
 
-       
+   
 
     def delete_task(self, task_id: int) -> Dict:
         """刪除任務"""

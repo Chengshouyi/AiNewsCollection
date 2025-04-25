@@ -637,7 +637,7 @@ class TestCrawlerTaskService:
         update_result = crawler_task_service.update_task(task_id, update_data)
         print(f"Update result: {update_result}")
         assert update_result["success"] is True
-        assert update_result["message"] == "任務更新成功"
+        assert "任務更新成功" in update_result["message"]
         assert update_result["task"] is not None
 
         print(f"Fetching task {task_id} from DB again after update...")
