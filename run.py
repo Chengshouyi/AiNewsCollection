@@ -108,9 +108,9 @@ def run_scheduled_tasks():
     """長期運行，定期執行排程任務重新載入"""
     # 從環境變數讀取間隔，若無則使用預設值 4 小時
     try:
-        interval_hr = int(os.getenv('SCHEDULE_RELOAD_INTERVAL_HR', '4'))
+        interval_hr = int(os.getenv('SCHEDULE_RELOAD_INTERVAL_HR', '1'))
         if interval_hr <= 0:
-            interval_hr = 4 # 防止無效值
+            interval_hr = 1 # 防止無效值
         logging.info(f"排程任務重新載入間隔設定為: {interval_hr} 小時")
     except ValueError:
         interval_hr = 4
@@ -120,7 +120,7 @@ def run_scheduled_tasks():
 
     while True:
         try:
-            # 執行排程任務重新載入
+            # 執行排程任務重新載入ㄋ
             logging.info("開始重新載入排程任務...")
             get_scheduler_service().reload_scheduler()
             logging.info("排程任務重新載入完成。")

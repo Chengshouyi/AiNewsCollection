@@ -319,12 +319,10 @@ class SchedulerService(BaseService[CrawlerTasks]):
         try:
             # --- 使用服務容器獲取 db_manager ---
             db_manager = get_db_manager()
-            # 使用事務讀取任務信息
-            # --- 直接使用 db_manager 創建事務 ---
+            # 使用 context manager 管理 session 生命周期
             with db_manager.session_scope() as session:
-                # --- 直接初始化 Repository ---
+                # --- 直接使用 session 初始化 Repository ---
                 repo = CrawlerTasksRepository(session, CrawlerTasks)
-                # --- 修改結束 ---
                 task = repo.get_by_id(task_id)
 
                 if not task:
@@ -347,8 +345,9 @@ class SchedulerService(BaseService[CrawlerTasks]):
             task_executor_service = get_task_executor_service()
             # 交由 TaskExecutor 執行 (在事務外部)
             # --- 使用讀取到的變數 ---
-            logger.info(f"調度器觸發執行任務 {task.id} ({task_name}), 附加參數: {task_args}")
-            task_executor_service.execute_task(task.id) # 移除 self.
+            logger.info(f"調度器觸發執行任務 {task_id} ({task_name}), 附加參數: {task_args}")
+            # 確保傳遞的是 ID 而不是 detached 的 task 物件
+            task_executor_service.execute_task(task_id, task_args)
             # --- 修改結束 ---
             
         except DatabaseOperationError as db_e:

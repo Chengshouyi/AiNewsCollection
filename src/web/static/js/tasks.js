@@ -255,7 +255,7 @@ function updateTaskUI(taskId, progress, status, scrapePhase, message, articlesCo
             // 設置進度百分比
             progressBar.css('width', progress + '%').text(progress + '%');
 
-            // 根據狀態改變進度條顏色 - 確保這些類名與您的 CSS 框架匹配
+            // 根據狀態改變進度條顏色
             progressBar.removeClass('bg-success bg-warning bg-danger bg-info bg-secondary');
 
             // 將狀態轉為大寫以匹配枚舉值
@@ -274,26 +274,28 @@ function updateTaskUI(taskId, progress, status, scrapePhase, message, articlesCo
             }
 
             // 添加調試日誌
-            console.log(`更新任務 ${taskId} 進度條: ${progress}%, 狀態: ${status}, 添加的類: bg-${status.toLowerCase() === 'completed' ? 'success' : status.toLowerCase() === 'running' ? 'info' : 'secondary'}`);
+            // console.log(`更新任務 ${taskId} 進度條: ${progress}%, 狀態: ${status}, 添加的類: bg-${status.toLowerCase() === 'completed' ? 'success' : status.toLowerCase() === 'running' ? 'info' : 'secondary'}`);
         }
 
         // 更新狀態文本
         const statusBadge = taskRow.find('.task-status-badge');
         if (statusBadge.length) {
             statusBadge.text(status);
-            // 根據狀態改變徽章顏色
-            statusBadge.removeClass('badge-success badge-warning badge-danger badge-info badge-secondary bg-success bg-warning bg-danger bg-info bg-secondary');
+            // 根據狀態改變徽章顏色 - **只使用 bg-* 類別**
+            statusBadge.removeClass('bg-success bg-warning bg-danger bg-info bg-secondary badge-success badge-warning badge-danger badge-info badge-secondary'); // 移除所有舊的顏色類別
 
-            if (status === 'COMPLETED' || status === 'completed') {
-                statusBadge.addClass('bg-success badge-success');
-            } else if (status === 'RUNNING' || status === 'running') {
-                statusBadge.addClass('bg-info badge-info');
-            } else if (status === 'FAILED' || status === 'failed' || status === 'CANCELLED' || status === 'cancelled') {
-                statusBadge.addClass('bg-danger badge-danger');
-            } else if (status === 'PENDING' || status === 'pending') {
-                statusBadge.addClass('bg-warning badge-warning');
+            const upperStatus = status ? status.toUpperCase() : '';
+
+            if (upperStatus === 'COMPLETED') {
+                statusBadge.addClass('bg-success');
+            } else if (upperStatus === 'RUNNING') {
+                statusBadge.addClass('bg-info');
+            } else if (upperStatus === 'FAILED' || upperStatus === 'CANCELLED') {
+                statusBadge.addClass('bg-danger');
+            } else if (upperStatus === 'PENDING') {
+                statusBadge.addClass('bg-warning');
             } else {
-                statusBadge.addClass('bg-secondary badge-secondary');
+                statusBadge.addClass('bg-secondary'); // 其他狀態
             }
         }
 
@@ -472,15 +474,17 @@ function renderTasksTable(tasks) {
 
         console.log(`渲染任務: ID=${task.id}, 名稱=${taskName}, 狀態=${taskStatus}, 類型=${taskType}`);
 
-        // 根據狀態設置徽章樣式
-        let statusBadgeClass = 'badge bg-secondary'; // 默認
-        if (taskStatus === 'RUNNING') {
+        // 根據狀態設置徽章樣式 - **只使用 bg-* 類別**
+        let statusBadgeClass = 'badge bg-secondary'; // 默認 badge 基礎樣式 + 顏色
+        const upperStatus = taskStatus ? taskStatus.toUpperCase() : '';
+
+        if (upperStatus === 'RUNNING') {
             statusBadgeClass = 'badge bg-info';
-        } else if (taskStatus === 'COMPLETED') {
+        } else if (upperStatus === 'COMPLETED') {
             statusBadgeClass = 'badge bg-success';
-        } else if (taskStatus === 'FAILED' || taskStatus === 'CANCELLED') {
+        } else if (upperStatus === 'FAILED' || upperStatus === 'CANCELLED') {
             statusBadgeClass = 'badge bg-danger';
-        } else if (taskStatus === 'PENDING') {
+        } else if (upperStatus === 'PENDING') {
             statusBadgeClass = 'badge bg-warning';
         }
 
