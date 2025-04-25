@@ -446,6 +446,7 @@ def validate_task_args(field_name: str, required: bool = False):
             # 可選欄位及其類型定義
             optional_fields = {
                 'ai_only': bool,
+                'is_limit_num_articles': bool,
                 'max_pages': int,
                 'num_articles': int,
                 'csv_file_prefix': str,
@@ -509,7 +510,7 @@ def validate_task_args(field_name: str, required: bool = False):
                         raise ValidationError(f"{field_name}.{param}: {str(e)}")
 
             # 驗證布爾類型參數
-            bool_params = ['ai_only', 'save_to_csv', 'save_to_database', 'get_links_by_task_id', 'is_test', 'save_partial_results_on_cancel', 'save_partial_to_database']
+            bool_params = ['ai_only', 'is_limit_num_articles', 'save_to_csv', 'save_to_database', 'get_links_by_task_id', 'is_test', 'save_partial_results_on_cancel', 'save_partial_to_database']
             for param in bool_params:
                 if param in task_args:
                     try:

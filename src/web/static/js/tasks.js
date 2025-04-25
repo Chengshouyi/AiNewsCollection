@@ -111,25 +111,10 @@ $(document).ready(function () {
     });
 
     // 綁定爬取模式變更事件
-    $('#scrape-mode').change(function () {
-        const scrapeMode = $(this).val();
-        toggleContentOnlyLinksInput(); // 這個函數處理連結輸入框
+    $('#scrape-mode').change(handleScrapeModeChange);
 
-        // 新增：處理其他欄位的顯示/隱藏
-        const maxPagesContainer = $('#max-pages').closest('.col-md-6.mb-3');
-        const numArticlesContainer = $('#num-articles').closest('.col-md-6.mb-3');
-        const aiOnlyContainer = $('#ai-only').closest('.mb-3'); // 找到 AI checkbox 的 mb-3 父容器
-
-        if (scrapeMode === 'content_only') {
-            maxPagesContainer.addClass('d-none');
-            numArticlesContainer.addClass('d-none');
-            aiOnlyContainer.addClass('d-none');
-        } else {
-            maxPagesContainer.removeClass('d-none');
-            numArticlesContainer.removeClass('d-none');
-            aiOnlyContainer.removeClass('d-none');
-        }
-    });
+    // --- 新增：綁定是否限制文章數量 Checkbox 的變更事件 --- 
+    $('#is-limit-num-articles').change(toggleNumArticlesInputVisibility);
 });
 
 // --- WebSocket 處理 --- 
@@ -577,11 +562,8 @@ function showTaskModal(taskId) {
         $('#task-form').data('task-id', task.id);
         $('#task-name').val(task.task_name);
 
-        // --- 修正任務類型 ---
-        const taskType = task.is_auto ? 'auto' : 'manual'; // 根據 is_auto 決定類型
-        $('#task-type').val(taskType); // 直接設置 <select> 的值
-        console.log(`任務類型設置為: ${taskType}`);
-        // 驗證是否設置成功
+        const taskType = task.is_auto ? 'auto' : 'manual';
+        $('#task-type').val(taskType);
         if ($('#task-type').val() !== taskType) {
             console.warn(`設置任務類型下拉選單值為 "${taskType}" 失敗。當前值: ${$('#task-type').val()}`);
         }
@@ -589,23 +571,21 @@ function showTaskModal(taskId) {
         $('#ai-only').prop('checked', task.task_args?.ai_only || false);
         $('#task-remark').val(task.notes || '');
 
-        // --- 修正排程欄位更新 ---
-        updateScheduleFields(taskType, task.cron_expression); // 使用轉換後的 taskType
+        updateScheduleFields(taskType, task.cron_expression);
 
-        // --- 調試高級參數 ---
         console.log("任務參數 (task_args):", JSON.parse(JSON.stringify(task.task_args)));
         if (task.task_args) {
             console.log("準備調用 setAdvancedParams，傳入:", task.task_args);
-            setAdvancedParams(task.task_args);
+            setAdvancedParams(task.task_args); // 會調用 toggleNumArticlesInputVisibility
             console.log("setAdvancedParams 調用後，檢查表單值:");
             console.log("Max Pages:", $('#max-pages').val());
             console.log("Num Articles:", $('#num-articles').val());
+            console.log("Limit Num Articles Checkbox:", $('#is-limit-num-articles').is(':checked'));
         } else {
             console.warn("任務參數 (task_args) 不存在，使用預設值。");
-            setAdvancedParams(null);
+            setAdvancedParams(null); // 會調用 toggleNumArticlesInputVisibility
         }
 
-        // --- 修正爬蟲選擇器設置 (異步處理) ---
         loadCrawlers(function () {
             if (task.crawler_id !== null && task.crawler_id !== undefined) {
                 const crawlerSelect = $('#crawler-id');
@@ -618,9 +598,9 @@ function showTaskModal(taskId) {
                 console.warn("任務數據中缺少有效的 crawler_id");
                 $('#crawler-id').prop('disabled', true);
             }
-            // --- 修改點：編輯模式下也需要觸發一次顯示邏輯 ---
+            // 編輯模式下根據初始 scrape-mode 設置 UI
+            handleScrapeModeChange();
             toggleContentOnlyLinksInput();
-            // --- 修改結束 ---
         });
 
     } else {
@@ -628,30 +608,13 @@ function showTaskModal(taskId) {
         $('#task-modal-label').text('新增任務');
         $('#task-form').data('is-edit', false);
         $('#task-form').data('task-id', '');
-        setAdvancedParams(null);
+        setAdvancedParams(null); // 會設置預設值並調用 toggleNumArticlesInputVisibility
         loadCrawlers();
         $('#task-type').val('manual');
         updateScheduleFields('manual');
-        // --- 修改點：新增模式下觸發一次顯示邏輯 ---
-        toggleContentOnlyLinksInput(); // 確保 scrape-mode 預設值對應的 UI 正確
-        // --- 修改結束 ---
-        // --- 新增：根據初始 scrape-mode 設置欄位可見性 ---
-        const initialScrapeMode = $('#scrape-mode').val();
-        const maxPagesContainer = $('#max-pages').closest('.col-md-6.mb-3');
-        const numArticlesContainer = $('#num-articles').closest('.col-md-6.mb-3');
-        const aiOnlyContainer = $('#ai-only').closest('.mb-3');
-
-        if (initialScrapeMode === 'content_only') {
-            maxPagesContainer.addClass('d-none');
-            numArticlesContainer.addClass('d-none');
-            aiOnlyContainer.addClass('d-none');
-        } else {
-            // 確保在非 content_only 模式下是可見的
-            maxPagesContainer.removeClass('d-none');
-            numArticlesContainer.removeClass('d-none');
-            aiOnlyContainer.removeClass('d-none');
-        }
-        // --- 新增結束 ---
+        // 新增模式下根據初始 scrape-mode 設置 UI
+        handleScrapeModeChange();
+        toggleContentOnlyLinksInput();
     }
 
     $('#task-modal').modal('show');
@@ -664,6 +627,7 @@ function setAdvancedParams(taskArgs) {
     const args = taskArgs || {
         max_pages: 10,
         num_articles: 10,
+        is_limit_num_articles: false, // 新增預設值
         max_retries: 3,
         retry_delay: 2.0,
         timeout: 10,
@@ -672,34 +636,32 @@ function setAdvancedParams(taskArgs) {
         save_to_csv: false,
         csv_file_prefix: '',
         save_partial_results_on_cancel: true,
-        ai_only: false // 確保預設值包含所有相關欄位
+        ai_only: false
     };
     console.log("setAdvancedParams 實際使用的參數 (args):", args);
 
     // 填充表單 (請確保以下 ID 與 HTML 一致)
     $('#max-pages').val(args.max_pages);
-    $('#num-articles').val(args.num_articles);
+    $('#num-articles').val(args.num_articles); // 填充數量值
+    $('#is-limit-num-articles').prop('checked', args.is_limit_num_articles || false); // 設置 Checkbox
     $('#max-retries').val(args.max_retries);
     $('#retry-delay').val(args.retry_delay);
     $('#timeout').val(args.timeout);
     $('#min-keywords').val(args.min_keywords);
     $('#scrape-mode').val(args.scrape_mode);
-    $('#save-to-csv').prop('checked', args.save_to_csv || false); // 確保布爾值
+    $('#save-to-csv').prop('checked', args.save_to_csv || false);
     $('#csv-file-prefix').val(args.csv_file_prefix || '');
-    $('#save-partial-results').prop('checked', args.save_partial_results_on_cancel || false); // 確保布爾值
-    // ai_only 的填充在 showTaskModal 中已處理，這裡可以不用重複設置
+    $('#save-partial-results').prop('checked', args.save_partial_results_on_cancel || false);
 
-    // 根據儲存到CSV的設定顯示/隱藏前綴欄位
+    // 根據 CSV 勾選框顯示/隱藏前綴欄位
     if ($('#save-to-csv').is(':checked')) {
         $('#csv-prefix-container').removeClass('d-none');
     } else {
         $('#csv-prefix-container').addClass('d-none');
     }
 
-    // --- 修改點：設置完 scrape-mode 後觸發一次顯示邏輯 ---
-    // 注意：這裡需要在 showTaskModal 調用後再根據 isEdit 狀態決定是否顯示
-    // toggleContentOnlyLinksInput(); // 移到 showTaskModal 末尾調用更可靠
-    // --- 修改結束 ---
+    // 根據 is_limit_num_articles 勾選框顯示/隱藏數量輸入框
+    toggleNumArticlesInputVisibility();
 }
 
 // 重置表單
@@ -711,19 +673,16 @@ function resetTaskForm() {
     $('#ai-only').prop('checked', false);
     $('#task-remark').val('');
     $('#schedule-container').empty();
-    // --- 修改點：確保爬蟲選擇啟用 ---
     $('#crawler-id').prop('disabled', false);
     console.log("爬蟲選擇已啟用 (表單重置)");
-    // --- 修改結束 ---
+
     // 重置高級參數為預設值
     setAdvancedParams(null);
-    // --- 新增：確保相關欄位在重置時可見 ---
-    $('#max-pages').closest('.col-md-6.mb-3').removeClass('d-none');
-    $('#num-articles').closest('.col-md-6.mb-3').removeClass('d-none');
-    $('#ai-only').closest('.mb-3').removeClass('d-none');
+
+    // 確保重置後 scrape-mode 相關的 UI 正確 (因為 setAdvancedParams 會設置 scrape-mode)
+    handleScrapeModeChange();
     // 確保 content_only 的容器也隱藏
-    $('#content-only-links-container').addClass('d-none');
-    // --- 新增結束 ---
+    toggleContentOnlyLinksInput();
 }
 
 // 保存任務
@@ -733,13 +692,13 @@ function saveTask() {
     const taskId = $('#task-form').data('task-id');
     const taskName = $('#task-name').val().trim();
     const crawlerId = $('#crawler-id').val();
-    // --- 修正任務類型獲取 ---
-    const taskType = $('#task-type').val(); // 從 <select> 獲取值 ('auto' 或 'manual')
+    const taskType = $('#task-type').val();
     const taskRemark = $('#task-remark').val().trim();
 
     // 獲取高級參數
     const maxPages = parseInt($('#max-pages').val() || 10);
-    const numArticles = parseInt($('#num-articles').val() || 10);
+    const isLimitNumArticles = $('#is-limit-num-articles').is(':checked'); // 讀取 Checkbox
+    const numArticles = parseInt($('#num-articles').val() || 10); // 讀取數量 (即使隱藏)
     const maxRetries = parseInt($('#max-retries').val() || 3);
     const retryDelay = parseFloat($('#retry-delay').val() || 2.0);
     const timeout = parseInt($('#timeout').val() || 10);
@@ -750,12 +709,10 @@ function saveTask() {
     const scrapeMode = $('#scrape-mode').val();
     const savePartialResults = $('#save-partial-results').is(':checked');
 
-    // 確保必填欄位為正確類型
     const taskData = {
         task_name: taskName,
         crawler_id: parseInt(crawlerId),
-        // --- 修正 is_auto 設置 ---
-        is_auto: taskType === 'auto', // 將 'auto'/'manual' 轉回布林值
+        is_auto: taskType === 'auto',
         notes: taskRemark
     };
 
@@ -763,7 +720,6 @@ function saveTask() {
         displayAlert('warning', '請選擇有效的爬蟲', true);
         return;
     }
-    // --- 新增：驗證任務類型是否已選擇 ---
     if (!taskType) {
         displayAlert('warning', '請選擇任務類型', true);
         return;
@@ -772,7 +728,8 @@ function saveTask() {
     // 添加高級參數
     taskData.task_args = {
         max_pages: maxPages,
-        num_articles: numArticles,
+        is_limit_num_articles: isLimitNumArticles, // 保存 Checkbox 狀態
+        num_articles: numArticles, // 保存數量值
         max_retries: maxRetries,
         retry_delay: retryDelay,
         timeout: timeout,
@@ -792,7 +749,7 @@ function saveTask() {
         cancel_timeout: 60
     };
 
-    // --- 新增：根據模式和編輯狀態處理 article_links ---
+    // 根據模式和編輯狀態處理 article_links
     if (scrapeMode === 'content_only') {
         if (!isEdit) {
             // 新增模式 + CONTENT_ONLY: 從 textarea 獲取連結
@@ -820,40 +777,28 @@ function saveTask() {
         taskData.task_args.article_links = [];
         taskData.task_args.get_links_by_task_id = false;
     }
-    // --- 新增結束 ---
 
-    // --- 修正 cron_expression 設置 ---
+    // 設置 cron_expression
     if (taskData.is_auto) {
         taskData.cron_expression = $('#cron-expression').val().trim();
     } else {
         taskData.cron_expression = null;
     }
 
-    // 設置 scrape_phase 初始值
+    // 設置 scrape_phase 和 is_active
     taskData.scrape_phase = 'init';
-
-    // 設置 is_active 為 true
     taskData.is_active = true;
 
-    // 輸出表單數據到控制台以便調試
     console.log('準備保存的任務數據:', taskData);
 
     // 表單驗證
     let errorMessages = [];
-
-    if (!taskData.task_name) {
-        errorMessages.push('請填寫任務名稱');
-    }
-
-    if (isNaN(taskData.crawler_id)) {
-        errorMessages.push('請選擇爬蟲');
-    }
-
-    // 如果是自動執行，需要添加排程設定
-    if (taskData.is_auto) {
-        if (!taskData.cron_expression) {
-            errorMessages.push('自動執行的任務需要填寫排程表達式');
-        }
+    if (!taskData.task_name) errorMessages.push('請填寫任務名稱');
+    if (isNaN(taskData.crawler_id)) errorMessages.push('請選擇爬蟲');
+    if (taskData.is_auto && !taskData.cron_expression) errorMessages.push('自動執行的任務需要填寫排程表達式');
+    // 新增驗證：如果勾選了限制數量，則數量必須大於 0
+    if (taskData.task_args.is_limit_num_articles && taskData.task_args.num_articles <= 0) {
+        errorMessages.push('文章數量必須大於 0');
     }
 
     if (errorMessages.length > 0) {
@@ -1304,4 +1249,44 @@ function toggleContentOnlyLinksInput() {
         editNotice.addClass('d-none');
         inputArea.val(''); // 清空可能存在的輸入
     }
+}
+
+// 新增：控制文章數量輸入框的可見性
+function toggleNumArticlesInputVisibility() {
+    const isChecked = $('#is-limit-num-articles').is(':checked');
+    const numArticlesContainer = $('#num-articles-container');
+
+    if (isChecked) {
+        numArticlesContainer.removeClass('d-none');
+    } else {
+        numArticlesContainer.addClass('d-none');
+    }
+}
+
+// 新增：處理 scrape-mode 變更時的 UI 更新
+function handleScrapeModeChange() {
+    const scrapeMode = $('#scrape-mode').val();
+    const maxPagesContainer = $('#max-pages').closest('.col-md-6.mb-3');
+    // 包含 Checkbox 和 Input 的整體容器
+    const limitCheckboxContainer = $('#limit-num-articles-checkbox-container');
+    const numArticlesContainer = $('#num-articles-container');
+    const aiOnlyContainer = $('#ai-only').closest('.mb-3');
+
+    if (scrapeMode === 'content_only') {
+        maxPagesContainer.addClass('d-none');
+        limitCheckboxContainer.addClass('d-none');
+        numArticlesContainer.addClass('d-none'); // 同時隱藏輸入框本身
+        aiOnlyContainer.addClass('d-none');
+    } else {
+        maxPagesContainer.removeClass('d-none');
+        limitCheckboxContainer.removeClass('d-none');
+        // 不直接顯示 numArticlesContainer，而是根據 Checkbox 狀態決定
+        // numArticlesContainer.removeClass('d-none');
+        aiOnlyContainer.removeClass('d-none');
+        // 當 scrapeMode 不是 content_only 時，需要根據 Checkbox 決定 Input 的可見性
+        toggleNumArticlesInputVisibility();
+    }
+
+    // 同步更新 content_only 相關的 UI
+    toggleContentOnlyLinksInput();
 }

@@ -10,6 +10,7 @@ from src.utils.type_utils import AwareDateTime
 TASK_ARGS_DEFAULT = {
     'max_pages': 10,
     'ai_only': False,
+    'is_limit_num_articles': False,
     'num_articles': 10,
     'min_keywords': 3,
     'max_retries': 3,
@@ -49,6 +50,7 @@ class CrawlerTasks(Base, BaseEntity):
     - task_args: 任務參數 
         - max_pages: 最大頁數
         - ai_only: 是否只抓取AI相關文章
+        - is_limit_num_articles: 是否限制抓取文章數量
         - num_articles: 抓取的文章數量
         - min_keywords: 最小關鍵字數量
         - max_retries: 最大重試次數

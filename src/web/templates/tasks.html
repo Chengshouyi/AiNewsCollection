@@ -89,6 +89,21 @@
                                     <div class="form-text">爬取頁面的最大數量</div>
                                 </div>
                                 <div class="col-md-6 mb-3">
+                                    <label for="max-retries" class="form-label">最大重試次數</label>
+                                    <input type="number" class="form-control" id="max-retries" min="0" value="3">
+                                    <div class="form-text">請求失敗時的重試次數</div>
+                                </div>
+                            </div>
+                            <div class="row align-items-center">
+                                <div class="col-md-6 mb-3" id="limit-num-articles-checkbox-container">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="is-limit-num-articles">
+                                        <label class="form-check-label" for="is-limit-num-articles">
+                                            是否限制抓取文章數量
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-3 d-none" id="num-articles-container">
                                     <label for="num-articles" class="form-label">文章數量</label>
                                     <input type="number" class="form-control" id="num-articles" min="1" value="10">
                                     <div class="form-text">最多爬取的文章數量</div>
@@ -96,27 +111,33 @@
                             </div>
                             <div class="row">
                                 <div class="col-md-6 mb-3">
-                                    <label for="max-retries" class="form-label">最大重試次數</label>
-                                    <input type="number" class="form-control" id="max-retries" min="0" value="3">
-                                    <div class="form-text">請求失敗時的重試次數</div>
-                                </div>
-                                <div class="col-md-6 mb-3">
                                     <label for="retry-delay" class="form-label">重試延遲 (秒)</label>
                                     <input type="number" class="form-control" id="retry-delay" min="0" step="0.5"
                                         value="2.0">
                                     <div class="form-text">重試間隔時間</div>
                                 </div>
-                            </div>
-                            <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="timeout" class="form-label">超時時間 (秒)</label>
                                     <input type="number" class="form-control" id="timeout" min="1" value="10">
                                     <div class="form-text">請求超時時間</div>
                                 </div>
+                            </div>
+                            <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label for="min-keywords" class="form-label">最小關鍵字數</label>
                                     <input type="number" class="form-control" id="min-keywords" min="1" value="3">
                                     <div class="form-text">關鍵字提取的最小數量</div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-12 mb-3">
+                                    <label for="scrape-mode" class="form-label">爬取模式</label>
+                                    <select class="form-select" id="scrape-mode">
+                                        <option value="full_scrape">完整爬取</option>
+                                        <option value="links_only">僅爬取連結</option>
+                                        <option value="content_only">僅爬取內容</option>
+                                    </select>
+                                    <div class="form-text">選擇爬取的內容範圍</div>
                                 </div>
                             </div>
                             <div class="row">
@@ -144,42 +165,32 @@
                             </div>
                             <div class="row">
                                 <div class="col-12 mb-3">
-                                    <label for="scrape-mode" class="form-label">爬取模式</label>
-                                    <select class="form-select" id="scrape-mode">
-                                        <option value="full_scrape">完整爬取</option>
-                                        <option value="links_only">僅爬取連結</option>
-                                        <option value="content_only">僅爬取內容</option>
-                                    </select>
-                                    <div class="form-text">選擇爬取的內容範圍</div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="ai-only">
+                                        <label class="form-check-label" for="ai-only">
+                                            AI 相關（只抓取與 AI 相關的文章）
+                                        </label>
+                                    </div>
                                 </div>
                             </div>
-                            <div class="mb-3 d-none" id="content-only-links-container">
-                                <label for="article-links-input" class="form-label d-none"
-                                    id="content-only-links-label">文章連結
-                                    (CONTENT_ONLY 模式)</label>
-                                <textarea class="form-control d-none" id="article-links-input" rows="5"
-                                    placeholder="請每行輸入一個文章連結..."></textarea>
-                                <div class="form-text d-none" id="content-only-links-form-text">
-                                    僅在「新增任務」且選擇「僅爬取內容」模式時需要填寫。
-                                </div>
-                                <div class="alert alert-info mt-2 d-none" role="alert" id="content-only-edit-notice">
-                                    編輯模式下，將使用此任務先前抓取的連結進行文章內容爬取。若無先前抓取的連結，任務更新將會失敗。
-                                </div>
+                            <div class="mb-3">
+                                <label for="task-remark" class="form-label">備註</label>
+                                <textarea class="form-control" id="task-remark" rows="3"></textarea>
                             </div>
                         </div>
                     </div>
 
-                    <div class="mb-3">
-                        <div class="form-check">
-                            <input class="form-check-input" type="checkbox" id="ai-only">
-                            <label class="form-check-label" for="ai-only">
-                                AI 相關（只抓取與 AI 相關的文章）
-                            </label>
+                    <div class="mb-3 d-none" id="content-only-links-container">
+                        <label for="article-links-input" class="form-label d-none" id="content-only-links-label">文章連結
+                            (CONTENT_ONLY 模式)</label>
+                        <textarea class="form-control d-none" id="article-links-input" rows="5"
+                            placeholder="請每行輸入一個文章連結..."></textarea>
+                        <div class="form-text d-none" id="content-only-links-form-text">
+                            僅在「新增任務」且選擇「僅爬取內容」模式時需要填寫。
                         </div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="task-remark" class="form-label">備註</label>
-                        <textarea class="form-control" id="task-remark" rows="3"></textarea>
+                        <div class="alert alert-info mt-2 d-none" role="alert" id="content-only-edit-notice">
+                            編輯模式下，將使用此任務先前抓取的連結進行文章內容爬取。若無先前抓取的連結，任務更新將會失敗。
+                        </div>
                     </div>
                 </form>
             </div>

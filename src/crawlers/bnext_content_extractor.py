@@ -37,7 +37,7 @@ class BnextContentExtractor:
             self.site_config = config
 
     def batch_get_articles_content(self, articles_df: pd.DataFrame, num_articles: Optional[int] = None, 
-                                   ai_only: bool = True, min_keywords: int = 3) -> List[Dict[str, Any]]:
+                                   ai_only: bool = True, min_keywords: int = 3, is_limit_num_articles: bool = False) -> List[Dict[str, Any]]:
         """批量獲取文章內容
         
         Args:
@@ -52,14 +52,14 @@ class BnextContentExtractor:
         result = []
         
         # 如果限制數量，只處理指定數量的文章
-        if num_articles is not None:
+        if is_limit_num_articles and num_articles is not None and num_articles > 0:
             articles_df = articles_df.head(num_articles)
         
         for _, article in articles_df.iterrows():
             try:
                 # 獲取文章內容
                 article_content = self._get_article_content(article['link'])
-                
+                logger.debug(f"article_content: {article_content}")
                 if article_content:
                     # 如果設置了 ai_only，檢查文章是否AI相關
                     if ai_only and not article_content.get('is_ai_related', False):

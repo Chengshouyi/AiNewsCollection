@@ -103,6 +103,7 @@ class BnextCrawler(BaseCrawler):
             num_articles = self.global_params.get("num_articles", 10)
             ai_only = self.global_params.get("ai_only", True)
             min_keywords = self.global_params.get("min_keywords", 3)
+            is_limit_num_articles = self.global_params.get("is_limit_num_articles", False)
             
             # 使用重試機制批量獲取文章內容
             articles_content = self.retry_operation(
@@ -110,7 +111,8 @@ class BnextCrawler(BaseCrawler):
                     self.articles_df,
                     num_articles=num_articles,
                     ai_only=ai_only,
-                    min_keywords=min_keywords
+                    min_keywords=min_keywords,
+                    is_limit_num_articles=is_limit_num_articles
                 ),
                 task_id=task_id
             )

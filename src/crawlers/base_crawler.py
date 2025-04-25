@@ -500,6 +500,7 @@ class BaseCrawler(ABC):
             task_args: 任務參數 (與crawler_tasks_model.py的task_args對應)
                 - max_pages: 最大頁數
                 - ai_only: 是否只抓取AI相關文章
+                - is_limit_num_articles: 是否限制抓取文章數量
                 - num_articles: 抓取的文章數量
                 - min_keywords: 最小關鍵字數量
                 - max_retries: 最大重試次數
