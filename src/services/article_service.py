@@ -3,7 +3,7 @@ from typing import Optional, Dict, Any, List, TypeVar, Tuple, Hashable, Type, ca
 from src.models.articles_model import Base, Articles, ArticleScrapeStatus
 from src.models.articles_schema import ArticleReadSchema, PaginatedArticleResponse
 from datetime import datetime, timedelta
-from src.error.errors import DatabaseOperationError, ValidationError
+from src.error.errors import DatabaseOperationError, ValidationError, InvalidOperationError
 from src.database.articles_repository import ArticlesRepository
 from sqlalchemy import or_
 from sqlalchemy.orm import Session
@@ -43,6 +43,10 @@ class ArticleService(BaseService[Articles]):
         Returns:
             Dict[str, Any]: 驗證後的資料
         """
+        # 驗證資料，若是更新則移除 link 欄位
+        if is_update:
+            data.pop('link', None)
+
         schema_type = SchemaType.UPDATE if is_update else SchemaType.CREATE
         return self.validate_data('Article', data, schema_type)
 
@@ -127,65 +131,155 @@ class ArticleService(BaseService[Articles]):
             }
 
     def batch_create_articles(self, articles_data: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """批量創建新文章，返回包含 ArticleReadSchema 列表的結果"""
+        """
+        批量創建或更新文章。
+        如果文章連結已存在，則更新；否則創建新文章。
+        """
+        success_count = 0
+        update_count = 0
+        fail_count = 0
+        # 將這些列表定義在 try 外部，以便 except 塊可以訪問它們
+        inserted_articles_orm: List[Articles] = []
+        updated_articles_orm: List[Articles] = []
+        failed_articles_details: List[Dict[str, Any]] = []
+        inserted_schemas: List[ArticleReadSchema] = [] # 將 Schema 列表也定義在外部
+        updated_schemas: List[ArticleReadSchema] = []   # 將 Schema 列表也定義在外部
+
+        # 在事務中執行所有操作
         try:
+            valid_inserted_orms = [] # 臨時列表，用於收集 refresh 成功的 ORM
+            valid_updated_orms = []   # 臨時列表，用於收集 refresh 成功的 ORM
+
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
 
-                repo_result = article_repo.batch_create(articles_data)
+                for item_data in articles_data:
+                    link = item_data.get('link')
+                    existing_article = None
+                    item_success = False
+                    is_update_path = False
 
-                # --- 新增: Flush 和 Refresh 以獲取 ID ---
-                session.flush() # 將所有待處理的變更寫入 DB (獲取 ID)
-                inserted_articles_orm = repo_result.get('inserted_articles', [])
-                updated_articles_orm = repo_result.get('updated_articles', [])
+                    try:
+                        if not link:
+                             raise ValidationError("文章資料缺少 'link' 欄位")
 
-                # Refresh 每個對象以確保數據同步
+                        # 1. 檢查連結是否存在
+                        existing_article = article_repo.find_by_link(link)
+
+                        if existing_article:
+                            # --- 更新路徑 ---
+                            is_update_path = True
+                            logger.debug(f"批量處理：連結 '{link}' 已存在，嘗試更新。")
+                            # 驗證會移除link後送驗，所以不須額外處理
+                            validated_data = self.validate_article_data(item_data, is_update=True)
+
+                            # 調用 repo.update (它會處理驗證和不可變欄位)
+                            updated_article = article_repo.update(existing_article.id, validated_data)
+
+                            # repo.update 成功執行 (可能返回 None 表示無變更)
+                            update_count += 1
+                            if updated_article:
+                                updated_articles_orm.append(updated_article)
+                            else:
+                                logger.debug(f"批量處理：連結 '{link}' 更新完成，無實際數據變更。")
+                            item_success = True
+
+                        else:
+                            # --- 創建路徑 ---
+                            is_update_path = False
+                            logger.debug(f"批量處理：連結 '{link}' 不存在，嘗試創建。")
+                            validated_data = self.validate_article_data(item_data, is_update=False)
+
+                            # 調用 repo.create
+                            new_article = article_repo.create(validated_data)
+
+                            if new_article:
+                                inserted_articles_orm.append(new_article)
+                                success_count += 1
+                                item_success = True
+                            else:
+                                raise DatabaseOperationError("Repository create 方法返回 None，創建失敗")
+
+                    except (ValidationError, DatabaseOperationError, InvalidOperationError) as e:
+                        logger.error(f"批量處理文章 {'更新' if is_update_path else '創建'} 失敗 (Link: {link}): {e}")
+                        fail_count += 1
+                        failed_articles_details.append({"data": item_data, "error": str(e)})
+                    except Exception as e:
+                        logger.error(f"批量處理文章時發生未預期錯誤 (Link: {link}): {e}", exc_info=True)
+                        fail_count += 1
+                        failed_articles_details.append({"data": item_data, "error": f"未預期錯誤: {str(e)}"})
+
+                # --- 在事務內部，循環結束後 ---
+                session.flush()
+
+                # Refresh inserted ORMs and collect valid ones
                 for article in inserted_articles_orm:
-                    if article and not instance_state(article).detached: # 確保對象在 session 中
-                         session.refresh(article)
+                    if article and not instance_state(article).detached:
+                        try:
+                            session.refresh(article)
+                            valid_inserted_orms.append(article) # Collect successfully refreshed
+                        except Exception as refresh_err:
+                             logger.error(f"Refresh 插入的文章 ID={getattr(article, 'id', 'N/A')} 失敗: {refresh_err}", exc_info=True)
+                             fail_count += 1
+                             success_count -= 1
+                             failed_articles_details.append({"data": f"ID={getattr(article, 'id', 'N/A')}", "error": f"Refresh 失敗: {refresh_err}"})
+
+                # Refresh updated ORMs and collect valid ones
                 for article in updated_articles_orm:
                      if article and not instance_state(article).detached:
-                         session.refresh(article)
-                # --- 結束新增 ---
+                        try:
+                            session.refresh(article)
+                            valid_updated_orms.append(article) # Collect successfully refreshed
+                        except Exception as refresh_err:
+                             logger.error(f"Refresh 更新的文章 ID={getattr(article, 'id', 'N/A')} 失敗: {refresh_err}", exc_info=True)
+                             fail_count += 1
+                             update_count -= 1
+                             failed_articles_details.append({"data": f"ID={getattr(article, 'id', 'N/A')}", "error": f"Refresh 失敗: {refresh_err}"})
 
-                # 轉換結果中的 ORM 列表為 Schema 列表
-                inserted_schemas = [ArticleReadSchema.model_validate(a) for a in inserted_articles_orm]
-                updated_schemas = [ArticleReadSchema.model_validate(a) for a in updated_articles_orm]
+                # --- 將 ORM 轉換為 Schema (移到事務內部) ---
+                inserted_schemas = [ArticleReadSchema.model_validate(a) for a in valid_inserted_orms]
+                updated_schemas = [ArticleReadSchema.model_validate(a) for a in valid_updated_orms]
 
-                # 構建最終返回的結果字典
-                final_result_msg = repo_result.copy()
-                final_result_msg['inserted_articles'] = inserted_schemas
-                final_result_msg['updated_articles'] = updated_schemas
+            # --- 事務在此提交或回滾 ---
 
-                message = (
-                    f"批量處理文章完成：新增 {final_result_msg.get('success_count', 0)} 筆，"
-                    f"更新 {final_result_msg.get('update_count', 0)} 筆，"
-                    f"失敗 {final_result_msg.get('fail_count', 0)} 筆"
-                )
+            # --- 事務外部：構建成功返回結果 ---
+            message = (
+                f"批量處理文章完成：新增 {success_count} 筆，"
+                f"更新 {update_count} 筆，"
+                f"失敗 {fail_count} 筆"
+            )
+            final_result_msg = {
+                'success_count': success_count,
+                'update_count': update_count,
+                'fail_count': fail_count,
+                'inserted_articles': inserted_schemas, # 使用在事務內轉換好的列表
+                'updated_articles': updated_schemas,   # 使用在事務內轉換好的列表
+                'failed_details': failed_articles_details
+            }
+            overall_success = fail_count == 0
 
-                success = final_result_msg.get('fail_count', 0) == 0
-                return {
-                    'success': success,
-                    'message': message,
-                    'resultMsg': final_result_msg
-                }
-        except ValidationError as e:
-            # Pydantic 驗證錯誤現在也可能在這裡觸發，但應該是轉換時的問題
-            error_msg = f"批量創建文章時資料轉換或驗證失敗: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return {'success': False, 'message': error_msg, 'resultMsg': None}
-        except DatabaseOperationError as e:
-            error_msg = f"批量創建文章時資料庫操作失敗: {str(e)}"
-            logger.error(error_msg, exc_info=True)
-            return {'success': False, 'message': error_msg, 'resultMsg': None}
+            return {
+                'success': overall_success,
+                'message': message,
+                'resultMsg': final_result_msg
+            }
+
         except Exception as e:
-            # 捕獲更廣泛的異常，包括可能的 refresh 錯誤
-            error_msg = f"批量創建文章失敗: {str(e)}"
+            # 捕獲事務層面或其他未預期的異常
+            error_msg = f"批量創建/更新文章過程中發生未預期錯誤: {str(e)}"
             logger.error(error_msg, exc_info=True)
+            # 返回通用錯誤結構
             return {
                 'success': False,
                 'message': error_msg,
-                'resultMsg': None
+                'resultMsg': { # 提供部分結果（如果有的話）
+                    'success_count': success_count,
+                    'update_count': update_count,
+                    'fail_count': fail_count + (len(articles_data) - success_count - update_count - fail_count), # 將未處理的也計入失敗
+                    'inserted_articles': [], # 保持外部錯誤時返回空
+                    'updated_articles': [], # 保持外部錯誤時返回空
+                    'failed_details': failed_articles_details + [{"data": "General Error", "error": str(e)}]
+                }
             }
 
     def find_all_articles(self,

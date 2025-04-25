@@ -204,37 +204,114 @@ class TestArticleService:
         assert result_update["article"].summary == update_data["summary"]
         assert result_update["article"].link == article_data["link"] # 連結應保持不變
 
-    def test_batch_create_articles(self, article_service):
-        """測試批量新增文章"""
+    def test_batch_create_articles(self, article_service, sample_articles):
+        """測試批量新增文章，包含新增、更新（重複連結）和失敗情況"""
+        # 準備測試數據
+        existing_article_link_1 = sample_articles[0].link
+        existing_article_link_2 = sample_articles[1].link
+        original_title_1 = sample_articles[0].title
+        original_category_2 = sample_articles[1].category
+
         articles_data = [
             {
-                "title": f"batch_測試文章{i}",
-                "link": f"https://test.com/batch_article{i}",
-                "summary": f"batch_測試摘要{i}",
-                "content": f"batch_測試內容{i}",
-                "source": "測試來源",
-                "source_url": f"https://test.com/batch_source{i}",
-                "category": "測試",
+                # 情況 1: 全新文章，應創建成功
+                "title": "全新批量文章",
+                "link": "https://test.com/batch_new_unique",
+                "summary": "新摘要",
+                "content": "新內容",
+                "source": "批量測試來源",
+                "source_url": "https://test.com/batch_new_source",
+                "category": "批量測試",
                 "published_at": datetime.now(timezone.utc),
-                "is_ai_related": True,
-                "is_scraped": True,
-                "tags": "測試,文章",
-                "scrape_status": ArticleScrapeStatus.CONTENT_SCRAPED
+                "is_ai_related": False,
+                "is_scraped": False,
+                "tags": "新,批量",
+                "scrape_status": ArticleScrapeStatus.LINK_SAVED
+            },
+            {
+                # 情況 2: 連結已存在，應更新現有文章 1
+                "title": "更新後的AI發展",
+                "link": existing_article_link_1,
+                "summary": "這是更新後的摘要",
+                "is_scraped": True # 假設更新了爬取狀態
+            },
+            {
+                # 情況 3: 連結已存在，應更新現有文章 2
+                "title": "更新後的市場分析", # 假設標題也更新了
+                "link": existing_article_link_2,
+                "category": "更新後的財經分類", # 更新分類
+                "tags": "更新,財經" # 更新標籤
+            },
+            {
+                # 情況 4: 缺少 link，應失敗
+                "title": "無效文章 - 缺少連結",
+                "summary": "此項應失敗",
+                "source": "無效來源",
+                "source_url": "https://invalid.com/source"
             }
-            for i in range(3)
         ]
 
         result = article_service.batch_create_articles(articles_data)
-        assert result["success"] is True
+
+        # 驗證總體結果
+        assert result["success"] is False # 因為有一筆失敗
         assert "resultMsg" in result
-        assert result["resultMsg"]["success_count"] == 3
-        assert result["resultMsg"]["update_count"] == 0
-        assert result["resultMsg"]["fail_count"] == 0
-        assert "inserted_articles" in result["resultMsg"]
-        assert len(result["resultMsg"]["inserted_articles"]) == 3
-        assert all(isinstance(a, ArticleReadSchema) for a in result["resultMsg"]["inserted_articles"])
-        assert "updated_articles" in result["resultMsg"]
-        assert len(result["resultMsg"]["updated_articles"]) == 0
+        result_msg = result["resultMsg"]
+
+        # 驗證計數
+        assert result_msg["success_count"] == 1, f"預期創建 1 筆，實際 {result_msg['success_count']}"
+        assert result_msg["update_count"] == 2, f"預期更新 2 筆，實際 {result_msg['update_count']}"
+        assert result_msg["fail_count"] == 1, f"預期失敗 1 筆，實際 {result_msg['fail_count']}"
+
+        # 驗證創建的文章
+        assert "inserted_articles" in result_msg
+        assert len(result_msg["inserted_articles"]) == 1
+        inserted_article_schema = result_msg["inserted_articles"][0]
+        assert isinstance(inserted_article_schema, ArticleReadSchema)
+        assert inserted_article_schema.title == "全新批量文章"
+        assert inserted_article_schema.link == "https://test.com/batch_new_unique"
+        assert inserted_article_schema.id is not None # 確保有 ID
+
+        # 驗證更新的文章
+        assert "updated_articles" in result_msg
+        assert len(result_msg["updated_articles"]) == 2
+        updated_schema_1 = next((a for a in result_msg["updated_articles"] if a.link == existing_article_link_1), None)
+        updated_schema_2 = next((a for a in result_msg["updated_articles"] if a.link == existing_article_link_2), None)
+
+        assert updated_schema_1 is not None
+        assert isinstance(updated_schema_1, ArticleReadSchema)
+        assert updated_schema_1.title == "更新後的AI發展" # 驗證更新的標題
+        assert updated_schema_1.summary == "這是更新後的摘要" # 驗證更新的摘要
+        assert updated_schema_1.is_scraped is True # 驗證更新的欄位
+        assert updated_schema_1.id == sample_articles[0].id # ID 應保持不變
+
+        assert updated_schema_2 is not None
+        assert isinstance(updated_schema_2, ArticleReadSchema)
+        assert updated_schema_2.title == "更新後的市場分析" # 驗證更新的標題
+        assert updated_schema_2.category == "更新後的財經分類" # 驗證更新的分類
+        assert updated_schema_2.tags == "更新,財經" # 驗證更新的標籤
+        assert updated_schema_2.id == sample_articles[1].id # ID 應保持不變
+
+        # 驗證失敗的項目
+        assert "failed_details" in result_msg
+        assert len(result_msg["failed_details"]) == 1
+        failed_detail = result_msg["failed_details"][0]
+        assert failed_detail["data"]["title"] == "無效文章 - 缺少連結"
+        assert "缺少 'link' 欄位" in failed_detail["error"]
+
+        # (可選) 直接檢查資料庫確認更新已生效
+        with article_service._transaction() as session:
+            db_article_1 = session.get(Articles, sample_articles[0].id)
+            db_article_2 = session.get(Articles, sample_articles[1].id)
+            assert db_article_1.title == "更新後的AI發展"
+            assert db_article_1.is_scraped is True
+            assert db_article_2.category == "更新後的財經分類"
+            assert db_article_2.tags == "更新,財經"
+
+            # 確認新文章已存在
+            new_db_article = session.query(Articles).filter_by(link="https://test.com/batch_new_unique").first()
+            assert new_db_article is not None
+            assert new_db_article.title == "全新批量文章"
 
     def test_get_article_by_id(self, article_service, sample_articles):
         """測試根據ID獲取文章"""

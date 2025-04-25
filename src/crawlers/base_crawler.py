@@ -307,18 +307,16 @@ class BaseCrawler(ABC):
                             
                 str_articles_data = [convert_hashable_dict_to_str_dict(article) for article in articles_data]
 
-                # --- 修改：調用 batch_update 或 batch_create ---
                 if self.global_params.get('get_links_by_task_id', False) or self.global_params.get('scrape_mode') == ScrapeMode.CONTENT_ONLY.value:
-                    # 如果是 CONTENT_ONLY 模式，或者 get_links_by_task_id 為 True，則執行更新
+                    logger.info("調用 article_service.batch_update_articles_by_link...") # 新增日誌
                     result = self.article_service.batch_update_articles_by_link(
                         article_data = str_articles_data
                     )
                 else:
-                    # 否則執行創建 (或更新，如果連結已存在)
+                    logger.info("調用 article_service.batch_create_articles...") # 新增日誌
                     result = self.article_service.batch_create_articles(
                         articles_data = str_articles_data
                     )
-                # --- 結束修改 ---
                 
                 if not result["success"]:
                     logger.error(f"批量保存文章到資料庫失敗: {result['message']}")

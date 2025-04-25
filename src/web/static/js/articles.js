@@ -117,7 +117,7 @@ function renderArticlesTable(articles) {
     articles.forEach(article => {
         // 格式化日期
         const publishDate = article.published_at ? new Date(article.published_at).toLocaleString() : '-';
-        const crawlDate = article.created_at ? new Date(article.created_at).toLocaleString() : '-';
+        const lastScrapeAttempt = article.last_scrape_attempt ? new Date(article.last_scrape_attempt).toLocaleString() : '-';
 
         // AI 相關徽章
         const aiRelatedBadge = article.is_ai_related
@@ -139,7 +139,7 @@ function renderArticlesTable(articles) {
                 <td>${escapeHtml(article.source || '-')}</td>
                 <td>${publishDate}</td>
                 <td class="text-center">${aiRelatedBadge}</td>
-                <td>${crawlDate}</td>
+                <td>${lastScrapeAttempt}</td>
                 <td>${escapeHtml(displayStatus)}</td>
                 <td>
                     <div class="btn-group" role="group">

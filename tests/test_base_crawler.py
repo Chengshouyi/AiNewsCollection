@@ -472,6 +472,7 @@ class TestBaseCrawler:
             "tags": ["Test Tags 1", "Test Tags 2"],
             "is_ai_related": [False, False],
             "is_scraped": [False, False],
+            "scrape_status": [ArticleScrapeStatus.LINK_SAVED.value, ArticleScrapeStatus.LINK_SAVED.value],
         })
         
         # 先清除資料庫中的所有文章
@@ -541,6 +542,7 @@ class TestBaseCrawler:
             "tags": ["Test Tags 1", "Test Tags 2"],
             "is_ai_related": [False, False],
             "is_scraped": [False, False],
+            "scrape_status": [ArticleScrapeStatus.LINK_SAVED.value, ArticleScrapeStatus.LINK_SAVED.value],
         })
         
         # 模擬 batch_update_articles_by_link 方法 (而不是 batch_update_articles)
