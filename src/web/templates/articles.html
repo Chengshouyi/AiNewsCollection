@@ -3,6 +3,12 @@
 {% block title %}文章列表 - AI 新聞收集器{% endblock %}
 
 {% block content %}
+<style>
+    /* 防止特定表格標頭文字換行 */
+    .th-nowrap {
+        white-space: nowrap;
+    }
+</style>
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h1>文章列表</h1>
     <div class="d-flex">
@@ -24,9 +30,9 @@
                 <li>
                     <hr class="dropdown-divider">
                 </li>
-                <li><a class="dropdown-item" href="#" data-filter="today">今日</a></li>
-                <li><a class="dropdown-item" href="#" data-filter="week">本週</a></li>
-                <li><a class="dropdown-item" href="#" data-filter="month">本月</a></li>
+                <li><a class="dropdown-item" href="#" data-filter="today" title="根據抓取時間篩選">今日</a></li>
+                <li><a class="dropdown-item" href="#" data-filter="week" title="根據抓取時間篩選">本週</a></li>
+                <li><a class="dropdown-item" href="#" data-filter="month" title="根據抓取時間篩選">本月</a></li>
             </ul>
         </div>
     </div>
@@ -40,8 +46,9 @@
                 <th scope="col">標題</th>
                 <th scope="col">來源</th>
                 <th scope="col">發布日期</th>
-                <th scope="col">AI相關</th>
+                <th scope="col" class="th-nowrap">AI相關</th>
                 <th scope="col">抓取時間</th>
+                <th scope="col" class="th-nowrap">爬取狀態</th>
                 <th scope="col">操作</th>
             </tr>
         </thead>

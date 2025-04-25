@@ -9,7 +9,7 @@ STANDARD_KEYS = {
     'page', 'per_page', 'limit', 'offset', 
     'sort_by', 'sort_desc', 
     'is_preview', 'preview_fields',
-    'q' # 包含通用的搜尋關鍵字 'q'
+    'q', # 包含通用的搜尋關鍵字 'q'
 }
 
 def parse_and_validate_common_query_params(args: MultiDict) -> Tuple[Dict[str, Any], Dict[str, Any]]:

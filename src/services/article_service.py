@@ -384,60 +384,61 @@ class ArticleService(BaseService[Articles]):
                                 sort_by: Optional[str] = None,
                                 sort_desc: bool = False,
                                 is_preview: bool = False,
-                                preview_fields: Optional[List[str]] = None
+                                preview_fields: Optional[List[str]] = None,
+                                validated_params: Optional[Dict[str, Any]] = None
                                ) -> Dict[str, Any]:
-        """分頁獲取文章，支援過濾、排序和預覽"""
+        """查找文章並分頁返回，支援過濾、排序和預覽"""
         try:
+            # 確保 filter_criteria 是字典
+            if filter_criteria is None:
+                filter_criteria = {}
+
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
-                if not article_repo:
-                    return {
-                        'success': False,
-                        'message': '無法取得資料庫存取器',
-                        'resultMsg': None
-                    }
 
-                repo_result: Dict[str, Any] = article_repo.find_paginated(
-                    filter_criteria=filter_criteria or {},
+                total_count, articles_orm_or_dict = article_repo.find_paginated(
                     page=page,
                     per_page=per_page,
+                    filter_criteria=filter_criteria,
+                    extra_filters=None,
                     sort_by=sort_by,
                     sort_desc=sort_desc,
                     is_preview=is_preview,
                     preview_fields=preview_fields
                 )
 
-                if not repo_result or 'items' not in repo_result:
-                    logger.warning("find_articles_paginated: repo.find_paginated 返回的結果結構不符合預期。")
-                    return {
-                        'success': False,
-                        'message': '分頁獲取文章失敗 (內部錯誤或無數據)',
-                        'resultMsg': None
-                    }
+                # 計算總頁數
+                total_pages = (total_count + per_page - 1) // per_page if per_page > 0 else 0
 
-                items_result = repo_result.get('items', [])
+                # 轉換結果
+                items: ArticleResultType
+                if not is_preview and articles_orm_or_dict and isinstance(articles_orm_or_dict[0], Articles):
+                    items = [ArticleReadSchema.model_validate(article) for article in articles_orm_or_dict]
+                else:
+                    items = articles_orm_or_dict # 保持字典列表或空列表
 
-                try:
-                    paginated_response = PaginatedArticleResponse(
-                        items=items_result,
-                        page=repo_result.get("page", 1),
-                        per_page=repo_result.get("per_page", per_page),
-                        total=repo_result.get("total", 0),
-                        total_pages=repo_result.get("total_pages", 0),
-                        has_next=repo_result.get("has_next", False),
-                        has_prev=repo_result.get("has_prev", False)
-                    )
-                except Exception as pydantic_error:
-                    logger.error(f"創建 PaginatedArticleResponse 時出錯: {pydantic_error}", exc_info=True)
-                    return {'success': False, 'message': f'分頁結果格式錯誤: {pydantic_error}', 'resultMsg': None}
+                # 構建分頁響應對象
+                paginated_response = PaginatedArticleResponse(
+                    items=items,
+                    page=page,
+                    per_page=per_page,
+                    total=total_count,
+                    total_pages=total_pages,
+                    has_next=page < total_pages,
+                    has_prev=page > 1
+                )
 
                 return {
                     'success': True,
-                    'message': '分頁獲取文章成功',
-                    'resultMsg': paginated_response
+                    'message': '獲取分頁文章成功',
+                    'resultMsg': paginated_response # 返回包含 Schema 列表的 PaginatedResponse
                 }
+        except DatabaseOperationError as e:
+            error_msg = f"獲取分頁文章時資料庫操作失敗: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            return {'success': False, 'message': error_msg, 'resultMsg': None}
         except Exception as e:
-            error_msg = f"分頁獲取文章失敗: {str(e)}"
+            error_msg = f"獲取分頁文章失敗: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {
                 'success': False,

@@ -428,66 +428,66 @@ class BaseRepository(Generic[T], ABC):
         return False
         
     
-    def find_paginated(self, filter_criteria: Optional[Dict[str, Any]] = None, page: int = 1, per_page: int = 10, sort_by: Optional[str] = None, sort_desc: bool = False, is_preview: bool = False, preview_fields: Optional[List[str]] = None) -> Dict[str, Any]:
+    def find_paginated(self, page: int = 1, per_page: int = 10, 
+                       filter_criteria: Optional[Dict[str, Any]] = None, 
+                       extra_filters: Optional[List[Any]] = None, 
+                       sort_by: Optional[str] = None, 
+                       sort_desc: bool = False, 
+                       is_preview: bool = False, 
+                       preview_fields: Optional[List[str]] = None) -> tuple[int, list]:
         """獲取分頁數據，支援過濾、排序和預覽模式"""
         # 驗證分頁參數
-        if per_page <= 0:
-            # 使用 InvalidOperationError 替換 ValueError
-            raise InvalidOperationError("每頁記錄數必須大於0")
-        if page <= 0:
-            page = 1
+        if not isinstance(per_page, int) or per_page <= 0:
+            raise InvalidOperationError("每頁記錄數必須是正整數")
+        if not isinstance(page, int) or page <= 0:
+             page = 1 # 頁碼無效時預設為 1
         
         # 計算偏移量
         offset = (page - 1) * per_page
         
-        # --- 預覽模式處理 ---
+        # --- 預覽模式處理 (保持不變) ---
         query_entities = [self.model_class] # 默認查詢整個模型
         valid_preview_fields = []
-        if is_preview and preview_fields:
+        local_is_preview = is_preview # 創建本地變數以在閉包中使用
+        if local_is_preview and preview_fields:
             valid_preview_fields = [field for field in preview_fields if hasattr(self.model_class, field)]
             if valid_preview_fields:
-                # 確保至少有一個有效欄位才替換查詢實體
                  query_entities = [getattr(self.model_class, field) for field in valid_preview_fields]
             else:
                 logger.warning(f"預覽模式請求的欄位 {preview_fields} 均無效，將返回完整物件。")
-                is_preview = False # 重置預覽標誌，因為沒有有效的欄位
+                local_is_preview = False # 重置預覽標誌
         # --- 預覽模式處理結束 ---
         
-        # 構建查詢，使用 query_entities
-        query = self.session.query(*query_entities)
+        # 構建查詢
+        base_query = self.session.query(*query_entities)
         
-        # 應用過濾 (注意：過濾仍然基於 self.model_class 的屬性)
-        query = self._apply_filters(query, filter_criteria or {})
+        # --- 修改：應用過濾和額外過濾 --- 
+        filtered_query = self._apply_filters(base_query, filter_criteria or {})
+        if extra_filters:
+            for extra_filter in extra_filters:
+                filtered_query = filtered_query.filter(extra_filter)
+        # --- 修改結束 ---
 
         # 添加排序
+        sorted_query = filtered_query # Start with filtered query
         if sort_by:
             if not hasattr(self.model_class, sort_by):
-                raise DatabaseOperationError(f"無效的排序欄位: {sort_by}")
+                raise InvalidOperationError(f"無效的排序欄位: {sort_by}")
             sort_column = getattr(self.model_class, sort_by)
-            # 如果是預覽模式且排序欄位不在預覽欄位中，排序可能會失敗或行為不符預期
-            # SQLAlchemy 在 .order_by() 中引用未在 select 列表中的欄位通常是允許的
             order_by = desc(sort_column) if sort_desc else asc(sort_column)
-            query = query.order_by(order_by)
+            sorted_query = filtered_query.order_by(order_by)
         
-        # 獲取總記錄數 (count 需要在應用分頁前)
-        # 注意: count() 會忽略 with_entities 的設定，這是 SQLAlchemy 的行為
-        total_query = self.session.query(self.model_class)
-        total_query = self._apply_filters(total_query, filter_criteria or {})
-        total = total_query.count()
-        
-        # 計算總頁數
-        total_pages = (total + per_page - 1) // per_page if total > 0 else 1 # 避免 total=0 時除以0
-        
-        # 調整頁碼 (如果請求頁碼超過總頁數)
-        if page > total_pages and total > 0:
-            page = total_pages
-            offset = (page - 1) * per_page
-        elif page > 1 and total == 0: # 如果總數為0，強制回到第一頁
-             page = 1
-             offset = 0
+        # 獲取總記錄數 (基於過濾後的查詢，但在應用分頁前)
+        # 注意: count() 會忽略 with_entities 的設定，因此 count 需要基於完整模型
+        count_query = self.session.query(self.model_class) 
+        count_query = self._apply_filters(count_query, filter_criteria or {})
+        if extra_filters: # Count 也需要應用額外過濾
+            for extra_filter in extra_filters:
+                count_query = count_query.filter(extra_filter)
+        total = self.execute_query(lambda: count_query.count(), err_msg="計算總記錄數時出錯")
         
         # 應用分頁獲取當前頁的記錄
-        paginated_query = query.offset(offset).limit(per_page)
+        paginated_query = sorted_query.offset(offset).limit(per_page)
         
         # 執行查詢
         raw_items = self.execute_query(
@@ -496,24 +496,14 @@ class BaseRepository(Generic[T], ABC):
         )
         
         # --- 結果轉換 (如果為預覽模式) ---
-        items = []
-        if is_preview and valid_preview_fields:
-             # 如果使用了 with_entities，結果是元組列表
+        items: list
+        if local_is_preview and valid_preview_fields:
             items = [dict(zip(valid_preview_fields, row)) for row in raw_items]
         else:
-            # 否則結果是模型實例列表
             items = raw_items
         # --- 結果轉換結束 ---
 
-        return {
-            "items": items,
-            "page": page,
-            "per_page": per_page,
-            "total": total,
-            "total_pages": total_pages,
-            "has_next": page < total_pages,
-            "has_prev": page > 1
-        }
+        return total, items # 返回總數和當前頁項目
 
     # def find_all(self, *args, **kwargs):
     #     """找出所有實體的別名方法"""

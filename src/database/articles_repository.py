@@ -874,7 +874,7 @@ class ArticlesRepository(BaseRepository[Articles]):
         }
 
     def get_paginated_by_filter(self, filter_dict: Dict[str, Any], page: int, per_page: int, 
-                               sort_by: Optional[str] = None, sort_desc: bool = False) -> Dict[str, Any]:
+                               sort_by: Optional[str] = None, sort_desc: bool = False) -> tuple[int, list]:
         """根據過濾條件獲取分頁資料 (現在使用 BaseRepository.find_paginated)"""
         # 如果未指定排序欄位，預設按 published_at 降序排序
         if sort_by is None:
@@ -1164,6 +1164,45 @@ class ArticlesRepository(BaseRepository[Articles]):
         search_text = remaining_criteria.pop("search_text", None)
         tags_like = remaining_criteria.pop("tags", None) # 假設 'tags' 意指 LIKE 搜索
         category_filter = remaining_criteria.pop("category", None) # <-- 攔截 category
+        
+        # --- 修改：統一處理 'filter' 參數 --- 
+        special_filter_value = remaining_criteria.pop("filter", None)
+        if special_filter_value is not None:
+            if special_filter_value == 'ai':
+                if hasattr(self.model_class, 'is_ai_related'):
+                    processed_query = processed_query.filter(self.model_class.is_ai_related == True)
+                else:
+                    logger.warning(f"嘗試按 'filter=ai' 過濾，但模型沒有 'is_ai_related' 欄位。")
+            elif special_filter_value == 'not-ai':
+                if hasattr(self.model_class, 'is_ai_related'):
+                    processed_query = processed_query.filter(self.model_class.is_ai_related == False)
+                else:
+                    logger.warning(f"嘗試按 'filter=not-ai' 過濾，但模型沒有 'is_ai_related' 欄位。")
+            elif special_filter_value == 'today':
+                if hasattr(self.model_class, 'created_at'):
+                    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                    processed_query = processed_query.filter(self.model_class.created_at >= today_start)
+                else:
+                    logger.warning(f"嘗試按 'filter=today' 過濾，但模型沒有 'created_at' 欄位。")
+            elif special_filter_value == 'week':
+                if hasattr(self.model_class, 'created_at'):
+                    today = datetime.now().date()
+                    start_of_week = today - timedelta(days=today.weekday())
+                    start_of_week_dt = datetime.combine(start_of_week, datetime.min.time())
+                    processed_query = processed_query.filter(self.model_class.created_at >= start_of_week_dt)
+                else:
+                    logger.warning(f"嘗試按 'filter=week' 過濾，但模型沒有 'created_at' 欄位。")
+            elif special_filter_value == 'month':
+                if hasattr(self.model_class, 'created_at'):
+                    today = datetime.now().date()
+                    start_of_month = today.replace(day=1)
+                    start_of_month_dt = datetime.combine(start_of_month, datetime.min.time())
+                    processed_query = processed_query.filter(self.model_class.created_at >= start_of_month_dt)
+                else:
+                    logger.warning(f"嘗試按 'filter=month' 過濾，但模型沒有 'created_at' 欄位。")
+            else:
+                logger.warning(f"過濾條件 'filter' 的值 '{special_filter_value}' 無效，已忽略。接受的值為 'ai', 'not-ai', 'today', 'week', 'month'。")
+        # --- 結束 'filter' 處理 ---
 
         # is_ai_related 和 published_at Range 也可以在這裡處理，
         # 或者如果基類 _apply_filters 已能處理 bool 和 $gte/$lte，則讓基類處理
@@ -1180,7 +1219,7 @@ class ArticlesRepository(BaseRepository[Articles]):
         if tags_like and isinstance(tags_like, str):
             processed_query = processed_query.filter(self.model_class.tags.like(f'%{tags_like}%'))
 
-        # --- 新增 Category 處理 --- 
+        # --- Category 處理 (保持不變) --- 
         if category_filter is not None: # 只有在提供了 category 時才過濾
             # 確保模型有 category 屬性 (雖然我們知道有)
             if hasattr(self.model_class, 'category'):

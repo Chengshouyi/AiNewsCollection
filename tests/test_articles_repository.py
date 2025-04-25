@@ -1,6 +1,6 @@
 import pytest
 import time # 引入 time 模組
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta # 確保 timedelta 已導入
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from src.database.articles_repository import ArticlesRepository
@@ -178,7 +178,7 @@ class TestArticleRepository:
 
     def test_find_by_category(self, article_repo, sample_articles, session, clean_db):
         """測試根據分類查詢文章"""
-        articles = article_repo.find_by_category("科技")
+        articles = article_repo.find_by_filter({"category": "科技"})
         assert len(articles) == 2
         assert all(isinstance(article, Articles) for article in articles) # Check type
         assert all(article.category == "科技" for article in articles)
@@ -186,8 +186,8 @@ class TestArticleRepository:
     def test_find_by_category_preview(self, article_repo, sample_articles, session, clean_db):
         """測試根據分類查詢文章（預覽模式）"""
         preview_fields = ["title", "link"]
-        articles_preview = article_repo.find_by_category(
-            "科技", is_preview=True, preview_fields=preview_fields
+        articles_preview = article_repo.find_by_filter(
+            {"category": "科技"}, is_preview=True, preview_fields=preview_fields
         )
         assert len(articles_preview) == 2
         assert all(isinstance(article, dict) for article in articles_preview)
@@ -501,72 +501,94 @@ class TestArticleRepository:
 
     def test_get_paginated_by_filter_default_sort(self, article_repo, filter_test_articles, session):
         """測試分頁查詢，使用預設排序 (published_at desc)"""
-        page1_result = article_repo.get_paginated_by_filter( filter_dict={}, page=1, per_page=2 )
-        assert page1_result["total_pages"] == 3
-        assert page1_result["total"] == 5
-        assert len(page1_result["items"]) == 2
-        assert all(isinstance(a, Articles) for a in page1_result["items"]) # Default is not preview
-        assert page1_result["items"][0].title == "一般科技新聞2"
-        assert page1_result["items"][1].title == "AI研究報告2"
+        page = 1
+        per_page = 2
+        total_count, items = article_repo.get_paginated_by_filter( filter_dict={}, page=page, per_page=per_page )
+        total_pages = (total_count + per_page - 1) // per_page
+        
+        assert total_pages == 3
+        assert total_count == 5
+        assert len(items) == 2
+        assert all(isinstance(a, Articles) for a in items) # Default is not preview
+        # 預設排序現在是 published_at desc
+        assert items[0].title == "一般科技新聞2" # 2023-01-20
+        assert items[1].title == "AI研究報告2"   # 2023-01-15
 
     def test_get_paginated_by_filter_custom_sort(self, article_repo, filter_test_articles, session):
         """測試分頁查詢，使用自定義排序"""
-        title_asc_result = article_repo.get_paginated_by_filter( filter_dict={}, page=1, per_page=3, sort_by="title", sort_desc=False )
-        assert len(title_asc_result["items"]) == 3
-        assert all(isinstance(a, Articles) for a in title_asc_result["items"])
-        titles = [item.title for item in title_asc_result["items"]]
-        assert titles == ["AI研究報告1", "AI研究報告2", "一般科技新聞1"]
-        assert title_asc_result["has_next"] is True
-        assert title_asc_result["total"] == 5
+        page = 1
+        per_page = 3
+        total_count, items = article_repo.get_paginated_by_filter( filter_dict={}, page=page, per_page=per_page, sort_by="title", sort_desc=False )
+        has_next = page * per_page < total_count
+
+        assert len(items) == 3
+        assert all(isinstance(a, Articles) for a in items)
+        titles = [item.title for item in items]
+        assert titles == ["AI研究報告1", "AI研究報告2", "一般科技新聞1"] # 依標題升序
+        assert has_next is True
+        assert total_count == 5
 
     def test_get_paginated_by_filter_preview(self, article_repo, filter_test_articles, session):
         """測試分頁查詢（預覽模式）"""
         preview_fields = ["link", "category", "published_at"]
-        page1_result = article_repo.find_paginated( # Use find_paginated directly for preview testing
-            filter_criteria={}, # <--- Changed from filter_dict
-            page=1,
-            per_page=2,
+        page = 1
+        per_page = 2
+        total_count, items = article_repo.find_paginated( # Use find_paginated directly for preview testing
+            filter_criteria={}, 
+            page=page,
+            per_page=per_page,
             is_preview=True,
             preview_fields=preview_fields,
-            sort_by='id',        # Explicitly sort by ID descending for this test
+            sort_by='id',       
             sort_desc=True
-            # Default sort is ID desc in find_paginated base implementation if no sort_by given <- This assumption was incorrect
         )
-        assert page1_result["total_pages"] == 3
-        assert page1_result["total"] == 5
-        assert len(page1_result["items"]) == 2
-        assert all(isinstance(a, dict) for a in page1_result["items"])
-        assert set(page1_result["items"][0].keys()) == set(preview_fields)
-        # Check content based on default ID desc sort (assuming IDs 5, 4, 3, 2, 1 -> titles tech2, ai2, finance, tech1, ai1)
-        assert page1_result["items"][0]["link"] == "https://example.com/tech2" # ID 5
-        assert page1_result["items"][1]["link"] == "https://example.com/ai2"   # ID 4
+        total_pages = (total_count + per_page - 1) // per_page
+        
+        assert total_pages == 3
+        assert total_count == 5
+        assert len(items) == 2
+        assert all(isinstance(a, dict) for a in items)
+        assert set(items[0].keys()) == set(preview_fields)
+        assert items[0]["link"] == "https://example.com/tech2" # ID 5
+        assert items[1]["link"] == "https://example.com/ai2"   # ID 4
 
         # Test with filter and preview
-        page1_filtered_preview = article_repo.find_paginated(
+        page = 1
+        per_page = 1
+        total_count_filtered, items_filtered = article_repo.find_paginated(
             filter_criteria={"is_ai_related": True}, # Should match ai1, ai2
-            page=1,
-            per_page=1,
+            page=page,
+            per_page=per_page,
             sort_by="published_at",
             sort_desc=True, # Newest AI first (ai2)
             is_preview=True,
             preview_fields=preview_fields
         )
-        assert page1_filtered_preview["total"] == 2
-        assert page1_filtered_preview["total_pages"] == 2
-        assert len(page1_filtered_preview["items"]) == 1
-        assert isinstance(page1_filtered_preview["items"][0], dict)
-        assert page1_filtered_preview["items"][0]["link"] == "https://example.com/ai2"
+        total_pages_filtered = (total_count_filtered + per_page - 1) // per_page
+
+        assert total_count_filtered == 2
+        assert total_pages_filtered == 2
+        assert len(items_filtered) == 1
+        assert isinstance(items_filtered[0], dict)
+        assert items_filtered[0]["link"] == "https://example.com/ai2"
 
     def test_pagination_navigation(self, article_repo, filter_test_articles, session):
         """測試分頁導航屬性 (has_next, has_prev)"""
+        page = 1
         per_page = 2
-        total = 5
-        total_pages = 3
-        page1 = article_repo.get_paginated_by_filter(filter_dict={}, page=1, per_page=per_page)
-        assert page1["has_prev"] is False
-        assert page1["has_next"] is True
-        assert page1["total_pages"] == total_pages
-        assert page1["total"] == total
+        total_expected = 5
+        total_pages_expected = 3
+        
+        total_count, items = article_repo.get_paginated_by_filter(filter_dict={}, page=page, per_page=per_page)
+        
+        has_prev = page > 1
+        has_next = page * per_page < total_count
+        calculated_total_pages = (total_count + per_page - 1) // per_page
+
+        assert has_prev is False
+        assert has_next is True
+        assert calculated_total_pages == total_pages_expected
+        assert total_count == total_expected
 
     def test_delete_by_link(self, article_repo, sample_articles, session, clean_db):
         """測試根據連結刪除文章，並在找不到連結時引發 ValidationError"""
@@ -658,7 +680,9 @@ class TestArticleRepository:
         result_task11 = article_repo.find_articles_by_task_id(task_id=11, limit=1)
         assert len(result_task11) == 1
         assert isinstance(result_task11[0], Articles)
-        assert result_task11[0].title == "AI研究報告2" # Based on default sort
+        # find_articles_by_task_id sorts by scrape_status asc, then updated_at desc
+        # Assuming ai2 (PENDING) comes before finance (LINK_SAVED)
+        assert result_task11[0].title == "AI研究報告2"
 
     def test_find_articles_by_task_id_preview(self, article_repo, filter_test_articles, session):
         """測試根據 task_id 查找文章（預覽模式）"""
@@ -669,11 +693,11 @@ class TestArticleRepository:
         assert len(result_task11_preview) == 1
         assert isinstance(result_task11_preview[0], dict)
         assert set(result_task11_preview[0].keys()) == set(preview_fields)
-        assert result_task11_preview[0]["link"] == "https://example.com/ai2" # Based on default sort
+        assert result_task11_preview[0]["link"] == "https://example.com/ai2" # Based on sort
 
     def test_count_articles_by_task_id(self, article_repo, filter_test_articles, session):
         """測試根據 task_id 計算文章數量"""
         assert article_repo.count_articles_by_task_id(task_id=10) == 3
         assert article_repo.count_articles_by_task_id(task_id=11) == 2
-        assert article_repo.count_articles_by_task_id(task_id=10, is_scraped=True) == 3
-        assert article_repo.count_articles_by_task_id(task_id=11, is_scraped=False) == 2
+        assert article_repo.count_articles_by_task_id(task_id=10, is_scraped=True) == 3 # tech1, tech2, ai1 are scraped
+        assert article_repo.count_articles_by_task_id(task_id=11, is_scraped=False) == 2 # ai2, finance are unscraped
