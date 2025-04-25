@@ -327,32 +327,27 @@ class SchedulerService(BaseService[CrawlerTasks]):
                 # --- 修改結束 ---
                 task = repo.get_by_id(task_id)
 
-            if not task:
-                error_msg = f"找不到任務 {task_id}，無法執行"
-                logger.error(error_msg)
-                
-                # 如果是持久化恢復的任務但資料庫中已不存在，應該移除該排程
-                # 注意：靜態方法無法直接訪問 self.cron_scheduler
-                # 需要考慮如何在靜態方法中移除作業，或接受此限制
-                # 一個可能的做法是讓 reload_scheduler 處理這種情況
-                # if task_args and self.scheduler_status['running']: # 無法訪問 self
-                #     job_id = f"task_{task_id}"
-                #     try:
-                #         self.cron_scheduler.remove_job(job_id)
-                #         logger.info(f"已移除不存在的持久化任務: {job_id}")
-                #     except Exception as e:
-                #         logger.warning(f"移除不存在的任務 {job_id} 失敗: {str(e)}")
-                return
-                
+                if not task:
+                    error_msg = f"找不到任務 {task_id}，無法執行"
+                    logger.error(error_msg)
+                    return # 直接返回，避免後續操作
+
+                # --- 將屬性讀取移入 session scope ---
+                is_auto = task.is_auto
+                task_name = task.task_name
+                # --- 移入結束 ---
+
             # 檢查任務是否設置為自動執行 (讀取 task 物件，無需再次查詢DB)
-            if not task.is_auto:
-                logger.warning(f"任務 {task_id} ({task.task_name}) 已設置為非自動執行，跳過本次執行")
+            # --- 使用讀取到的變數 ---
+            if not is_auto:
+                logger.warning(f"任務 {task_id} ({task_name}) 已設置為非自動執行，跳過本次執行")
                 return
-                
+
             # --- 使用服務容器獲取 task_executor_service ---
             task_executor_service = get_task_executor_service()
             # 交由 TaskExecutor 執行 (在事務外部)
-            logger.info(f"調度器觸發執行任務 {task.id} ({task.task_name}), 附加參數: {task_args}")
+            # --- 使用讀取到的變數 ---
+            logger.info(f"調度器觸發執行任務 {task.id} ({task_name}), 附加參數: {task_args}")
             task_executor_service.execute_task(task.id) # 移除 self.
             # --- 修改結束 ---
             
