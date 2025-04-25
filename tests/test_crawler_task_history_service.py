@@ -398,7 +398,7 @@ class TestCrawlerTaskHistoryService:
         """測試分頁查找歷史記錄 (非預覽)"""
         page = 1
         per_page = 2
-        result = history_service.find_histories_paginated(page=page, per_page=per_page)
+        result = history_service.find_histories_paginated(page=page, per_page=per_page, sort_by='start_time', sort_desc=True) # 指定排序
 
         assert result["success"] is True
         assert result["message"] == "分頁獲取歷史記錄成功"
@@ -409,23 +409,16 @@ class TestCrawlerTaskHistoryService:
         assert paginated_data["per_page"] == per_page
         assert paginated_data["total"] == len(sample_histories)
         assert paginated_data["total_pages"] == (len(sample_histories) + per_page - 1) // per_page
+        assert paginated_data.get("has_next") is not None # 檢查是否存在
+        assert paginated_data.get("has_prev") is not None # 檢查是否存在
         assert isinstance(paginated_data["items"], list)
         assert len(paginated_data["items"]) <= per_page
         assert all(isinstance(h, CrawlerTaskHistoryReadSchema) for h in paginated_data["items"])
 
-        # -- 修正 NameError: 先排序，再提取 ID --
         # 驗證第一頁的 ID 是否與原始數據按 start_time 降序排序後的前 per_page 個匹配
-        # 首先對原始數據進行排序
         sorted_histories_by_start_time = sorted(sample_histories, key=lambda h: h.start_time, reverse=True)
-        # 然後從排序後的列表中提取預期的 ID
         expected_ids_page1 = [h.id for h in sorted_histories_by_start_time[:per_page]]
-
-        # 獲取實際返回的 ID
-        # 同樣，調用時指定排序以確保結果穩定
-        result_sorted = history_service.find_histories_paginated(page=page, per_page=per_page, sort_by='start_time', sort_desc=True)
-        paginated_data_sorted = result_sorted["resultMsg"]
-        actual_ids_page1 = [item.id for item in paginated_data_sorted["items"]]
-
+        actual_ids_page1 = [item.id for item in paginated_data["items"]]
         assert actual_ids_page1 == expected_ids_page1
 
     def test_find_histories_paginated_preview(self, history_service, sample_histories):
@@ -445,6 +438,9 @@ class TestCrawlerTaskHistoryService:
         assert paginated_data["page"] == page
         assert paginated_data["per_page"] == per_page
         assert paginated_data["total"] == len(sample_histories)
+        assert paginated_data["total_pages"] == (len(sample_histories) + per_page - 1) // per_page
+        assert paginated_data.get("has_next") is not None # 檢查是否存在
+        assert paginated_data.get("has_prev") is not None # 檢查是否存在
         assert isinstance(paginated_data["items"], list)
         assert len(paginated_data["items"]) <= per_page
         assert all(isinstance(h, dict) for h in paginated_data["items"])

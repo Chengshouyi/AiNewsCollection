@@ -16,7 +16,7 @@ from src.database.crawler_tasks_repository import CrawlerTasksRepository
 from src.services.task_executor_service import TaskExecutorService
 from src.error.errors import DatabaseOperationError
 from src.services.service_container import get_task_executor_service
-
+from src.config import get_db_manager
 # 設定 logger
 logging.basicConfig(level=logging.INFO, 
                     format='%(asctime)s - %(levelname)s - %(message)s')
@@ -190,6 +190,10 @@ class SchedulerService(BaseService[CrawlerTasks]):
             self.scheduler_status['job_count'] = len(self.cron_scheduler.get_jobs())
             self.scheduler_status['last_start_time'] = datetime.now(timezone.utc)
             
+            # --- 新增 Log ---
+            logger.info(f"SchedulerService: 調度器已啟動，處理 {scheduled_count} 個任務，移除 {removed_count} 個過期任務。總共 {self.scheduler_status['job_count']} 個作業。")
+            # --- 新增 Log 結束 ---
+            
             return {
                 'success': True,
                 'message': f'調度器已啟動，處理 {scheduled_count} 個任務 (新增/更新)，移除 {removed_count} 個過期任務。總共 {self.scheduler_status["job_count"]} 個作業',
@@ -299,18 +303,28 @@ class SchedulerService(BaseService[CrawlerTasks]):
             logger.error(f"排程任務 {task.id} 失敗: {str(e)}", exc_info=True)
             return False
 
-    def _trigger_task(self, task_id: int, task_args: Optional[Dict[str, Any]] = None) -> None:
-        """在 cron 調度器觸發時，將該任務交由 TaskExecutor 執行
+    @staticmethod
+    def _trigger_task(task_id: int, task_args: Optional[Dict[str, Any]] = None) -> None:
+        """在 cron 調度器觸發時，將該任務交由 TaskExecutor 執行 (靜態版本)
         
         Args:
             task_id: 任務 ID
             task_args: 附加的任務參數 (持久化存儲的任務可能提供)
         """
+        # --- 新增 Log ---
+        logger.info(f"SchedulerService (Static): 準備觸發任務 ID: {task_id}，附加參數: {task_args}")
+        # --- 新增 Log 結束 ---
         task: Optional[CrawlerTasks] = None
+        db_manager = None # 初始化
         try:
+            # --- 使用服務容器獲取 db_manager ---
+            db_manager = get_db_manager()
             # 使用事務讀取任務信息
-            with self._transaction() as session:
-                repo = cast(CrawlerTasksRepository, self._get_repository('CrawlerTask', session))
+            # --- 直接使用 db_manager 創建事務 ---
+            with db_manager.session_scope() as session:
+                # --- 直接初始化 Repository ---
+                repo = CrawlerTasksRepository(session, CrawlerTasks)
+                # --- 修改結束 ---
                 task = repo.get_by_id(task_id)
 
             if not task:
@@ -318,13 +332,16 @@ class SchedulerService(BaseService[CrawlerTasks]):
                 logger.error(error_msg)
                 
                 # 如果是持久化恢復的任務但資料庫中已不存在，應該移除該排程
-                if task_args and self.scheduler_status['running']:
-                    job_id = f"task_{task_id}"
-                    try:
-                        self.cron_scheduler.remove_job(job_id)
-                        logger.info(f"已移除不存在的持久化任務: {job_id}")
-                    except Exception as e:
-                        logger.warning(f"移除不存在的任務 {job_id} 失敗: {str(e)}")
+                # 注意：靜態方法無法直接訪問 self.cron_scheduler
+                # 需要考慮如何在靜態方法中移除作業，或接受此限制
+                # 一個可能的做法是讓 reload_scheduler 處理這種情況
+                # if task_args and self.scheduler_status['running']: # 無法訪問 self
+                #     job_id = f"task_{task_id}"
+                #     try:
+                #         self.cron_scheduler.remove_job(job_id)
+                #         logger.info(f"已移除不存在的持久化任務: {job_id}")
+                #     except Exception as e:
+                #         logger.warning(f"移除不存在的任務 {job_id} 失敗: {str(e)}")
                 return
                 
             # 檢查任務是否設置為自動執行 (讀取 task 物件，無需再次查詢DB)
@@ -332,9 +349,12 @@ class SchedulerService(BaseService[CrawlerTasks]):
                 logger.warning(f"任務 {task_id} ({task.task_name}) 已設置為非自動執行，跳過本次執行")
                 return
                 
+            # --- 使用服務容器獲取 task_executor_service ---
+            task_executor_service = get_task_executor_service()
             # 交由 TaskExecutor 執行 (在事務外部)
             logger.info(f"調度器觸發執行任務 {task.id} ({task.task_name}), 附加參數: {task_args}")
-            self.task_executor_service.execute_task(task.id)
+            task_executor_service.execute_task(task.id) # 移除 self.
+            # --- 修改結束 ---
             
         except DatabaseOperationError as db_e:
             error_msg = f"觸發任務 {task_id} 前讀取資料庫失敗: {str(db_e)}"
@@ -342,6 +362,11 @@ class SchedulerService(BaseService[CrawlerTasks]):
         except Exception as e:
             error_msg = f"觸發執行任務 {task_id} 時發生錯誤: {str(e)}"
             logger.error(error_msg, exc_info=True)
+        finally:
+            # 如果 db_manager 被成功獲取，確保清理
+            if db_manager:
+                # db_manager.cleanup() # 不應在此處清理，事務管理器會處理 session
+                pass
     
     def add_or_update_task_to_scheduler(self, task: CrawlerTasks, session: Session) -> Dict[str, Any]:
         """新增或更新任務到排程 (需要傳入 session)"""

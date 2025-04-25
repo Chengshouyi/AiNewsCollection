@@ -292,6 +292,10 @@ class TaskExecutorService(BaseService[CrawlerTasks], ProgressListener):
         Returns:
             Dict[str, Any]: 執行結果
         """
+  
+        logger.info(f"TaskExecutorService: 開始執行內部任務 task_id={task_id}, history_id={history_id}")
+        
+        
         crawler_name = None
         task: Optional[CrawlerTasks] = None # 初始化 task
         

@@ -130,46 +130,78 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
         if is_active is not None:
             filter_criteria["is_active"] = is_active
 
-        # 使用 find_by_filter 查找，limit=1 (is_preview 預設為 False)
-        results = self.find_by_filter(filter_criteria=filter_criteria, limit=1)
-        if results:
-            item = results[0]
-            # 進行運行時類型檢查
+        # Use find_paginated with page=1, per_page=1
+        total, items = self.find_paginated(
+            filter_criteria=filter_criteria,
+            page=1,
+            per_page=1,
+            is_preview=False # get_task_by_id should return the full instance
+        )
+        # find_paginated returns a list
+        if items:
+            item = items[0]
+            # Ensure it's the correct type (though find_paginated should handle this)
             if isinstance(item, self.model_class):
                 return item
         return None
 
     def find_tasks_by_crawler_id(self, crawler_id: int, is_active: bool = True,
                                  limit: Optional[int] = None,
+                                 offset: Optional[int] = None,
                                  is_preview: bool = False,
                                  preview_fields: Optional[List[str]] = None
                                  ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
         """根據爬蟲ID查詢相關的任務，支援分頁和預覽"""
         filter_criteria: Dict[str, Any] = {"crawler_id": crawler_id, "is_active": is_active}
-        return self.find_by_filter(
+
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"find_tasks_by_crawler_id: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=limit,
+            page=page,
+            per_page=per_page,
             is_preview=is_preview,
             preview_fields=preview_fields,
-            sort_by='created_at', # 可選：添加預設排序
+            sort_by='created_at', # Keep original default sort
             sort_desc=True
         )
+        return items # Return only the items list
 
     def find_auto_tasks(self, is_active: bool = True,
                         limit: Optional[int] = None,
+                        offset: Optional[int] = None,
                         is_preview: bool = False,
                         preview_fields: Optional[List[str]] = None
                         ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
         """查詢所有自動執行的任務，支援分頁和預覽"""
         filter_criteria: Dict[str, Any] = {"is_auto": True, "is_active": is_active}
-        return self.find_by_filter(
+
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"find_auto_tasks: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=limit,
+            page=page,
+            per_page=per_page,
             is_preview=is_preview,
             preview_fields=preview_fields,
-            sort_by='created_at', # 可選：添加預設排序
+            sort_by='created_at', # Keep original default sort
             sort_desc=True
         )
+        return items # Return only the items list
 
     def find_ai_only_tasks(self, is_active: bool = True,
                            limit: Optional[int] = None,
@@ -218,19 +250,32 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
     def find_scheduled_tasks(self, is_active: bool = True,
                              limit: Optional[int] = None,
+                             offset: Optional[int] = None,
                              is_preview: bool = False,
                              preview_fields: Optional[List[str]] = None
                              ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
         """查詢已排程的任務，支援分頁和預覽"""
         filter_criteria: Dict[str, Any] = {"is_active": is_active, "is_scheduled": True}
-        return self.find_by_filter(
+
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"find_scheduled_tasks: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=limit,
+            page=page,
+            per_page=per_page,
             is_preview=is_preview,
             preview_fields=preview_fields,
-            sort_by='created_at', # 可選：添加預設排序
+            sort_by='created_at', # Keep original default sort
             sort_desc=True
         )
+        return items # Return only the items list
 
     def toggle_scheduled_status(self, task_id: int) -> Optional[CrawlerTasks]:
         """
@@ -416,6 +461,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
     def find_tasks_by_multiple_crawlers(self, crawler_ids: List[int],
                                         limit: Optional[int] = None,
+                                        offset: Optional[int] = None,
                                         is_preview: bool = False,
                                         preview_fields: Optional[List[str]] = None
                                         ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
@@ -423,14 +469,26 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
         if not crawler_ids:
             return []
         filter_criteria: Dict[str, Any] = {"crawler_id": {"$in": crawler_ids}}
-        return self.find_by_filter(
+
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"find_tasks_by_multiple_crawlers: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=limit,
+            page=page,
+            per_page=per_page,
             is_preview=is_preview,
             preview_fields=preview_fields,
-            sort_by='created_at', # 可選：添加預設排序
+            sort_by='created_at', # Keep original default sort
             sort_desc=True
         )
+        return items # Return only the items list
 
     def count_tasks_by_crawler(self, crawler_id: int) -> int:
         """獲取特定爬蟲的任務數量"""
@@ -444,6 +502,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
     def find_tasks_by_cron_expression(self, cron_expression: str,
                                       limit: Optional[int] = None,
+                                      offset: Optional[int] = None,
                                       is_preview: bool = False,
                                       preview_fields: Optional[List[str]] = None
                                       ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
@@ -460,14 +519,26 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             "cron_expression": cron_expression,
             "is_auto": True # 只查詢自動執行的任務
         }
-        return self.find_by_filter(
+
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"find_tasks_by_cron_expression: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=limit,
+            page=page,
+            per_page=per_page,
             is_preview=is_preview,
             preview_fields=preview_fields,
-            sort_by='created_at', # 可選：添加預設排序
+            sort_by='created_at', # Keep original default sort
             sort_desc=True
         )
+        return items # Return only the items list
 
     def find_due_tasks(self, cron_expression: str,
                        limit: Optional[int] = None,
@@ -587,6 +658,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
     def find_failed_tasks(self, days: int = 1,
                           limit: Optional[int] = None,
+                          offset: Optional[int] = None,
                           is_preview: bool = False,
                           preview_fields: Optional[List[str]] = None
                           ) -> Union[List[CrawlerTasks], List[Dict[str, Any]]]:
@@ -595,44 +667,31 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             days = 0 # 防止負數天數
         time_threshold = datetime.now(timezone.utc) - timedelta(days=days)
 
-        def query_builder():
-            # --- Preview Logic ---
-            query_entities = [self.model_class]
-            valid_preview_fields = []
-            local_is_preview = is_preview
-            if local_is_preview and preview_fields:
-                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
-                if valid_preview_fields:
-                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
-                else:
-                    logger.warning(f"find_failed_tasks 預覽欄位無效: {preview_fields}，返回完整物件。")
-                    local_is_preview = False
-            # --- End Preview Logic ---
+        filter_criteria: Dict[str, Any] = {
+            "is_active": True, # 只關心活動任務的失敗狀態
+            "last_run_success": False,
+            "last_run_at": {"$gte": time_threshold} # 修改為 $gte 以匹配時間閾值
+        }
 
-            query = self.session.query(*query_entities).filter(
-                self.model_class.is_active == True, # 只關心活動任務的失敗狀態
-                self.model_class.last_run_success == False,
-                self.model_class.last_run_at.isnot(None), # 確保有執行過
-                self.model_class.last_run_at >= time_threshold
-            ).order_by(self.model_class.last_run_at.desc()) # 按失敗時間降序
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"find_failed_tasks: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
 
-            # Apply limit
-            if limit is not None:
-                query = query.limit(limit)
-
-            raw_results = query.all()
-
-            # --- Result Transformation ---
-            if local_is_preview and valid_preview_fields:
-                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
-            else:
-                return raw_results
-            # --- End Result Transformation ---
-
-        return self.execute_query(
-            query_builder,
-            err_msg=f"查詢最近 {days} 天失敗的活動任務時發生錯誤"
+        total, items = self.find_paginated(
+            filter_criteria=filter_criteria,
+            page=page,
+            per_page=per_page,
+            sort_by='last_run_at', # Sort by failure time
+            sort_desc=True,
+            is_preview=is_preview,
+            preview_fields=preview_fields
         )
+        return items # Return only the items list
 
     def convert_to_local_time(self, utc_time, timezone_str='Asia/Taipei'):
         """將 UTC 時間轉換為指定時區時間"""
@@ -652,7 +711,7 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
 
     def advanced_search(self, is_preview: bool = False, preview_fields: Optional[List[str]] = None, **filters) -> Dict[str, Any]:
         """
-        進階搜尋任務 (已更新以支援預覽)
+        進階搜尋任務 (已更新以支援預覽和 find_paginated)
 
         Args:
             is_preview: 是否啟用預覽模式
@@ -680,184 +739,100 @@ class CrawlerTasksRepository(BaseRepository['CrawlerTasks']):
             - offset: 偏移量
 
         Returns:
-            包含 'tasks' 列表和 'total_count' 的字典，或在錯誤時返回 None。
+            包含 'tasks' 列表和 'total_count' 的字典。
             如果 is_preview=True，'tasks' 將是字典列表，否則為模型實例列表。
         """
-        def build_and_run_query():
-            # --- Preview Logic ---
-            query_entities = [self.model_class]
-            valid_preview_fields = []
-            local_is_preview = is_preview # 使用本地變數
-            if local_is_preview and preview_fields:
-                valid_preview_fields = [f for f in preview_fields if hasattr(self.model_class, f)]
-                if valid_preview_fields:
-                    query_entities = [getattr(self.model_class, f) for f in valid_preview_fields]
+        # 1. 提取分頁和排序參數
+        limit = filters.pop('limit', None)
+        offset = filters.pop('offset', None)
+        sort_by = filters.pop('sort_by', 'created_at') # Default sort
+        sort_desc = filters.pop('sort_desc', True)    # Default sort desc
+
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"advanced_search: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        # 2. 構建 filter_criteria 和 extra_filters
+        filter_criteria: Dict[str, Any] = {}
+        extra_filters_list: List[Any] = [] # For complex filters like JSON access
+
+        for key, value in filters.items():
+            if value is None or value == '': # Skip None or empty string values
+                continue
+
+            # Standard fields handled by base _apply_filters
+            if key in ['crawler_id', 'is_auto', 'is_active', 'last_run_success', 'cron_expression', 'task_status', 'scrape_phase']:
+                if key == 'task_status' and isinstance(value, TaskStatus):
+                     filter_criteria[key] = value.value
+                elif key == 'scrape_phase' and isinstance(value, ScrapePhase):
+                    filter_criteria[key] = value.value
                 else:
-                    logger.warning(f"advanced_search 預覽欄位無效: {preview_fields}，返回完整物件。")
-                    local_is_preview = False # 重置預覽標誌
-            # --- End Preview Logic ---
-
-            # 使用 query_entities 初始化查詢
-            query = self.session.query(*query_entities)
-
-            # --- 過濾 (邏輯不變，但基於 self.model_class 的屬性) ---
-            if 'task_name' in filters and filters['task_name']:
-                query = query.filter(self.model_class.task_name.like(f"%{filters['task_name']}%"))
-            if 'crawler_id' in filters and filters['crawler_id']:
-                query = query.filter(self.model_class.crawler_id == filters['crawler_id']) # 使用 == 而非 filter_by
-            if 'is_auto' in filters and filters['is_auto'] is not None:
-                query = query.filter(self.model_class.is_auto == filters['is_auto'])
-            if 'is_active' in filters and filters['is_active'] is not None:
-                query = query.filter(self.model_class.is_active == filters['is_active'])
-            if 'last_run_success' in filters and filters['last_run_success'] is not None:
-                query = query.filter(self.model_class.last_run_success == filters['last_run_success'])
-            if 'cron_expression' in filters and filters['cron_expression']:
-                query = query.filter(self.model_class.cron_expression == filters['cron_expression'])
-
-            if 'date_range' in filters and filters['date_range']:
-                start_date, end_date = filters['date_range']
-                if start_date:
-                    query = query.filter(self.model_class.last_run_at >= enforce_utc_datetime_transform(start_date))
-                if end_date:
-                    query = query.filter(self.model_class.last_run_at <= enforce_utc_datetime_transform(end_date))
-
-            if 'has_notes' in filters and filters['has_notes'] is not None:
-                if filters['has_notes'] is True:
-                    query = query.filter(self.model_class.notes.isnot(None) & (self.model_class.notes != ''))
+                    filter_criteria[key] = value
+            elif key == 'task_name':
+                # Requires specific handling if base doesn't support 'like' via dict
+                # Assume base _apply_filters doesn't handle this, add to extra_filters
+                extra_filters_list.append(self.model_class.task_name.like(f"%{value}%"))
+            elif key == 'date_range':
+                start_date, end_date = value
+                date_filter = {}
+                if start_date: date_filter["$gte"] = enforce_utc_datetime_transform(start_date)
+                if end_date:   date_filter["$lte"] = enforce_utc_datetime_transform(end_date)
+                if date_filter: filter_criteria['last_run_at'] = date_filter
+            elif key == 'has_notes':
+                if value is True:
+                    # Use extra_filters for combined condition
+                    extra_filters_list.append(self.model_class.notes.isnot(None))
+                    extra_filters_list.append(self.model_class.notes != '')
                 else:
-                    query = query.filter((self.model_class.notes == None) | (self.model_class.notes == ''))
-
-            if 'task_status' in filters and filters['task_status']:
-                status_value = filters['task_status'].value if isinstance(filters['task_status'], TaskStatus) else filters['task_status']
-                query = query.filter(self.model_class.task_status == status_value)
-
-            if 'scrape_phase' in filters and filters['scrape_phase']:
-                phase_value = filters['scrape_phase'].value if isinstance(filters['scrape_phase'], ScrapePhase) else filters['scrape_phase']
-                query = query.filter(self.model_class.scrape_phase == phase_value)
-
-            if 'retry_count' in filters:
-                retry_filter = filters['retry_count']
-                if isinstance(retry_filter, dict):
-                    if 'min' in retry_filter:
-                        query = query.filter(self.model_class.retry_count >= retry_filter['min'])
-                    if 'max' in retry_filter:
-                        query = query.filter(self.model_class.retry_count <= retry_filter['max'])
-                elif isinstance(retry_filter, int):
-                    query = query.filter(self.model_class.retry_count == retry_filter)
-
-
-            # --- 過濾 task_args (JSON) ---
-            if 'ai_only' in filters and filters['ai_only'] is not None:
-                 query = query.filter(self.model_class.task_args.isnot(None)) # 確保 task_args 非 NULL
-                 query = query.filter(self.model_class.task_args['ai_only'].as_boolean() == filters['ai_only'])
-
-            if 'max_pages' in filters and filters['max_pages'] is not None:
-                 query = query.filter(self.model_class.task_args.isnot(None))
-                 query = query.filter(self.model_class.task_args['max_pages'].as_integer() == filters['max_pages'])
-
-            if 'save_to_csv' in filters and filters['save_to_csv'] is not None:
-                 query = query.filter(self.model_class.task_args.isnot(None))
-                 query = query.filter(self.model_class.task_args['save_to_csv'].as_boolean() == filters['save_to_csv'])
-
-            if 'scrape_mode' in filters and filters['scrape_mode']:
-                mode_value = filters['scrape_mode'].value if isinstance(filters['scrape_mode'], ScrapeMode) else filters['scrape_mode']
-                query = query.filter(self.model_class.task_args.isnot(None))
-                query = query.filter(self.model_class.task_args['scrape_mode'].as_string() == mode_value)
-
-            # --- 計算總數 (在分頁前) ---
-            # 創建一個僅用於計數的查詢，應用相同的過濾器
-            count_query = self.session.query(func.count(self.model_class.id))
-            # 重新應用所有過濾條件到 count_query
-            if 'task_name' in filters and filters['task_name']:
-                count_query = count_query.filter(self.model_class.task_name.like(f"%{filters['task_name']}%"))
-            # ... (複製所有過濾條件到 count_query) ...
-            if 'crawler_id' in filters and filters['crawler_id']:
-                count_query = count_query.filter(self.model_class.crawler_id == filters['crawler_id'])
-            if 'is_auto' in filters and filters['is_auto'] is not None:
-                count_query = count_query.filter(self.model_class.is_auto == filters['is_auto'])
-            if 'is_active' in filters and filters['is_active'] is not None:
-                count_query = count_query.filter(self.model_class.is_active == filters['is_active'])
-            if 'last_run_success' in filters and filters['last_run_success'] is not None:
-                count_query = count_query.filter(self.model_class.last_run_success == filters['last_run_success'])
-            if 'cron_expression' in filters and filters['cron_expression']:
-                count_query = count_query.filter(self.model_class.cron_expression == filters['cron_expression'])
-            if 'date_range' in filters and filters['date_range']:
-                start_date, end_date = filters['date_range']
-                if start_date:
-                    count_query = count_query.filter(self.model_class.last_run_at >= enforce_utc_datetime_transform(start_date))
-                if end_date:
-                    count_query = count_query.filter(self.model_class.last_run_at <= enforce_utc_datetime_transform(end_date))
-            if 'has_notes' in filters and filters['has_notes'] is not None:
-                if filters['has_notes'] is True:
-                    count_query = count_query.filter(self.model_class.notes.isnot(None) & (self.model_class.notes != ''))
-                else:
-                    count_query = count_query.filter((self.model_class.notes == None) | (self.model_class.notes == ''))
-            if 'task_status' in filters and filters['task_status']:
-                status_value = filters['task_status'].value if isinstance(filters['task_status'], TaskStatus) else filters['task_status']
-                count_query = count_query.filter(self.model_class.task_status == status_value)
-            if 'scrape_phase' in filters and filters['scrape_phase']:
-                phase_value = filters['scrape_phase'].value if isinstance(filters['scrape_phase'], ScrapePhase) else filters['scrape_phase']
-                count_query = count_query.filter(self.model_class.scrape_phase == phase_value)
-            if 'retry_count' in filters:
-                 retry_filter = filters['retry_count']
-                 if isinstance(retry_filter, dict):
-                     if 'min' in retry_filter: count_query = count_query.filter(self.model_class.retry_count >= retry_filter['min'])
-                     if 'max' in retry_filter: count_query = count_query.filter(self.model_class.retry_count <= retry_filter['max'])
-                 elif isinstance(retry_filter, int): count_query = count_query.filter(self.model_class.retry_count == retry_filter)
-            # --- task_args 過濾 for count_query ---
-            if 'ai_only' in filters and filters['ai_only'] is not None:
-                 count_query = count_query.filter(self.model_class.task_args.isnot(None))
-                 count_query = count_query.filter(self.model_class.task_args['ai_only'].as_boolean() == filters['ai_only'])
-            if 'max_pages' in filters and filters['max_pages'] is not None:
-                 count_query = count_query.filter(self.model_class.task_args.isnot(None))
-                 count_query = count_query.filter(self.model_class.task_args['max_pages'].as_integer() == filters['max_pages'])
-            if 'save_to_csv' in filters and filters['save_to_csv'] is not None:
-                 count_query = count_query.filter(self.model_class.task_args.isnot(None))
-                 count_query = count_query.filter(self.model_class.task_args['save_to_csv'].as_boolean() == filters['save_to_csv'])
-            if 'scrape_mode' in filters and filters['scrape_mode']:
-                mode_value = filters['scrape_mode'].value if isinstance(filters['scrape_mode'], ScrapeMode) else filters['scrape_mode']
-                count_query = count_query.filter(self.model_class.task_args.isnot(None))
-                count_query = count_query.filter(self.model_class.task_args['scrape_mode'].as_string() == mode_value)
-
-            total_count = count_query.scalar() or 0
-
-            # --- 排序 (應用到原始 query) ---
-            sort_by = filters.get('sort_by', 'created_at') # 預設按創建時間
-            sort_desc = filters.get('sort_desc', True) # 預設降冪
-            # 排序欄位必須存在於模型中
-            if hasattr(self.model_class, sort_by):
-                order_column = getattr(self.model_class, sort_by)
-                # 如果是預覽模式且排序欄位不在預覽欄位中，仍嘗試排序
-                query = query.order_by(desc(order_column) if sort_desc else asc(order_column))
+                    extra_filters_list.append(or_(self.model_class.notes == None, self.model_class.notes == ''))
+            elif key == 'retry_count':
+                retry_filter_val = value
+                if isinstance(retry_filter_val, dict):
+                    retry_criteria = {}
+                    if 'min' in retry_filter_val: retry_criteria['$gte'] = retry_filter_val['min']
+                    if 'max' in retry_filter_val: retry_criteria['$lte'] = retry_filter_val['max']
+                    if retry_criteria: filter_criteria['retry_count'] = retry_criteria
+                elif isinstance(retry_filter_val, int):
+                    filter_criteria['retry_count'] = retry_filter_val
+            # JSON fields -> use extra_filters
+            elif key == 'ai_only':
+                extra_filters_list.append(self.model_class.task_args.isnot(None))
+                extra_filters_list.append(self.model_class.task_args['ai_only'].as_boolean() == value)
+            elif key == 'max_pages':
+                 extra_filters_list.append(self.model_class.task_args.isnot(None))
+                 extra_filters_list.append(self.model_class.task_args['max_pages'].as_integer() == value)
+            elif key == 'save_to_csv':
+                 extra_filters_list.append(self.model_class.task_args.isnot(None))
+                 extra_filters_list.append(self.model_class.task_args['save_to_csv'].as_boolean() == value)
+            elif key == 'scrape_mode':
+                 mode_value = value.value if isinstance(value, ScrapeMode) else value
+                 extra_filters_list.append(self.model_class.task_args.isnot(None))
+                 extra_filters_list.append(self.model_class.task_args['scrape_mode'].as_string() == mode_value)
             else:
-                logger.warning(f"無效的排序欄位 '{sort_by}'，將使用預設排序 (created_at desc)。")
-                query = query.order_by(desc(self.model_class.created_at))
+                logger.warning(f"advanced_search: 未知的過濾條件 '{key}'，已忽略。")
 
-            # --- 分頁 (應用到原始 query) ---
-            limit = filters.get('limit')
-            offset = filters.get('offset')
-            if offset is not None:
-                query = query.offset(offset)
-            if limit is not None:
-                query = query.limit(limit)
-
-            # --- 執行查詢 (獲取數據) ---
-            raw_results = query.all()
-
-            # --- 結果轉換 (如果為預覽模式) ---
-            tasks = []
-            if local_is_preview and valid_preview_fields:
-                # 如果使用了 with_entities，結果是元組列表
-                tasks = [dict(zip(valid_preview_fields, row)) for row in raw_results]
-            else:
-                # 否則結果是模型實例列表
-                tasks = raw_results
-            # --- 結果轉換結束 ---
-
-            return {'tasks': tasks, 'total_count': total_count}
-
-        return self.execute_query(
-            build_and_run_query,
-            err_msg="進階搜尋任務時發生錯誤",
-            exception_class=DatabaseOperationError
-        )
+        # 3. 呼叫 find_paginated
+        try:
+            total, tasks = self.find_paginated(
+                filter_criteria=filter_criteria,
+                extra_filters=extra_filters_list if extra_filters_list else None,
+                page=page,
+                per_page=per_page,
+                sort_by=sort_by,
+                sort_desc=sort_desc,
+                is_preview=is_preview,
+                preview_fields=preview_fields
+            )
+            return {'tasks': tasks, 'total_count': total}
+        except InvalidOperationError as e:
+             # Catch specific errors like invalid sort_by
+             logger.error(f"進階搜尋時發生錯誤: {e}")
+             # Re-raise or return an error structure
+             raise DatabaseOperationError(f"進階搜尋失敗: {e}") from e
+        except Exception as e:
+            logger.error(f"進階搜尋任務時發生未預期錯誤: {e}", exc_info=True)
+            raise DatabaseOperationError(f"進階搜尋任務時發生未預期錯誤: {e}") from e

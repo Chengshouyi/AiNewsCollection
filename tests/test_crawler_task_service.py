@@ -657,3 +657,77 @@ class TestCrawlerTaskService:
              assert refetched_task.task_args.get("max_pages") == initial_task_args["max_pages"], "Default task arg lost"
 
         print(f"--- Test update_task persistence finished successfully ---")
+
+    def test_find_tasks_advanced(self, crawler_task_service, sample_tasks, session):
+        """測試進階搜尋任務 (find_tasks_advanced)"""
+        # 添加更多樣化的數據以進行過濾和排序測試
+        crawler_id_for_test = sample_tasks[0].crawler_id
+        with session.begin_nested():
+            session.add(CrawlerTasks(
+                task_name="不活躍的舊任務", crawler_id=crawler_id_for_test, is_active=False,
+                cron_expression="* * * * *", task_args=TASK_ARGS_DEFAULT,
+                created_at=datetime(2022, 1, 1, tzinfo=timezone.utc)
+            ))
+            session.add(CrawlerTasks(
+                task_name="活躍的特殊任務", crawler_id=crawler_id_for_test, is_active=True,
+                cron_expression="1 1 * * *", task_args=TASK_ARGS_DEFAULT,
+                created_at=datetime(2023, 5, 1, tzinfo=timezone.utc)
+            ))
+        session.commit()
+
+        # 1. 基本分頁測試 (獲取所有活躍和不活躍的)
+        result_page1 = crawler_task_service.find_tasks_advanced(page=1, per_page=2, sort_by='created_at', sort_desc=False) # 按創建時間升序
+        assert result_page1["success"] is True
+        assert "data" in result_page1
+        data_page1 = result_page1["data"]
+        assert data_page1["page"] == 1
+        assert data_page1["per_page"] == 2
+        assert data_page1["total"] == 4 # sample_tasks(2) + new tasks(2)
+        assert data_page1["total_pages"] == 2
+        assert data_page1["has_next"] is True
+        assert data_page1["has_prev"] is False
+        assert len(data_page1["items"]) == 2
+        assert data_page1["items"][0]["task_name"] == "不活躍的舊任務" # 最舊的
+
+        # 2. 帶過濾條件 (只獲取活躍的)
+        result_active = crawler_task_service.find_tasks_advanced(is_active=True)
+        assert result_active["success"] is True
+        data_active = result_active["data"]
+        assert data_active["total"] == 3 # sample_tasks(2) + new active(1)
+        assert all(item["is_active"] for item in data_active["items"])
+
+        # 3. 帶排序條件 (按名稱升序)
+        result_sorted = crawler_task_service.find_tasks_advanced(sort_by='task_name', sort_desc=False)
+        assert result_sorted["success"] is True
+        data_sorted = result_sorted["data"]
+        assert len(data_sorted["items"]) > 1 # Ensure there's something to compare
+        assert data_sorted["items"][0]["task_name"] <= data_sorted["items"][1]["task_name"]
+
+        # 4. 預覽模式
+        preview_fields = ["id", "task_name"]
+        result_preview = crawler_task_service.find_tasks_advanced(
+            page=1, per_page=2, is_preview=True, preview_fields=preview_fields
+        )
+        assert result_preview["success"] is True
+        data_preview = result_preview["data"]
+        assert len(data_preview["items"]) == 2
+        assert isinstance(data_preview["items"][0], dict)
+        assert set(data_preview["items"][0].keys()) == set(preview_fields)
+
+        # 5. 組合過濾和分頁
+        result_combo = crawler_task_service.find_tasks_advanced(is_active=True, page=2, per_page=1, sort_by='created_at', sort_desc=False)
+        assert result_combo["success"] is True
+        data_combo = result_combo["data"]
+        assert data_combo["page"] == 2
+        assert data_combo["per_page"] == 1
+        assert data_combo["total"] == 3 # 總共有3個活躍的
+        assert len(data_combo["items"]) == 1
+        # 驗證是否為活躍任務中第二個創建的 (sample_tasks[1])
+        assert data_combo["items"][0]["task_name"] == "週間財經新聞"
+
+        # 6. 測試無結果的過濾
+        result_no_match = crawler_task_service.find_tasks_advanced(task_name="不存在的任務名稱")
+        assert result_no_match["success"] is True
+        data_no_match = result_no_match["data"]
+        assert data_no_match["total"] == 0
+        assert len(data_no_match["items"]) == 0

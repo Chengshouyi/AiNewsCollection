@@ -513,8 +513,8 @@ class ArticleService(BaseService[Articles]):
                         'message': '無法取得資料庫存取器',
                         'articles': []
                     }
-                articles_result = article_repo.find_by_filter(
-                    filter_criteria={'category': category},
+                articles_result = article_repo.find_by_category(
+                    category=category,
                     limit=limit,
                     offset=offset,
                     is_preview=is_preview,
@@ -556,8 +556,8 @@ class ArticleService(BaseService[Articles]):
             with self._transaction() as session:
                 article_repo = cast(ArticlesRepository, self._get_repository('Article', session))
 
-                articles_result = article_repo.find_by_filter(
-                    filter_criteria={'tags': {"$in": tags}},
+                articles_result = article_repo.find_by_tags(
+                    tags=tags,
                     limit=limit,
                     offset=offset,
                     is_preview=is_preview,

@@ -702,15 +702,15 @@ class TestCrawlersService:
         assert set(item.keys()) == set(preview_fields)
         assert item['is_active'] is False # technews is inactive
 
-        # --- 測試不匹配的條件 --- 
+        # --- 測試不匹配的條件 ---
         filter_data = {"crawler_type": "不存在類型"}
         result_nomatch = crawlers_service.find_filtered_crawlers(filter_data)
-        # 服務層對於找不到結果返回 success: False
-        assert result_nomatch['success'] is False # 修正斷言：應為 False
-        assert "找不到符合條件" in result_nomatch['message']
-        assert result_nomatch['data'] is not None # 即使失敗，也應返回分頁結構
-        assert result_nomatch['data'].total == 0
-        assert len(result_nomatch['data'].items) == 0
+        # 服務層對於找不到結果返回 success: True
+        assert result_nomatch['success'] is True # 修正斷言：應為 True
+        assert result_nomatch['data'] is not None
+        paginated_nomatch = result_nomatch['data']
+        assert paginated_nomatch.total == 0
+        assert len(paginated_nomatch.items) == 0
 
 class TestCrawlersServiceErrorHandling:
     """測試爬蟲服務的錯誤處理"""

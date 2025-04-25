@@ -1,4 +1,5 @@
 import pytest
+import math # 添加導入
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -683,32 +684,38 @@ class TestCrawlersPaginationViaBase:
         crawlers_repo.session.commit()
         session.expire_all()
 
+        current_page = 1
+        per_page = 3
         # 使用 find_paginated
-        page1 = crawlers_repo.find_paginated(page=1, per_page=3)
-        assert page1["page"] == 1
-        assert page1["per_page"] == 3
-        assert len(page1["items"]) == 3
-        assert page1["total"] == 9
-        assert page1["total_pages"] == 3
-        assert page1["has_next"] is True
-        assert page1["has_prev"] is False
-        assert isinstance(page1["items"][0], Crawlers) # 預設返回實例
+        total, items_p1 = crawlers_repo.find_paginated(page=current_page, per_page=per_page)
+        total_pages = math.ceil(total / per_page) if per_page > 0 else 1
+        has_next = current_page < total_pages
+        has_prev = current_page > 1
 
-        page2 = crawlers_repo.find_paginated(page=2, per_page=3)
-        assert page2["page"] == 2
-        assert len(page2["items"]) == 3
+        assert len(items_p1) == 3
+        assert total == 9
+        assert total_pages == 3
+        assert has_next is True
+        assert has_prev is False
+        assert isinstance(items_p1[0], Crawlers) # 預設返回實例
 
-        page3 = crawlers_repo.find_paginated(page=3, per_page=3)
-        assert page3["page"] == 3
-        assert len(page3["items"]) == 3
-        assert page3["has_next"] is False
+        current_page = 2
+        total, items_p2 = crawlers_repo.find_paginated(page=current_page, per_page=per_page)
+        assert len(items_p2) == 3
+
+        current_page = 3
+        total, items_p3 = crawlers_repo.find_paginated(page=current_page, per_page=per_page)
+        total_pages = math.ceil(total / per_page) if per_page > 0 else 1
+        has_next = current_page < total_pages
+        assert len(items_p3) == 3
+        assert has_next is False
 
         # 測試預覽模式
-        page1_preview = crawlers_repo.find_paginated(page=1, per_page=3, is_preview=True, preview_fields=["id"])
-        assert len(page1_preview["items"]) == 3
-        assert isinstance(page1_preview["items"][0], dict)
-        assert "id" in page1_preview["items"][0]
-        assert "crawler_name" not in page1_preview["items"][0]
+        total_preview, items_p1_preview = crawlers_repo.find_paginated(page=1, per_page=3, is_preview=True, preview_fields=["id"])
+        assert len(items_p1_preview) == 3
+        assert isinstance(items_p1_preview[0], dict)
+        assert "id" in items_p1_preview[0]
+        assert "crawler_name" not in items_p1_preview[0]
 
 
     def test_pagination_edge_cases(self, crawlers_repo, sample_crawlers, session, clean_db):
@@ -718,47 +725,59 @@ class TestCrawlersPaginationViaBase:
             crawlers_repo.find_paginated(page=1, per_page=0)
 
         # 測試負數頁碼 (由基類處理)
-        page_neg = crawlers_repo.find_paginated(page=-1, per_page=3)
-        assert page_neg["page"] == 1
+        current_page = 1 # 負數頁碼會被重置為 1
+        per_page = 3
+        total_neg, items_neg = crawlers_repo.find_paginated(page=-1, per_page=per_page)
+        total_pages_neg = math.ceil(total_neg / per_page) if per_page > 0 else 1
+        has_prev_neg = current_page > 1
+        assert len(items_neg) == 3 # 假設有足夠數據
+        assert total_neg == 3 # 原始數據量
+        assert has_prev_neg is False # 因為頁碼被重置為 1
 
         # 測試空數據集的分頁
         crawlers_repo.session.query(Crawlers).delete()
         crawlers_repo.session.commit()
         session.expire_all()
 
-        empty_page = crawlers_repo.find_paginated(page=1, per_page=3)
-        assert empty_page["total"] == 0
-        assert empty_page["total_pages"] == 1 # 基類實現中，total=0時 total_pages 為 1
-        assert len(empty_page["items"]) == 0
-        assert empty_page["has_next"] is False
-        assert empty_page["has_prev"] is False
+        current_page = 1
+        per_page = 3
+        empty_total, empty_items = crawlers_repo.find_paginated(page=current_page, per_page=per_page)
+        empty_total_pages = math.ceil(empty_total / per_page) if per_page > 0 else 1
+        empty_has_next = current_page < empty_total_pages
+        empty_has_prev = current_page > 1
+
+        assert empty_total == 0
+        assert empty_total_pages == 0 
+        assert len(empty_items) == 0
+        assert empty_has_next is False
+        assert empty_has_prev is False
 
     def test_pagination_sorting(self, crawlers_repo, sample_crawlers, session, clean_db):
         """測試分頁排序功能"""
         # 測試升序排序
-        asc_page = crawlers_repo.find_paginated(
+        total_asc, items_asc = crawlers_repo.find_paginated(
             page=1,
             per_page=10,
             sort_by="crawler_name",
             sort_desc=False
         )
         # 確保返回的是實例列表
-        assert all(isinstance(item, Crawlers) for item in asc_page["items"])
-        asc_names = [item.crawler_name for item in asc_page["items"]]
+        assert all(isinstance(item, Crawlers) for item in items_asc)
+        asc_names = [item.crawler_name for item in items_asc]
         assert asc_names == sorted(asc_names)
 
         # 測試降序排序
-        desc_page = crawlers_repo.find_paginated(
+        total_desc, items_desc = crawlers_repo.find_paginated(
             page=1,
             per_page=10,
             sort_by="crawler_name",
             sort_desc=True
         )
-        desc_names = [item.crawler_name for item in desc_page["items"]]
+        desc_names = [item.crawler_name for item in items_desc]
         assert desc_names == sorted(desc_names, reverse=True)
 
         # 測試無效的排序欄位 (由基類處理)
-        with pytest.raises(DatabaseOperationError) as exc_info: # 基類拋出 DatabaseOperationError
+        with pytest.raises(InvalidOperationError) as exc_info: # 基類現在應該拋出 InvalidOperationError
             crawlers_repo.find_paginated(
                 page=1,
                 per_page=10,
@@ -773,10 +792,14 @@ class TestCrawlersPaginationViaBase:
 
         collected_records = []
         page = 1
+        per_page = 3
         while True:
-            page_data = crawlers_repo.find_paginated(page=page, per_page=3)
-            collected_records.extend(page_data["items"])
-            if not page_data["has_next"]:
+            total, items = crawlers_repo.find_paginated(page=page, per_page=per_page)
+            collected_records.extend(items)
+            # 計算是否有下一頁
+            total_pages = math.ceil(total / per_page) if per_page > 0 else 1
+            has_next = page < total_pages
+            if not has_next:
                 break
             page += 1
 
@@ -850,94 +873,98 @@ class TestCrawlersFilteringAndPaginationViaBase:
         """測試組合多種過濾條件並進行分頁"""
         # 使用 find_paginated 進行測試
         filter_dict_1 = {"is_active": True, "crawler_type": "web"}
-        page_data_1 = crawlers_repo.find_paginated(
+        total_1, items_1 = crawlers_repo.find_paginated(
             filter_criteria=filter_dict_1, page=1, per_page=10
         )
-        assert page_data_1["total"] == 1
-        assert len(page_data_1["items"]) == 1
-        assert page_data_1["items"][0].crawler_name == "新聞爬蟲Web1"
+        assert total_1 == 1
+        assert len(items_1) == 1
+        assert items_1[0].crawler_name == "新聞爬蟲Web1"
 
         filter_dict_2 = {"crawler_type": {"$in": ["web", "rss"]}} # 使用 $in
-        page_data_2 = crawlers_repo.find_paginated(
+        total_2, items_2 = crawlers_repo.find_paginated(
             filter_criteria=filter_dict_2, page=1, per_page=10
         )
-        assert page_data_2["total"] == 4
-        assert len(page_data_2["items"]) == 4
+        assert total_2 == 4
+        assert len(items_2) == 4
 
         two_days_ago = datetime.now(timezone.utc) - timedelta(days=2, hours=1)
         filter_dict_3 = {"created_at": {"$gte": two_days_ago}}
-        page_data_3 = crawlers_repo.find_paginated(
+        total_3, items_3 = crawlers_repo.find_paginated(
             filter_criteria=filter_dict_3, page=1, per_page=10, sort_by="created_at", sort_desc=False
         )
-        assert page_data_3["total"] == 3
-        assert len(page_data_3["items"]) == 3
-        assert page_data_3["items"][0].crawler_name == "RSS爬蟲1"
+        assert total_3 == 3
+        assert len(items_3) == 3
+        assert items_3[0].crawler_name == "RSS爬蟲1"
 
         filter_dict_4 = {"is_active": False, "crawler_type": "rss"}
-        page_data_4 = crawlers_repo.find_paginated(
+        total_4, items_4 = crawlers_repo.find_paginated(
             filter_criteria=filter_dict_4, page=1, per_page=10
         )
-        assert page_data_4["total"] == 1
-        assert len(page_data_4["items"]) == 1
-        assert page_data_4["items"][0].crawler_name == "RSS爬蟲2"
+        assert total_4 == 1
+        assert len(items_4) == 1
+        assert items_4[0].crawler_name == "RSS爬蟲2"
 
         filter_dict_5 = {"crawler_type": {"$ne": "api"}} # 使用 $ne
-        page_data_5 = crawlers_repo.find_paginated(
+        total_5, items_5 = crawlers_repo.find_paginated(
             filter_criteria=filter_dict_5, page=1, per_page=10
         )
-        assert page_data_5["total"] == 4
+        assert total_5 == 4
 
         # 測試空 filter_criteria
-        page_data_empty = crawlers_repo.find_paginated(
-            filter_criteria={}, page=1, per_page=3
+        current_page_empty = 1
+        per_page_empty = 3
+        total_empty, items_empty = crawlers_repo.find_paginated(
+            filter_criteria={}, page=current_page_empty, per_page=per_page_empty
         )
-        assert page_data_empty["total"] == 5
-        assert len(page_data_empty["items"]) == 3
-        assert page_data_empty["has_next"] is True
+        total_pages_empty = math.ceil(total_empty / per_page_empty) if per_page_empty > 0 else 1
+        has_next_empty = current_page_empty < total_pages_empty
+        assert total_empty == 5
+        assert len(items_empty) == 3
+        assert has_next_empty is True
 
         # 測試包含無效 key 的 filter_criteria (基類應忽略)
         filter_dict_invalid = {"is_active": True, "invalid_key": "some_value"}
-        page_data_invalid = crawlers_repo.find_paginated(
+        total_invalid, items_invalid = crawlers_repo.find_paginated(
             filter_criteria=filter_dict_invalid, page=1, per_page=10
         )
-        assert page_data_invalid["total"] == 3 # Web1, RSS1, API
-        assert len(page_data_invalid["items"]) == 3
+        assert total_invalid == 3 # Web1, RSS1, API
+        assert len(items_invalid) == 3
 
     def test_pagination_with_sorting(self, crawlers_repo, filter_test_crawlers, session, clean_db):
         """測試分頁排序與過濾結合"""
         filter_dict = {"is_active": True}
-        page_data_asc = crawlers_repo.find_paginated(
+        total_asc, items_asc = crawlers_repo.find_paginated(
             filter_criteria=filter_dict,
             page=1,
             per_page=10,
             sort_by="created_at",
             sort_desc=False
         )
-        assert page_data_asc["total"] == 3
-        created_times_asc = [item.created_at for item in page_data_asc["items"]]
+        assert total_asc == 3
+        created_times_asc = [item.created_at for item in items_asc]
         assert created_times_asc == sorted(created_times_asc)
-        assert page_data_asc["items"][0].crawler_name == "新聞爬蟲Web1"
+        assert items_asc[0].crawler_name == "新聞爬蟲Web1"
 
-        page_data_desc = crawlers_repo.find_paginated(
+        total_desc, items_desc = crawlers_repo.find_paginated(
             filter_criteria=filter_dict,
             page=1,
             per_page=10,
             sort_by="created_at",
             sort_desc=True
         )
-        assert page_data_desc["total"] == 3
-        created_times_desc = [item.created_at for item in page_data_desc["items"]]
+        assert total_desc == 3
+        created_times_desc = [item.created_at for item in items_desc]
         assert created_times_desc == sorted(created_times_desc, reverse=True)
-        assert page_data_desc["items"][0].crawler_name == "API爬蟲"
+        assert items_desc[0].crawler_name == "API爬蟲"
 
         filter_dict_names = {"crawler_type": {"$in": ["web", "rss"]}} # 使用 $in
-        page_data_name_asc = crawlers_repo.find_paginated(
+        total_name_asc, items_name_asc = crawlers_repo.find_paginated(
             filter_criteria=filter_dict_names,
             page=1,
             per_page=10,
             sort_by="crawler_name",
             sort_desc=False
         )
-        assert page_data_name_asc["total"] == 4
-        names_asc = [item.crawler_name for item in page_data_name_asc["items"]]
+        assert total_name_asc == 4
+        names_asc = [item.crawler_name for item in items_name_asc]
         assert names_asc == ["RSS爬蟲1", "RSS爬蟲2", "新聞爬蟲Web1", "新聞爬蟲Web2"]

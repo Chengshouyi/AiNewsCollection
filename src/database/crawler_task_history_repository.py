@@ -124,87 +124,131 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
             logger.error(f"更新 CrawlerTaskHistory (ID={entity_id}) 時發生未預期錯誤: {e}", exc_info=True)
             raise DatabaseOperationError(f"更新 CrawlerTaskHistory (ID={entity_id}) 時發生未預期錯誤: {e}") from e
 
-    def find_by_task_id(self, task_id: int, 
-                        limit: Optional[int] = None, 
-                        offset: Optional[int] = None, 
-                        sort_desc: bool = False,
-                        is_preview: bool = False, 
+    def find_by_task_id(self, task_id: int,
+                        limit: Optional[int] = None,
+                        offset: Optional[int] = None,
+                        sort_desc: bool = False, # Keep sort_desc
+                        is_preview: bool = False,
                         preview_fields: Optional[List[str]] = None
                         ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
         """根據任務ID查詢相關的歷史記錄，支援分頁、排序和預覽"""
         filter_criteria = {"task_id": task_id}
-        return self.find_by_filter(
+
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"find_by_task_id: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=limit,
-            offset=offset,
-            sort_by="start_time", # Default sort for this method
-            sort_desc=sort_desc,
+            page=page,
+            per_page=per_page,
+            sort_by="start_time", # Keep the original default sort
+            sort_desc=sort_desc,  # Pass sort_desc
             is_preview=is_preview,
             preview_fields=preview_fields
         )
+        return items # Return only the items list
 
-    def find_successful_histories(self, 
-                                  limit: Optional[int] = None, 
+    def find_successful_histories(self,
+                                  limit: Optional[int] = None,
                                   offset: Optional[int] = None,
-                                  is_preview: bool = False, 
+                                  is_preview: bool = False,
                                   preview_fields: Optional[List[str]] = None
                                   ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
         """查詢所有成功的任務歷史記錄，支援分頁和預覽"""
         filter_criteria = {"success": True}
-        return self.find_by_filter(
+
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"find_successful_histories: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=limit,
-            offset=offset,
+            page=page,
+            per_page=per_page,
             is_preview=is_preview,
             preview_fields=preview_fields
-            # Default sorting by created_at/id desc will be applied by find_by_filter
+            # Default sort (created_at desc) is handled by find_paginated
         )
+        return items # Return only the items list
 
-    def find_failed_histories(self, 
-                              limit: Optional[int] = None, 
+    def find_failed_histories(self,
+                              limit: Optional[int] = None,
                               offset: Optional[int] = None,
-                              is_preview: bool = False, 
+                              is_preview: bool = False,
                               preview_fields: Optional[List[str]] = None
                               ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
         """查詢所有失敗的任務歷史記錄，支援分頁和預覽"""
         filter_criteria = {"success": False}
-        return self.find_by_filter(
+
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"find_failed_histories: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=limit,
-            offset=offset,
+            page=page,
+            per_page=per_page,
             is_preview=is_preview,
             preview_fields=preview_fields
-            # Default sorting by created_at/id desc will be applied by find_by_filter
+            # Default sort (created_at desc) is handled by find_paginated
         )
+        return items # Return only the items list
 
-    def find_histories_with_articles(self, 
-                                     min_articles: int = 1, 
-                                     limit: Optional[int] = None, 
+    def find_histories_with_articles(self,
+                                     min_articles: int = 1,
+                                     limit: Optional[int] = None,
                                      offset: Optional[int] = None,
-                                     is_preview: bool = False, 
+                                     is_preview: bool = False,
                                      preview_fields: Optional[List[str]] = None
                                      ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
         """查詢文章數量大於等於指定值的歷史記錄，支援分頁和預覽"""
         if min_articles < 0:
             raise ValueError("min_articles 不能為負數")
-            
+
         filter_criteria = {"articles_count": {"$gte": min_articles}}
-        return self.find_by_filter(
+
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"find_histories_with_articles: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=limit,
-            offset=offset,
+            page=page,
+            per_page=per_page,
             is_preview=is_preview,
             preview_fields=preview_fields
-            # Default sorting by created_at/id desc will be applied by find_by_filter
+            # Default sort (created_at desc) is handled by find_paginated
         )
+        return items # Return only the items list
 
     def find_histories_by_date_range(
-        self, 
-        start_date: Optional[datetime] = None, 
+        self,
+        start_date: Optional[datetime] = None,
         end_date: Optional[datetime] = None,
-        limit: Optional[int] = None, 
+        limit: Optional[int] = None,
         offset: Optional[int] = None,
-        is_preview: bool = False, 
+        is_preview: bool = False,
         preview_fields: Optional[List[str]] = None
     ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
         """根據日期範圍查詢歷史記錄，支援分頁和預覽"""
@@ -217,15 +261,25 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
                 filter_criteria["start_time"]["$lte"] = end_date
             else:
                 filter_criteria["start_time"] = {"$lte": end_date}
-                
-        return self.find_by_filter(
+
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"find_histories_by_date_range: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=limit,
-            offset=offset,
+            page=page,
+            per_page=per_page,
             is_preview=is_preview,
             preview_fields=preview_fields
-            # Default sorting by created_at/id desc will be applied by find_by_filter
+            # Default sort (created_at desc) is handled by find_paginated
         )
+        return items # Return only the items list
 
     def count_total_articles(self, task_id: Optional[int] = None) -> int:
         """
@@ -267,7 +321,7 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         return int(result) if result is not None else 0
 
     def get_latest_history(self, task_id: int,
-                           is_preview: bool = False, 
+                           is_preview: bool = False,
                            preview_fields: Optional[List[str]] = None
                            ) -> Optional[Union['CrawlerTaskHistory', Dict[str, Any]]]:
         """
@@ -279,20 +333,22 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         :return: 最新的歷史記錄實例或字典，如果不存在則返回 None
         """
         filter_criteria = {"task_id": task_id}
-        results = self.find_by_filter(
+        # Use find_paginated with page=1, per_page=1 to get the latest
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=1,
-            sort_by="start_time", 
-            sort_desc=True,
+            page=1,
+            per_page=1,
+            sort_by="start_time",
+            sort_desc=True, # Sort by start_time descending
             is_preview=is_preview,
             preview_fields=preview_fields
         )
-        return results[0] if results else None
+        return items[0] if items else None
 
-    def get_histories_older_than(self, days: int, 
-                                 limit: Optional[int] = None, 
+    def get_histories_older_than(self, days: int,
+                                 limit: Optional[int] = None,
                                  offset: Optional[int] = None,
-                                 is_preview: bool = False, 
+                                 is_preview: bool = False,
                                  preview_fields: Optional[List[str]] = None
                                  ) -> Union[List['CrawlerTaskHistory'], List[Dict[str, Any]]]:
         """
@@ -307,18 +363,28 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
         """
         if days < 0:
             raise ValueError("天數不能為負數")
-            
+
         threshold_date = datetime.now(timezone.utc) - timedelta(days=days)
         filter_criteria = {"start_time": {"$lt": threshold_date}}
-        
-        return self.find_by_filter(
+
+        # Convert limit/offset to page/per_page
+        page = 1
+        per_page = limit if limit is not None and limit > 0 else 10 # Default per_page
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+            logger.warning(f"get_histories_older_than: Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+            page = 1
+
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=limit,
-            offset=offset,
+            page=page,
+            per_page=per_page,
             is_preview=is_preview,
             preview_fields=preview_fields
-            # Default sorting by created_at/id desc will be applied by find_by_filter
+            # Default sort (created_at desc) is handled by find_paginated
         )
+        return items # Return only the items list
 
     def update_history_status(
         self, 
@@ -355,17 +421,19 @@ class CrawlerTaskHistoryRepository(BaseRepository['CrawlerTaskHistory']):
             return False
 
     def get_latest_by_task_id(self, task_id: int,
-                              is_preview: bool = False, 
+                              is_preview: bool = False,
                               preview_fields: Optional[List[str]] = None
                               ) -> Optional[Union['CrawlerTaskHistory', Dict[str, Any]]]:
         """獲取指定任務的最新一筆歷史記錄 (按 created_at 降序)，支援預覽"""
         filter_criteria = {"task_id": task_id}
-        results = self.find_by_filter(
+        # Use find_paginated with page=1, per_page=1 to get the latest
+        total, items = self.find_paginated(
             filter_criteria=filter_criteria,
-            limit=1,
+            page=1,
+            per_page=1,
             sort_by="created_at", # Sort by creation time as per original logic
             sort_desc=True,
             is_preview=is_preview,
             preview_fields=preview_fields
         )
-        return results[0] if results else None 
+        return items[0] if items else None 

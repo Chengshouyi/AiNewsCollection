@@ -8,6 +8,7 @@ from src.database.database_manager import DatabaseManager
 from src.database.base_repository import BaseRepository, SchemaType
 from src.models.base_model import Base
 from src.error.errors import DatabaseOperationError, ValidationError
+from src.config import get_db_manager
 
 # 設定 logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -27,7 +28,7 @@ class BaseService(Generic[T]):
         Args:
             db_manager: 資料庫管理器實例 (如果為None，則創建一個新的)
         """
-        self.db_manager = db_manager or DatabaseManager()
+        self.db_manager = db_manager or get_db_manager()
     
     def _get_repository_mapping(self) -> Dict[str, Tuple[Type[BaseRepository], Type[Base]]]:
         """

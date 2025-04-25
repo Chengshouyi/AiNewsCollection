@@ -284,11 +284,14 @@ class TestSchedulerService:
         scheduler_service, _ = scheduler_service_with_mocks
         auto_task = sample_tasks[0]
         mock_get_by_id.return_value = auto_task
-        
-        # Mock task_executor_service.execute_task
-        with patch.object(scheduler_service.task_executor_service, 'execute_task') as mock_execute:
+
+        # Mock task_executor_service.execute_task - 需要 mock get_task_executor_service
+        mock_executor = MagicMock()
+        with patch('src.services.scheduler_service.get_task_executor_service', return_value=mock_executor) as mock_get_executor:
             scheduler_service._trigger_task(auto_task.id, auto_task.task_args)
-            mock_execute.assert_called_once_with(auto_task.id)
+            mock_get_executor.assert_called_once() # 確保 get_task_executor_service 被調用
+            # 現在斷言應該在我們創建的 mock_executor 上
+            mock_executor.execute_task.assert_called_once_with(auto_task.id)
         
         # 測試任務不存在的情況
         mock_get_by_id.return_value = None

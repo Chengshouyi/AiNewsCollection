@@ -473,27 +473,31 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                 # 提取分頁和排序參數，剩下的作為過濾器
                 sort_by = filters.pop('sort_by', 'created_at') # Default sort
                 sort_desc = filters.pop('sort_desc', True)    # Default order
-                limit = per_page
-                offset = (page - 1) * per_page
+                # Note: limit and offset are handled by page/per_page conversion below
 
                 # 調用 Repository 的 advanced_search 方法，傳入預覽參數
+                # repo.advanced_search 內部會處理 limit/offset 到 page/per_page 的轉換
+                # 它現在返回 {'tasks': [...], 'total_count': ...}
                 result_dict = tasks_repo.advanced_search(
                     is_preview=is_preview,
                     preview_fields=preview_fields,
-                    limit=limit,
-                    offset=offset,
+                    limit=per_page, # Pass per_page as limit
+                    offset=(page - 1) * per_page, # Calculate offset
                     sort_by=sort_by,
                     sort_desc=sort_desc,
                     **filters # 傳遞剩餘的過濾條件
                 )
 
-                items = result_dict['tasks']
-                total_count = result_dict['total_count']
-                total_pages = (total_count + per_page - 1) // per_page if total_count > 0 else 1
+                # 修改：從返回的字典中提取 tasks 和 total_count
+                items = result_dict.get('tasks', [])
+                total_count = result_dict.get('total_count', 0)
+                total_pages = (total_count + per_page - 1) // per_page if per_page > 0 else 0
 
                 # 如果不是預覽模式，將模型實例轉換為 Schema
                 if not is_preview:
-                    items_schema = [CrawlerTaskReadSchema.model_validate(item) for item in items]
+                    # Ensure items are ORM objects before validation
+                    items_orm = cast(List[CrawlerTasks], items)
+                    items_schema = [CrawlerTaskReadSchema.model_validate(item) for item in items_orm]
                 else:
                     items_schema = items # 預覽模式下直接使用字典列表
 

@@ -9,6 +9,7 @@ from flask_socketio import join_room, leave_room
 from src.models.base_model import Base
 from src.config import get_db_manager
 from run import initialize_default_crawler
+from src.services.service_container import get_scheduler_service
 
 # 設定 Logger
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -84,9 +85,35 @@ def list_routes():
         })
     return jsonify(routes)
 
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    """在應用程式上下文銷毀時清理資料庫資源"""
+    db_manager = get_db_manager()
+    if db_manager:
+        try:
+            # 假設 DatabaseManager 有 cleanup 方法
+            db_manager.cleanup()
+            logger.info("資料庫管理器資源已清理 (teardown_appcontext)")
+        except Exception as e:
+            logger.error(f"清理資料庫管理器時發生錯誤 (teardown_appcontext): {e}", exc_info=True)
+
 # 主程式入口
 if __name__ == '__main__':
     logger.info("Starting Flask-SocketIO server...")
+    # 新增：啟動排程器
+    try:
+        scheduler = get_scheduler_service()
+        scheduler_result = scheduler.start_scheduler()
+        if scheduler_result.get('success'):
+            logger.info(f"排程器已成功啟動: {scheduler_result.get('message')}")
+        else:
+            logger.error(f"啟動排程器失敗: {scheduler_result.get('message')}")
+    except Exception as e:
+        logger.error(f"啟動排程器時發生未預期錯誤: {e}", exc_info=True)
+        # 根據您的需求，決定是否要在排程器啟動失敗時阻止應用程式啟動
+        # raise e # 如果需要，可以取消註解以停止啟動
+    # 新增結束
+
     # 使用 socketio.run 來啟動伺服器，以便 WebSocket 正常工作
     # 允許來自任何 IP 的連接，方便容器環境
     socketio.run(app, debug=True, host='0.0.0.0', port=5000, use_reloader=False) # use_reloader=False 避免多線程問題

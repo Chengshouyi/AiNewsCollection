@@ -42,21 +42,36 @@ class ArticlesRepository(BaseRepository[Articles]):
         return self.execute_query(lambda: self.session.query(self.model_class).filter_by(link=link).first())
 
     
-    def find_by_category(self, category: str, 
-                         limit: Optional[int] = None, 
+    def find_by_category(self, category: str,
+                         limit: Optional[int] = None,
                          offset: Optional[int] = None,
-                         is_preview: bool = False, 
+                         is_preview: bool = False,
                          preview_fields: Optional[List[str]] = None
                          ) -> Union[List[Articles], List[Dict[str, Any]]]:
         """根據分類查詢文章，支援分頁和預覽"""
-        # Use base class find_by_filter and pass parameters
-        return self.find_by_filter(
+        # --- 修改：計算 page 和 per_page ---
+        page = 1
+        # 如果 limit 未提供或無效，設定一個合理的預設值給 per_page
+        per_page = limit if limit is not None and limit > 0 else 10 
+        if offset is not None and offset >= 0 and per_page > 0:
+            page = (offset // per_page) + 1
+        elif offset is not None:
+             # 如果 offset 有效但 limit/per_page 無效，記錄警告並使用 page 1
+             logger.warning(f"Offset ({offset}) provided but limit/per_page ({limit}) is invalid, defaulting to page 1.")
+             page = 1
+
+        # --- 修改：呼叫 find_paginated ---
+        # find_paginated 返回 (total, items)
+        total, items = self.find_paginated(
             filter_criteria={"category": category},
-            limit=limit,
-            offset=offset,
+            page=page,
+            per_page=per_page, # find_paginated 內部會處理 <= 0 的情況
             is_preview=is_preview,
             preview_fields=preview_fields
+            # find_paginated 內部會處理預設排序
         )
+        # 返回 items 列表，符合原方法簽名
+        return items
 
     def search_by_title(self, keyword: str, exact_match: bool = False, 
                         limit: Optional[int] = None, 

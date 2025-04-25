@@ -178,7 +178,7 @@ class TestArticleRepository:
 
     def test_find_by_category(self, article_repo, sample_articles, session, clean_db):
         """測試根據分類查詢文章"""
-        articles = article_repo.find_by_filter({"category": "科技"})
+        articles = article_repo.find_by_category("科技")
         assert len(articles) == 2
         assert all(isinstance(article, Articles) for article in articles) # Check type
         assert all(article.category == "科技" for article in articles)
@@ -186,8 +186,8 @@ class TestArticleRepository:
     def test_find_by_category_preview(self, article_repo, sample_articles, session, clean_db):
         """測試根據分類查詢文章（預覽模式）"""
         preview_fields = ["title", "link"]
-        articles_preview = article_repo.find_by_filter(
-            {"category": "科技"}, is_preview=True, preview_fields=preview_fields
+        articles_preview = article_repo.find_by_category(
+            "科技", is_preview=True, preview_fields=preview_fields
         )
         assert len(articles_preview) == 2
         assert all(isinstance(article, dict) for article in articles_preview)

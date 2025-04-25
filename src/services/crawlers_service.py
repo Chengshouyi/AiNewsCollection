@@ -10,6 +10,7 @@ from src.database.base_repository import BaseRepository
 from src.database.base_repository import SchemaType
 from sqlalchemy.orm.attributes import instance_state
 import json
+from src.error.errors import InvalidOperationError
 
 # 設定日誌檔案路徑
 log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
@@ -873,19 +874,24 @@ class CrawlersService(BaseService[Crawlers]):
                     preview_fields=preview_fields # 傳遞 preview_fields
                 )
                 
-                # repo_result 現在是包含 'items', 'page', etc. 的字典
+                # repo_result 現在是 (total_count, items) 元組
+                total_count, items = repo_result
                 
                 # 創建 PaginatedCrawlerResponse 實例
-                # Schema 已更新，可以直接接收 repo_result['items'] (無論是 Schema 還是 Dict)
+                # 需要手動計算分頁資訊
+                total_pages = (total_count + per_page - 1) // per_page if per_page > 0 else 0
+                has_next = page < total_pages
+                has_prev = page > 1
+
                 try:
                     paginated_response = PaginatedCrawlerResponse(
-                        items=repo_result.get('items', []), # 直接使用 repo 返回的 items
-                        page=repo_result.get("page", 1),
-                        per_page=repo_result.get("per_page", per_page),
-                        total=repo_result.get("total", 0),
-                        total_pages=repo_result.get("total_pages", 0),
-                        has_next=repo_result.get("has_next", False),
-                        has_prev=repo_result.get("has_prev", False)
+                        items=items, # 直接使用解包後的 items
+                        page=page, # 使用傳入的 page
+                        per_page=per_page, # 使用傳入的 per_page
+                        total=total_count, # 使用解包後的 total_count
+                        total_pages=total_pages,
+                        has_next=has_next,
+                        has_prev=has_prev
                     )
                 except Exception as pydantic_error:
                     logger.error(f"創建 PaginatedCrawlerResponse 時出錯: {pydantic_error}", exc_info=True)
@@ -895,7 +901,7 @@ class CrawlersService(BaseService[Crawlers]):
                 # 檢查是否有數據並設置消息
                 if not paginated_response.items:
                     message = "找不到符合條件的爬蟲設定"
-                    success_status = False # 維持 False 表示未找到 (或 True 如果空列表是成功) -> 保持一致性，返回 True
+                    success_status = True # 按照之前的邏輯，空列表也算成功
                 else:
                     message = "獲取爬蟲設定列表成功"
                     success_status = True
@@ -905,6 +911,9 @@ class CrawlersService(BaseService[Crawlers]):
                     'message': message,
                     'data': paginated_response # 返回 Schema 實例
                 }
+        except InvalidOperationError as e: # 捕獲 repo 可能拋出的分頁/排序錯誤
+             logger.error(f"獲取過濾後的分頁爬蟲設定列表失敗 (參數錯誤): {str(e)}")
+             return {'success': False, 'message': str(e), 'data': None}
         except Exception as e:
             logger.error(f"獲取過濾後的分頁爬蟲設定列表失敗: {str(e)}")
             # 直接返回標準錯誤結構，避免拋出未處理的異常

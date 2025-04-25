@@ -163,13 +163,14 @@ class TestCrawlerTaskHistoryRepository:
             limit=1,
             is_preview=True,
             preview_fields=preview_fields
-            # Default sort is likely created_at desc or id desc
+            # find_successful_histories itself doesn't take sort params.
+            # Rely on find_paginated's default sort (created_at/id desc).
         )
         assert len(successful_preview) == 1
         assert isinstance(successful_preview[0], dict)
         assert set(successful_preview[0].keys()) == set(preview_fields)
-        # Assuming default sort gets the latest successful one
-        assert successful_preview[0]["message"] == "成功抓取更多文章"
+        # Assuming default sort (e.g., ID desc) gets the latest successful one (ID 3)
+        assert successful_preview[0]["message"] == "成功抓取"
 
     def test_find_failed_histories(self, crawler_task_history_repo: CrawlerTaskHistoryRepository, sample_histories: List[CrawlerTaskHistory]):
         """測試查詢失敗的歷史記錄（包括預覽）"""

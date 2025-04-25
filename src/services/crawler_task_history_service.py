@@ -265,7 +265,8 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
                     filter_criteria['start_time'] = date_filter # 假設基於 start_time 過濾
 
                 # 使用 find_paginated
-                repo_result: Dict[str, Any] = history_repo.find_paginated(
+                # 修改：接收 tuple[int, list]
+                total_count, items_result = history_repo.find_paginated(
                     filter_criteria=filter_criteria,
                     page=page,
                     per_page=per_page,
@@ -275,25 +276,27 @@ class CrawlerTaskHistoryService(BaseService[CrawlerTaskHistory]):
                     preview_fields=preview_fields
                 )
 
-                items_result: HistoryListResult = repo_result.get('items', [])
                 items_response: HistoryListResult
 
                 if is_preview:
-                     items_response = items_result # 直接使用 dict list
+                     items_response = items_result # items_result is already List[Dict] or List[]
                 else:
                     # 確保 items_result 是 ORM 對象列表
                     orm_list = cast(List[CrawlerTaskHistory], items_result)
                     items_response = [CrawlerTaskHistoryReadSchema.model_validate(item) for item in orm_list]
 
+                # 修改：從 total_count 計算 total_pages
+                total_pages = (total_count + per_page - 1) // per_page if per_page > 0 else 0
+
                 # 返回包含分頁資訊和結果列表的字典
                 paginated_data = {
                     "items": items_response,
-                    "page": repo_result.get("page", 1),
-                    "per_page": repo_result.get("per_page", per_page),
-                    "total": repo_result.get("total", 0),
-                    "total_pages": repo_result.get("total_pages", 0),
-                    "has_next": repo_result.get("has_next", False),
-                    "has_prev": repo_result.get("has_prev", False)
+                    "page": page, # 使用傳入的 page
+                    "per_page": per_page, # 使用傳入的 per_page
+                    "total": total_count, # 使用返回的 total_count
+                    "total_pages": total_pages,
+                    "has_next": page < total_pages,
+                    "has_prev": page > 1
                 }
 
                 return {
