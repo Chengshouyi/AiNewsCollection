@@ -186,3 +186,4 @@ cython_debug/
 
 .ai/
 filememory
+src/crawlers/configs/tech_news_crawler_config.json
