@@ -661,7 +661,9 @@ class TestValidateTaskArgs:
             "save_to_database": True,
             "get_links_by_task_id": False,
             "is_test": False,
-            "article_links": []
+            "article_links": [],
+            "save_partial_results_on_cancel": False,
+            "save_partial_to_database": False
         }
         with pytest.raises(ValidationError, match="task_args: task_args.ai_only: 類型不匹配。期望類型: bool"):
             validator(invalid_args)
