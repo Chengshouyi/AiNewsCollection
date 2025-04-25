@@ -10,6 +10,9 @@
     </button>
 </div>
 
+<!-- 新增提示訊息區域 -->
+<div id="main-alert-area"></div>
+
 <div class="table-responsive">
     <table class="table table-striped table-hover">
         <thead>
@@ -38,6 +41,8 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
+                <!-- 新增模態框內提示區域 -->
+                <div id="modal-alert-area"></div>
                 <form id="crawler-form">
                     <input type="hidden" id="crawler-id">
                     <div class="mb-3">
@@ -47,7 +52,7 @@
                     <div class="mb-3">
                         <label for="module-name" class="form-label">模組名稱</label>
                         <input type="text" class="form-control" id="module-name" name="module_name" required>
-                        <div class="form-text">請輸入爬蟲模組的名稱，例如：bnext_crawler</div>
+                        <div class="form-text">請輸入爬蟲模組的名稱，例如：bnext，系統將自動加上 _crawler 後綴</div>
                     </div>
                     <div class="mb-3">
                         <label for="crawler-website" class="form-label">目標網站</label>

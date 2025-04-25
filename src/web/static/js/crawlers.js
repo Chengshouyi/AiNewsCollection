@@ -36,13 +36,49 @@ $(document).ready(function () {
     });
 
     // 使用事件委託綁定表格中的編輯和刪除按鈕事件
-    $('#crawlers-table-body').on('click', '.edit-crawler-btn', function () {
+    $('#crawlers-table-body').on('click', '.edit-crawler-btn', function (event) {
         const crawlerId = $(this).data('id');
+        console.log(`編輯按鈕點擊: crawlerId=${crawlerId}`);
+        const crawler = crawlers.find(c => c.id === crawlerId);
+
+        // 增加詳細日誌
+        if (crawler) {
+            console.log('找到的爬蟲物件:', crawler);
+            console.log(`爬蟲模組名稱: ${crawler.module_name}, 類型: ${typeof crawler.module_name}`);
+            console.log(`比較結果 (=== 'bnext'): ${crawler.module_name === 'bnext'}`);
+        } else {
+            console.log('未能在 crawlers 陣列中找到 ID 為', crawlerId, '的爬蟲');
+        }
+
+        if (crawler && crawler.module_name === 'bnext') {
+            console.log('檢測到 bnext 預設爬蟲，阻止編輯');
+            displayAlert('warning', '系統預設爬蟲，不可編輯。');
+            event.preventDefault(); // 阻止默認行為
+            event.stopImmediatePropagation(); // 阻止其他監聽器
+            return false; // 停止執行
+        }
+
+        // 如果不是 bnext_crawler，才顯示模態框
+        console.log('允許編輯，顯示模態框');
         showCrawlerModal(crawlerId);
     });
 
-    $('#crawlers-table-body').on('click', '.delete-crawler-btn', function () {
-        currentCrawlerId = $(this).data('id');
+    $('#crawlers-table-body').on('click', '.delete-crawler-btn', function (event) {
+        const crawlerId = $(this).data('id');
+        console.log(`刪除按鈕點擊: crawlerId=${crawlerId}`); // 添加日誌
+        const crawler = crawlers.find(c => c.id === crawlerId);
+
+        if (crawler && crawler.module_name === 'bnext') {
+            console.log('檢測到 bnext 預設爬蟲，阻止刪除');
+            displayAlert('warning', '系統預設爬蟲，不可刪除。');
+            event.preventDefault(); // 阻止默認行為
+            event.stopImmediatePropagation(); // 阻止其他監聽器
+            return false; // 停止執行
+        }
+
+        // 如果不是 bnext_crawler，才顯示確認刪除模態框
+        console.log('允許刪除，顯示確認模態框'); // 添加日誌
+        currentCrawlerId = crawlerId; // 設置當前要刪除的ID
         $('#delete-modal').modal('show');
     });
 
@@ -58,6 +94,19 @@ $(document).ready(function () {
         testCrawler(crawlerId, crawlerName);
     });
 });
+
+// 新增函數：在主頁面顯示提示
+function displayMainAlert(type, message) {
+    const alertArea = $('#main-alert-area');
+    alertArea.empty(); // 清除之前的提示
+    const alertHtml = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            ${escapeHtml(message)}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+    `;
+    alertArea.html(alertHtml);
+}
 
 // WebSocket連接設置
 function setupWebSocket() {
@@ -471,6 +520,9 @@ function renderCrawlersTable(crawlers) {
     crawlers.forEach(crawler => {
         const statusBadgeClass = crawler.is_active ? 'badge bg-success' : 'badge bg-secondary';
         const statusText = crawler.is_active ? '啟用' : '停用';
+        const isBnextCrawler = crawler.module_name === 'bnext';
+        const disabledAttr = isBnextCrawler ? 'disabled' : '';
+        const disabledTitle = isBnextCrawler ? 'title="系統預設爬蟲，不可修改或刪除"' : '';
 
         const row = `
             <tr data-id="${crawler.id}">
@@ -481,10 +533,10 @@ function renderCrawlersTable(crawlers) {
                 <td>${escapeHtml(crawler.crawler_type)}</td>
                 <td><span class="${statusBadgeClass}">${statusText}</span></td>
                 <td>
-                    <button class="btn btn-sm btn-outline-primary edit-crawler-btn" data-id="${crawler.id}">
+                    <button class="btn btn-sm btn-outline-primary edit-crawler-btn" data-id="${crawler.id}" ${disabledAttr} ${disabledTitle}>
                         <i class="bi bi-pencil"></i> 編輯
                     </button>
-                    <button class="btn btn-sm btn-outline-danger delete-crawler-btn" data-id="${crawler.id}">
+                    <button class="btn btn-sm btn-outline-danger delete-crawler-btn" data-id="${crawler.id}" ${disabledAttr} ${disabledTitle}>
                         <i class="bi bi-trash"></i> 刪除
                     </button>
                     <button class="btn btn-sm btn-outline-info test-crawler-btn" data-id="${crawler.id}" 
@@ -501,14 +553,20 @@ function renderCrawlersTable(crawlers) {
 
 // 顯示爬蟲新增/編輯模態框
 function showCrawlerModal(crawlerId) {
-    resetCrawlerForm(); // 清空表單
+    resetCrawlerForm();
 
     if (crawlerId) {
-        // 編輯模式
+        // --- 編輯模式 --- 
         const crawler = crawlers.find(c => c.id === crawlerId);
         if (!crawler) {
             console.error('找不到ID為', crawlerId, '的爬蟲');
             return;
+        }
+
+        // 檢查是否為預設爬蟲
+        if (crawler.module_name === 'bnext') {
+            displayAlert('warning', '系統預設爬蟲，不可編輯。');
+            return; // 不顯示編輯模態框
         }
 
         $('#crawler-modal-label').text('編輯爬蟲');
@@ -523,14 +581,16 @@ function showCrawlerModal(crawlerId) {
             url: `/api/crawlers/${crawlerId}/config`,
             method: 'GET',
             success: function (response) {
-                console.log('API 回應:', response);
                 if (response.success) {
+                    const configContentStr = JSON.stringify(response.config, null, 2);
                     $('#current-config-file').text(crawler.config_file_name);
-                    $('#config-content').val(JSON.stringify(response.config, null, 2));
+                    $('#config-content').val(configContentStr);
+                    // 將原始值存儲在 data 屬性中，用於後續比較
+                    $('#config-content').data('original-value', configContentStr);
                     $('#config-edit-section').show();
                 } else {
                     console.error('API 回應錯誤:', response.message);
-                    displayAlert('warning', response.message);
+                    displayAlert('warning', response.message, true); // Show in modal
                 }
             },
             error: function (xhr, status, error) {
@@ -542,13 +602,16 @@ function showCrawlerModal(crawlerId) {
                     configFileName: crawler.config_file_name,
                     url: `/api/crawlers/${crawlerId}/config`
                 });
-                displayAlert('danger', '獲取配置檔案失敗: ' + (xhr.responseJSON?.message || error));
+                const errorMsg = xhr.responseJSON?.message || error;
+                displayAlert('danger', `獲取配置檔案失敗: ${errorMsg}`, true); // Show in modal
             }
         });
     } else {
-        // 新增模式
+        // --- 新增模式 --- 
         $('#crawler-modal-label').text('新增爬蟲');
         $('#config-edit-section').hide();
+        // 清除可能殘留的 data
+        $('#config-content').removeData('original-value');
     }
 
     $('#crawler-modal').modal('show');
@@ -616,164 +679,252 @@ function resetCrawlerForm() {
     $('#config-fields-container').empty();
 }
 
-// 保存爬蟲
+// 保存爬蟲（新增或更新）
 function saveCrawler() {
-    // 收集表單數據
+    console.log('保存爬蟲按鈕點擊');
     const crawlerId = $('#crawler-id').val();
     const isEdit = !!crawlerId;
+    const crawlerName = $('#crawler-name').val(); // 獲取 name 用於可能的檔名
 
-    const crawlerData = {
-        crawler_name: $('#crawler-name').val(),
+    // --- 基本表單資料收集 ---
+    const baseData = {
+        crawler_name: crawlerName,
         module_name: $('#module-name').val(),
         base_url: $('#crawler-website').val(),
-        config_file_name: getConfigFileName(),
-        crawler_type: $('#crawler-type').val()
+        crawler_type: $('#crawler-type').val(),
     };
 
-    // 表單驗證
-    if (!crawlerData.crawler_name || !crawlerData.base_url || !crawlerData.crawler_type) {
-        displayAlert('warning', '請填寫必填欄位');
-        return;
-    }
+    // --- 判斷操作類型 --- 
+    if (isEdit) {
+        // --- 編輯模式 --- 
+        console.log('執行編輯模式保存');
+        const url = `/api/crawlers/${crawlerId}`;
 
-    // 處理配置檔案
-    const configFile = $('#config-file')[0].files[0];
-    if (configFile) {
-        // 如果有上傳新檔案，使用 FormData 傳送
-        const formData = new FormData();
-        formData.append('config_file', configFile);
-        formData.append('crawler_data', JSON.stringify(crawlerData));
+        // 1. 先更新基本資料
+        $.ajax({
+            url: url,
+            method: 'PUT',
+            contentType: 'application/json',
+            data: JSON.stringify(baseData),
+            success: function (response) {
+                console.log('基本資料更新成功:', response);
 
-        const url = isEdit ? `/api/crawlers/${crawlerId}/config` : '/api/crawlers';
-        const method = isEdit ? 'PUT' : 'POST';
+                // 2. 檢查是否需要更新配置檔案
+                const configFile = $('#config-file')[0].files[0];
+                const configContent = $('#config-content').val();
+                // TODO: 需要一種方法來判斷 configContent 是否真的被修改過，
+                // 例如在 showCrawlerModal 時保存原始值進行比較。
+                // 暫時簡化：只要 textarea 有內容就認為可能需要更新（除非上傳了新檔案）
+                const originalConfigContent = $('#config-content').data('original-value'); // 假設 showCrawlerModal 設置了這個
+                const contentChanged = configContent !== originalConfigContent;
+
+                if (configFile) {
+                    // 2a. 如果上傳了新檔案，調用 config 更新 API
+                    console.log('檢測到新配置檔案，開始上傳...');
+                    const configFormData = new FormData();
+                    configFormData.append('config_file', configFile);
+
+                    // 添加 crawler_data (作為 JSON 字串), 供後端 update_crawler_config 使用
+                    configFormData.append('crawler_data', JSON.stringify(baseData));
+
+                    // 注意：根據 Python 後端 update_crawler_config 的實現，
+                    // 它可能還需要 'crawler_data'。如果需要，在這裡添加：
+                    // configFormData.append('crawler_data', JSON.stringify(baseData)); 
+                    // 但根據用戶需求，先只傳檔案
+
+                    $.ajax({
+                        url: `${url}/config`,
+                        method: 'PUT',
+                        data: configFormData,
+                        processData: false,
+                        contentType: false,
+                        success: function (configResponse) {
+                            console.log('配置檔案上傳成功:', configResponse);
+                            $('#crawler-modal').modal('hide');
+                            displayMainAlert('success', response.message || '爬蟲及配置更新成功');
+                            loadCrawlers();
+                        },
+                        error: function (jqXHR, textStatus, errorThrown) {
+                            console.error('配置檔案上傳失敗:', textStatus, errorThrown, jqXHR.responseJSON);
+                            const configErrorMsg = jqXHR.responseJSON?.error || jqXHR.responseJSON?.message || '配置檔案上傳失敗';
+                            // 顯示在主頁面和模態框
+                            displayMainAlert('danger', `基本資料更新成功，但配置檔案上傳失敗: ${configErrorMsg}`);
+                            displayAlert('danger', `配置檔案上傳失敗: ${configErrorMsg}`, true);
+                        }
+                    });
+                } else if (contentChanged) {
+                    // 2b. 如果修改了 Textarea 內容，構建 Blob 並上傳
+                    console.log('檢測到配置內容修改，開始上傳...');
+                    try {
+                        // 驗證 JSON 格式
+                        JSON.parse(configContent);
+
+                        const configBlob = new Blob([configContent], { type: 'application/json' });
+                        const configFormData = new FormData();
+                        // 使用一個合理的檔名，或者後端 update_crawler_config 能處理無檔名情況
+                        const fileName = $('#current-config-file').text() || `${baseData.module_name}_crawler_config.json`;
+                        configFormData.append('config_file', configBlob, fileName);
+
+                        // 添加 crawler_data (作為 JSON 字串), 供後端 update_crawler_config 使用
+                        configFormData.append('crawler_data', JSON.stringify(baseData));
+
+                        $.ajax({
+                            url: `${url}/config`,
+                            method: 'PUT',
+                            data: configFormData,
+                            processData: false,
+                            contentType: false,
+                            success: function (configResponse) {
+                                console.log('配置內容更新成功:', configResponse);
+                                $('#crawler-modal').modal('hide');
+                                displayMainAlert('success', response.message || '爬蟲及配置更新成功');
+                                loadCrawlers();
+                            },
+                            error: function (jqXHR, textStatus, errorThrown) {
+                                console.error('配置內容更新失敗:', textStatus, errorThrown, jqXHR.responseJSON);
+                                const configErrorMsg = jqXHR.responseJSON?.error || jqXHR.responseJSON?.message || '配置內容更新失敗';
+                                displayMainAlert('danger', `基本資料更新成功，但配置內容更新失敗: ${configErrorMsg}`);
+                                displayAlert('danger', `配置內容更新失敗: ${configErrorMsg}`, true);
+                            }
+                        });
+                    } catch (e) {
+                        console.error('Textarea 配置內容非有效 JSON', e);
+                        displayMainAlert('danger', `基本資料更新成功，但 Textarea 配置內容非有效 JSON: ${e.message}`);
+                        displayAlert('danger', `Textarea 配置內容非有效 JSON: ${e.message}`, true);
+                    }
+                } else {
+                    // 2c. 配置無變化，直接完成
+                    console.log('配置無變化');
+                    $('#crawler-modal').modal('hide');
+                    displayMainAlert('success', response.message || '爬蟲更新成功');
+                    loadCrawlers();
+                }
+            },
+            error: function (jqXHR, textStatus, errorThrown) {
+                console.error('基本資料更新失敗:', textStatus, errorThrown, jqXHR.responseJSON);
+                const errorMessage = jqXHR.responseJSON?.error || jqXHR.responseJSON?.message || '更新爬蟲基本資料時發生錯誤';
+                displayMainAlert('danger', errorMessage);
+                displayAlert('danger', errorMessage, true);
+            }
+        });
+
+    } else {
+        // --- 新增模式 --- 
+        console.log('執行新增模式保存');
+        const url = '/api/crawlers';
+        const method = 'POST';
+
+        // --- 強制檢查檔案上傳 ---
+        const configFile = $('#config-file')[0].files[0];
+        if (!configFile) {
+            const errorMsg = '新增爬蟲必須上傳配置檔案。';
+            console.error(errorMsg);
+            displayMainAlert('danger', errorMsg);
+            displayAlert('danger', errorMsg, true); // 在模態框內也顯示
+            return; // 阻止執行
+        }
+
+        // --- 步驟 2.1: 新增爬蟲資料 ---
+        const baseData = {
+            crawler_name: $('#crawler-name').val(),
+            module_name: $('#module-name').val(),
+            base_url: $('#crawler-website').val(),
+            crawler_type: $('#crawler-type').val(),
+            config_file_name: configFile.name, // 添加文件名到基礎數據
+            config: {} // 添加一個空的 config 物件以滿足後端要求
+        };
+
+        console.log('準備發送新增爬蟲元數據請求:', method, url, baseData);
 
         $.ajax({
             url: url,
             method: method,
-            data: formData,
-            processData: false,
-            contentType: false,
+            contentType: 'application/json', // 發送 JSON 數據
+            data: JSON.stringify(baseData),
             success: function (response) {
-                console.log('保存成功:', response);
-                $('#crawler-modal').modal('hide');
-                displayAlert('success', response.message || '保存成功');
-                loadCrawlers();
-                // 清空檔案選擇器
-                $('#config-file').val('');
-            },
-            error: function (xhr, status, error) {
-                console.error('保存失敗:', {
-                    status: xhr.status,
-                    statusText: xhr.statusText,
-                    responseText: xhr.responseText,
-                    error: error
+                console.log('步驟 2.1 (新增元數據) 成功:', response);
+
+                if (!response.success || !response.crawler || !response.crawler.id) {
+                    console.error('新增元數據成功，但響應格式不正確或缺少爬蟲 ID:', response);
+                    const errorMsg = '新增爬蟲元數據成功，但無法獲取新爬蟲 ID。';
+                    displayMainAlert('danger', errorMsg);
+                    displayAlert('danger', errorMsg, true);
+                    return;
+                }
+
+                const newCrawlerId = response.crawler.id;
+                const originalMessage = response.message; // 保存第一步的成功消息
+
+                // --- 步驟 2.2: 上傳配置檔案 ---
+                console.log(`準備上傳配置檔案到 crawler ID: ${newCrawlerId}`);
+                const configFormData = new FormData();
+                configFormData.append('config_file', configFile);
+
+                // 添加 crawler_data (作為 JSON 字串), 供後端 update_crawler_config 使用
+                configFormData.append('crawler_data', JSON.stringify(baseData));
+
+                // 注意：根據 Python 後端 update_crawler_config 的實現，
+                // 它可能還需要 'crawler_data'。如果需要，在這裡添加：
+                // configFormData.append('crawler_data', JSON.stringify(baseData)); 
+                // 但根據用戶需求，先只傳檔案
+
+                $.ajax({
+                    url: `/api/crawlers/${newCrawlerId}/config`,
+                    method: 'PUT', // 更新配置使用 PUT
+                    data: configFormData,
+                    processData: false,
+                    contentType: false,
+                    success: function (configResponse) {
+                        console.log('步驟 2.2 (上傳配置檔案) 成功:', configResponse);
+                        $('#crawler-modal').modal('hide');
+                        // 可以合併第一步和第二步的成功消息
+                        displayMainAlert('success', originalMessage + ' 且配置檔案上傳成功。');
+                        loadCrawlers();
+                    },
+                    error: function (jqXHR, textStatus, errorThrown) {
+                        console.error('步驟 2.2 (上傳配置檔案) 失敗:', textStatus, errorThrown, jqXHR.responseJSON);
+                        const configErrorMsg = jqXHR.responseJSON?.error || jqXHR.responseJSON?.message || '配置檔案上傳失敗';
+                        // 顯示錯誤，提示元數據已創建但檔案上傳失敗
+                        displayMainAlert('danger', `爬蟲元數據已創建，但配置檔案上傳失敗: ${configErrorMsg}`);
+                        displayAlert('danger', `配置檔案上傳失敗: ${configErrorMsg}`, true);
+                        // 考慮是否需要重新加載列表，因為元數據可能已經存在
+                        loadCrawlers();
+                    }
                 });
-                displayAlert('danger', '保存失敗: ' + (xhr.responseJSON?.message || error));
+
+            },
+            error: function (jqXHR, textStatus, errorThrown) {
+                console.error('步驟 2.1 (新增元數據) 失敗:', textStatus, errorThrown, jqXHR.responseJSON);
+                const errorMessage = jqXHR.responseJSON?.error || jqXHR.responseJSON?.message || '新增爬蟲元數據時發生錯誤';
+                displayMainAlert('danger', errorMessage);
+                displayAlert('danger', errorMessage, true);
             }
         });
-    } else if (isEdit && $('#config-content').val()) {
-        // 如果是編輯模式且修改了配置內容，使用修改後的內容
-        try {
-            console.log('當前配置內容:', $('#config-content').val());
-            const configContent = $('#config-content').val().trim();
-            if (!configContent) {
-                console.warn('配置內容為空');
-                displayAlert('warning', '配置內容不能為空');
-                return;
-            }
-            const config = JSON.parse(configContent);
-            console.log('解析後的配置:', config);
-
-            // 創建一個新的 Blob 對象作為配置檔案
-            const configBlob = new Blob([configContent], { type: 'application/json' });
-            const configFile = new File([configBlob], crawlerData.config_file_name, { type: 'application/json' });
-
-            // 使用 FormData 傳送
-            const formData = new FormData();
-            formData.append('config_file', configFile);
-            formData.append('crawler_data', JSON.stringify(crawlerData));
-
-            $.ajax({
-                url: `/api/crawlers/${crawlerId}/config`,
-                method: 'PUT',
-                data: formData,
-                processData: false,
-                contentType: false,
-                success: function (response) {
-                    console.log('保存成功:', response);
-                    $('#crawler-modal').modal('hide');
-                    displayAlert('success', response.message || '保存成功');
-                    loadCrawlers();
-                    // 清空檔案選擇器
-                    $('#config-file').val('');
-                },
-                error: function (xhr, status, error) {
-                    console.error('保存失敗:', {
-                        status: xhr.status,
-                        statusText: xhr.statusText,
-                        responseText: xhr.responseText,
-                        error: error
-                    });
-                    displayAlert('danger', '保存失敗: ' + (xhr.responseJSON?.message || error));
-                }
-            });
-        } catch (error) {
-            console.error('配置內容解析錯誤:', error);
-            console.error('原始配置內容:', $('#config-content').val());
-            displayAlert('danger', '配置內容格式錯誤，請確保是有效的 JSON 格式');
-        }
-    } else {
-        // 其他情況直接保存
-        saveCrawlerData(crawlerData);
     }
-}
-
-// 保存爬蟲數據到後端
-function saveCrawlerData(crawlerData) {
-    console.log('準備保存的數據:', crawlerData);
-    const crawlerId = $('#crawler-id').val();
-    const url = crawlerId ? `/api/crawlers/${crawlerId}` : '/api/crawlers';
-    const method = crawlerId ? 'PUT' : 'POST';
-
-    $.ajax({
-        url: url,
-        method: method,
-        contentType: 'application/json',
-        data: JSON.stringify(crawlerData),
-        success: function (response) {
-            console.log('保存成功:', response);
-            $('#crawler-modal').modal('hide');
-            displayAlert('success', response.message || '保存成功');
-            loadCrawlers();
-        },
-        error: function (xhr, status, error) {
-            console.error('保存失敗:', {
-                status: xhr.status,
-                statusText: xhr.statusText,
-                responseText: xhr.responseText,
-                error: error
-            });
-            displayAlert('danger', '保存失敗: ' + (xhr.responseJSON?.message || error));
-        }
-    });
 }
 
 // 刪除爬蟲
 function deleteCrawler(crawlerId) {
-    if (!crawlerId) return;
+    console.log(`執行刪除: crawlerId=${crawlerId}`); // 添加日誌
+    if (!crawlerId) {
+        console.error('刪除錯誤: crawlerId 無效');
+        return;
+    }
 
     $.ajax({
         url: `/api/crawlers/${crawlerId}`,
         method: 'DELETE',
         success: function (response) {
-            $('#delete-modal').modal('hide');
-            displayAlert('success', '爬蟲已刪除');
-            loadCrawlers();
+            console.log('刪除成功:', response); // 添加日誌
+            $('#delete-modal').modal('hide'); // 關閉確認模態框
+            displayMainAlert('success', response.message || '爬蟲刪除成功');
+            loadCrawlers(); // 重新加載列表
         },
-        error: function (xhr, status, error) {
-            $('#delete-modal').modal('hide');
-            console.error('刪除爬蟲失敗:', error);
-            displayAlert('danger', '刪除失敗: ' + (xhr.responseJSON?.message || error));
+        error: function (jqXHR, textStatus, errorThrown) {
+            console.error('刪除失敗:', textStatus, errorThrown, jqXHR.responseJSON); // 添加日誌
+            const errorMessage = jqXHR.responseJSON?.error || jqXHR.responseJSON?.message || '刪除爬蟲時發生錯誤';
+            $('#delete-modal').modal('hide'); // 關閉確認模態框
+            displayMainAlert('danger', errorMessage);
         }
     });
 }
@@ -827,31 +978,44 @@ function getConfigFileName() {
 
 // 顯示提示訊息
 function displayAlert(type, message, inModal = false) {
-    const alertHtml = `
+    // 這個函數現在主要用於模態框內的即時反饋，或者可以考慮移除/合併
+    const alertContainerId = inModal ? 'modal-alert-area' : 'main-alert-area'; // 可能需要調整ID
+    let alertContainer = $(`#${alertContainerId}`); // 使用 let
+
+    // 如果是顯示在主頁面，則使用新的函數
+    if (!inModal) {
+        displayMainAlert(type, message);
+        return;
+    }
+
+    // 以下是模態框內提示的邏輯 (如果需要保留)
+    // 確保模態框內有對應的 alert area
+    if (alertContainer.length === 0 && inModal) {
+        console.warn("Modal alert area not found, attempting to create one inside modal body.");
+        // 在 form 之前創建它 (如果不存在)
+        $('#crawler-form').before('<div id="modal-alert-area"></div>');
+        alertContainer = $(`#${alertContainerId}`); // 重新選擇
+        // 如果創建後仍然找不到，表示有更嚴重的問題
+        if (alertContainer.length === 0) {
+            console.error("Failed to create or find modal alert area.");
+            return;
+        }
+    }
+
+    // 清除之前的模態框提示
+    alertContainer.empty();
+
+    alertContainer.html(`
         <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-            ${message}
+            ${escapeHtml(message)}
             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
         </div>
-    `;
+    `);
 
-    if (inModal) {
-        // 在模態框中顯示提示
-        const modalBody = $('.modal-body').first();
-        modalBody.prepend(alertHtml);
-    } else {
-        // 在頁面頂部顯示提示
-        const alertContainer = $('#alert-container');
-        if (alertContainer.length === 0) {
-            // 如果不存在，則創建一個
-            $('main.container').prepend('<div id="alert-container"></div>');
-        }
-        $('#alert-container').html(alertHtml);
-
-        // 5秒後自動消失
-        setTimeout(() => {
-            $('.alert').alert('close');
-        }, 5000);
-    }
+    // 可選：幾秒後自動消失
+    // setTimeout(() => {
+    //     alertContainer.find('.alert').alert('close');
+    // }, 5000);
 }
 
 // HTML 轉義，防止 XSS

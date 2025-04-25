@@ -52,7 +52,7 @@ def create_crawler():
             return jsonify({"success": False, "message": "請求體為空或非 JSON 格式"}), 400
 
         # 確保必要欄位存在
-        required_fields = ['crawler_name', 'module_name', 'base_url', 'crawler_type']
+        required_fields = ['crawler_name', 'module_name', 'base_url', 'crawler_type', 'config_file_name']
         missing_fields = [field for field in required_fields if field not in data]
         if missing_fields:
             return jsonify({
