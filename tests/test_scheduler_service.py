@@ -291,7 +291,10 @@ class TestSchedulerService:
             scheduler_service._trigger_task(auto_task.id, auto_task.task_args)
             mock_get_executor.assert_called_once() # 確保 get_task_executor_service 被調用
             # 現在斷言應該在我們創建的 mock_executor 上
-            mock_executor.execute_task.assert_called_once_with(auto_task.id)
+            mock_executor.execute_task.assert_called_once_with(
+                auto_task.id,
+                auto_task.task_args
+            )
         
         # 測試任務不存在的情況
         mock_get_by_id.return_value = None

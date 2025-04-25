@@ -594,7 +594,8 @@ class TestBnextCrawler:
             crawler.articles_df,
             num_articles=custom_params["num_articles"],
             ai_only=custom_params["ai_only"],
-            min_keywords=custom_params["min_keywords"]
+            min_keywords=custom_params["min_keywords"],
+            is_limit_num_articles=False
         )
 
     def test_fetch_article_links_empty_result(self, mock_config_file, mock_article_service, mock_scraper, mock_extractor):
