@@ -1,11 +1,20 @@
-import pytest
+# flake8: noqa: F811
+"""本模組測試 BaseCreateSchema 與 BaseUpdateSchema 的功能與資料庫互動。"""
+
+import logging
 from datetime import datetime, timezone, timedelta
+from typing import Optional
+
+import pytest
 from sqlalchemy import String
 from sqlalchemy.orm import Mapped, mapped_column
-from src.error.errors import ValidationError
-from typing import Optional
+
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
 from src.models.base_model import Base
+from src.error.errors import ValidationError
+from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+
+logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
 
 
 class ModelForTest(Base):
@@ -171,9 +180,11 @@ def test_validate_datetime():
     iso_time_string = "2023-01-01T12:00:00Z"
     parsed_datetime = datetime.fromisoformat(iso_time_string.replace("Z", "+00:00"))
     str_schema = CreateSchemaForTest(created_at=parsed_datetime, name="test")
-    assert str_schema.created_at.year == 2023
-    assert str_schema.created_at.month == 1
-    assert str_schema.created_at.day == 1
+    created_at_value = str_schema.created_at
+    assert isinstance(created_at_value, datetime)
+    assert created_at_value.year == 2023
+    assert created_at_value.month == 1
+    assert created_at_value.day == 1
 
 
 def test_concurrent_model_operations(initialized_db_manager):
