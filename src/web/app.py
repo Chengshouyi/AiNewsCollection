@@ -11,15 +11,14 @@ from src.config import get_db_manager
 from src.services.service_container import get_scheduler_service, get_crawlers_service
 import os
 
-# 設定 Logger
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from src.utils.log_utils import LoggerSetup # 使用統一的 logger
+logger = LoggerSetup.setup_logger(__name__) # 使用統一的 logger
 
 
 
 # 初始化資料庫和默認數據
-def initialize_app(app):
-    with app.app_context():
+# def initialize_app(app):
+#     with app.app_context():
         # 初始化資料庫表格
         # db_manager = get_db_manager()
         # db_manager.create_tables(Base)
@@ -43,7 +42,7 @@ app.register_blueprint(article_bp)
 app.register_blueprint(view_bp)
 
 # 執行應用初始化
-initialize_app(app)
+# initialize_app(app)
 
 # SocketIO /tasks 命名空間事件處理
 @socketio.on('connect', namespace='/tasks')
@@ -118,4 +117,4 @@ if __name__ == '__main__':
 
     # 使用 socketio.run 來啟動伺服器，以便 WebSocket 正常工作
     # 允許來自任何 IP 的連接，方便容器環境
-    socketio.run(app, debug=True, host='0.0.0.0', port=5000, use_reloader=False) # use_reloader=False 避免多線程問題
+    socketio.run(app, debug=True, host='0.0.0.0', port=5000, use_reloader=False, allow_unsafe_werkzeug=True) # 添加參數

@@ -1,25 +1,23 @@
+# Standard library imports
+import sys
+import os
 from logging.config import fileConfig
+from pathlib import Path
 
+# Third-party imports
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
-
 from alembic import context
 
-import sys
-from pathlib import Path
-sys.path.append(str(Path(__file__).parent.parent))
-
+# Local application/library specific imports
 from src.models.base_model import Base
-from src.models.crawlers_model import Crawlers
-from src.models.crawler_tasks_model import CrawlerTasks
-from src.models.articles_model import Articles
-from src.models.crawler_task_history_model import CrawlerTaskHistory
 
-import os
+# Modify sys.path before Alembic uses the models, but after all imports.
+sys.path.append(str(Path(__file__).parent.parent))
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
-config = context.config
+config = context.config  # type: ignore
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
@@ -51,15 +49,15 @@ def run_migrations_offline() -> None:
 
     """
     url = config.get_main_option("sqlalchemy.url")
-    context.configure(
+    context.configure(  # type: ignore
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
     )
 
-    with context.begin_transaction():
-        context.run_migrations()
+    with context.begin_transaction():  # type: ignore
+        context.run_migrations()  # type: ignore
 
 
 def run_migrations_online() -> None:
@@ -70,7 +68,7 @@ def run_migrations_online() -> None:
 
     """
     # Read DATABASE_URL from environment variable
-    db_url = os.environ.get('DATABASE_URL')
+    db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         raise ValueError("DATABASE_URL environment variable not set")
 
@@ -79,21 +77,19 @@ def run_migrations_online() -> None:
     engine_config = {"sqlalchemy.url": db_url}
 
     connectable = engine_from_config(
-        engine_config, # Use the dict with env var URL
+        engine_config,  # Use the dict with env var URL
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)  # type: ignore
 
-        with context.begin_transaction():
-            context.run_migrations()
+        with context.begin_transaction():  # type: ignore
+            context.run_migrations()  # type: ignore
 
 
-if context.is_offline_mode():
+if context.is_offline_mode():  # type: ignore
     run_migrations_offline()
 else:
     run_migrations_online()

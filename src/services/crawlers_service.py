@@ -11,23 +11,24 @@ from src.database.base_repository import SchemaType
 from sqlalchemy.orm.attributes import instance_state
 import json
 from src.error.errors import InvalidOperationError
+from src.utils.log_utils import LoggerSetup
 
 # 設定日誌檔案路徑
-log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
-os.makedirs(log_dir, exist_ok=True)
-log_file = os.path.join(log_dir, 'crawler_service.log')
+# log_dir = os.path.join(os.path.dirname(__file__), '..', '..', 'logs')
+# os.makedirs(log_dir, exist_ok=True)
+# log_file = os.path.join(log_dir, 'crawler_service.log')
 
-# 設定日誌格式
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(log_file, encoding='utf-8'),
-        logging.StreamHandler()  # 同時輸出到控制台
-    ]
-)
-logger = logging.getLogger(__name__)
-
+# # 設定日誌格式
+# logging.basicConfig(
+#     level=logging.INFO,
+#     format='%(asctime)s - %(levelname)s - %(message)s',
+#     handlers=[
+#         logging.FileHandler(log_file, encoding='utf-8'),
+#         logging.StreamHandler()  # 同時輸出到控制台
+#     ]
+# )
+# logger = logging.getLogger(__name__)
+logger = LoggerSetup.setup_logger('crawlers_service') # <<<--- 使用 log_utils 取得 logger
 # 通用類型變數，用於泛型方法
 T = TypeVar('T', bound=Base)
 

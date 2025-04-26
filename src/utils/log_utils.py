@@ -46,21 +46,21 @@ class LoggerSetup:
         """
         try:
             # 獲取專案根目錄
-            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            
+            # project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            project_root = "/app"
             # 創建日誌目錄
             log_dir_path = os.path.join(project_root, log_dir)
-            if not os.path.exists(log_dir_path):
-                os.makedirs(log_dir_path)
+            # if not os.path.exists(log_dir_path):
+            #     os.makedirs(log_dir_path)
             
             # 使用台北時區
             taipei_tz = pytz.timezone('Asia/Taipei')
             # 獲取當前 UTC 時間並轉換為台北時間
             current_time = datetime.now(pytz.UTC).astimezone(taipei_tz)
             
-            # 生成日誌檔案名
-            timestamp = current_time.strftime("%Y%m%d_%H%M%S")
-            log_filename = os.path.join(log_dir_path, f'{module_name}_{timestamp}.log')
+            # # 生成日誌檔案名
+            # timestamp = current_time.strftime("%Y%m%d_%H%M%S")
+            # log_filename = os.path.join(log_dir_path, f'{module_name}_{timestamp}.log')
             
             # 設置預設日誌格式
             if log_format is None:
@@ -92,6 +92,7 @@ class LoggerSetup:
                     if datefmt:
                         return dt.strftime(datefmt)
                     return dt.strftime(date_format)
+                pass
             
             # 使用自定義格式化器
             formatter = TaipeiFormatter(log_format, date_format)
@@ -102,21 +103,21 @@ class LoggerSetup:
             logger.addHandler(console_handler)
             
             # 配置文件處理器
-            file_handler = logging.FileHandler(
-                filename=log_filename,
-                encoding='utf-8',
-                mode='a'
-            )
-            file_handler.setFormatter(formatter)
-            logger.addHandler(file_handler)
+            # file_handler = logging.FileHandler(
+            #     filename=log_filename,
+            #     encoding='utf-8',
+            #     mode='a'
+            # )
+            # file_handler.setFormatter(formatter)
+            # logger.addHandler(file_handler)
             
             # 設置不要傳遞到父記錄器
             logger.propagate = False
             
             # 記錄初始化信息
-            logger.debug(f"日誌系統初始化完成")
-            logger.debug(f"日誌文件路徑: {log_filename}")
-            logger.debug(f"當前時間: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+            logger.debug(f"日誌系統初始化完成(僅控制台)")
+            # logger.debug(f"日誌文件路徑: {log_filename}")
+            # logger.debug(f"當前時間: {current_time.strftime('%Y-%m-%d %H:%M:%S %Z')}")
             
             return logger
             
@@ -132,6 +133,7 @@ class LoggerSetup:
             
             basic_logger.error(f"日誌系統初始化失敗: {str(e)}", exc_info=True)
             return basic_logger
+            pass
 
     @staticmethod
     def set_debug_mode(logger: logging.Logger, enable: bool = False):
@@ -143,3 +145,4 @@ class LoggerSetup:
             enable (bool): 是否啟用調試模式
         """
         logger.setLevel(logging.DEBUG if enable else logging.INFO) 
+        pass

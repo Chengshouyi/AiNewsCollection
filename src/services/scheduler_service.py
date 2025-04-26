@@ -18,9 +18,8 @@ from src.error.errors import DatabaseOperationError
 from src.services.service_container import get_task_executor_service
 from src.config import get_db_manager
 # 設定 logger
-logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from src.utils.log_utils import LoggerSetup # 使用統一的 logger
+logger = LoggerSetup.setup_logger(__name__) # 使用統一的 logger
 
 class SchedulerService(BaseService[CrawlerTasks]):
     """排程服務，使用 Cron 表達式調度爬蟲任務執行"""
@@ -41,7 +40,7 @@ class SchedulerService(BaseService[CrawlerTasks]):
         
         # 設定 SQLAlchemy 任務存儲
         jobstore = SQLAlchemyJobStore(
-            url=self.db_manager.db_url,
+            url=self.db_manager.database_url,
             engine=self.db_manager.engine,
             tablename='apscheduler_jobs'
         )
@@ -649,7 +648,7 @@ class SchedulerService(BaseService[CrawlerTasks]):
     
     def __del__(self):
         """析構方法，確保調度器被停止"""
-        if self.scheduler_status['running']:
+        if hasattr(self, 'scheduler_status') and self.scheduler_status.get('running'):
             try:
                 # 使用 shutdown 而非 pause，因為這是最終銷毀
                 self.cron_scheduler.shutdown(wait=False)

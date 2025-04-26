@@ -43,10 +43,10 @@ RUN groupadd --gid $USER_GID $USERNAME \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
     && chmod 0440 /etc/sudoers.d/$USERNAME
 
-WORKDIR /workspace
-
 # 設定使用者
 USER $USERNAME
+
+WORKDIR /app
 
 # 複製 requirements 檔案 (dev container 會掛載整個目錄，但先複製可以利用快取)
 # 注意：這裡假設 requirements*.txt 在專案根目錄，而不是 .devcontainer 裡

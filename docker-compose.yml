@@ -69,6 +69,8 @@ volumes:
   postgres-data:
     # 定義 PostgreSQL 資料的 volume
     driver: local
+  app-logs:      # <<<--- 定義 logs volume
+    driver: local
 
 networks:
   # 定義預設網路

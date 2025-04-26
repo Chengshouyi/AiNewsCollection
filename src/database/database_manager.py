@@ -4,15 +4,16 @@ from typing import Optional, Type
 from contextlib import contextmanager
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import QueuePool
+from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.orm.decl_api import DeclarativeBase
 from sqlalchemy.exc import OperationalError
 from src.error.errors import DatabaseError, DatabaseConnectionError, DatabaseConfigError, DatabaseOperationError
 from functools import wraps
 
 # 設定 logger
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from src.utils.log_utils import LoggerSetup # 使用統一的 logger
+logger = LoggerSetup.setup_logger(__name__) # 使用統一的 logger
 
 
 
@@ -31,100 +32,51 @@ class DatabaseManager:
             DatabaseConnectionError: 資料庫連接錯誤
         """
         try:
-            self.db_url = self._get_db_url(db_path)
-            
-            # 路徑和目錄檢查
-            if not self.db_url.startswith('sqlite:///:memory:'):
-                db_file_path = self.db_url.replace('sqlite:///', '')
-                db_dir = os.path.dirname(db_file_path)
-                
-                if db_dir and not os.path.exists(db_dir):
-                    os.makedirs(db_dir, exist_ok=True)
-                
-                # 檢查目錄寫入權限
-                if db_dir and not os.access(db_dir, os.W_OK):
-                    raise DatabaseConfigError(f"資料庫目錄沒有寫入權限: {db_dir}")
-            
-            # 創建引擎時增加更多錯誤處理
-            try:
-                self.engine = create_engine(self.db_url)
-                self.Session = sessionmaker(bind=self.engine)
-            except Exception as engine_error:
-                error_msg = f"創建數據庫引擎失敗: {engine_error}"
-                logger.error(error_msg)
-                raise DatabaseConfigError(error_msg) from engine_error
-            
-            # 連接驗證
-            self.check_database_health()
-            self.database_path = self.db_url.replace('sqlite:///', '')
-        
+            # 優先從環境變數讀取 DATABASE_URL
+            self.database_url = os.environ.get('DATABASE_URL')
+
+            if not self.database_url:
+                # 在容器環境中，DATABASE_URL 必須被設定
+                # 如果沒設定，可以選擇報錯或嘗試使用傳入的 db_path (如果有的話)
+                # 但不再自動創建基於 /workspace 的 SQLite 路徑
+                if db_path and db_path.startswith('sqlite:///'):
+                    self.database_url = db_path # 允許測試時傳入 SQLite URL
+                    logger.warning(f"Warning: DATABASE_URL not set. Using provided SQLite DB: {self.database_url}")
+                else:
+                    # --- 強制報錯，避免 PermissionError ---
+                    raise DatabaseConfigError("DATABASE_URL environment variable is not set.")
+
+            logger.info(f"DatabaseManager initialized with URL: {self.database_url}")
+            # 使用連接池，例如 QueuePool
+            self.engine = create_engine(
+                self.database_url,
+                poolclass=QueuePool,
+                pool_size=10,         # 可根據需要調整
+                max_overflow=20,      # 可根據需要調整
+                pool_recycle=3600,    # 可選：回收閒置連接 (秒)
+                pool_pre_ping=True    # 可選：使用前檢查連接
+            )
+            self._verify_connection()
+            self._session_factory = sessionmaker(bind=self.engine)
+            # 使用 scoped_session 來管理 session 的線程安全
+            self._scoped_session = scoped_session(self._session_factory)
+            logger.info("DatabaseManager initialized successfully.")
+
         except OperationalError as e:
             error_msg = f"數據庫連接驗證失敗: {e}"
             logger.error(error_msg)
             raise DatabaseConnectionError(error_msg) from e
-        except DatabaseError:
-            # 直接傳遞已定義的資料庫異常
-            raise
+        
+        except SQLAlchemyError as e:
+             error_msg = f"Database engine creation or connection failed: {e}"
+             logger.error(error_msg, exc_info=True)
+             raise DatabaseConfigError(error_msg) from e
+        
         except Exception as e:
             error_msg = f"數據庫初始化錯誤: {e}"
             logger.error(error_msg)
             raise DatabaseConfigError(error_msg) from e
     
-    def _get_db_url(self, db_path: Optional[str] = None) -> str:
-        """
-        獲取數據庫URL
-        
-        Args:
-            db_path: 資料庫路徑 (可選)
-            
-        Returns:
-            資料庫URL字串，會將所有非記憶體資料庫的路徑轉換為絕對路徑
-            
-        Raises:
-            DatabaseConfigError: 資料庫路徑無效
-        """
-        try:
-            if db_path is None:
-                db_path = os.getenv('DATABASE_PATH', '/workspace/data/news.db')
-                
-            if db_path.startswith('sqlite:///:memory:'):
-                return db_path
-            
-            if not db_path.startswith('sqlite:///'):
-                db_path = f"sqlite:///{db_path}"
-            
-            file_path = db_path.replace('sqlite:///', '')
-            
-            # 處理相對路徑和絕對路徑
-            if not os.path.isabs(file_path):
-                # 如果是相對路徑，轉換為絕對路徑
-                file_path = os.path.abspath(file_path)
-                db_path = f"sqlite:///{file_path}"
-            
-            db_dir = os.path.dirname(file_path)
-            
-            if db_dir:
-                # 檢查目錄是否存在，若不存在則創建
-                if not os.path.exists(db_dir):
-                    os.makedirs(db_dir, exist_ok=True)
-                
-                # 檢查目錄寫入權限
-                if not os.access(db_dir, os.W_OK):
-                    raise DatabaseConfigError(f"資料庫目錄沒有寫入權限: {db_dir}")
-                
-                # 如果文件存在，檢查文件寫入權限
-                if os.path.exists(file_path) and not os.access(file_path, os.W_OK):
-                    raise DatabaseConfigError(f"資料庫文件沒有寫入權限: {file_path}")
-            
-            return db_path
-        except OSError as e:
-            error_msg = f"資料庫路徑錯誤: {e}"
-            logger.error(error_msg)
-            raise DatabaseConfigError(error_msg) from e
-        except Exception as e:
-            error_msg = f"處理資料庫URL時發生錯誤: {e}"
-            logger.error(error_msg)
-            raise DatabaseConfigError(error_msg) from e
     
     def _verify_connection(self) -> None:
         """
@@ -154,7 +106,15 @@ class DatabaseManager:
             error_msg = f"數據庫連接驗證失敗 (未知錯誤): {e}"
             logger.error(error_msg)
             raise DatabaseConnectionError(error_msg) from e
-    
+        
+
+    def get_session(self):
+        return self._scoped_session()
+
+    def close_session(self):
+        if hasattr(self, '_scoped_session'): # 檢查是否存在
+             self._scoped_session.remove()
+
     @contextmanager
     def session_scope(self):
         """
@@ -166,7 +126,8 @@ class DatabaseManager:
         Raises:
             DatabaseOperationError: 數據庫操作失敗
         """
-        session = self.Session()
+        session = self.get_session()
+        logger.debug(f"Session scope started.session: {session}") 
         try:
             yield session
             # 如果session已經不活躍，不需要進行commit
@@ -185,24 +146,11 @@ class DatabaseManager:
             else:
                 raise DatabaseOperationError(f"非數據庫相關的操作錯誤: {e}") from e
         finally:
-            try:
-                # 確保在任何情況下都會關閉session
-                if session:
-                    session.close()
-                    # 在某些情況下，expire_all可能會拋出異常
-                    try:
-                        session.expire_all()
-                    except Exception as expire_error:
-                        logger.warning(f"Session expire_all 錯誤 (忽略): {expire_error}")
-                    
-                    # 在某些情況下，設置bind=None可能會拋出異常
-                    try:
-                        session.bind = None
-                    except Exception as bind_error:
-                        logger.warning(f"Session unbind 錯誤 (忽略): {bind_error}")
-            except Exception as cleanup_error:
-                # 記錄清理錯誤但不拋出，避免掩蓋原始異常
-                logger.warning(f"Session 清理錯誤 (忽略): {cleanup_error}")
+            # scoped_session 在 request/thread 結束時移除，這裡不需要手動 close
+             # 但如果不是 web request 範圍，可能需要在外部呼叫 remove()
+             # self.close_session() # 這裡調用 remove 可能太早
+             logger.debug("Session scope finished.") # Debug log
+             pass # Scoped session 由其管理器處理關閉和移除
     
     def create_tables(self, base: Type[DeclarativeBase]) -> None:
         """
@@ -216,21 +164,22 @@ class DatabaseManager:
         """
         try:
             base.metadata.create_all(self.engine)
+            logger.info("所有表格已創建成功")
         except SQLAlchemyError as e:
             error_msg = f"創建表格失敗: {e}"
-            logger.error(error_msg)
+            logger.error(error_msg, exc_info=True)
             raise DatabaseOperationError(error_msg) from e
 
-    def create_engine(self):
-        """重新創建並返回資料庫引擎"""
-        try:
-            self.engine = create_engine(self.db_url)
-            self.Session = sessionmaker(bind=self.engine)  # 重新綁定 Session
-            self._verify_connection()  # 驗證連接
-            return self.engine
-        except Exception as e:
-            logger.error(f"重建引擎失敗: {str(e)}")
-            raise DatabaseConfigError(str(e))
+    # def create_engine(self):
+    #     """重新創建並返回資料庫引擎"""
+    #     try:
+    #         self.engine = create_engine(self.db_url)
+    #         self.Session = sessionmaker(bind=self.engine)  # 重新綁定 Session
+    #         self._verify_connection()  # 驗證連接
+    #         return self.engine
+    #     except Exception as e:
+    #         logger.error(f"重建引擎失敗: {str(e)}")
+    #         raise DatabaseConfigError(str(e))
 
     def check_database_health(self):
         """檢查資料庫健康狀態"""
@@ -242,8 +191,14 @@ class DatabaseManager:
             return False
 
     def cleanup(self):
-        """清理資料庫連接"""
-        self.engine.dispose()   
+        """清理資源，例如關閉 session 和 dispose 引擎"""
+        logger.info("Cleaning up DatabaseManager resources...")
+        if hasattr(self, '_scoped_session'): # 檢查屬性是否存在
+             self._scoped_session.remove()
+             logger.info("Scoped session removed.")
+        if hasattr(self, 'engine'): # 檢查屬性是否存在
+             self.engine.dispose()
+             logger.info("Database engine disposed.") 
         
 
 

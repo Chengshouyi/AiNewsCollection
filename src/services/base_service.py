@@ -8,11 +8,11 @@ from src.database.database_manager import DatabaseManager
 from src.database.base_repository import BaseRepository, SchemaType
 from src.models.base_model import Base
 from src.error.errors import DatabaseOperationError, ValidationError
+from src.error.service_errors import ServiceInitializationError
 from src.config import get_db_manager
 
-# 設定 logger
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from src.utils.log_utils import LoggerSetup # 使用統一的 logger
+logger = LoggerSetup.setup_logger(__name__)
 
 T = TypeVar('T', bound=Base)
 
@@ -28,7 +28,17 @@ class BaseService(Generic[T]):
         Args:
             db_manager: 資料庫管理器實例 (如果為None，則創建一個新的)
         """
-        self.db_manager = db_manager or get_db_manager()
+        try:
+            self.db_manager = db_manager or get_db_manager()
+            if not self.db_manager:
+                raise ServiceInitializationError("DatabaseManager could not be initialized.")
+            self.repositories: Dict[str, BaseRepository] = {}
+            self._repositories_mapping = self._get_repository_mapping()
+        except Exception as e:
+            logger.error(f"BaseService initialization failed: {e}", exc_info=True)
+            raise ServiceInitializationError(f"Failed to initialize BaseService: {e}") from e
+
+
     
     def _get_repository_mapping(self) -> Dict[str, Tuple[Type[BaseRepository], Type[Base]]]:
         """
@@ -81,23 +91,23 @@ class BaseService(Generic[T]):
         事務上下文管理器，創建並管理 Session 的生命週期。
         
         Yields:
-            Session: 資料庫會話實例
+            session: 資料庫會話實例
         
         Raises:
             Exception: 任何在事務中發生的異常
         """
-        session = self.db_manager.Session()
         try:
-            yield session
-            session.commit()
+            with self.db_manager.session_scope() as session:
+                yield session
+        except DatabaseOperationError as e:
+            # 將底層錯誤包裝或直接拋出
+            logger.error(f"Transaction failed within BaseService: {e}", exc_info=True)
+            raise # 或者 raise 特定服務層的錯誤 from e
         except Exception as e:
-            session.rollback()
-            logger.error(f"事務執行失敗，已回滾: {str(e)}")
+            logger.error(f"未預期的錯誤，事務執行失敗: {str(e)}", exc_info=True)
             # 根據需要決定是否重新拋出異常，這裡選擇重新拋出以通知上層調用者
-            raise 
-        finally:
-            # 確保 session 在事務結束後關閉
-            session.close()
+            raise DatabaseOperationError(f"Unexpected error in transaction: {e}") from e
+        
     
     def validate_data(self, repository_name: str, entity_data: Dict[str, Any], schema_type: SchemaType) -> Dict[str, Any]:
         """
@@ -142,9 +152,13 @@ class BaseService(Generic[T]):
             raise ValidationError(error_msg) from e
 
     def cleanup(self):
-        """清理資源 (如果需要)"""
-        # logger.info("BaseService cleanup called (no specific action needed in this version).") # <--- 註解或移除此行
-        pass # 或者如果 cleanup 沒有其他事做，直接 pass
+        """清理服務資源，主要是關閉 session"""
+        # 實際的清理應該由 DatabaseManager 處理
+        # Scoped Session 的清理通常在 request teardown 或線程結束時進行
+        # 可以考慮在這裡顯式移除 session，如果不是在 web context 中
+        if hasattr(self.db_manager, 'close_session'): # 假設有 close_session 方法
+             logger.info("Cleaning up session via BaseService...")
+             self.db_manager.close_session()
 
     def __del__(self):
         """確保清理方法被呼叫"""

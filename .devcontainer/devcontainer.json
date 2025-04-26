@@ -10,6 +10,7 @@
     // 指定 VS Code 在容器內開啟哪個資料夾作為工作區
     // 這應與 docker-compose.override.yml 中 volumes 的目標路徑一致
     "workspaceFolder": "/app",
+    "updateRemoteUserUID": false, // <<< 新增：停用 UID/GID 同步
     "customizations": {
         "vscode": {
             "extensions": [
@@ -71,7 +72,7 @@
         "db",
         "worker"
     ],
-    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client && pip install --upgrade pip && pip install --user -r requirements.txt -r requirements-dev.txt",
-    "postStartCommand": "alembic upgrade head",
+    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client && pip install --upgrade pip && pip install --user -r requirements.txt -r requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc",
+    "postStartCommand": "export PATH=\"/home/vscode/.local/bin:$PATH\" && alembic upgrade head",
     "remoteUser": "vscode"
 }
