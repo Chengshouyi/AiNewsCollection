@@ -69,8 +69,8 @@
     ],
     // 指定需要隨 Dev Container 一起啟動的其他服務
     "runServices": [
-        "db",
-        "worker"
+        "db"
+        // "worker"
     ],
     "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client && pip install --upgrade pip && pip install --user -r requirements.txt -r requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc",
     "postStartCommand": "export PATH=\"/home/vscode/.local/bin:$PATH\" && alembic upgrade head",

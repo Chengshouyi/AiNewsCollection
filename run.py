@@ -104,7 +104,7 @@ def main():
         # 在初始化失敗時嘗試清理
         logger.error(f"初始化失敗: {e}", exc_info=True)
         try:
-            scheduler_service.stop_scheduler()
+            get_scheduler_service().stop_scheduler()
         except Exception as se:
             logger.error(f"初始化失敗後停止排程器時發生錯誤: {se}", exc_info=True)
         try:
@@ -124,7 +124,7 @@ def main():
                     exc_info=True,
                 )
         # 初始化失敗通常意味著無法繼續，所以直接拋出
-        raise e
+        raise Exception("初始化失敗")
 
 
 def run_scheduled_tasks():
@@ -169,17 +169,3 @@ if __name__ == "__main__":
     except Exception as e:
         logger.error(f"程序異常退出: {e}", exc_info=True)
         # 確保在任何頂層異常時都嘗試清理資源
-        try:
-            get_scheduler_service().stop_scheduler()
-        except Exception as se:
-            logger.error(f"停止排程器時發生錯誤: {se}", exc_info=True)
-        try:
-            ServiceContainer.clear_instances()
-        except Exception as ce:
-            logger.error(f"清理服務實例時發生錯誤: {ce}", exc_info=True)
-        try:
-            get_db_manager().cleanup()
-        except Exception as de:
-            logger.error(f"清理資料庫管理器時發生錯誤: {de}", exc_info=True)
-        # 重新引發原始異常，以便外部監控（如 systemd/supervisor）知道程序失敗
-        raise e
