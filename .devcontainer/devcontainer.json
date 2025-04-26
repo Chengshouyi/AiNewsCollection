@@ -57,7 +57,10 @@
                     "sql",
                     "postgres"
                 ], // 可以更新語言
-                "sqltools.autoOpenSessionFiles": true
+                "sqltools.autoOpenSessionFiles": true,
+                "python.linting.pylintArgs": [
+                    "--rcfile=.pylintrc" // 或者您的設定檔的實際路徑
+                ]
             }
         }
     },

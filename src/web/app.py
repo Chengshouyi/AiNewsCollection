@@ -12,11 +12,11 @@ from src.services.service_container import (
     get_scheduler_service,
     get_crawlers_service,
 )
+import threading  # 導入 threading 模組
 import os
 import time
 from dotenv import load_dotenv
 from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
-import threading  # 導入 threading 模組
 
 logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
 
