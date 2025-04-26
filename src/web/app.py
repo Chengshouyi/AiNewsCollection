@@ -10,9 +10,6 @@ from src.config import get_db_manager
 from src.services.service_container import (
     ServiceContainer,
     get_scheduler_service,
-    get_task_executor_service,
-    get_crawler_task_service,
-    get_article_service,
     get_crawlers_service,
 )
 import os
