@@ -942,14 +942,18 @@ function executeTask(taskId, button) {
 
                 // 檢查是否返回了會話ID
                 const sessionId = response.session_id;
-                const roomName = response.room || `task_${taskId}`;
+                // --- 修改：始終使用基礎房間名稱 ---
+                const baseRoomName = `task_${taskId}`;
+                // --- 修改結束 ---
 
                 // 如果 WebSocket 已連接，加入相應房間
                 if (socket && socket.connected) {
-                    console.log(`啟動後加入房間: ${roomName}`);
-                    socket.emit('join_room', { 'room': roomName });
+                    // --- 修改：使用基礎房間名稱加入 ---
+                    console.log(`啟動後加入房間: ${baseRoomName}`);
+                    socket.emit('join_room', { 'room': baseRoomName });
+                    // --- 修改結束 ---
 
-                    // 保存會話ID到按鈕或行元素上，以便後續使用
+                    // 保存會話ID到按鈕或行元素上，以便後續使用 (這部分邏輯可以保留，以備將來可能需要)
                     if (sessionId) {
                         const taskRow = $(`.task-row[data-task-id="${taskId}"]`);
                         if (taskRow.length) {

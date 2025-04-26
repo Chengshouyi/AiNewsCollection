@@ -1,4 +1,14 @@
-from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text, VARCHAR, String, Enum as SQLAlchemyEnum, JSON
+from sqlalchemy import (
+    Integer,
+    DateTime,
+    Boolean,
+    ForeignKey,
+    Text,
+    VARCHAR,
+    String,
+    Enum as SQLAlchemyEnum,
+    JSON,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from typing import Optional
@@ -7,32 +17,34 @@ from .base_entity import BaseEntity
 from src.utils.enum_utils import ScrapePhase, ScrapeMode, TaskStatus
 from src.utils.type_utils import AwareDateTime
 
+
 TASK_ARGS_DEFAULT = {
-    'max_pages': 10,
-    'ai_only': False,
-    'is_limit_num_articles': False,
-    'num_articles': 10,
-    'min_keywords': 3,
-    'max_retries': 3,
-    'retry_delay': 2.0,
-    'timeout': 10,
-    'is_test': False,
-    'save_to_csv': False,
-    'csv_file_prefix': '',
-    'save_to_database': True,
-    'scrape_mode': ScrapeMode.FULL_SCRAPE.value,
-    'get_links_by_task_id': False,
-    'article_links': [],
-    'save_partial_results_on_cancel': False,
-    'save_partial_to_database': False,
-    'max_cancel_wait': 30,
-    'cancel_interrupt_interval': 5,
-    'cancel_timeout': 60
+    "max_pages": 10,
+    "ai_only": False,
+    "is_limit_num_articles": False,
+    "num_articles": 10,
+    "min_keywords": 3,
+    "max_retries": 3,
+    "retry_delay": 2.0,
+    "timeout": 10,
+    "is_test": False,
+    "save_to_csv": False,
+    "csv_file_prefix": "",
+    "save_to_database": True,
+    "scrape_mode": ScrapeMode.FULL_SCRAPE.value,
+    "get_links_by_task_id": False,
+    "article_links": [],
+    "save_partial_results_on_cancel": False,
+    "save_partial_to_database": False,
+    "max_cancel_wait": 30,
+    "cancel_interrupt_interval": 5,
+    "cancel_timeout": 60,
 }
+
 
 class CrawlerTasks(Base, BaseEntity):
     """爬蟲任務模型
-    
+
     欄位說明：
     - task_name: 任務名稱
     - crawler_id: 外鍵，關聯爬蟲
@@ -47,7 +59,7 @@ class CrawlerTasks(Base, BaseEntity):
     - scrape_phase: 當前爬取階段
     - task_status: 當前任務狀態
     - retry_count: 重試次數
-    - task_args: 任務參數 
+    - task_args: 任務參數
         - max_pages: 最大頁數
         - ai_only: 是否只抓取AI相關文章
         - is_limit_num_articles: 是否限制抓取文章數量
@@ -55,7 +67,7 @@ class CrawlerTasks(Base, BaseEntity):
         - min_keywords: 最小關鍵字數量
         - max_retries: 最大重試次數
         - retry_delay: 重試延遲時間
-        - timeout: 超時時間 
+        - timeout: 超時時間
         - is_test: 是否為測試模式
         - save_to_csv: 是否保存到CSV文件
         - csv_file_prefix: CSV檔案名稱前綴，最終文件名格式為 {前綴}_{任務ID}_{時間戳}.csv
@@ -69,53 +81,41 @@ class CrawlerTasks(Base, BaseEntity):
         - cancel_interrupt_interval: 取消等待間隔
         - cancel_timeout: 取消超時時間
     """
-    __tablename__ = 'crawler_tasks'
 
-    task_name: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False
-    )
+    __tablename__ = "crawler_tasks"
+
+    task_name: Mapped[str] = mapped_column(String(255), nullable=False)
     crawler_id: Mapped[int] = mapped_column(
-        Integer,
-        ForeignKey('crawlers.id'),
-        nullable=False
+        Integer, ForeignKey("crawlers.id"), nullable=False
     )
-    is_auto: Mapped[bool] = mapped_column(
-        Boolean, 
-        default=True, 
-        nullable=False
-    )
-    is_active: Mapped[bool] = mapped_column(
-        Boolean, 
-        default=True, 
-        nullable=False
-    )
-    is_scheduled: Mapped[bool] = mapped_column(
-        Boolean,
-        default=False,
-        nullable=False
-    )
-    retry_count: Mapped[int] = mapped_column(
-        Integer,
-        default=0,
-        nullable=False
-    )
+    is_auto: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_scheduled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    retry_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     task_args: Mapped[dict] = mapped_column(JSON, default=TASK_ARGS_DEFAULT)
     notes: Mapped[Optional[str]] = mapped_column(Text)
     last_run_at: Mapped[Optional[datetime]] = mapped_column(AwareDateTime)
     last_run_success: Mapped[Optional[bool]] = mapped_column(Boolean)
     last_run_message: Mapped[Optional[str]] = mapped_column(Text)
     cron_expression: Mapped[Optional[str]] = mapped_column(VARCHAR(255))
-    
+
     scrape_phase: Mapped[ScrapePhase] = mapped_column(
-        SQLAlchemyEnum(ScrapePhase, values_callable=lambda x: [str(e.value) for e in ScrapePhase]),
+        SQLAlchemyEnum(
+            ScrapePhase,
+            values_callable=lambda x: [str(e.value) for e in ScrapePhase],
+            native_enum=False,
+        ),
         default=ScrapePhase.INIT.value,
-        nullable=False
+        nullable=False,
     )
     task_status: Mapped[TaskStatus] = mapped_column(
-        SQLAlchemyEnum(TaskStatus, values_callable=lambda x: [str(e.value) for e in TaskStatus]),
+        SQLAlchemyEnum(
+            TaskStatus,
+            values_callable=lambda x: [str(e.value) for e in TaskStatus],
+            native_enum=False,
+        ),
         default=TaskStatus.INIT.value,
-        nullable=False
+        nullable=False,
     )
 
     # 新增與 Articles 的反向關聯
@@ -125,48 +125,47 @@ class CrawlerTasks(Base, BaseEntity):
 
     history = relationship("CrawlerTaskHistory", back_populates="task", lazy="joined")
 
-        
     # 定義需要監聽的 datetime 欄位
-    _aware_datetime_fields = Base._aware_datetime_fields.union({'last_run_at'})
+    _aware_datetime_fields = Base._aware_datetime_fields.union({"last_run_at"})
 
     def __init__(self, **kwargs):
         # 設置預設值
-        if 'is_auto' not in kwargs:
-            kwargs['is_auto'] = True
-        if 'is_active' not in kwargs:
-            kwargs['is_active'] = True
-        if 'is_scheduled' not in kwargs:
-            kwargs['is_scheduled'] = False
-        if 'scrape_phase' not in kwargs:
-            kwargs['scrape_phase'] = ScrapePhase.INIT
-        if 'task_status' not in kwargs:
-            kwargs['task_status'] = TaskStatus.INIT
-        if 'retry_count' not in kwargs:
-            kwargs['retry_count'] = 0
-        if 'task_args' not in kwargs:
-            kwargs['task_args'] = TASK_ARGS_DEFAULT
+        if "is_auto" not in kwargs:
+            kwargs["is_auto"] = True
+        if "is_active" not in kwargs:
+            kwargs["is_active"] = True
+        if "is_scheduled" not in kwargs:
+            kwargs["is_scheduled"] = False
+        if "scrape_phase" not in kwargs:
+            kwargs["scrape_phase"] = ScrapePhase.INIT
+        if "task_status" not in kwargs:
+            kwargs["task_status"] = TaskStatus.INIT
+        if "retry_count" not in kwargs:
+            kwargs["retry_count"] = 0
+        if "task_args" not in kwargs:
+            kwargs["task_args"] = TASK_ARGS_DEFAULT
 
         # 告知父類需要監聽的 datetime 欄位
         super().__init__(**kwargs)
 
     def __repr__(self):
         return f"<CrawlerTask(id={self.id}, task_name={self.task_name}, crawler_id={self.crawler_id})>"
-    
+
     def to_dict(self):
         return {
             **super().to_dict(),
-            'task_name': self.task_name,
-            'crawler_id': self.crawler_id,
-            'is_auto': self.is_auto,
-            'is_active': self.is_active,
-            'is_scheduled': self.is_scheduled,
-            'task_args': self.task_args,
-            'notes': self.notes,
-            'last_run_at': self.last_run_at.isoformat() if self.last_run_at else None,
-            'last_run_success': self.last_run_success,
-            'last_run_message': self.last_run_message,
-            'cron_expression': self.cron_expression,
-            'scrape_phase': self.scrape_phase.value if self.scrape_phase else None,
-            'retry_count': self.retry_count,
-            'task_status': self.task_status.value if self.task_status else None,
+            "task_name": self.task_name,
+            "crawler_id": self.crawler_id,
+            "is_auto": self.is_auto,
+            "is_active": self.is_active,
+            "is_scheduled": self.is_scheduled,
+            "task_args": self.task_args,
+            "notes": self.notes,
+            "last_run_at": self.last_run_at.isoformat() if self.last_run_at else None,
+            "last_run_success": self.last_run_success,
+            "last_run_message": self.last_run_message,
+            "cron_expression": self.cron_expression,
+            "scrape_phase": self.scrape_phase.value if self.scrape_phase else None,
+            "retry_count": self.retry_count,
+            "task_status": self.task_status.value if self.task_status else None,
         }

@@ -5,51 +5,68 @@ from src.services.article_service import ArticleService
 from src.services.scheduler_service import SchedulerService
 from src.models.base_model import Base
 from src.config import get_db_manager
-from src.services.service_container import ServiceContainer, get_scheduler_service, get_task_executor_service, get_crawler_task_service, get_article_service, get_crawlers_service
+from src.services.service_container import (
+    ServiceContainer,
+    get_scheduler_service,
+    get_task_executor_service,
+    get_crawler_task_service,
+    get_article_service,
+    get_crawlers_service,
+)
 from datetime import datetime, timezone
+from dotenv import load_dotenv
 
 from src.utils.log_utils import LoggerSetup
+
 logger = LoggerSetup.setup_logger(__name__)
+
+load_dotenv()
+
 
 def initialize_default_crawler():
     """初始化默認的爬蟲數據，如果不存在則創建"""
     try:
         # 獲取爬蟲服務
         crawlers_service = get_crawlers_service()
-        
+
         # 定義默認爬蟲數據
         default_crawler = {
-            'crawler_name': 'BnextCrawler',
-            'module_name': 'bnext',
-            'base_url': 'https://www.bnext.com.tw',
-            'is_active': True,
-            'crawler_type': 'web',
-            'config_file_name': 'bnext_crawler_config.json',
+            "crawler_name": "BnextCrawler",
+            "module_name": "bnext",
+            "base_url": "https://www.bnext.com.tw",
+            "is_active": True,
+            "crawler_type": "web",
+            "config_file_name": "bnext_crawler_config.json",
         }
-        
+
         # 檢查爬蟲是否已存在
-        existing_crawler_result = crawlers_service.get_crawler_by_exact_name(default_crawler['crawler_name'])
-        
+        existing_crawler_result = crawlers_service.get_crawler_by_exact_name(
+            default_crawler["crawler_name"]
+        )
+
         # 如果不存在，創建新爬蟲
-        if not existing_crawler_result['success'] or existing_crawler_result['crawler'] is None:
+        if (
+            not existing_crawler_result["success"]
+            or existing_crawler_result["crawler"] is None
+        ):
             result = crawlers_service.create_crawler(default_crawler)
-            if result['success']:
+            if result["success"]:
                 logger.info(f"已成功初始化默認爬蟲: {default_crawler['crawler_name']}")
             else:
                 logger.error(f"初始化默認爬蟲失敗: {result['message']}")
         else:
             logger.info(f"默認爬蟲 {default_crawler['crawler_name']} 已存在，無需創建")
-    
+
     except Exception as e:
         logger.error(f"初始化默認爬蟲時發生錯誤: {e}", exc_info=True)
 
+
 def main():
     try:
-       
 
         # 初始化排程服務（使用單體模式）
         scheduler_service = get_scheduler_service()
-        
+
         # 初始化任務執行服務（使用單體模式）
         task_executor_service = get_task_executor_service()
 
@@ -58,28 +75,31 @@ def main():
 
         # 初始化文章服務（使用單體模式）
         article_service = get_article_service()
-        
-        # 啟動排程服務
-        scheduler_service.start_scheduler()
-        
-         # 初始化資料庫存取
-        # db_manager = get_db_manager()
-        # 創建資料庫表格，完全依賴 alembic upgrade head 來管理資料庫結構
-        # db_manager.create_tables(Base)
-        # logging.info("資料庫初始化完成")
-        
+
+        # 新增：啟動排程器
+        try:
+            scheduler = get_scheduler_service()
+            scheduler_result = scheduler.start_scheduler()
+            if scheduler_result.get("success"):
+                logger.info(f"排程器已成功啟動: {scheduler_result.get('message')}")
+            else:
+                logger.error(f"啟動排程器失敗: {scheduler_result.get('message')}")
+        except Exception as e:
+            logger.error(f"啟動排程器時發生未預期錯誤: {e}", exc_info=True)
+            # 根據您的需求，決定是否要在排程器啟動失敗時阻止應用程式啟動
+            # raise e # 如果需要，可以取消註解以停止啟動
+
         # 初始化默認爬蟲數據
         initialize_default_crawler()
-        
+
         if __debug__:
             # 測試資料庫存取
             pass
             # test_data_access(data_access)
-        
+
         # 可以在這裡添加其他初始化或定期任務
         logger.info("主程序啟動成功")
-        
-        
+
     except Exception as e:
         # 在初始化失敗時嘗試清理
         logger.error(f"初始化失敗: {e}", exc_info=True)
@@ -91,7 +111,7 @@ def main():
             ServiceContainer.clear_instances()
         except Exception as ce:
             logger.error(f"初始化失敗後清理服務實例時發生錯誤: {ce}", exc_info=True)
-        
+
         db_manager = get_db_manager()
         if db_manager:
             try:
@@ -99,21 +119,27 @@ def main():
                 db_manager.cleanup()
                 logger.info("資料庫管理器資源已清理 (teardown_appcontext)")
             except Exception as e:
-                logger.error(f"清理資料庫管理器時發生錯誤 (teardown_appcontext): {e}", exc_info=True)
+                logger.error(
+                    f"清理資料庫管理器時發生錯誤 (teardown_appcontext): {e}",
+                    exc_info=True,
+                )
         # 初始化失敗通常意味著無法繼續，所以直接拋出
         raise e
+
 
 def run_scheduled_tasks():
     """長期運行，定期執行排程任務重新載入"""
     # 從環境變數讀取間隔，若無則使用預設值 4 小時
     try:
-        interval_hr = int(os.getenv('SCHEDULE_RELOAD_INTERVAL_HR', '1'))
+        interval_hr = int(os.getenv("SCHEDULE_RELOAD_INTERVAL_HR", "1"))
         if interval_hr <= 0:
-            interval_hr = 1 # 防止無效值
+            interval_hr = 1  # 防止無效值
         logger.info(f"排程任務重新載入間隔設定為: {interval_hr} 小時")
     except ValueError:
         interval_hr = 4
-        logger.warning(f"環境變數 SCHEDULE_RELOAD_INTERVAL_HR 設定無效，使用預設值: {interval_hr} 小時")
+        logger.warning(
+            f"環境變數 SCHEDULE_RELOAD_INTERVAL_HR 設定無效，使用預設值: {interval_hr} 小時"
+        )
 
     interval_sec = interval_hr * 3600
 
@@ -132,7 +158,6 @@ def run_scheduled_tasks():
             # 在出現錯誤後，短暫休眠避免快速連續失敗
             logger.info("發生錯誤，將在 60 秒後重試...")
             time.sleep(60)
-
 
 
 if __name__ == "__main__":

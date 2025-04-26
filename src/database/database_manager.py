@@ -1,60 +1,55 @@
 import os
-import logging
 from typing import Optional, Type
 from contextlib import contextmanager
+from functools import wraps
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.orm import sessionmaker, scoped_session
 from sqlalchemy.orm.decl_api import DeclarativeBase
 from sqlalchemy.exc import OperationalError
-from src.error.errors import DatabaseError, DatabaseConnectionError, DatabaseConfigError, DatabaseOperationError
-from functools import wraps
+from src.error.errors import (
+    DatabaseConnectionError,
+    DatabaseConfigError,
+    DatabaseOperationError,
+)
+
 
 # 設定 logger
-from src.utils.log_utils import LoggerSetup # 使用統一的 logger
-logger = LoggerSetup.setup_logger(__name__) # 使用統一的 logger
+from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
 
+logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
 
 
 class DatabaseManager:
     """數據庫連接和會話管理"""
-    
-    def __init__(self, db_path: Optional[str] = None):
+
+    def __init__(self):
         """
         初始化數據庫管理器
-        
-        Args:
-            db_path: 數據庫路徑 (可選，預設使用環境變數)
-        
+
         Raises:
             DatabaseConfigError: 資料庫配置錯誤
             DatabaseConnectionError: 資料庫連接錯誤
         """
         try:
             # 優先從環境變數讀取 DATABASE_URL
-            self.database_url = os.environ.get('DATABASE_URL')
+            self.database_url = os.environ.get("DATABASE_URL")
 
             if not self.database_url:
-                # 在容器環境中，DATABASE_URL 必須被設定
-                # 如果沒設定，可以選擇報錯或嘗試使用傳入的 db_path (如果有的話)
-                # 但不再自動創建基於 /workspace 的 SQLite 路徑
-                if db_path and db_path.startswith('sqlite:///'):
-                    self.database_url = db_path # 允許測試時傳入 SQLite URL
-                    logger.warning(f"Warning: DATABASE_URL not set. Using provided SQLite DB: {self.database_url}")
-                else:
-                    # --- 強制報錯，避免 PermissionError ---
-                    raise DatabaseConfigError("DATABASE_URL environment variable is not set.")
+                raise DatabaseConfigError(
+                    "DATABASE_URL environment variable is not set."
+                )
 
             logger.info(f"DatabaseManager initialized with URL: {self.database_url}")
             # 使用連接池，例如 QueuePool
             self.engine = create_engine(
                 self.database_url,
                 poolclass=QueuePool,
-                pool_size=10,         # 可根據需要調整
-                max_overflow=20,      # 可根據需要調整
-                pool_recycle=3600,    # 可選：回收閒置連接 (秒)
-                pool_pre_ping=True    # 可選：使用前檢查連接
+                pool_size=10,  # 可根據需要調整
+                max_overflow=20,  # 可根據需要調整
+                pool_recycle=3600,  # 可選：回收閒置連接 (秒)
+                pool_pre_ping=True,  # 可選：使用前檢查連接
             )
             self._verify_connection()
             self._session_factory = sessionmaker(bind=self.engine)
@@ -66,22 +61,21 @@ class DatabaseManager:
             error_msg = f"數據庫連接驗證失敗: {e}"
             logger.error(error_msg)
             raise DatabaseConnectionError(error_msg) from e
-        
+
         except SQLAlchemyError as e:
-             error_msg = f"Database engine creation or connection failed: {e}"
-             logger.error(error_msg, exc_info=True)
-             raise DatabaseConfigError(error_msg) from e
-        
+            error_msg = f"Database engine creation or connection failed: {e}"
+            logger.error(error_msg, exc_info=True)
+            raise DatabaseConfigError(error_msg) from e
+
         except Exception as e:
             error_msg = f"數據庫初始化錯誤: {e}"
             logger.error(error_msg)
             raise DatabaseConfigError(error_msg) from e
-    
-    
+
     def _verify_connection(self) -> None:
         """
         驗證數據庫連接
-        
+
         Raises:
             DatabaseConnectionError: 連接驗證失敗
         """
@@ -89,11 +83,13 @@ class DatabaseManager:
             # 嘗試建立連接並執行簡單查詢
             with self.engine.connect() as conn:
                 result = conn.execute(text("SELECT 1")).fetchone()
-                
+
                 # 檢查查詢結果
                 if result is None or result[0] != 1:
-                    raise DatabaseConnectionError("資料庫連接測試失敗：無法獲取預期結果")
-                
+                    raise DatabaseConnectionError(
+                        "資料庫連接測試失敗：無法獲取預期結果"
+                    )
+
         except OperationalError as e:
             error_msg = f"數據庫連接驗證失敗 (操作錯誤): {e}"
             logger.error(error_msg)
@@ -106,28 +102,27 @@ class DatabaseManager:
             error_msg = f"數據庫連接驗證失敗 (未知錯誤): {e}"
             logger.error(error_msg)
             raise DatabaseConnectionError(error_msg) from e
-        
 
     def get_session(self):
         return self._scoped_session()
 
     def close_session(self):
-        if hasattr(self, '_scoped_session'): # 檢查是否存在
-             self._scoped_session.remove()
+        if hasattr(self, "_scoped_session"):  # 檢查是否存在
+            self._scoped_session.remove()
 
     @contextmanager
     def session_scope(self):
         """
         提供事務範圍的會話上下文管理器
-        
+
         Yields:
             SQLAlchemy 會話物件
-            
+
         Raises:
             DatabaseOperationError: 數據庫操作失敗
         """
         session = self.get_session()
-        logger.debug(f"Session scope started.session: {session}") 
+        logger.debug(f"Session scope started.session: {session}")
         try:
             yield session
             # 如果session已經不活躍，不需要進行commit
@@ -139,7 +134,7 @@ class DatabaseManager:
                 session.rollback()
             error_msg = f"數據庫操作失敗: {e}"
             logger.error(error_msg)
-            
+
             # 根據不同異常類型提供更詳細的錯誤資訊
             if isinstance(e, SQLAlchemyError):
                 raise DatabaseOperationError(f"數據庫操作錯誤: {e}") from e
@@ -147,18 +142,18 @@ class DatabaseManager:
                 raise DatabaseOperationError(f"非數據庫相關的操作錯誤: {e}") from e
         finally:
             # scoped_session 在 request/thread 結束時移除，這裡不需要手動 close
-             # 但如果不是 web request 範圍，可能需要在外部呼叫 remove()
-             # self.close_session() # 這裡調用 remove 可能太早
-             logger.debug("Session scope finished.") # Debug log
-             pass # Scoped session 由其管理器處理關閉和移除
-    
+            # 但如果不是 web request 範圍，可能需要在外部呼叫 remove()
+            # self.close_session() # 這裡調用 remove 可能太早
+            logger.debug("Session scope finished.")  # Debug log
+            pass  # Scoped session 由其管理器處理關閉和移除
+
     def create_tables(self, base: Type[DeclarativeBase]) -> None:
         """
         創建所有表格
-        
+
         Args:
             base: SQLAlchemy 模型基礎類
-            
+
         Raises:
             DatabaseOperationError: 創建表格失敗
         """
@@ -193,39 +188,39 @@ class DatabaseManager:
     def cleanup(self):
         """清理資源，例如關閉 session 和 dispose 引擎"""
         logger.info("Cleaning up DatabaseManager resources...")
-        if hasattr(self, '_scoped_session'): # 檢查屬性是否存在
-             self._scoped_session.remove()
-             logger.info("Scoped session removed.")
-        if hasattr(self, 'engine'): # 檢查屬性是否存在
-             self.engine.dispose()
-             logger.info("Database engine disposed.") 
-        
+        if hasattr(self, "_scoped_session"):  # 檢查屬性是否存在
+            self._scoped_session.remove()
+            logger.info("Scoped session removed.")
+        if hasattr(self, "engine"):  # 檢查屬性是否存在
+            self.engine.dispose()
+            logger.info("Database engine disposed.")
 
 
 def check_session(func):
     """
     檢查資料庫會話狀態的裝飾器
-    
+
     Args:
         func: 被裝飾的函數
-        
+
     Returns:
         裝飾後的函數
-        
+
     Raises:
         DatabaseConnectionError: 資料庫連接已關閉或發生錯誤
     """
+
     @wraps(func)
     def wrapper(self, *args, **kwargs):
         try:
             # 檢查 session 對象是否存在
-            if not hasattr(self, 'session'):
+            if not hasattr(self, "session"):
                 raise DatabaseConnectionError("沒有有效的資料庫會話")
-                
+
             # 檢查 session 是否有效
             if not self.session or not self.session.bind:
                 raise DatabaseConnectionError("資料庫連接已關閉")
-                
+
             return func(self, *args, **kwargs)
         except OperationalError as e:
             error_msg = f"資料庫連接錯誤: {e}"
@@ -235,4 +230,5 @@ def check_session(func):
             error_msg = f"資料庫會話屬性錯誤: {e}"
             logger.error(error_msg)
             raise DatabaseConnectionError(error_msg) from e
+
     return wrapper
