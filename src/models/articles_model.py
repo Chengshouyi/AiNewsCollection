@@ -1,3 +1,8 @@
+"""本模組定義了 Articles 文章資料表的 SQLAlchemy ORM 模型，包含欄位結構、關聯與序列化方法。"""
+
+from datetime import datetime, timezone
+from typing import Optional
+
 from sqlalchemy import (
     UniqueConstraint,
     Integer,
@@ -9,20 +14,15 @@ from sqlalchemy import (
     ForeignKey,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from src.models.base_model import Base
-from typing import Optional
-from datetime import datetime, timezone
-from .base_entity import BaseEntity
-from src.utils.type_utils import AwareDateTime
-import logging
-from src.utils.enum_utils import ArticleScrapeStatus
 from sqlalchemy import Enum as SQLAlchemyEnum
 
-# 設定 logger
-logging.basicConfig(
-    level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s"
-)
-logger = logging.getLogger(__name__)
+from src.models.base_model import Base
+from src.models.base_entity import BaseEntity
+from src.utils.type_utils import AwareDateTime
+from src.utils.enum_utils import ArticleScrapeStatus
+from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+
+logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
 
 
 class Articles(Base, BaseEntity):
