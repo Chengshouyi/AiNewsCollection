@@ -1,24 +1,28 @@
+"""
+提供資料庫連接和會話管理的類別。
+
+這個模組包含 DatabaseManager 類別，負責處理資料庫的初始化、
+連接池管理、會話生命週期控制以及錯誤處理。
+"""
+
 import os
-from typing import Optional, Type
 from contextlib import contextmanager
 from functools import wraps
+from typing import Optional, Type
+
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy.orm import DeclarativeBase, Session, scoped_session, sessionmaker
 from sqlalchemy.pool import QueuePool
-from sqlalchemy.orm import sessionmaker, scoped_session, Session
-from sqlalchemy.orm.decl_api import DeclarativeBase
-from sqlalchemy.exc import OperationalError
+
 from src.error.errors import (
-    DatabaseConnectionError,
     DatabaseConfigError,
+    DatabaseConnectionError,
     DatabaseOperationError,
 )
+from src.utils.log_utils import LoggerSetup
 
-
-# 設定 logger
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
-
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = LoggerSetup.setup_logger(__name__)
 
 
 class DatabaseManager:
@@ -33,43 +37,41 @@ class DatabaseManager:
             DatabaseConnectionError: 資料庫連接錯誤
         """
         try:
-            # 優先從環境變數讀取 DATABASE_URL
             self.database_url = os.environ.get("DATABASE_URL")
-
             if not self.database_url:
                 raise DatabaseConfigError(
                     "DATABASE_URL environment variable is not set."
                 )
 
-            logger.info(f"DatabaseManager initialized with URL: {self.database_url}")
-            # 使用連接池，例如 QueuePool
+            logger.info("DatabaseManager initializing with URL: %s", self.database_url)
             self.engine = create_engine(
                 self.database_url,
                 poolclass=QueuePool,
-                pool_size=10,  # 可根據需要調整
-                max_overflow=20,  # 可根據需要調整
-                pool_recycle=3600,  # 可選：回收閒置連接 (秒)
-                pool_pre_ping=True,  # 可選：使用前檢查連接
+                pool_size=10,
+                max_overflow=20,
+                pool_recycle=3600,
+                pool_pre_ping=True,
             )
             self._verify_connection()
             self._session_factory = sessionmaker(bind=self.engine)
-            # 使用 scoped_session 來管理 session 的線程安全
             self._scoped_session = scoped_session(self._session_factory)
             logger.info("DatabaseManager initialized successfully.")
 
         except OperationalError as e:
             error_msg = f"數據庫連接驗證失敗: {e}"
-            logger.error(error_msg)
+            logger.error("數據庫連接驗證失敗: %s", e)
             raise DatabaseConnectionError(error_msg) from e
 
         except SQLAlchemyError as e:
             error_msg = f"Database engine creation or connection failed: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error(
+                "Database engine creation or connection failed: %s", e, exc_info=True
+            )
             raise DatabaseConfigError(error_msg) from e
 
         except Exception as e:
             error_msg = f"數據庫初始化錯誤: {e}"
-            logger.error(error_msg)
+            logger.error("數據庫初始化錯誤: %s", e)
             raise DatabaseConfigError(error_msg) from e
 
     def _verify_connection(self) -> None:
@@ -80,11 +82,8 @@ class DatabaseManager:
             DatabaseConnectionError: 連接驗證失敗
         """
         try:
-            # 嘗試建立連接並執行簡單查詢
             with self.engine.connect() as conn:
                 result = conn.execute(text("SELECT 1")).fetchone()
-
-                # 檢查查詢結果
                 if result is None or result[0] != 1:
                     raise DatabaseConnectionError(
                         "資料庫連接測試失敗：無法獲取預期結果"
@@ -92,22 +91,24 @@ class DatabaseManager:
 
         except OperationalError as e:
             error_msg = f"數據庫連接驗證失敗 (操作錯誤): {e}"
-            logger.error(error_msg)
+            logger.error("數據庫連接驗證失敗 (操作錯誤): %s", e)
             raise DatabaseConnectionError(error_msg) from e
         except SQLAlchemyError as e:
             error_msg = f"數據庫連接驗證失敗 (SQL錯誤): {e}"
-            logger.error(error_msg)
+            logger.error("數據庫連接驗證失敗 (SQL錯誤): %s", e)
             raise DatabaseConnectionError(error_msg) from e
         except Exception as e:
             error_msg = f"數據庫連接驗證失敗 (未知錯誤): {e}"
-            logger.error(error_msg)
+            logger.error("數據庫連接驗證失敗 (未知錯誤): %s", e)
             raise DatabaseConnectionError(error_msg) from e
 
-    def get_session(self):
+    def get_session(self) -> Session:
+        """獲取一個線程安全的會話"""
         return self._scoped_session()
 
     def close_session(self):
-        if hasattr(self, "_scoped_session"):  # 檢查是否存在
+        """關閉當前線程的會話"""
+        if hasattr(self, "_scoped_session"):
             self._scoped_session.remove()
 
     @contextmanager
@@ -123,57 +124,64 @@ class DatabaseManager:
             DatabaseOperationError: 數據庫操作失敗
         """
         session: Session = self.get_session()
-        logger.debug(f"Session scope started. Session: {session}")
+        logger.debug("Session scope started. Session: %s", session)
         try:
             yield session
-            # 只有活躍的 session 才需要 commit
             if session.is_active:
                 session.commit()
-                logger.debug(f"Session scope committed. Session: {session}")
+                logger.debug("Session scope committed. Session: %s", session)
             else:
                 logger.warning(
-                    f"Session scope ended but session was not active. Session: {session}"
+                    "Session scope ended but session was not active. Session: %s",
+                    session,
                 )
 
         except Exception as e:
             logger.error(
-                f"Exception in session scope: {e}. Rolling back. Session: {session}"
+                "Exception in session scope: %s. Rolling back. Session: %s", e, session
             )
+            wrapped_error = e  # Preserve original error by default
             try:
-                # 只有活躍的 session 才需要 rollback
                 if session.is_active:
                     session.rollback()
-                    logger.debug(f"Session rollback successful. Session: {session}")
+                    logger.debug("Session rollback successful. Session: %s", session)
                 else:
                     logger.warning(
-                        f"Attempted rollback on inactive session. Session: {session}"
+                        "Attempted rollback on inactive session. Session: %s", session
                     )
 
             except Exception as rb_exc:
-                # 如果 rollback 也失敗，記錄額外錯誤
                 logger.error(
-                    f"Rollback failed: {rb_exc}. Original error: {e}. Session: {session}"
+                    "Rollback failed: %s. Original error: %s. Session: %s",
+                    rb_exc,
+                    e,
+                    session,
                 )
-                # 即使 rollback 失敗，仍嘗試關閉 session
 
-            # 將原始錯誤包裝後重新拋出
+            # Wrap SQLAlchemy errors specifically
             if isinstance(e, SQLAlchemyError):
                 wrapped_error = DatabaseOperationError(f"數據庫操作錯誤: {e}")
+                logger.error(
+                    "Raising wrapped DatabaseOperationError: %s", wrapped_error
+                )
             else:
-                wrapped_error = e
-            logger.error(f"Raising wrapped error: {wrapped_error}")
-            raise wrapped_error
+                logger.error("Raising original error: %s", wrapped_error)
+
+            raise wrapped_error from e  # Chain the original exception
 
         finally:
-            # 無論成功或失敗，最終都要關閉 session
             try:
-                logger.debug(f"Closing session in finally block. Session: {session}")
-                session.close()
-                logger.debug(f"Session closed successfully. Session: {session}")
+                logger.debug("Closing session in finally block. Session: %s", session)
+                self.close_session()  # Use the close_session method to ensure proper cleanup via scoped_session
+                logger.debug(
+                    "Session closed successfully via close_session. Session ID was: %s",
+                    session,
+                )
             except Exception as close_exc:
-                # 如果關閉 session 出錯，記錄下來但不影響原始異常的拋出
                 logger.error(
-                    f"Failed to close session: {close_exc}. Session: {session}"
+                    "Failed to close session: %s. Session ID was: %s",
+                    close_exc,
+                    session,
                 )
 
     def create_tables(self, base: Type[DeclarativeBase]) -> None:
@@ -191,43 +199,38 @@ class DatabaseManager:
             logger.info("所有表格已創建成功")
         except SQLAlchemyError as e:
             error_msg = f"創建表格失敗: {e}"
-            logger.error(error_msg, exc_info=True)
+            logger.error("創建表格失敗: %s", e, exc_info=True)
             raise DatabaseOperationError(error_msg) from e
 
-    # def create_engine(self):
-    #     """重新創建並返回資料庫引擎"""
-    #     try:
-    #         self.engine = create_engine(self.db_url)
-    #         self.Session = sessionmaker(bind=self.engine)  # 重新綁定 Session
-    #         self._verify_connection()  # 驗證連接
-    #         return self.engine
-    #     except Exception as e:
-    #         logger.error(f"重建引擎失敗: {str(e)}")
-    #         raise DatabaseConfigError(str(e))
-
-    def check_database_health(self):
+    def check_database_health(self) -> bool:
         """檢查資料庫健康狀態"""
         try:
             self._verify_connection()
+            logger.info("Database health check successful.")
             return True
-        except Exception as e:
-            logger.error(f"資料庫健康檢查失敗: {str(e)}")
+        except DatabaseConnectionError as e:
+            logger.error("資料庫健康檢查失敗: %s", e)
+            return False
+        except Exception as e:  # Catch other potential unexpected errors during check
+            logger.error("資料庫健康檢查時發生意外錯誤: %s", e)
             return False
 
     def cleanup(self):
         """清理資源，例如關閉 session 和 dispose 引擎"""
         logger.info("Cleaning up DatabaseManager resources...")
-        if hasattr(self, "_scoped_session"):  # 檢查屬性是否存在
-            self._scoped_session.remove()
+        if hasattr(self, "_scoped_session"):
+            self.close_session()  # Use the method to remove session
             logger.info("Scoped session removed.")
-        if hasattr(self, "engine"):  # 檢查屬性是否存在
+        if hasattr(self, "engine"):
             self.engine.dispose()
             logger.info("Database engine disposed.")
 
 
 def check_session(func):
     """
-    檢查資料庫會話狀態的裝飾器
+    檢查資料庫會話狀態的裝飾器 (注意: 此裝飾器假設 'self' 具有 'session' 屬性，
+    但 DatabaseManager 本身不直接持有 'session'，而是透過 'get_session()' 提供。
+    如果此裝飾器用於 DatabaseManager 之外的類別，請確保該類別有 'session'。)
 
     Args:
         func: 被裝飾的函數
@@ -241,23 +244,66 @@ def check_session(func):
 
     @wraps(func)
     def wrapper(self, *args, **kwargs):
-        try:
-            # 檢查 session 對象是否存在
+        # This decorator assumes 'self' has a 'session' attribute.
+        # DatabaseManager uses get_session() or session_scope().
+        # Ensure the class using this decorator manages 'session' correctly.
+        session_instance: Optional[Session] = None
+        if hasattr(self, "session") and isinstance(
+            getattr(self, "session", None), Session
+        ):
+            session_instance = self.session
+        elif hasattr(self, "get_session") and callable(self.get_session):
+            # Attempt to get session if applicable, but be cautious
+            # as this might not be the intended use case for the decorator.
+            # Consider if the decorator is applied correctly.
+            logger.warning(
+                "check_session decorator used on class potentially without direct 'session' attribute. Attempting get_session()."
+            )
+            # We cannot reliably get and manage the session here without knowing
+            # the context (e.g., if it should be within a session_scope).
+            # This check might be better performed inside the decorated function itself.
+            # For now, we'll just check if a session attribute exists.
             if not hasattr(self, "session"):
-                raise DatabaseConnectionError("沒有有效的資料庫會話")
+                raise DatabaseConnectionError(
+                    "Class using check_session lacks a 'session' attribute."
+                )
+            session_instance = getattr(self, "session", None)  # Re-check after warning
+        else:
+            raise DatabaseConnectionError(
+                "Class using check_session lacks a 'session' attribute or a 'get_session' method."
+            )
 
-            # 檢查 session 是否有效
-            if not self.session or not self.session.bind:
-                raise DatabaseConnectionError("資料庫連接已關閉")
+        try:
+            # Check if the session instance obtained is valid
+            if (
+                not session_instance
+                or not session_instance.is_active
+                or not session_instance.bind
+            ):
+                logger.error(
+                    "Database connection is closed or session is invalid. Session: %s",
+                    session_instance,
+                )
+                raise DatabaseConnectionError("資料庫連接已關閉或 Session 無效")
 
+            logger.debug("Session check passed for function: %s", func.__name__)
             return func(self, *args, **kwargs)
+
         except OperationalError as e:
             error_msg = f"資料庫連接錯誤: {e}"
-            logger.error(error_msg)
+            logger.error("資料庫連接錯誤: %s", e)
             raise DatabaseConnectionError(error_msg) from e
         except AttributeError as e:
+            # This might occur if 'session' exists but lacks expected properties (like 'bind')
             error_msg = f"資料庫會話屬性錯誤: {e}"
-            logger.error(error_msg)
+            logger.error("資料庫會話屬性錯誤: %s", e)
+            raise DatabaseConnectionError(error_msg) from e
+        except DatabaseConnectionError as e:  # Re-raise specifically caught errors
+            raise e
+        except Exception as e:  # Catch unexpected errors during the check
+            error_msg = f"執行 {func.__name__} 的會話檢查時發生意外錯誤: {e}"
+            logger.error("執行 %s 的會話檢查時發生意外錯誤: %s", func.__name__, e)
+            # Decide if this should be wrapped as DatabaseConnectionError or re-raised
             raise DatabaseConnectionError(error_msg) from e
 
     return wrapper
