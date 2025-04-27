@@ -1,22 +1,28 @@
+"""本模組定義爬蟲任務模型，用於管理和追蹤爬蟲任務的執行狀態、設定和結果。"""
+
+from datetime import datetime
+from typing import Optional
+
 from sqlalchemy import (
-    Integer,
-    DateTime,
     Boolean,
+    DateTime,
     ForeignKey,
+    Integer,
+    JSON,
+    String,
     Text,
     VARCHAR,
-    String,
-    Enum as SQLAlchemyEnum,
-    JSON,
 )
+from sqlalchemy import Enum as SQLAlchemyEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
 from src.models.base_model import Base
-from typing import Optional
-from datetime import datetime
-from .base_entity import BaseEntity
+from src.models.base_entity import BaseEntity
 from src.utils.enum_utils import ScrapePhase, ScrapeMode, TaskStatus
+from src.utils.log_utils import LoggerSetup
 from src.utils.type_utils import AwareDateTime
 
+logger = LoggerSetup.setup_logger(__name__)
 
 TASK_ARGS_DEFAULT = {
     "max_pages": 10,
@@ -118,18 +124,13 @@ class CrawlerTasks(Base, BaseEntity):
         nullable=False,
     )
 
-    # 新增與 Articles 的反向關聯
     articles = relationship("Articles", back_populates="task")
-
     crawler = relationship("Crawlers", back_populates="crawler_tasks", lazy="joined")
-
     history = relationship("CrawlerTaskHistory", back_populates="task", lazy="joined")
 
-    # 定義需要監聽的 datetime 欄位
     _aware_datetime_fields = Base._aware_datetime_fields.union({"last_run_at"})
 
     def __init__(self, **kwargs):
-        # 設置預設值
         if "is_auto" not in kwargs:
             kwargs["is_auto"] = True
         if "is_active" not in kwargs:
@@ -145,7 +146,6 @@ class CrawlerTasks(Base, BaseEntity):
         if "task_args" not in kwargs:
             kwargs["task_args"] = TASK_ARGS_DEFAULT
 
-        # 告知父類需要監聽的 datetime 欄位
         super().__init__(**kwargs)
 
     def __repr__(self):
