@@ -1,156 +1,208 @@
+"""測試 ArticlesRepository 的功能。
+
+此模組包含了對 ArticlesRepository 類的所有測試案例，包括：
+- 基本的 CRUD 操作
+- 搜尋和過濾功能
+- 分頁功能
+- 批次操作
+- 統計功能
+"""
+
+# flake8: noqa: F811
+# pylint: disable=redefined-outer-name
+
+# Standard library imports
+import time
+from datetime import datetime, timezone, timedelta
+from typing import List
+
+# Third party imports
 import pytest
-import time # 引入 time 模組
-from datetime import datetime, timezone, timedelta # 確保 timedelta 已導入
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+
+# Local application imports
 from src.database.articles_repository import ArticlesRepository
-from src.models.articles_model import Articles
+from src.models.articles_model import Articles, ArticleScrapeStatus
 from src.models.base_model import Base
 from src.database.base_repository import SchemaType
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from src.error.errors import ValidationError, DatabaseOperationError
-from src.models.articles_model import ArticleScrapeStatus
-from typing import List, Dict, Any, Union # Import Union
+from src.utils.log_utils import LoggerSetup
 
-# 設置測試資料庫，使用 session scope
-@pytest.fixture(scope="session")
-def engine():
-    return create_engine('sqlite:///:memory:')
+logger = LoggerSetup.setup_logger(__name__)
 
-@pytest.fixture(scope="session")
-def tables(engine):
-    Base.metadata.create_all(engine)
-    yield
-    Base.metadata.drop_all(engine)
-
-@pytest.fixture(scope="session")
-def session_factory(engine):
-    """創建會話工廠"""
-    return sessionmaker(bind=engine)
 
 @pytest.fixture(scope="function")
-def session(session_factory, tables):
-    """為每個測試函數創建新的會話"""
-    session = session_factory()
-    try:
-        yield session
-    finally:
-        session.close()
+def article_repo(initialized_db_manager):
+    """為每個測試函數創建新的 ArticlesRepository 實例"""
+    with initialized_db_manager.session_scope() as session:
+        return ArticlesRepository(session, Articles)
+
 
 @pytest.fixture(scope="function")
-def article_repo(session):
-    return ArticlesRepository(session, Articles)
-
-@pytest.fixture(scope="function")
-def clean_db(session):
+def clean_db(initialized_db_manager):
     """清空資料庫的 fixture"""
-    session.query(Articles).delete()
-    session.commit()
-    session.expire_all()
+    with initialized_db_manager.session_scope() as session:
+        session.query(Articles).delete()
+        session.commit()
+        session.expire_all()
+
 
 @pytest.fixture(scope="function")
-def sample_articles(session, clean_db) -> List[Articles]:
-    """更新 sample_articles fixture 以包含 tags 和 task_id"""
-    articles = [
-        Articles( # 0
-            title="科技新聞：AI研究突破",
-            link="https://example.com/article1",
-            summary="這是關於AI研究的文章摘要",
-            content="這是關於AI研究的文章內容",
-            source="測試來源1",
-            source_url="https://example.com/source1",
-            category="科技",
-            published_at=datetime(2023, 1, 1, tzinfo=timezone.utc),
-            is_ai_related=True,
-            is_scraped=True,
-            scrape_status=ArticleScrapeStatus.PENDING,
-            tags="AI,研究",
-            task_id=1
-        ),
-        Articles( # 1
-            title="財經報導：股市走勢分析",
-            link="https://example.com/article2",
-            summary="這是股市分析的摘要",
-            content="這是股市分析的內容",
-            source="測試來源2",
-            source_url="https://example.com/source2",
-            category="財經",
-            published_at=datetime(2023, 1, 3, tzinfo=timezone.utc),
-            is_ai_related=False,
-            is_scraped=True,
-            scrape_status=ArticleScrapeStatus.PENDING,
-            tags="財經,市場",
-            task_id=1
-        ),
-        Articles( # 2
-            title="Python編程技巧分享",
-            link="https://example.com/article3",
-            summary="這是Python相關教學",
-            content="這是Python相關教學內容", # Added content
-            source="測試來源1",
-            source_url="https://example.com/source3",
-            category="科技",
-            published_at=datetime(2023, 1, 5, tzinfo=timezone.utc),
-            is_ai_related=False,
-            is_scraped=False,
-            scrape_status=ArticleScrapeStatus.LINK_SAVED,
-            tags="Python,編程",
-            task_id=2
-        )
-    ]
-    session.add_all(articles)
-    session.commit()
+def sample_articles(initialized_db_manager, clean_db) -> List[Articles]:
+    """創建測試用的文章數據"""
+    with initialized_db_manager.session_scope() as session:
+        articles = [
+            Articles(
+                title="科技新聞：AI研究突破",
+                link="https://example.com/article1",
+                summary="這是關於AI研究的文章摘要",
+                content="這是關於AI研究的文章內容",
+                source="測試來源1",
+                source_url="https://example.com/source1",
+                category="科技",
+                published_at=datetime(2023, 1, 1, tzinfo=timezone.utc),
+                is_ai_related=True,
+                is_scraped=True,
+                scrape_status=ArticleScrapeStatus.PENDING,
+                tags="AI,研究",
+                task_id=1,
+            ),
+            Articles(
+                title="財經報導：股市走勢分析",
+                link="https://example.com/article2",
+                summary="這是股市分析的摘要",
+                content="這是股市分析的內容",
+                source="測試來源2",
+                source_url="https://example.com/source2",
+                category="財經",
+                published_at=datetime(2023, 1, 3, tzinfo=timezone.utc),
+                is_ai_related=False,
+                is_scraped=True,
+                scrape_status=ArticleScrapeStatus.PENDING,
+                tags="財經,市場",
+                task_id=1,
+            ),
+            Articles(
+                title="Python編程技巧分享",
+                link="https://example.com/article3",
+                summary="這是Python相關教學",
+                content="這是Python相關教學內容",
+                source="測試來源1",
+                source_url="https://example.com/source3",
+                category="科技",
+                published_at=datetime(2023, 1, 5, tzinfo=timezone.utc),
+                is_ai_related=False,
+                is_scraped=False,
+                scrape_status=ArticleScrapeStatus.LINK_SAVED,
+                tags="Python,編程",
+                task_id=2,
+            ),
+        ]
+        session.add_all(articles)
+        session.commit()
+        session.expire_all()
+        return session.query(Articles).order_by(Articles.published_at.asc()).all()
 
-    # 確保所有物件都有正確的 ID
-    session.expire_all()
-    # Return a query to fetch them ordered, ensuring consistent test results
-    return session.query(Articles).order_by(Articles.published_at.asc()).all()
 
 @pytest.fixture(scope="function")
-def filter_test_articles(session, clean_db) -> List[Articles]:
-    """創建專門用於過濾和分頁測試的文章，包含 task_id 和 tags"""
-    articles = [
-        Articles( # 0
-            title="AI研究報告1", link="https://example.com/ai1", category="AI研究",
-            published_at=datetime(2023, 1, 1, 10, tzinfo=timezone.utc), is_ai_related=True, is_scraped=True,
-            tags="AI,研究,深度學習", task_id=10, scrape_status=ArticleScrapeStatus.CONTENT_SCRAPED,
-            summary="AI研究摘要", content="AI研究內容",
-            source="來源A", source_url="https://source.a/ai1"
-        ),
-        Articles( # 1
-            title="一般科技新聞1", link="https://example.com/tech1", category="科技",
-            published_at=datetime(2023, 1, 10, 10, tzinfo=timezone.utc), is_ai_related=False, is_scraped=True,
-            tags="科技,創新", task_id=10, scrape_status=ArticleScrapeStatus.CONTENT_SCRAPED,
-            summary="科技新聞摘要", content="科技新聞內容",
-            source="來源B", source_url="https://source.b/tech1"
-        ),
-        Articles( # 2
-            title="財經報導", link="https://example.com/finance", category="財經",
-            published_at=datetime(2023, 1, 5, 10, tzinfo=timezone.utc), is_ai_related=False, is_scraped=False,
-            tags="財經,市場", task_id=11, scrape_status=ArticleScrapeStatus.LINK_SAVED,
-            summary="財經報導摘要", content="財經報導內容",
-            source="來源C", source_url="https://source.c/finance"
-        ),
-            Articles( # 3
-            title="AI研究報告2", link="https://example.com/ai2", category="AI研究",
-            published_at=datetime(2023, 1, 15, 10, tzinfo=timezone.utc), is_ai_related=True, is_scraped=False,
-            tags="AI,研究,大語言模型", task_id=11, scrape_status=ArticleScrapeStatus.PENDING,
-            summary="更多AI研究摘要", content="更多AI研究內容",
-            source="來源A", source_url="https://source.a/ai2"
-        ),
-        Articles( # 4
-            title="一般科技新聞2", link="https://example.com/tech2", category="科技",
-            published_at=datetime(2023, 1, 20, 10, tzinfo=timezone.utc), is_ai_related=False, is_scraped=True,
-            tags="科技,產業", task_id=10, scrape_status=ArticleScrapeStatus.CONTENT_SCRAPED,
-            summary="更多科技新聞摘要", content="更多科技新聞內容",
-            source="來源B", source_url="https://source.b/tech2"
+def filter_test_articles(initialized_db_manager, clean_db) -> List[Articles]:
+    """創建專門用於過濾和分頁測試的文章"""
+    with initialized_db_manager.session_scope() as session:
+        articles = [
+            Articles(
+                title="AI研究報告1",
+                link="https://example.com/ai1",
+                category="AI研究",
+                published_at=datetime(2023, 1, 1, 10, tzinfo=timezone.utc),
+                is_ai_related=True,
+                is_scraped=True,
+                tags="AI,研究,深度學習",
+                task_id=10,
+                scrape_status=ArticleScrapeStatus.CONTENT_SCRAPED,
+                summary="AI研究摘要",
+                content="AI研究內容",
+                source="來源A",
+                source_url="https://source.a/ai1",
+            ),
+            Articles(
+                title="一般科技新聞1",
+                link="https://example.com/tech1",
+                category="科技",
+                published_at=datetime(2023, 1, 10, 10, tzinfo=timezone.utc),
+                is_ai_related=False,
+                is_scraped=True,
+                tags="科技,創新",
+                task_id=10,
+                scrape_status=ArticleScrapeStatus.CONTENT_SCRAPED,
+                summary="科技新聞摘要",
+                content="科技新聞內容",
+                source="來源B",
+                source_url="https://source.b/tech1",
+            ),
+            Articles(
+                title="財經報導",
+                link="https://example.com/finance",
+                category="財經",
+                published_at=datetime(2023, 1, 5, 10, tzinfo=timezone.utc),
+                is_ai_related=False,
+                is_scraped=False,
+                tags="財經,市場",
+                task_id=11,
+                scrape_status=ArticleScrapeStatus.LINK_SAVED,
+                summary="財經報導摘要",
+                content="財經報導內容",
+                source="來源C",
+                source_url="https://source.c/finance",
+            ),
+            Articles(
+                title="AI研究報告2",
+                link="https://example.com/ai2",
+                category="AI研究",
+                published_at=datetime(2023, 1, 15, 10, tzinfo=timezone.utc),
+                is_ai_related=True,
+                is_scraped=False,
+                tags="AI,研究,大語言模型",
+                task_id=11,
+                scrape_status=ArticleScrapeStatus.PENDING,
+                summary="更多AI研究摘要",
+                content="更多AI研究內容",
+                source="來源A",
+                source_url="https://source.a/ai2",
+            ),
+            Articles(
+                title="一般科技新聞2",
+                link="https://example.com/tech2",
+                category="科技",
+                published_at=datetime(2023, 1, 20, 10, tzinfo=timezone.utc),
+                is_ai_related=False,
+                is_scraped=True,
+                tags="科技,產業",
+                task_id=10,
+                scrape_status=ArticleScrapeStatus.CONTENT_SCRAPED,
+                summary="更多科技新聞摘要",
+                content="更多科技新聞內容",
+                source="來源B",
+                source_url="https://source.b/tech2",
+            ),
+        ]
+        session.add_all(articles)
+        session.commit()
+        session.expire_all()
+        return session.query(Articles).order_by(Articles.published_at.asc()).all()
+
+
+@pytest.fixture(scope="function")
+def initialized_db_manager(db_manager_for_test):
+    """Fixture that depends on db_manager_for_test, creates tables, and yields the manager."""
+    logger.debug("Creating tables for test function...")
+    try:
+        db_manager_for_test.create_tables(Base)
+        yield db_manager_for_test
+    finally:
+        logger.debug(
+            "Test function finished, tables might be dropped by manager cleanup or next test setup."
         )
-    ]
-    session.add_all(articles)
-    session.commit()
-    session.expire_all()
-    # 按 published_at 降序排列的預期順序: tech2(4), ai2(3), tech1(1), finance(2), ai1(0)
-    return session.query(Articles).order_by(Articles.published_at.asc()).all()
+
 
 # ArticleRepository 測試
 class TestArticleRepository:
@@ -168,7 +220,7 @@ class TestArticleRepository:
             article_repo.get_schema_class(SchemaType.LIST)
         assert "未支援的 schema 類型" in str(exc_info.value)
 
-    def test_find_by_link(self, article_repo, sample_articles, session, clean_db):
+    def test_find_by_link(self, article_repo, sample_articles, clean_db):
         """測試根據連結查詢文章"""
         article = article_repo.find_by_link("https://example.com/article1")
         assert article is not None
@@ -176,14 +228,14 @@ class TestArticleRepository:
         article = article_repo.find_by_link("https://nonexistent.com")
         assert article is None
 
-    def test_find_by_category(self, article_repo, sample_articles, session, clean_db):
+    def test_find_by_category(self, article_repo, sample_articles, clean_db):
         """測試根據分類查詢文章"""
         articles = article_repo.find_by_category("科技")
         assert len(articles) == 2
-        assert all(isinstance(article, Articles) for article in articles) # Check type
+        assert all(isinstance(article, Articles) for article in articles)  # Check type
         assert all(article.category == "科技" for article in articles)
 
-    def test_find_by_category_preview(self, article_repo, sample_articles, session, clean_db):
+    def test_find_by_category_preview(self, article_repo, sample_articles, clean_db):
         """測試根據分類查詢文章（預覽模式）"""
         preview_fields = ["title", "link"]
         articles_preview = article_repo.find_by_category(
@@ -193,9 +245,12 @@ class TestArticleRepository:
         assert all(isinstance(article, dict) for article in articles_preview)
         for article_dict in articles_preview:
             assert set(article_dict.keys()) == set(preview_fields)
-            assert article_dict["title"] in ["科技新聞：AI研究突破", "Python編程技巧分享"]
+            assert article_dict["title"] in [
+                "科技新聞：AI研究突破",
+                "Python編程技巧分享",
+            ]
 
-    def test_search_by_title(self, article_repo, sample_articles, session, clean_db):
+    def test_search_by_title(self, article_repo, sample_articles, clean_db):
         """測試根據標題搜索文章"""
         # 測試模糊匹配 (非預覽)
         articles_fuzzy = article_repo.search_by_title("Python")
@@ -204,12 +259,14 @@ class TestArticleRepository:
         assert "Python" in articles_fuzzy[0].title
 
         # 測試精確匹配 (非預覽)
-        articles_exact = article_repo.search_by_title("Python編程技巧分享", exact_match=True)
+        articles_exact = article_repo.search_by_title(
+            "Python編程技巧分享", exact_match=True
+        )
         assert len(articles_exact) == 1
         assert isinstance(articles_exact[0], Articles)
         assert articles_exact[0].title == "Python編程技巧分享"
 
-    def test_search_by_title_preview(self, article_repo, sample_articles, session, clean_db):
+    def test_search_by_title_preview(self, article_repo, sample_articles, clean_db):
         """測試根據標題搜索文章（預覽模式）"""
         preview_fields = ["link", "category"]
 
@@ -225,7 +282,10 @@ class TestArticleRepository:
 
         # 測試精確匹配 (預覽)
         articles_exact_preview = article_repo.search_by_title(
-            "科技新聞：AI研究突破", exact_match=True, is_preview=True, preview_fields=preview_fields
+            "科技新聞：AI研究突破",
+            exact_match=True,
+            is_preview=True,
+            preview_fields=preview_fields,
         )
         assert len(articles_exact_preview) == 1
         assert isinstance(articles_exact_preview[0], dict)
@@ -233,7 +293,7 @@ class TestArticleRepository:
         assert articles_exact_preview[0]["link"] == "https://example.com/article1"
         assert articles_exact_preview[0]["category"] == "科技"
 
-    def test_search_by_keywords(self, article_repo, sample_articles, session, clean_db):
+    def test_search_by_keywords(self, article_repo, sample_articles, clean_db):
         """測試根據關鍵字搜索（標題、內容、摘要）"""
         # 關鍵字 "研究" 應該匹配 article1 的 title, summary, content
         results_research = article_repo.search_by_keywords("研究")
@@ -262,14 +322,14 @@ class TestArticleRepository:
         results_none = article_repo.search_by_keywords("不存在")
         assert len(results_none) == 0
 
-    def test_search_by_keywords_preview(self, article_repo, sample_articles, session, clean_db):
+    def test_search_by_keywords_preview(self, article_repo, sample_articles, clean_db):
         """測試根據關鍵字搜索（預覽模式）"""
         preview_fields = ["source", "tags"]
         # 關鍵字 "內容" 應該匹配 article1 和 article2
         results_content_preview = article_repo.search_by_keywords(
             "內容", is_preview=True, preview_fields=preview_fields
         )
-        assert len(results_content_preview) == 3 # article 1, 2, 3 have "內容"
+        assert len(results_content_preview) == 3  # article 1, 2, 3 have "內容"
         assert all(isinstance(a, dict) for a in results_content_preview)
         sources = {a["source"] for a in results_content_preview}
         assert "測試來源1" in sources
@@ -277,7 +337,7 @@ class TestArticleRepository:
         assert set(results_content_preview[0].keys()) == set(preview_fields)
 
     # Renamed from test_get_by_filter to test_find_by_filter_logic
-    def test_find_by_filter_logic(self, article_repo, sample_articles, session, clean_db):
+    def test_find_by_filter_logic(self, article_repo, sample_articles, clean_db):
         """測試 find_by_filter 的過濾邏輯（包括覆寫的 _apply_filters）"""
         # --- 測試標準過濾（由基類處理） ---
         articles = article_repo.find_by_filter({"category": "科技"})
@@ -285,17 +345,16 @@ class TestArticleRepository:
         assert all(isinstance(a, Articles) for a in articles)
         assert all(a.category == "科技" for a in articles)
 
-        articles = article_repo.find_by_filter({
-            "category": "科技",
-            "is_ai_related": True
-        })
+        articles = article_repo.find_by_filter(
+            {"category": "科技", "is_ai_related": True}
+        )
         assert len(articles) == 1
         assert articles[0].is_ai_related is True
 
-        articles = article_repo.find_by_filter({
-            "published_at": {"$gte": datetime(2023, 1, 3, tzinfo=timezone.utc)}
-        })
-        assert len(articles) == 2 # article2 and article3
+        articles = article_repo.find_by_filter(
+            {"published_at": {"$gte": datetime(2023, 1, 3, tzinfo=timezone.utc)}}
+        )
+        assert len(articles) == 2  # article2 and article3
 
         # --- 測試自訂過濾（由 ArticlesRepository._apply_filters 處理） ---
         # 測試 search_text
@@ -309,14 +368,16 @@ class TestArticleRepository:
         assert articles_tags[0].title == "科技新聞：AI研究突破"
 
         # 測試混合過濾
-        articles_mixed = article_repo.find_by_filter({
-            "search_text": "科技", # 匹配 article1 和 article3
-            "is_scraped": True     # 進一步過濾，只剩 article1
-        })
+        articles_mixed = article_repo.find_by_filter(
+            {
+                "search_text": "科技",  # 匹配 article1 和 article3
+                "is_scraped": True,  # 進一步過濾，只剩 article1
+            }
+        )
         assert len(articles_mixed) == 1
         assert articles_mixed[0].link == "https://example.com/article1"
 
-    def test_get_source_statistics(self, article_repo, sample_articles, session, clean_db):
+    def test_get_source_statistics(self, article_repo, sample_articles, clean_db):
         """測試獲取來源統計數據"""
         stats = article_repo.get_source_statistics()
         assert isinstance(stats, dict)
@@ -330,7 +391,7 @@ class TestArticleRepository:
         assert stats["測試來源2"]["scraped"] == 1
         assert stats["測試來源2"]["unscraped"] == 0
 
-    def test_count(self, article_repo, sample_articles, session, clean_db):
+    def test_count(self, article_repo, sample_articles, clean_db):
         """測試計算文章總數（包括使用自訂過濾）"""
         assert article_repo.count() == 3
 
@@ -346,7 +407,7 @@ class TestArticleRepository:
         # 測試混合過濾
         assert article_repo.count({"category": "科技", "search_text": "教學"}) == 1
 
-    def test_get_category_distribution(self, article_repo, sample_articles, session, clean_db):
+    def test_get_category_distribution(self, article_repo, sample_articles, clean_db):
         """測試獲取分類分佈"""
         distribution = article_repo.get_category_distribution()
         assert isinstance(distribution, dict)
@@ -356,7 +417,7 @@ class TestArticleRepository:
         assert "財經" in distribution
         assert distribution["財經"] == 1
 
-    def test_find_by_tags(self, article_repo, sample_articles, session, clean_db):
+    def test_find_by_tags(self, article_repo, sample_articles, clean_db):
         """測試根據標籤查找文章"""
         # 測試單一標籤 (非預覽)
         articles_single = article_repo.find_by_tags(["AI"])
@@ -372,7 +433,7 @@ class TestArticleRepository:
         assert "Python編程技巧分享" in titles
         assert "財經報導：股市走勢分析" in titles
 
-    def test_find_by_tags_preview(self, article_repo, sample_articles, session, clean_db):
+    def test_find_by_tags_preview(self, article_repo, sample_articles, clean_db):
         """測試根據標籤查找文章（預覽模式）"""
         preview_fields = ["title", "source"]
         # 測試多個標籤（OR 邏輯, 預覽）
@@ -386,7 +447,7 @@ class TestArticleRepository:
         assert "科技新聞：AI研究突破" in titles_found
         assert set(articles_multi_preview[0].keys()) == set(preview_fields)
 
-    def test_validate_unique_link(self, article_repo, sample_articles, session, clean_db):
+    def test_validate_unique_link(self, article_repo, sample_articles, clean_db):
         """測試連結唯一性驗證"""
         with pytest.raises(ValidationError) as exc_info:
             article_repo.validate_unique_link("https://example.com/article1")
@@ -402,13 +463,28 @@ class TestArticleRepository:
             article_repo.validate_unique_link(None)
         assert "連結不可為空" in str(exc_info.value)
 
-    def test_create_article(self, article_repo, session, clean_db):
+    def test_create_article(self, article_repo, clean_db):
         """測試創建新文章，並驗證返回的 Article 物件"""
-        article_data = { "title": "測試創建文章", "link": "https://test.com/create", "summary": "創建摘要", "content": "創建內容", "category": "創建類別", "is_ai_related": False, "is_scraped": False, "source": "創建來源", "source_url": "https://test.com/source_create", "published_at": datetime(2023, 1, 10, tzinfo=timezone.utc), "scrape_status": ArticleScrapeStatus.LINK_SAVED, "tags": "創建,測試", "task_id": 10 }
+        article_data = {
+            "title": "測試創建文章",
+            "link": "https://test.com/create",
+            "summary": "創建摘要",
+            "content": "創建內容",
+            "category": "創建類別",
+            "is_ai_related": False,
+            "is_scraped": False,
+            "source": "創建來源",
+            "source_url": "https://test.com/source_create",
+            "published_at": datetime(2023, 1, 10, tzinfo=timezone.utc),
+            "scrape_status": ArticleScrapeStatus.LINK_SAVED,
+            "tags": "創建,測試",
+            "task_id": 10,
+        }
         created_article = article_repo.create(article_data)
+        article_repo.session.commit()
+
         assert created_article is not None
         assert isinstance(created_article, Articles)
-        session.flush()
         assert created_article.id is not None
         assert created_article.title == "測試創建文章"
         assert created_article.link == "https://test.com/create"
@@ -417,7 +493,9 @@ class TestArticleRepository:
         assert created_article.is_scraped is False
         assert created_article.scrape_status == ArticleScrapeStatus.LINK_SAVED
         assert created_article.source == "創建來源"
-        assert created_article.published_at == datetime(2023, 1, 10, tzinfo=timezone.utc)
+        assert created_article.published_at == datetime(
+            2023, 1, 10, tzinfo=timezone.utc
+        )
         assert created_article.tags == "創建,測試"
         assert created_article.task_id == 10
         assert created_article.created_at is not None
@@ -425,17 +503,23 @@ class TestArticleRepository:
 
     def test_create_article_with_missing_fields(self, article_repo, clean_db):
         """測試創建缺少必要欄位的文章，預期引發 ValidationError"""
-        minimal_data = { "title": "缺少欄位測試", "link": "https://test.com/missing" }
+        minimal_data = {"title": "缺少欄位測試", "link": "https://test.com/missing"}
         with pytest.raises(ValidationError) as exc_info:
             article_repo.create(minimal_data)
         error_message = str(exc_info.value)
         assert "source" in error_message or "source_url" in error_message
 
-    def test_update_article(self, article_repo, sample_articles, session, clean_db):
+    def test_update_article(self, article_repo, sample_articles, clean_db):
         """測試更新現有文章，並驗證返回的 Article 物件或 None"""
         article_to_update = sample_articles[0]
         article_id = article_to_update.id
-        update_data = { "title": "更新後的標題", "summary": "更新後的摘要", "is_ai_related": False, "tags": "更新,測試", "scrape_status": ArticleScrapeStatus.CONTENT_SCRAPED }
+        update_data = {
+            "title": "更新後的標題",
+            "summary": "更新後的摘要",
+            "is_ai_related": False,
+            "tags": "更新,測試",
+            "scrape_status": ArticleScrapeStatus.CONTENT_SCRAPED,
+        }
         original_updated_at = article_to_update.updated_at
         time.sleep(0.1)
         updated_article = article_repo.update(article_id, update_data)
@@ -450,7 +534,7 @@ class TestArticleRepository:
         assert updated_article.updated_at > original_updated_at
 
         # 驗證資料庫中的更改
-        db_article = session.get(Articles, article_id)
+        db_article = article_repo.session.get(Articles, article_id)
         assert db_article.title == "更新後的標題"
         assert db_article.scrape_status == ArticleScrapeStatus.CONTENT_SCRAPED
 
@@ -469,23 +553,31 @@ class TestArticleRepository:
         result_empty_update = article_repo.update(article_id, {})
         assert result_empty_update is None
 
-    def test_update_article_with_link_field(self, article_repo, sample_articles, session, clean_db):
+    def test_update_article_with_link_field(
+        self, article_repo, sample_articles, clean_db
+    ):
         """測試更新文章時包含不可變欄位（如 link），預期引發 ValidationError"""
         article_to_update = sample_articles[0]
         article_id = article_to_update.id
-        update_data_with_link = { "title": "嘗試更新連結", "link": "https://new-link.com" }
+        update_data_with_link = {
+            "title": "嘗試更新連結",
+            "link": "https://new-link.com",
+        }
         with pytest.raises(ValidationError) as exc_info:
             article_repo.update(article_id, update_data_with_link)
         assert "link" in str(exc_info.value).lower()
-        assert "不能更新不可變欄位" in str(exc_info.value) or "extra fields not permitted" in str(exc_info.value).lower()
+        assert (
+            "不能更新不可變欄位" in str(exc_info.value)
+            or "extra fields not permitted" in str(exc_info.value).lower()
+        )
 
         # 確保文章未被修改
-        db_article = session.get(Articles, article_id)
+        db_article = article_repo.session.get(Articles, article_id)
         assert db_article.title == article_to_update.title
         assert db_article.link == article_to_update.link
 
     # Renamed from test_update_scrape_status
-    def test_batch_mark_as_scraped(self, article_repo, sample_articles, session, clean_db):
+    def test_batch_mark_as_scraped(self, article_repo, sample_articles, clean_db):
         """測試批量標記文章為已爬取"""
         articles = sample_articles
         link1 = articles[0].link
@@ -493,76 +585,92 @@ class TestArticleRepository:
         non_existent_link = "https://nonexistent.com"
         links_to_mark = [link1, link3, non_existent_link]
         result = article_repo.batch_mark_as_scraped(links_to_mark)
-        session.commit()
+        article_repo.session.commit()
         assert isinstance(result, dict)
         assert result["success_count"] == 2
         assert result["fail_count"] == 1
         assert non_existent_link in result["failed_links"]
 
-    def test_get_paginated_by_filter_default_sort(self, article_repo, filter_test_articles, session):
+    def test_get_paginated_by_filter_default_sort(
+        self, article_repo, filter_test_articles, clean_db
+    ):
         """測試分頁查詢，使用預設排序 (published_at desc)"""
         page = 1
         per_page = 2
-        total_count, items = article_repo.get_paginated_by_filter( filter_dict={}, page=page, per_page=per_page )
+        total_count, items = article_repo.get_paginated_by_filter(
+            filter_dict={}, page=page, per_page=per_page
+        )
         total_pages = (total_count + per_page - 1) // per_page
-        
+
         assert total_pages == 3
         assert total_count == 5
         assert len(items) == 2
-        assert all(isinstance(a, Articles) for a in items) # Default is not preview
+        assert all(isinstance(a, Articles) for a in items)  # Default is not preview
         # 預設排序現在是 published_at desc
-        assert items[0].title == "一般科技新聞2" # 2023-01-20
-        assert items[1].title == "AI研究報告2"   # 2023-01-15
+        assert items[0].title == "一般科技新聞2"  # 2023-01-20
+        assert items[1].title == "AI研究報告2"  # 2023-01-15
 
-    def test_get_paginated_by_filter_custom_sort(self, article_repo, filter_test_articles, session):
+    def test_get_paginated_by_filter_custom_sort(
+        self, article_repo, filter_test_articles, clean_db
+    ):
         """測試分頁查詢，使用自定義排序"""
         page = 1
         per_page = 3
-        total_count, items = article_repo.get_paginated_by_filter( filter_dict={}, page=page, per_page=per_page, sort_by="title", sort_desc=False )
+        total_count, items = article_repo.get_paginated_by_filter(
+            filter_dict={},
+            page=page,
+            per_page=per_page,
+            sort_by="title",
+            sort_desc=False,
+        )
         has_next = page * per_page < total_count
 
         assert len(items) == 3
         assert all(isinstance(a, Articles) for a in items)
         titles = [item.title for item in items]
-        assert titles == ["AI研究報告1", "AI研究報告2", "一般科技新聞1"] # 依標題升序
+        assert titles == ["AI研究報告1", "AI研究報告2", "一般科技新聞1"]  # 依標題升序
         assert has_next is True
         assert total_count == 5
 
-    def test_get_paginated_by_filter_preview(self, article_repo, filter_test_articles, session):
+    def test_get_paginated_by_filter_preview(
+        self, article_repo, filter_test_articles, clean_db
+    ):
         """測試分頁查詢（預覽模式）"""
         preview_fields = ["link", "category", "published_at"]
         page = 1
         per_page = 2
-        total_count, items = article_repo.find_paginated( # Use find_paginated directly for preview testing
-            filter_criteria={}, 
-            page=page,
-            per_page=per_page,
-            is_preview=True,
-            preview_fields=preview_fields,
-            sort_by='id',       
-            sort_desc=True
+        total_count, items = (
+            article_repo.find_paginated(  # Use find_paginated directly for preview testing
+                filter_criteria={},
+                page=page,
+                per_page=per_page,
+                is_preview=True,
+                preview_fields=preview_fields,
+                sort_by="id",
+                sort_desc=True,
+            )
         )
         total_pages = (total_count + per_page - 1) // per_page
-        
+
         assert total_pages == 3
         assert total_count == 5
         assert len(items) == 2
         assert all(isinstance(a, dict) for a in items)
         assert set(items[0].keys()) == set(preview_fields)
-        assert items[0]["link"] == "https://example.com/tech2" # ID 5
-        assert items[1]["link"] == "https://example.com/ai2"   # ID 4
+        assert items[0]["link"] == "https://example.com/tech2"  # ID 5
+        assert items[1]["link"] == "https://example.com/ai2"  # ID 4
 
         # Test with filter and preview
         page = 1
         per_page = 1
         total_count_filtered, items_filtered = article_repo.find_paginated(
-            filter_criteria={"is_ai_related": True}, # Should match ai1, ai2
+            filter_criteria={"is_ai_related": True},  # Should match ai1, ai2
             page=page,
             per_page=per_page,
             sort_by="published_at",
-            sort_desc=True, # Newest AI first (ai2)
+            sort_desc=True,  # Newest AI first (ai2)
             is_preview=True,
-            preview_fields=preview_fields
+            preview_fields=preview_fields,
         )
         total_pages_filtered = (total_count_filtered + per_page - 1) // per_page
 
@@ -572,15 +680,17 @@ class TestArticleRepository:
         assert isinstance(items_filtered[0], dict)
         assert items_filtered[0]["link"] == "https://example.com/ai2"
 
-    def test_pagination_navigation(self, article_repo, filter_test_articles, session):
+    def test_pagination_navigation(self, article_repo, filter_test_articles, clean_db):
         """測試分頁導航屬性 (has_next, has_prev)"""
         page = 1
         per_page = 2
         total_expected = 5
         total_pages_expected = 3
-        
-        total_count, items = article_repo.get_paginated_by_filter(filter_dict={}, page=page, per_page=per_page)
-        
+
+        total_count, items = article_repo.get_paginated_by_filter(
+            filter_dict={}, page=page, per_page=per_page
+        )
+
         has_prev = page > 1
         has_next = page * per_page < total_count
         calculated_total_pages = (total_count + per_page - 1) // per_page
@@ -590,41 +700,41 @@ class TestArticleRepository:
         assert calculated_total_pages == total_pages_expected
         assert total_count == total_expected
 
-    def test_delete_by_link(self, article_repo, sample_articles, session, clean_db):
+    def test_delete_by_link(self, article_repo, sample_articles, clean_db):
         """測試根據連結刪除文章，並在找不到連結時引發 ValidationError"""
         articles = sample_articles
         link_to_delete = articles[0].link
         id_to_delete = articles[0].id
         deleted = article_repo.delete_by_link(link_to_delete)
         assert deleted is True
-        session.commit()
-        assert session.get(Articles, id_to_delete) is None
+        article_repo.session.commit()
+        assert article_repo.session.get(Articles, id_to_delete) is None
         with pytest.raises(ValidationError) as exc_info:
             article_repo.delete_by_link(link_to_delete)
         assert f"連結 '{link_to_delete}' 不存在，無法刪除" in str(exc_info.value)
 
-    def test_count_unscraped_links(self, article_repo, sample_articles, session, clean_db):
+    def test_count_unscraped_links(self, article_repo, sample_articles, clean_db):
         """測試計算未爬取連結的數量"""
         assert article_repo.count_unscraped_links() == 1
-        sample_articles[2].is_scraped = True # Mark the only unscraped as scraped
-        session.commit()
+        sample_articles[2].is_scraped = True  # Mark the only unscraped as scraped
+        article_repo.session.commit()
         assert article_repo.count_unscraped_links() == 0
 
-    def test_count_scraped_links(self, article_repo, sample_articles, session, clean_db):
+    def test_count_scraped_links(self, article_repo, sample_articles, clean_db):
         """測試計算已爬取連結的數量"""
         assert article_repo.count_scraped_links() == 2
-        sample_articles[0].is_scraped = False # Mark one scraped as unscraped
-        session.commit()
+        sample_articles[0].is_scraped = False  # Mark one scraped as unscraped
+        article_repo.session.commit()
         assert article_repo.count_scraped_links() == 1
 
-    def test_count_scraped_articles(self, article_repo, sample_articles, session, clean_db):
+    def test_count_scraped_articles(self, article_repo, sample_articles, clean_db):
         """測試計算已成功爬取內容的文章數量 (實際測試的是 is_scraped=True 的數量)"""
         assert article_repo.count_scraped_articles() == 2
-        sample_articles[2].is_scraped = True # Mark unscraped as scraped
-        session.commit()
+        sample_articles[2].is_scraped = True  # Mark unscraped as scraped
+        article_repo.session.commit()
         assert article_repo.count_scraped_articles() == 3
 
-    def test_find_unscraped_links(self, article_repo, sample_articles, session, clean_db):
+    def test_find_unscraped_links(self, article_repo, sample_articles, clean_db):
         """測試查找未爬取的連結"""
         # sample_articles[2] is initially unscraped
         unscraped_articles = article_repo.find_unscraped_links()
@@ -632,7 +742,9 @@ class TestArticleRepository:
         assert isinstance(unscraped_articles[0], Articles)
         assert unscraped_articles[0].link == sample_articles[2].link
 
-    def test_find_unscraped_links_preview(self, article_repo, sample_articles, session, clean_db):
+    def test_find_unscraped_links_preview(
+        self, article_repo, sample_articles, clean_db
+    ):
         """測試查找未爬取的連結（預覽模式）"""
         preview_fields = ["link", "scrape_status"]
         unscraped_preview = article_repo.find_unscraped_links(
@@ -644,7 +756,7 @@ class TestArticleRepository:
         assert unscraped_preview[0]["link"] == sample_articles[2].link
         assert unscraped_preview[0]["scrape_status"] == ArticleScrapeStatus.LINK_SAVED
 
-    def test_find_scraped_links(self, article_repo, sample_articles, session, clean_db):
+    def test_find_scraped_links(self, article_repo, sample_articles, clean_db):
         """測試查找已爬取的連結"""
         scraped_articles = article_repo.find_scraped_links()
         assert len(scraped_articles) == 2
@@ -653,7 +765,7 @@ class TestArticleRepository:
         assert sample_articles[0].link in links_found
         assert sample_articles[1].link in links_found
 
-    def test_find_scraped_links_preview(self, article_repo, sample_articles, session, clean_db):
+    def test_find_scraped_links_preview(self, article_repo, sample_articles, clean_db):
         """測試查找已爬取的連結（預覽模式）"""
         preview_fields = ["title", "is_ai_related"]
         scraped_preview = article_repo.find_scraped_links(
@@ -664,9 +776,14 @@ class TestArticleRepository:
         assert set(scraped_preview[0].keys()) == set(preview_fields)
         # Default sort is updated_at desc, but they were created close together. Rely on ID desc as fallback?
         # Let's assume article 2 might be returned first if IDs are sequential
-        assert scraped_preview[0]["title"] in [sample_articles[0].title, sample_articles[1].title]
+        assert scraped_preview[0]["title"] in [
+            sample_articles[0].title,
+            sample_articles[1].title,
+        ]
 
-    def test_find_articles_by_task_id(self, article_repo, filter_test_articles, session):
+    def test_find_articles_by_task_id(
+        self, article_repo, filter_test_articles, clean_db
+    ):
         """測試根據 task_id 查找文章，並驗證返回列表"""
         # Test non-preview
         result_task10 = article_repo.find_articles_by_task_id(task_id=10)
@@ -684,7 +801,9 @@ class TestArticleRepository:
         # Assuming ai2 (PENDING) comes before finance (LINK_SAVED)
         assert result_task11[0].title == "AI研究報告2"
 
-    def test_find_articles_by_task_id_preview(self, article_repo, filter_test_articles, session):
+    def test_find_articles_by_task_id_preview(
+        self, article_repo, filter_test_articles, clean_db
+    ):
         """測試根據 task_id 查找文章（預覽模式）"""
         preview_fields = ["link", "tags"]
         result_task11_preview = article_repo.find_articles_by_task_id(
@@ -693,11 +812,19 @@ class TestArticleRepository:
         assert len(result_task11_preview) == 1
         assert isinstance(result_task11_preview[0], dict)
         assert set(result_task11_preview[0].keys()) == set(preview_fields)
-        assert result_task11_preview[0]["link"] == "https://example.com/ai2" # Based on sort
+        assert (
+            result_task11_preview[0]["link"] == "https://example.com/ai2"
+        )  # Based on sort
 
-    def test_count_articles_by_task_id(self, article_repo, filter_test_articles, session):
+    def test_count_articles_by_task_id(
+        self, article_repo, filter_test_articles, clean_db
+    ):
         """測試根據 task_id 計算文章數量"""
         assert article_repo.count_articles_by_task_id(task_id=10) == 3
         assert article_repo.count_articles_by_task_id(task_id=11) == 2
-        assert article_repo.count_articles_by_task_id(task_id=10, is_scraped=True) == 3 # tech1, tech2, ai1 are scraped
-        assert article_repo.count_articles_by_task_id(task_id=11, is_scraped=False) == 2 # ai2, finance are unscraped
+        assert (
+            article_repo.count_articles_by_task_id(task_id=10, is_scraped=True) == 3
+        )  # tech1, tech2, ai1 are scraped
+        assert (
+            article_repo.count_articles_by_task_id(task_id=11, is_scraped=False) == 2
+        )  # ai2, finance are unscraped
