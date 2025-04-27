@@ -32,6 +32,19 @@ logger = LoggerSetup.setup_logger(__name__)
 
 
 @pytest.fixture(scope="function")
+def initialized_db_manager(db_manager_for_test):
+    """Fixture that depends on db_manager_for_test, creates tables, and yields the manager."""
+    logger.debug("Creating tables for test function...")
+    try:
+        db_manager_for_test.create_tables(Base)
+        yield db_manager_for_test
+    finally:
+        logger.debug(
+            "Test function finished, tables might be dropped by manager cleanup or next test setup."
+        )
+
+
+@pytest.fixture(scope="function")
 def article_repo(initialized_db_manager):
     """為每個測試函數創建新的 ArticlesRepository 實例"""
     with initialized_db_manager.session_scope() as session:
@@ -199,19 +212,6 @@ def filter_test_articles(initialized_db_manager, clean_db) -> List[Articles]:
         session.commit()
         session.expire_all()
         return session.query(Articles).order_by(Articles.published_at.asc()).all()
-
-
-@pytest.fixture(scope="function")
-def initialized_db_manager(db_manager_for_test):
-    """Fixture that depends on db_manager_for_test, creates tables, and yields the manager."""
-    logger.debug("Creating tables for test function...")
-    try:
-        db_manager_for_test.create_tables(Base)
-        yield db_manager_for_test
-    finally:
-        logger.debug(
-            "Test function finished, tables might be dropped by manager cleanup or next test setup."
-        )
 
 
 # ArticleRepository 測試

@@ -2,6 +2,10 @@ import shutil
 import os
 import pytest
 from src.database.database_manager import DatabaseManager  # 導入 DatabaseManager
+from src.models.base_model import Base
+from src.utils.log_utils import LoggerSetup
+
+logger = LoggerSetup.setup_logger(__name__)
 
 
 def pytest_configure(config):
