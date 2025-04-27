@@ -225,6 +225,24 @@ class DatabaseManager:
             self.engine.dispose()
             logger.info("Database engine disposed.")
 
+    def drop_tables(self, base: Type[DeclarativeBase]) -> None:
+        """
+        移除所有表格
+
+        Args:
+            base: SQLAlchemy 模型基礎類
+
+        Raises:
+            DatabaseOperationError: 移除表格失敗
+        """
+        try:
+            base.metadata.drop_all(self.engine)
+            logger.info("所有表格已成功移除")
+        except SQLAlchemyError as e:
+            error_msg = f"移除表格失敗: {e}"
+            logger.error("移除表格失敗: %s", e, exc_info=True)
+            raise DatabaseOperationError(error_msg) from e
+
 
 def check_session(func):
     """

@@ -31,8 +31,8 @@ def db_manager_for_test(monkeypatch):
     """
     提供一個連接到記憶體 SQLite 資料庫的 DatabaseManager 實例供測試使用。
     """
-    # 使用 monkeypatch 臨時設置環境變數
-    monkeypatch.setenv("DATABASE_URL", "sqlite:///:memory:")
+    # 使用 URI filename 和 cache=shared 確保多線程共享同一個記憶體資料庫
+    monkeypatch.setenv("DATABASE_URL", "sqlite:///file::memory:?cache=shared&uri=true")
 
     # 初始化 DatabaseManager
     db_manager = DatabaseManager()
