@@ -50,9 +50,7 @@ def initialized_db_manager(db_manager_for_test):
 def crawlers_repo(initialized_db_manager):
     """為每個測試函數創建新的 CrawlersRepository 實例"""
     with initialized_db_manager.session_scope() as session:
-        yield CrawlersRepository(
-            session, Crawlers
-        )  # 使用 yield 確保 session 在 repo 使用完畢後關閉
+        yield CrawlersRepository(session, Crawlers)
 
 
 @pytest.fixture(scope="function")
@@ -115,7 +113,6 @@ def sample_crawlers_data(
                 }
             )
         session.commit()  # 提交事務
-        # 不再需要 expire_all 或返回 session.query
 
     return crawlers_output_data  # 返回字典列表
 

@@ -160,7 +160,7 @@ class DatabaseManager:
             if isinstance(e, SQLAlchemyError):
                 wrapped_error = DatabaseOperationError(f"數據庫操作錯誤: {e}")
             else:
-                wrapped_error = DatabaseOperationError(f"非數據庫相關的操作錯誤: {e}")
+                wrapped_error = e
             logger.error(f"Raising wrapped error: {wrapped_error}")
             raise wrapped_error
 

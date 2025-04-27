@@ -36,7 +36,6 @@ def initialized_db_manager(db_manager_for_test):
     """Fixture that depends on db_manager_for_test, creates tables, and yields the manager."""
     logger.debug("Creating tables for test function...")
     try:
-
         db_manager_for_test.create_tables(Base)
         yield db_manager_for_test
     finally:
@@ -53,7 +52,7 @@ def crawler_task_history_repo(initialized_db_manager):
 
 
 @pytest.fixture(scope="function")
-def sample_crawler_data(initialized_db_manager) -> Dict[str, Any]:
+def sample_crawler_data(initialized_db_manager):
     """創建測試用的爬蟲資料，返回包含 ID 的字典"""
     with initialized_db_manager.session_scope() as session:
         crawler = Crawlers(
