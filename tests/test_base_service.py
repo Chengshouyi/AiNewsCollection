@@ -46,7 +46,7 @@ class ModelCreateSchemaForTest(BaseCreateSchema):
     title: str
 
     @field_validator("title")
-    def validate_title(cls, v):
+    def validate_title(cls, v):  # pylint: disable=no-self-argument
         if not v or not v.strip():
             raise ValueError("title不能為空")
         return v.strip()

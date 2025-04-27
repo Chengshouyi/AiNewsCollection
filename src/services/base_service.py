@@ -168,7 +168,6 @@ class BaseService(Generic[T]):
         """清理服務資源"""
         # 實際的清理由 DatabaseManager 處理
         if hasattr(self.db_manager, "close_session"):
-            logger.info("Cleaning up session via BaseService...")
             self.db_manager.close_session()
 
     def __del__(self):
