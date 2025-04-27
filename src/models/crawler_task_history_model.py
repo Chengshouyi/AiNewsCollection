@@ -1,12 +1,19 @@
-from sqlalchemy import Integer, DateTime, Boolean, ForeignKey, Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+"""本模組定義爬蟲任務執行歷史記錄模型，用於追蹤和記錄爬蟲任務的執行狀態、時間和結果。"""
+
 from datetime import datetime
 from typing import Optional
-from src.models.base_model import Base
-from .base_entity import BaseEntity
-from src.utils.enum_utils import TaskStatus
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text
 from sqlalchemy import Enum as SQLAlchemyEnum
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from src.models.base_model import Base
+from src.models.base_entity import BaseEntity
+from src.utils.enum_utils import TaskStatus
+from src.utils.log_utils import LoggerSetup
 from src.utils.type_utils import AwareDateTime
+
+logger = LoggerSetup.setup_logger(__name__)
 
 
 class CrawlerTaskHistory(Base, BaseEntity):
