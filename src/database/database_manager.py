@@ -5,7 +5,7 @@ from functools import wraps
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import QueuePool
-from sqlalchemy.orm import sessionmaker, scoped_session
+from sqlalchemy.orm import sessionmaker, scoped_session, Session
 from sqlalchemy.orm.decl_api import DeclarativeBase
 from sqlalchemy.exc import OperationalError
 from src.error.errors import (
@@ -113,7 +113,8 @@ class DatabaseManager:
     @contextmanager
     def session_scope(self):
         """
-        提供事務範圍的會話上下文管理器
+        提供事務範圍的會話上下文管理器。
+        在異常發生時回滾並關閉會話。
 
         Yields:
             SQLAlchemy 會話物件
@@ -121,31 +122,59 @@ class DatabaseManager:
         Raises:
             DatabaseOperationError: 數據庫操作失敗
         """
-        session = self.get_session()
-        logger.debug(f"Session scope started.session: {session}")
+        session: Session = self.get_session()
+        logger.debug(f"Session scope started. Session: {session}")
         try:
             yield session
-            # 如果session已經不活躍，不需要進行commit
+            # 只有活躍的 session 才需要 commit
             if session.is_active:
                 session.commit()
-        except Exception as e:
-            # 如果session已經不活躍，不需要進行rollback
-            if session.is_active:
-                session.rollback()
-            error_msg = f"數據庫操作失敗: {e}"
-            logger.error(error_msg)
-
-            # 根據不同異常類型提供更詳細的錯誤資訊
-            if isinstance(e, SQLAlchemyError):
-                raise DatabaseOperationError(f"數據庫操作錯誤: {e}") from e
+                logger.debug(f"Session scope committed. Session: {session}")
             else:
-                raise DatabaseOperationError(f"非數據庫相關的操作錯誤: {e}") from e
+                logger.warning(
+                    f"Session scope ended but session was not active. Session: {session}"
+                )
+
+        except Exception as e:
+            logger.error(
+                f"Exception in session scope: {e}. Rolling back. Session: {session}"
+            )
+            try:
+                # 只有活躍的 session 才需要 rollback
+                if session.is_active:
+                    session.rollback()
+                    logger.debug(f"Session rollback successful. Session: {session}")
+                else:
+                    logger.warning(
+                        f"Attempted rollback on inactive session. Session: {session}"
+                    )
+
+            except Exception as rb_exc:
+                # 如果 rollback 也失敗，記錄額外錯誤
+                logger.error(
+                    f"Rollback failed: {rb_exc}. Original error: {e}. Session: {session}"
+                )
+                # 即使 rollback 失敗，仍嘗試關閉 session
+
+            # 將原始錯誤包裝後重新拋出
+            if isinstance(e, SQLAlchemyError):
+                wrapped_error = DatabaseOperationError(f"數據庫操作錯誤: {e}")
+            else:
+                wrapped_error = DatabaseOperationError(f"非數據庫相關的操作錯誤: {e}")
+            logger.error(f"Raising wrapped error: {wrapped_error}")
+            raise wrapped_error
+
         finally:
-            # scoped_session 在 request/thread 結束時移除，這裡不需要手動 close
-            # 但如果不是 web request 範圍，可能需要在外部呼叫 remove()
-            # self.close_session() # 這裡調用 remove 可能太早
-            logger.debug("Session scope finished.")  # Debug log
-            pass  # Scoped session 由其管理器處理關閉和移除
+            # 無論成功或失敗，最終都要關閉 session
+            try:
+                logger.debug(f"Closing session in finally block. Session: {session}")
+                session.close()
+                logger.debug(f"Session closed successfully. Session: {session}")
+            except Exception as close_exc:
+                # 如果關閉 session 出錯，記錄下來但不影響原始異常的拋出
+                logger.error(
+                    f"Failed to close session: {close_exc}. Session: {session}"
+                )
 
     def create_tables(self, base: Type[DeclarativeBase]) -> None:
         """
