@@ -6,10 +6,12 @@
 
 # Standard library imports
 from typing import Any, Dict, List, Literal, Optional, Type, Union, overload
+import logging
 
 # Third party imports
 from pydantic import BaseModel
 from sqlalchemy import func
+from sqlalchemy.orm import load_only, noload
 
 # Local application imports
 from src.error.errors import DatabaseOperationError, ValidationError
@@ -19,7 +21,8 @@ from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
 from .base_repository import BaseRepository, SchemaType
 
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = LoggerSetup.setup_logger(__name__)
+# logger.setLevel(logging.DEBUG)  # <-- 臨時添加這行
 
 
 class CrawlersRepository(BaseRepository["Crawlers"]):
@@ -292,50 +295,111 @@ class CrawlersRepository(BaseRepository["Crawlers"]):
         """根據爬取目標(base_url)模糊查詢爬蟲，支援活躍狀態過濾、分頁和預覽"""
 
         def query_builder():
-            query_entities = [self.model_class]
+            from sqlalchemy.orm import noload  # <--- 導入 noload
+
+            # --- 修改開始 ---
             valid_preview_fields = []
             local_is_preview = is_preview
+            query_entities_orm = []  # 儲存 ORM 屬性
+
             if local_is_preview and preview_fields:
-                valid_preview_fields = [
-                    f for f in preview_fields if hasattr(self.model_class, f)
-                ]
-                if valid_preview_fields:
-                    query_entities = [
-                        getattr(self.model_class, f) for f in valid_preview_fields
-                    ]
-                else:
-                    # PylintW1203:logging-fstring-interpolation fix
+                # --- 預覽模式邏輯 ---
+                for field_name in preview_fields:
+                    if hasattr(self.model_class, field_name):
+                        # 確保關聯屬性不被加入 query_entities_orm (load_only 不處理關聯)
+                        if (
+                            field_name != "crawler_tasks"
+                        ):  # 假設關聯名稱是 crawler_tasks
+                            valid_preview_fields.append(field_name)
+                            query_entities_orm.append(
+                                getattr(self.model_class, field_name)
+                            )
+
+                if not valid_preview_fields:
                     logger.warning(
                         "find_by_target 預覽欄位無效: %s，返回完整物件。",
                         preview_fields,
                     )
                     local_is_preview = False
+                    # 無效預覽，載入所有非關聯欄位
+                    query_entities_orm = [
+                        getattr(self.model_class, c.name)
+                        for c in self.model_class.__table__.columns  # 只獲取基本欄位
+                    ]
+            else:
+                # --- 非預覽模式邏輯 ---
+                # 獲取 Crawlers 模型所有基本欄位的 ORM 映射屬性
+                query_entities_orm = [
+                    getattr(self.model_class, c.name)
+                    for c in self.model_class.__table__.columns  # 只獲取基本欄位
+                ]
 
-            query = self.session.query(*query_entities).filter(
-                self.model_class.base_url.like(f"%{target_pattern}%")
+            # --- 查詢構建 ---
+            query = (
+                self.session.query(self.model_class)
+                .options(
+                    # --- 關鍵修改：明確禁止載入 'crawler_tasks' 關聯 ---
+                    noload(self.model_class.crawler_tasks),
+                    # 仍然使用 load_only 限制 Crawlers 自身的欄位
+                    load_only(*query_entities_orm),
+                )
+                .filter(self.model_class.base_url.like(f"%{target_pattern}%"))
             )
+            # --- 結束修改 ---
 
             if is_active is not None:
                 query = query.filter(self.model_class.is_active == is_active)
 
             if hasattr(self.model_class, "created_at"):
-                query = query.order_by(self.model_class.created_at.desc())
+                query = query.order_by(
+                    self.model_class.created_at.desc(), self.model_class.id.asc()
+                )
+            elif hasattr(self.model_class, "id"):
+                query = query.order_by(self.model_class.id.asc())
 
             if offset is not None:
                 query = query.offset(offset)
             if limit is not None:
                 query = query.limit(limit)
 
+            # --- SQL 日誌記錄 (保持不變) ---
+            try:
+                from sqlalchemy.dialects import sqlite
+
+                compiled_query = query.statement.compile(
+                    dialect=sqlite.dialect(), compile_kwargs={"literal_binds": True}
+                )
+                logger.debug(
+                    "new version: Executing SQL for find_by_target (offset=%s, limit=%s): %s",
+                    offset,
+                    limit,
+                    compiled_query,
+                )
+            except Exception as log_err:
+                logger.error("Error compiling or logging SQL query: %s", log_err)
+            # --- 結束添加 ---
+
             raw_results = query.all()
 
+            # --- 添加調試日誌 ---
+            if offset == 2 and limit == 1:
+                logger.debug(
+                    "Executing query.all() for offset=2, limit=1 returned %d results: %s",
+                    len(raw_results),
+                    raw_results,
+                )
+            # --- 結束添加 ---
+
             if local_is_preview and valid_preview_fields:
-                return [dict(zip(valid_preview_fields, row)) for row in raw_results]
+                return [
+                    {f: getattr(row, f) for f in valid_preview_fields}
+                    for row in raw_results
+                ]
             else:
                 return raw_results
 
         return self.execute_query(
             query_builder,
-            # PylintW1203:logging-fstring-interpolation fix (using % formatting)
             err_msg=f"模糊查詢爬蟲目標 '{target_pattern}' 時發生錯誤",
         )
 
