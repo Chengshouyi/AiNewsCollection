@@ -1,10 +1,11 @@
 [MESSAGES CONTROL]
 # Disable the specified messages.
-disable=;W0621, # redefined-outer-name
+disable=;W0621, # 
         W0611, # unused-import
-        ;W0612, # redefined-outer-name
-        ;W0718, # redefined-outer-name
+        ;W0612, # 
+        ;W0718, # 
         W0613, # unused-argument
+        W0718, # PylintW0718:broad-exception-caught
         C0114, # missing-module-docstring
         C0115, # missing-class-docstring
         C0116, # missing-function-docstring
