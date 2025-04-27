@@ -1,4 +1,6 @@
-"""本模組定義了 Articles 文章資料表的 SQLAlchemy ORM 模型，包含欄位結構、關聯與序列化方法。"""
+"""
+本模組定義了 Articles 文章資料表的 SQLAlchemy ORM 模型，包含欄位結構、關聯與序列化方法。
+"""
 
 from datetime import datetime, timezone
 from typing import Optional
@@ -7,14 +9,12 @@ from sqlalchemy import (
     UniqueConstraint,
     Integer,
     String,
-    DateTime,
     Text,
     Boolean,
-    Enum,
+    Enum as SQLAlchemyEnum,
     ForeignKey,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import Enum as SQLAlchemyEnum
 
 from src.models.base_model import Base
 from src.models.base_entity import BaseEntity

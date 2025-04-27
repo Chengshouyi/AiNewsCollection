@@ -1,11 +1,14 @@
 [MESSAGES CONTROL]
 # Disable the specified messages.
-disable=C0114, # missing-module-docstring
+disable=;W0621, # redefined-outer-name
+        W0611, # unused-import
+        ;W0612, # redefined-outer-name
+        ;W0718, # redefined-outer-name
+        W0613, # unused-argument
+        C0114, # missing-module-docstring
         C0115, # missing-class-docstring
         C0116, # missing-function-docstring
+        C0301, # line-too-long
         R0903, # too-few-public-methods
-        W0611, # unused-import
-        C0301,  # line-too-long
-        W0612,
-        W0718,
-        W0613 # unused-argument
+
+

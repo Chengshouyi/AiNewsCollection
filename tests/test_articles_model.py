@@ -1,7 +1,7 @@
 """本模組針對 Articles 相關模型進行單元測試，驗證其資料結構與資料庫互動行為。"""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -10,6 +10,9 @@ from src.models.articles_model import Articles, ArticleScrapeStatus
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.base_model import Base
 from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+
+# flake8: noqa: F811
+# pylint: disable=redefined-outer-name
 
 logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
 
@@ -257,7 +260,6 @@ class TestArticleModel:
 
     def test_article_utc_datetime_conversion(self, initialized_db_manager):
         """測試 Article 的 published_at 欄位 UTC 時間轉換"""
-        from datetime import timedelta
 
         # 測試 1: 傳入無時區資訊的 datetime (naive datetime)
         naive_time = datetime(2025, 3, 28, 12, 0, 0)  # 無時區資訊
