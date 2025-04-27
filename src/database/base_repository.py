@@ -331,7 +331,9 @@ class BaseRepository(Generic[T], ABC):
                 return None
 
             if hasattr(entity, "updated_at"):
-                entity.updated_at = datetime.now(timezone.utc)
+                new_time = datetime.now(timezone.utc)
+                entity.updated_at = new_time
+                # flag_modified(entity, "updated_at")
                 logger.debug("手動更新 updated_at 為 %s", entity.updated_at)
 
             msg = f"實體準備更新 (待提交): {entity}"
@@ -442,11 +444,14 @@ class BaseRepository(Generic[T], ABC):
         if extra_filters:
             for extra_filter in extra_filters:
                 count_query = count_query.filter(extra_filter)
-        total = self.execute_query(count_query.count(), err_msg="計算總記錄數時出錯")
+        total = self.execute_query(
+            lambda: count_query.count(),
+            err_msg="計算總記錄數時出錯",  # pylint: disable=unnecessary-lambda
+        )
 
         paginated_query = sorted_query.offset(offset).limit(per_page)
         raw_items = self.execute_query(
-            paginated_query.all(),
+            lambda: paginated_query.all(),  # pylint: disable=unnecessary-lambda
             err_msg=f"分頁獲取資料時發生錯誤 (Page: {page}, PerPage: {per_page})",
         )
 
