@@ -36,25 +36,18 @@ def initialized_db_manager(db_manager_for_test):
     """Fixture that depends on db_manager_for_test, creates tables, and yields the manager."""
     logger.debug("Creating tables for test function...")
     try:
-        # Ensure all models related to this test file are known to Base.metadata
-        # This might involve importing them if Base is defined elsewhere or ensuring
-        # they inherit from the correct Base.
+
         db_manager_for_test.create_tables(Base)
         yield db_manager_for_test
     finally:
         logger.debug(
             "Test function finished, tables might be dropped by manager cleanup or next test setup."
         )
-        # Optionally drop tables here if db_manager_for_test doesn't handle it
-        # db_manager_for_test.drop_tables(Base)
 
 
 @pytest.fixture(scope="function")
 def crawler_task_history_repo(initialized_db_manager):
     """為每個測試函數創建新的 CrawlerTaskHistoryRepository 實例"""
-    # This fixture now provides the repo within a managed session scope
-    # Tests that only need the repo can use this directly.
-    # Tests needing direct session access should use initialized_db_manager directly.
     with initialized_db_manager.session_scope() as session:
         yield CrawlerTaskHistoryRepository(session, CrawlerTaskHistory)
 
