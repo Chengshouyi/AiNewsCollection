@@ -486,7 +486,7 @@ class CrawlerTasksRepository(BaseRepository["CrawlerTasks"]):
             )
             page = 1
 
-        total, items = self.find_paginated(
+        _, items = self.find_paginated(
             filter_criteria=filter_criteria,
             page=page,
             per_page=per_page,
@@ -540,7 +540,7 @@ class CrawlerTasksRepository(BaseRepository["CrawlerTasks"]):
             )
             page = 1
 
-        total, items = self.find_paginated(
+        _, items = self.find_paginated(
             filter_criteria=filter_criteria,
             page=page,
             per_page=per_page,
@@ -717,7 +717,7 @@ class CrawlerTasksRepository(BaseRepository["CrawlerTasks"]):
             )
             page = 1
 
-        total, items = self.find_paginated(
+        _, items = self.find_paginated(
             filter_criteria=filter_criteria,
             page=page,
             per_page=per_page,
