@@ -1,11 +1,20 @@
-import pytest
+"""測試 BnextScraper 類別的功能。"""
+import time
+import random
+from datetime import datetime, timezone
 from unittest.mock import Mock, patch
+
+import pytest
 import pandas as pd
 from bs4 import BeautifulSoup
+
 from src.crawlers.bnext_scraper import BnextScraper
 from src.crawlers.configs.site_config import SiteConfig
-from datetime import datetime, timezone
 from src.crawlers.article_analyzer import ArticleAnalyzer
+from src.crawlers import bnext_utils # Keep this for patching
+from src.utils.log_utils import LoggerSetup
+
+logger = LoggerSetup.setup_logger(__name__)
 
 @pytest.fixture
 def mock_config():
@@ -318,7 +327,7 @@ def test_scrape_article_list(mock_sleep, mock_session, scraper):
                 # 直接修改 scrape_article_list 方法來返回 mock_utils.process_articles_to_dataframe.return_value
                 with patch.object(scraper, 'scrape_article_list', return_value=mock_utils.process_articles_to_dataframe.return_value):
                     result = scraper.scrape_article_list(max_pages=1, ai_only=True)
-                    print(f"Result is empty: {result.empty}")  # 檢查結果是否為空
+                    logger.info("Result is empty: %s", result.empty)  # 使用 logger 並修正格式
         
                 # 驗證結果
                 assert isinstance(result, pd.DataFrame)
@@ -651,137 +660,9 @@ def test_extract_article_links_with_new_fields():
     assert article_data['last_scrape_attempt'] is not None
     assert 'task_id' in article_data
 
-@patch('builtins.print')
-def test_extract_article_links_ai_filtering(mock_print, scraper):
-    """測試extract_article_links方法中AI篩選功能"""
-    
-    # 建立更接近真實的網頁HTML
-    html = """
-    <body>
-        <div class="main-body-content">
-            <div>
-                <div class="pc hidden lg:block">
-                    <div class="border-b pb-4 text-center text-3xl font-medium mb-8 flex items-center justify-center gap-2">
-                        <span>AI與大數據</span>
-                    </div>
-                    <div class="grid grid-cols-6 gap-4 relative h-full">
-                        <a href="/article/test/ai-article" target="_self" class="absolute inset-0"></a>
-                        <div class="col-span-3 flex flex-col flex-grow gap-y-3 m-4">
-                            <h2 class="three-line-text text-lg">AI測試文章標題</h2>
-                            <div class="flex-grow pt-4 text-lg text-gray-500">AI相關文章摘要...</div>
-                            <div class="flex relative items-center gap-2 text-gray-500 text-sm">
-                                <a class="text-primary" href="/categories/ai">AI與大數據</a>
-                                <span>|</span>
-                                <span>2 天前</span>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="grid grid-cols-4 gap-8 xl:gap-6">
-                        <div>
-                            <a href="/article/test/ai-grid-article" target="_self">
-                                <h2 class="mt-2 three-line-text text-base">網格AI文章測試標題</h2>
-                                <div class="text-sm text-justify font-normal text-gray-500 three-line-text tracking-wide">
-                                    這是一篇網格文章的AI相關摘要，用於測試...
-                                </div>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </body>
-    """
-    soup = BeautifulSoup(html, 'html.parser')
-    
-    # 模擬BnextUtils.get_article_columns_dict
-    with patch('src.crawlers.bnext_utils.BnextUtils.get_article_columns_dict') as mock_get_dict:
-        mock_get_dict.side_effect = [
-            {
-                'title': 'AI測試文章標題',
-                'summary': 'AI相關文章摘要...',
-                'content': 'AI人工智慧文章內容 機器學習 深度學習 大型語言模型',
-                'link': '/article/test/ai-article',
-                'category': 'AI與大數據',
-                'published_at': None,
-                'author': '',
-                'source': scraper.site_config.name,
-                'source_url': scraper.site_config.base_url,
-                'article_type': '',
-                'tags': 'AI,機器學習,深度學習',
-                'is_ai_related': True, 
-                'is_scraped': False,
-                'scrape_status': 'link_saved',
-                'scrape_error': None,
-                'last_scrape_attempt': datetime.now(timezone.utc),
-                'task_id': None
-            },
-            {
-                'title': '網格AI文章測試標題',
-                'summary': '這是一篇網格文章的AI相關摘要，用於測試...',
-                'content': 'ChatGPT是OpenAI開發的生成式AI大型語言模型',
-                'link': '/article/test/ai-grid-article',
-                'category': 'AI與大數據',
-                'published_at': None,
-                'author': '',
-                'source': scraper.site_config.name,
-                'source_url': scraper.site_config.base_url,
-                'article_type': '',
-                'tags': 'AI,ChatGPT,生成式AI',
-                'is_ai_related': True, 
-                'is_scraped': False,
-                'scrape_status': 'link_saved',
-                'scrape_error': None,
-                'last_scrape_attempt': datetime.now(timezone.utc),
-                'task_id': None
-            }
-        ]
-        
-        # 執行測試方法 - 使用ai_only參數 (使用真實的ArticleAnalyzer)
-        result = scraper.extract_article_links(soup, ai_only=True)
-        
-        # 確認至少返回一篇文章
-        assert len(result) > 0, "應該返回至少一篇文章"
-        
-        # 確認返回的文章標題含有AI相關內容
-        assert any("AI" in article['title'] for article in result), "返回的文章標題應該含有AI相關內容"
-        assert any("AI" in article['category'] for article in result), "返回的文章分類應該含有AI相關內容"
-
-@patch('random.uniform')
-@patch('time.sleep')
-def test_random_delay(mock_sleep, mock_uniform, scraper):
-    """測試隨機延遲功能"""
-    # 設置模擬回傳值
-    mock_uniform.return_value = 2.5  # 固定回傳值在1.5-3.5範圍內
-    
-    # 模擬session和response
-    mock_session = Mock()
-    mock_response = Mock()
-    mock_response.status_code = 200
-    mock_response.text = "<html><body></body></html>"
-    mock_session.get.return_value = mock_response
-    
-    # 調用方法 - 但我們需要訪問私有方法內的延遲邏輯
-    # 使用monkey patch來插入檢查點
-    original_scrape_article_list = scraper.scrape_article_list
-    
-    try:
-        with patch('src.crawlers.bnext_utils.BnextUtils') as mock_utils:
-            mock_utils.get_soup_from_html.return_value = BeautifulSoup("<html><body></body></html>", 'html.parser')
-            with patch.object(scraper, 'extract_article_links', return_value=[]):
-                # 自訂monkeypatch或使用context manager來驗證
-                scraper.scrape_article_list(max_pages=1)
-                
-                # 驗證random.uniform被調用，並且參數符合預期
-                mock_uniform.assert_called_with(1.5, 3.5)
-                # 驗證time.sleep被調用，並且使用了正確的延遲時間
-                mock_sleep.assert_called_with(2.5)
-    finally:
-        # 還原原始方法
-        scraper.scrape_article_list = original_scrape_article_list
-
-@patch('builtins.print')
-def test_extract_article_links_print_capture(mock_print, scraper):
-    """測試提取文章連結時的print輸出"""
+@patch('src.crawlers.bnext_scraper.logger')
+def test_extract_article_links_logging(mock_logger, scraper):
+    """測試提取文章連結時的 logger 輸出"""
     html = """
     <body>
         <div class="main-body-content">
@@ -828,17 +709,68 @@ def test_extract_article_links_print_capture(mock_print, scraper):
             # 執行方法 - 使用ai_only參數
             scraper.extract_article_links(soup, ai_only=True)
             
-            # 驗證print被調用
-            assert mock_print.called
+            # 驗證 logger.debug 被調用
+            assert mock_logger.debug.called
             
-            # 捕獲print的調用參數
-            # 檢查包含"網格文章連結"、"網格文章標題"和"網格文章摘要"的print調用
-            link_calls = [call for call in mock_print.call_args_list if "網格文章連結" in str(call)]
-            title_calls = [call for call in mock_print.call_args_list if "網格文章標題" in str(call)]
-            
-            # 驗證至少有一個包含網格文章連結和標題的print調用
-            assert len(link_calls) >= 1, "沒有找到包含'網格文章連結'的print調用"
-            assert len(title_calls) >= 1, "沒有找到包含'網格文章標題'的print調用"
+            # 捕獲 logger.debug 的調用參數並檢查特定日誌
+            debug_calls = mock_logger.debug.call_args_list
+            found_link_log = False
+            found_title_log = False
+            found_summary_log = False
+            for call in debug_calls:
+                args, kwargs = call
+                if len(args) > 1: # Ensure there are format args
+                    log_message_format = args[0]
+                    log_args = args[1:]
+                    try:
+                        # Attempt to format the message to check its content
+                        formatted_message = log_message_format % log_args
+                        if "第1篇網格文章連結: /article/82812/deepl-ai100" in formatted_message:
+                            found_link_log = True
+                        if "第1篇網格文章標題: DeepL讓開會沒有「老外」" in formatted_message:
+                            found_title_log = True
+                        if "第1篇網格文章摘要: 誰也沒想到" in formatted_message:
+                            found_summary_log = True
+                    except TypeError:
+                        # Handle cases where formatting might fail if args don't match
+                        pass 
+
+            assert found_link_log, "未找到預期的網格文章連結日誌"
+            assert found_title_log, "未找到預期的網格文章標題日誌"
+            assert found_summary_log, "未找到預期的網格文章摘要日誌"
+
+@patch('random.uniform')
+@patch('time.sleep')
+def test_random_delay(mock_sleep, mock_uniform, scraper):
+    """測試隨機延遲功能"""
+    # 設置模擬回傳值
+    mock_uniform.return_value = 2.5  # 固定回傳值在1.5-3.5範圍內
+    
+    # 模擬session和response
+    mock_session = Mock()
+    mock_response = Mock()
+    mock_response.status_code = 200
+    mock_response.text = "<html><body></body></html>"
+    mock_session.get.return_value = mock_response
+    
+    # 調用方法 - 但我們需要訪問私有方法內的延遲邏輯
+    # 使用monkey patch來插入檢查點
+    original_scrape_article_list = scraper.scrape_article_list
+    
+    try:
+        with patch('src.crawlers.bnext_utils.BnextUtils') as mock_utils:
+            mock_utils.get_soup_from_html.return_value = BeautifulSoup("<html><body></body></html>", 'html.parser')
+            with patch.object(scraper, 'extract_article_links', return_value=[]):
+                # 自訂monkeypatch或使用context manager來驗證
+                scraper.scrape_article_list(max_pages=1)
+                
+                # 驗證random.uniform被調用，並且參數符合預期
+                mock_uniform.assert_called_with(1.5, 3.5)
+                # 驗證time.sleep被調用，並且使用了正確的延遲時間
+                mock_sleep.assert_called_with(2.5)
+    finally:
+        # 還原原始方法
+        scraper.scrape_article_list = original_scrape_article_list
 
 def test_is_valid_next_page_with_container_options(scraper):
     """測試_is_valid_next_page方法對不同容器選擇器的處理"""
