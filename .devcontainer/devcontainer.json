@@ -22,7 +22,7 @@
                 "ms-azuretools.vscode-docker",
                 "njpwerner.autodocstring",
                 "ms-python.debugpy",
-                "ms-python.black-formatter", // 添加 Black Formatter 擴充
+                // "ms-python.black-formatter", // 添加 Black Formatter 擴充
                 "ms-python.pylint", // 添加 Pylint 擴充
                 "mtxr.sqltools", // SQLTools 核心
                 "mtxr.sqltools-driver-pg" // <<< 修改：使用 PostgreSQL Driver

@@ -1,24 +1,28 @@
+"""定義爬蟲基類，提供爬取流程的基礎架構和通用方法。"""
+# Standard library imports
 from abc import ABC, abstractmethod
-from typing import Dict, Optional, Any, List, Tuple, Callable
-import pandas as pd
 from datetime import datetime, timezone
-import logging
-import time
 import json
 import os
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
+from typing import Dict, Optional, Any, List, Tuple, Callable
+
+# Third-party library imports
+import pandas as pd
+
+# Local application imports
 from src.crawlers.bnext_utils import BnextUtils
 from src.crawlers.configs.site_config import SiteConfig
-from src.services.article_service import ArticleService
-from src.utils.model_utils import validate_positive_int, validate_boolean, validate_str, validate_task_args
-from src.utils.transform_utils import convert_hashable_dict_to_str_dict
 from src.error.errors import ValidationError
-from src.utils.enum_utils import ScrapePhase, ScrapeMode, ArticleScrapeStatus
-from src.interface.progress_reporter import ProgressReporter, ProgressListener
+from src.interface.progress_reporter import ProgressListener, ProgressReporter
+from src.services.article_service import ArticleService
+from src.utils.enum_utils import ArticleScrapeStatus, ScrapeMode, ScrapePhase
+from src.utils.log_utils import LoggerSetup
+from src.utils.model_utils import validate_task_args
+from src.utils.transform_utils import convert_hashable_dict_to_str_dict
 
-# 設定 logger
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+
+logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
 
 class BaseCrawler(ABC):
     # 任務權重配置，用於動態計算進度百分比
@@ -63,7 +67,7 @@ class BaseCrawler(ABC):
     def _fetch_article_links(self, task_id: int) -> Optional[pd.DataFrame]:
         """
         抓取文章列表
-        
+
         Returns:
             pd.DataFrame: 包含文章列表的資料框
         """
@@ -73,10 +77,10 @@ class BaseCrawler(ABC):
     def _fetch_articles(self, task_id: int) -> Optional[List[Dict[str, Any]]]:
         """
         爬取文章詳細內容，子類別需要實作
-        
+
         Args:
             task_id: 任務ID，用於檢查是否取消
-            
+
         Returns:
             List[Dict[str, Any]]: 包含文章詳細內容的列表，如果爬取失敗則返回None
         """
@@ -98,31 +102,30 @@ class BaseCrawler(ABC):
                 # 獲取專案根目錄
                 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
                 config_path = os.path.join(project_root, 'src', 'crawlers', 'configs', self.config_file_name)
-                logger.debug(f"嘗試讀取配置檔案路徑: {config_path}")
+                logger.debug("嘗試讀取配置檔案路徑: %s", config_path)
                 
                 with open(config_path, 'r', encoding='utf-8') as f:
                     file_config = json.load(f)
                     # 使用文件配置更新默認配置
                     self.config_data.update(file_config)
                 
-                logger.debug(f"已載入爬蟲配置: {self.config_file_name}")
-                logger.debug(f"已載入爬蟲配置: {self.config_data}")
+                logger.debug("已載入爬蟲配置: %s", self.config_file_name)
+                logger.debug("已載入爬蟲配置: %s", self.config_data)
             except (json.JSONDecodeError, FileNotFoundError) as e:
-                logger.warning(f"載入配置文件失敗: {str(e)}，使用預設配置")
+                logger.warning("載入配置文件失敗: %s，使用預設配置", e)
                 raise ValueError("未找到配置文件")
         else:
-            logger.error(f"未找到配置文件")
+            logger.error("未找到配置文件")
             raise ValueError("未找到配置文件")  
         
 
     def _create_site_config(self):
         """創建站點配置"""
         if not self.config_data:
-            logger.debug(f"base_crawler - call_load_site_config()： 載入站點配置")
+            logger.debug("base_crawler - call_load_site_config()： 載入站點配置")
             self._load_site_config()
         
-        # 創建 site_config
-        logger.debug(f"base_crawler - call_create_site_config()： 創建 site_config")
+        logger.debug("base_crawler - call_create_site_config()： 創建 site_config")
         self.site_config = SiteConfig(
             name=self.config_data.get("name", None),
             base_url=self.config_data.get("base_url", None),
@@ -140,12 +143,12 @@ class BaseCrawler(ABC):
         for key in required_site_config_keys:
             value = getattr(self.site_config, key, None)
             if value is None:
-                logger.error(f"未提供 {key} 值，請設定有效值")
+                logger.error("未提供 %s 值，請設定有效值", key)
                 raise ValueError(f"未提供 {key} 值，請設定有效值")
 
     def _fetch_article_links_by_filter(self, **filters) -> Optional[pd.DataFrame]:
         """根據過濾條件從資料庫獲取文章列表
-        
+
         Args:
             **filters: 可選的過濾條件，直接傳遞給find_articles_advanced方法
                 - task_id: 任務ID
@@ -191,9 +194,6 @@ class BaseCrawler(ABC):
                             if key not in article_dict:
                                 article_dict[key] = None # 或提供默認值
 
-                        # 使用 BnextUtils 確保欄位一致性 (如果需要)
-                        # articles_data.append(BnextUtils.get_article_columns_dict(**article_dict))
-                        # 或者直接使用字典，如果鍵已對應
                         articles_data.append(article_dict)
                     else:
                         # 如果文章不存在，創建一個簡單記錄
@@ -237,10 +237,8 @@ class BaseCrawler(ABC):
 
             # 如果還有未處理的過濾器，記錄警告
             if filters:
-                logger.warning(f"發現未處理的過濾條件: {filters.keys()}，這些條件將被忽略。")
+                logger.warning("發現未處理的過濾條件: %s，這些條件將被忽略。", filters.keys())
 
-
-            # --- 修改：調用 find_articles_advanced 並處理返回結果 ---
             articles_response = self.article_service.find_articles_advanced(**advanced_filters)
 
             if articles_response["success"] and articles_response.get("resultMsg") and articles_response["resultMsg"].items:
@@ -256,25 +254,21 @@ class BaseCrawler(ABC):
                     if 'scrape_status' in article_dict and hasattr(article_dict['scrape_status'], 'value'):
                         article_dict['scrape_status'] = article_dict['scrape_status'].value
 
-                    # 使用 BnextUtils 確保欄位一致性 (如果需要)
-                    # articles_data.append(BnextUtils.get_article_columns_dict(**article_dict))
-                    # 或者直接使用字典，如果鍵已對應
                     articles_data.append(article_dict)
 
-                logger.debug(f"根據過濾條件獲取文章列表成功: {len(articles_data)}篇")
+                logger.debug("根據過濾條件獲取文章列表成功: %d篇", len(articles_data))
                 return pd.DataFrame(articles_data)
             else:
                 message = articles_response.get('message', '未知錯誤')
                 # 檢查是否是因為找不到數據而導致的 "失敗"
                 if articles_response.get("resultMsg") and not articles_response["resultMsg"].items:
-                    logger.info(f"根據過濾條件未找到任何文章。")
+                    logger.info("根據過濾條件未找到任何文章。")
                     return pd.DataFrame() # 返回空的 DataFrame
                 else:
-                    logger.warning(f"根據過濾條件獲取文章列表失敗: {message}")
+                    logger.warning("根據過濾條件獲取文章列表失敗: %s", message)
                     return None
-            # --- 結束修改 ---
         except Exception as e:
-            logger.error(f"根據過濾條件獲取文章列表失敗: {str(e)}", exc_info=True)
+            logger.error("根據過濾條件獲取文章列表失敗: %s", e, exc_info=True)
             return None
 
     def _save_to_database(self):
@@ -319,14 +313,13 @@ class BaseCrawler(ABC):
                     )
                 
                 if not result["success"]:
-                    logger.error(f"批量保存文章到資料庫失敗: {result['message']}")
-                    # 可以考慮從 result['resultMsg'] 中獲取更詳細的錯誤信息
+                    logger.error("批量保存文章到資料庫失敗: %s", result['message'])
                     return
                 
-                logger.info(f"批量保存文章到資料庫成功: {result['message']}")
+                logger.info("批量保存文章到資料庫成功: %s", result['message'])
                 
         except Exception as e:
-            logger.error(f"保存到資料庫失敗: {str(e)}")
+            logger.error("保存到資料庫失敗: %s", e)
             raise e
 
     def _save_to_csv(self, data: pd.DataFrame, csv_path: Optional[str] = None):
@@ -339,9 +332,9 @@ class BaseCrawler(ABC):
             # 確保目錄存在
             os.makedirs(os.path.dirname(csv_path) or '.', exist_ok=True)
             data.to_csv(csv_path, index=False, encoding='utf-8-sig')
-            logger.debug(f"文章數據已保存到 CSV 文件: {csv_path}")
+            logger.debug("文章數據已保存到 CSV 文件: %s", csv_path)
         except Exception as e:
-            logger.error(f"保存文章到 CSV 文件失敗: {str(e)}", exc_info=True)
+            logger.error("保存文章到 CSV 文件失敗: %s", e, exc_info=True)
 
     def _update_articles_with_content(self, articles_df: pd.DataFrame, articles_content: List[Dict[str, Any]]) -> pd.DataFrame:
         """
@@ -415,7 +408,7 @@ class BaseCrawler(ABC):
             return merged_df
             
         except Exception as e:
-            logger.error(f"更新文章內容失敗: {str(e)}", exc_info=True)
+            logger.error("更新文章內容失敗: %s", e, exc_info=True)
             return articles_df
 
     def _validate_and_update_task_params(self, task_id: int, task_args: Dict[str, Any]) -> bool:
@@ -439,7 +432,7 @@ class BaseCrawler(ABC):
                 # 修改調用方式，指定 is_update=False 表示這是完整模式而非更新模式
                 validated_task_args = validate_task_args('task_args')(task_args, is_update=False)
             except ValidationError as e:
-                logger.error(f"任務參數驗證失敗: {str(e)}")
+                logger.error("任務參數驗證失敗: %s", e)
                 self._update_scrape_phase(task_id, 0, f'任務參數驗證失敗: {str(e)}', ScrapePhase.FAILED)
                 return False
             
@@ -453,7 +446,7 @@ class BaseCrawler(ABC):
             return True
             
         except Exception as e:
-            logger.error(f"更新任務參數失敗: {str(e)}", exc_info=True)
+            logger.error("更新任務參數失敗: %s", e, exc_info=True)
             self._update_scrape_phase(task_id, 0, f'更新任務參數失敗: {str(e)}', ScrapePhase.FAILED)
             return False
 
@@ -567,11 +560,11 @@ class BaseCrawler(ABC):
             
         except Exception as e:
             # 檢查是否是因為任務取消而引發的異常
-            if "任務 {} 已取消".format(task_id) in str(e):
+            if task_id and "任務 {} 已取消".format(task_id) in str(e):
                 return self._handle_task_cancellation(task_id)
             
             self._update_scrape_phase(task_id, 0, f'任務失敗: {str(e)}', ScrapePhase.FAILED)
-            logger.error(f"執行任務失敗 (ID={task_id}): {str(e)}", exc_info=True)
+            logger.error("執行任務失敗 (ID=%s): %s", task_id, e, exc_info=True)
             return {
                 'success': False,
                 'message': f'任務失敗: {str(e)}',
@@ -892,10 +885,10 @@ class BaseCrawler(ABC):
         except Exception as e:
             # 檢查是否是因為任務取消而引發的異常
             if task_id and "任務 {} 已取消".format(task_id) in str(e):
-                logger.info(f"抓取文章列表時檢測到任務 {task_id} 已取消")
+                logger.info("抓取文章列表時檢測到任務 %s 已取消", task_id)
                 return None
                 
-            logger.error(f"抓取文章列表失敗: {str(e)}", exc_info=True)
+            logger.error("抓取文章列表失敗: %s", e, exc_info=True)
             raise
     
     def _save_results(self, task_id: int) -> None:
@@ -939,7 +932,7 @@ class BaseCrawler(ABC):
                 self._update_scrape_phase(task_id, progress, '保存數據到資料庫完成', ScrapePhase.SAVE_TO_DATABASE)
                 
         except Exception as e:
-            logger.error(f"保存結果失敗: {str(e)}", exc_info=True)
+            logger.error("保存結果失敗: %s", e, exc_info=True)
             raise
     
     def _update_scrape_phase(self, task_id: int, progress: int, message: str, scrape_phase: Optional[ScrapePhase] = None):
@@ -953,11 +946,11 @@ class BaseCrawler(ABC):
                 
             # 記錄日誌
             if scrape_phase:
-                logger.info(f"任務 {task_id} {scrape_phase.value}: {progress}%, {message}")
+                logger.info("任務 %s %s: %d%%, %s", task_id, scrape_phase.value, progress, message)
             else:
-                logger.debug(f"任務進度更新 (ID={task_id}): {progress}%, {message}")
+                logger.debug("任務進度更新 (ID=%s): %d%%, %s", task_id, progress, message)
             
-            # 新增：通知監聽者
+            # 通知監聽者
             progress_data = self.get_scrape_phase(task_id)
             self.progress_reporter.notify_progress(task_id, progress_data)
     
@@ -992,10 +985,10 @@ class BaseCrawler(ABC):
             except Exception as e:
                 retries += 1
                 if retries >= max_retries:
-                    logger.error(f"操作失敗，已重試 {retries} 次: {str(e)}")
+                    logger.error("操作失敗，已重試 %d 次: %s", retries, e)
                     raise e
                 
-                logger.warning(f"操作失敗，正在重試 ({retries}/{max_retries}): {str(e)}")
+                logger.warning("操作失敗，正在重試 (%d/%d): %s", retries, max_retries, e)
                 time.sleep(retry_delay)
                 
     def cancel_task(self, task_id: int) -> bool:
@@ -1008,12 +1001,12 @@ class BaseCrawler(ABC):
             是否成功取消
         """
         if task_id not in self.scrape_phase:
-            logger.warning(f"任務 {task_id} 不存在，無法取消")
+            logger.warning("任務 %s 不存在，無法取消", task_id)
             return False
             
         # 檢查任務狀態，只有運行中的任務才能取消
         if self.scrape_phase[task_id].get('scrape_phase') in [ScrapePhase.CANCELLED.value,  ScrapePhase.FAILED.value, ScrapePhase.COMPLETED.value]:
-            logger.warning(f"任務 {task_id} 當前狀態為 {self.scrape_phase[task_id].get('scrape_phase')}，無法取消")
+            logger.warning("任務 %s 當前狀態為 %s，無法取消", task_id, self.scrape_phase[task_id].get('scrape_phase'))
             return False
             
         self.scrape_phase[task_id]['cancel_flag'] = True
@@ -1030,7 +1023,7 @@ class BaseCrawler(ABC):
             bool: 是否已取消
         """
         if task_id in self.scrape_phase and self.scrape_phase[task_id].get('cancel_flag', False):
-            logger.info(f"任務 {task_id} 已被取消，停止執行")
+            logger.info("任務 %s 已被取消，停止執行", task_id)
             return True
         return False
 
@@ -1049,7 +1042,7 @@ class BaseCrawler(ABC):
         Returns:
             Dict[str, Any]: 標準化的任務取消響應
         """
-        logger.info(f"正在處理任務 {task_id} 的取消清理工作...")
+        logger.info("正在處理任務 %s 的取消清理工作...", task_id)
         
         # 更新任務狀態為取消
         self._update_scrape_phase(task_id, self.scrape_phase[task_id].get('progress', 0), '任務已取消並清理完成', ScrapePhase.CANCELLED)
@@ -1073,7 +1066,7 @@ class BaseCrawler(ABC):
                         csv_path = f'./logs/{csv_file_name}'
                         
                         self._save_to_csv(self.articles_df, csv_path)
-                        logger.info(f"已將取消任務的部分數據保存到 {csv_path}")
+                        logger.info("已將取消任務的部分數據保存到 %s", csv_path)
                     
                     # 保存到資料庫（如果配置了且獲取了有意義的數據）
                     if self.global_params.get('save_to_database', False) and self.global_params.get('save_partial_to_database', False):
@@ -1089,11 +1082,11 @@ class BaseCrawler(ABC):
                             self._save_to_database()
                             self.articles_df = original_df
                             
-                            logger.info(f"已將取消任務的 {len(complete_articles)} 篇完整文章保存到資料庫")
+                            logger.info("已將取消任務的 %d 篇完整文章保存到資料庫", len(complete_articles))
                     
                     partial_data_saved = True
                 except Exception as e:
-                    logger.error(f"保存取消任務的部分數據時發生錯誤: {str(e)}")
+                    logger.error("保存取消任務的部分數據時發生錯誤: %s", e)
         
         # 釋放資源：清空DataFrame以釋放記憶體
         if hasattr(self, 'articles_df'):

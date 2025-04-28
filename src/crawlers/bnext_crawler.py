@@ -1,15 +1,20 @@
-import pandas as pd
-import logging
-from src.crawlers.base_crawler import BaseCrawler
-from src.crawlers.bnext_scraper import BnextScraper
-from src.crawlers.bnext_content_extractor import BnextContentExtractor
+"""定義 BnextCrawler 類別，用於爬取 Bnext 網站的文章。"""
+
+# 標準函式庫
 from typing import Optional, List, Dict, Any
-from src.models.crawler_tasks_model import ScrapeMode
-from src.utils.enum_utils import ArticleScrapeStatus
-# 設定 logger
-logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+
+# 第三方函式庫
+import pandas as pd
+
+# 本地應用程式 imports
+from src.crawlers.base_crawler import BaseCrawler
+from src.crawlers.bnext_content_extractor import BnextContentExtractor
+from src.crawlers.bnext_scraper import BnextScraper
+from src.models.articles_model import ArticleScrapeStatus # 確保導入 ArticleScrapeStatus
+from src.utils.log_utils import LoggerSetup
+
+# 使用統一的 logger
+logger = LoggerSetup.setup_logger(__name__)
 
 class BnextCrawler(BaseCrawler):
     def __init__(self, config_file_name: Optional[str] = None, article_service=None, scraper=None, extractor=None):
@@ -23,17 +28,17 @@ class BnextCrawler(BaseCrawler):
         """
         super().__init__(config_file_name, article_service)
         
-        # 創建爬蟲實例，傳入配置
-        logger.debug(f"BnextCrawler - call_create_scraper()： 建立爬蟲實例")
+        # 創建爬蟲和擷取器實例，傳入配置
+        logger.debug("BnextCrawler - call_create_scraper(): 建立爬蟲實例")
         self.scraper = scraper or BnextScraper(
             config=self.site_config
         )
-        logger.debug(f"BnextCrawler - call_create_extractor()： 建立文章內容擷取器")
+        logger.debug("BnextCrawler - call_create_extractor(): 建立文章內容擷取器")
         self.extractor = extractor or BnextContentExtractor(
             config=self.site_config
         )
         
-        # 設置資料庫
+        # 初始化 DataFrame
         self.articles_df = pd.DataFrame()
 
     def _update_config(self):
@@ -55,7 +60,7 @@ class BnextCrawler(BaseCrawler):
                 - ai_only (bool): 是否只抓取 AI 相關文章，預設為 True
             
         Returns:
-            pd.DataFrame: 包含文章列表的資料框
+            pd.DataFrame: 包含文章列表的資料框，若無文章或發生錯誤則返回 None
         """
         # 檢查任務是否已取消
         if task_id and self._check_if_cancelled(task_id):
@@ -77,10 +82,10 @@ class BnextCrawler(BaseCrawler):
             categories = categories[:1]
             # 更新site_config中的類別
             self.site_config.categories = categories
-            logger.info(f"測試模式：只使用第一個類別 {categories[0]} 進行測試")
+            logger.info("測試模式：只使用第一個類別 %s 進行測試", categories[0])
         
-        logger.debug(f"抓取文章列表參數設定：最大頁數: {max_pages}, 文章類別: {categories}, AI 相關文章: {ai_only}")
-        logger.debug(f"抓取文章列表中...")
+        logger.debug("抓取文章列表參數設定：最大頁數: %s, 文章類別: %s, AI 相關文章: %s", max_pages, categories, ai_only)
+        logger.debug("抓取文章列表中...")
         article_links_df = self.retry_operation(
             lambda: self.scraper.scrape_article_list(max_pages, ai_only, min_keywords)
         )
@@ -88,7 +93,7 @@ class BnextCrawler(BaseCrawler):
             logger.warning("沒有文章列表可供處理")
             return None
         else:
-            logger.debug(f"成功抓取文章列表")
+            logger.debug("成功抓取文章列表")
             return article_links_df
 
 
@@ -139,7 +144,7 @@ class BnextCrawler(BaseCrawler):
             return articles_content
             
         except Exception as e:
-            logger.error(f"抓取文章內容時發生錯誤: {str(e)}")
+            logger.error("抓取文章內容時發生錯誤: %s", e)
             return None
 
 

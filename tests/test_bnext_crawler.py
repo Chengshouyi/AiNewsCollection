@@ -1,18 +1,30 @@
-import pytest
-import pandas as pd
+"""測試 BnextCrawler 類及其相關功能的單元測試。"""
+
+# 標準函式庫
+import json
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch, mock_open
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch, mock_open
+
+# 第三方函式庫
+import pandas as pd
+import pytest
+
+# 本地應用程式 imports
+from src.crawlers.bnext_content_extractor import BnextContentExtractor
 from src.crawlers.bnext_crawler import BnextCrawler
 from src.crawlers.bnext_scraper import BnextScraper
-from src.crawlers.bnext_content_extractor import BnextContentExtractor
-from src.services.article_service import ArticleService
-from src.models.articles_model import Articles, ArticleScrapeStatus
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-from src.models.base_model import Base
-import json
 from src.database.database_manager import DatabaseManager
+from src.models.articles_model import Articles, ArticleScrapeStatus
+from src.models.base_model import Base
+from src.services.article_service import ArticleService
+from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+
+# flake8: noqa: F811
+# pylint: disable=redefined-outer-name
+
+# 使用統一的 logger
+logger = LoggerSetup.setup_logger(__name__)
 
 # 測試用的配置
 TEST_CONFIG = {
@@ -162,41 +174,40 @@ def mock_article_service():
     }
     return service
 
-@pytest.fixture(scope="session")
-def engine():
-    """創建測試用的資料庫引擎"""
-    return create_engine('sqlite:///:memory:')
+@pytest.fixture(scope="function")
+def initialized_db_manager(db_manager_for_test: DatabaseManager):
+    """
+    提供一個初始化好的 DatabaseManager 實例。
+    確保資料表已創建，並在每次測試前清理 Articles 資料表。
+    依賴 conftest.py 中的 db_manager_for_test。
+    """
+    # 確保資料表存在 (假設 db_manager_for_test 會處理引擎)
+    try:
+        Base.metadata.create_all(db_manager_for_test.engine)
+    except Exception as e:
+        # 可以添加日誌記錄
+        print(f"創建資料表時出錯: {e}") # 暫時用 print 替代 logger
+        raise
 
-@pytest.fixture(scope="session")
-def tables(engine):
-    """創建資料表"""
-    Base.metadata.create_all(engine)
-    yield
-    Base.metadata.drop_all(engine)
+    # 在每次測試前清理 Articles 資料表
+    try:
+        with db_manager_for_test.session_scope() as session:
+            session.query(Articles).delete()
+            session.commit()
+    except Exception as e:
+        print(f"清理 Articles 資料表時出錯: {e}") # 暫時用 print 替代 logger
+        # 即使清理失敗，也繼續執行測試
+
+    yield db_manager_for_test
+    # 清理工作應由 db_manager_for_test 或其相關的 session fixture 處理
 
 @pytest.fixture(scope="function")
-def session_factory(engine):
-    """創建會話工廠"""
-    return sessionmaker(bind=engine)
-
-@pytest.fixture(scope="function")
-def article_service(engine, tables):
+def article_service(initialized_db_manager: DatabaseManager):
     """創建ArticleService實例"""
-    # 使用記憶體資料庫
-    db_manager = DatabaseManager('sqlite:///:memory:')
-    # 設置測試用的引擎
-    db_manager.engine = engine
-    # 創建新的會話工廠
-    db_manager.Session = sessionmaker(bind=engine)
-    # 創建資料表
-    # Base.metadata.create_all(engine) # 移到 tables fixture
-
-    service = ArticleService(db_manager)
+    # 直接使用傳入的 initialized_db_manager
+    service = ArticleService(initialized_db_manager)
     yield service
-
-    # 清理資源 (如果需要)
-    # Base.metadata.drop_all(engine) # 移到 tables fixture
-    # service.cleanup() # ArticleService 可能沒有 cleanup
+    # 通常不需要在此處清理，由 initialized_db_manager 處理
 
 class TestBnextCrawler:
     """BnextCrawler 的測試類"""
