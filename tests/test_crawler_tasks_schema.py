@@ -20,6 +20,7 @@ from src.models.crawler_tasks_schema import (
 )
 from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT, ScrapePhase, ScrapeMode
 from src.utils.enum_utils import TaskStatus
+from src.utils.transform_utils import str_to_enum
 from src.error.errors import ValidationError
 from src.models.base_schema import BaseUpdateSchema
 from src.utils.log_utils import LoggerSetup
@@ -95,7 +96,7 @@ class TestCrawlerTasksCreateSchema:
         assert schema.task_args["save_to_csv"] is True
         assert schema.task_args["csv_file_prefix"] == "test"
         assert schema.task_args["save_to_database"] is True
-        assert schema.task_args["scrape_mode"] == "full_scrape"
+        assert schema.task_args["scrape_mode"] == ScrapeMode.FULL_SCRAPE
         assert schema.task_args["get_links_by_task_id"] is True
         assert schema.task_args["article_links"] == []
         assert schema.task_args["max_cancel_wait"] == 30
@@ -259,7 +260,7 @@ class TestCrawlerTasksCreateSchema:
         schema = CrawlerTasksCreateSchema.model_validate(data)
         assert schema.is_auto is True
         assert schema.is_active is True
-        assert schema.task_args == TASK_ARGS_DEFAULT
+        assert schema.task_args == {**TASK_ARGS_DEFAULT, "scrape_mode": ScrapeMode.FULL_SCRAPE}
         assert schema.notes is None
         assert schema.cron_expression is None
         assert schema.last_run_at is None
@@ -685,7 +686,21 @@ class TestCrawlerTasksUpdateSchema:
             schema = CrawlerTasksUpdateSchema.model_validate(data)
 
             # 驗證指定的字段已正確設置
-            assert getattr(schema, field) == value
+            schema_value = getattr(schema, field)
+
+            if field == "task_args":
+                assert isinstance(schema_value, dict), f"預期 schema.{field} 是字典"
+                assert isinstance(value, dict), f"預期原始值 {field} 是字典"
+                schema_value_comparable = schema_value.copy()
+                if "scrape_mode" in schema_value_comparable and isinstance(schema_value_comparable["scrape_mode"], ScrapeMode):
+                    schema_value_comparable["scrape_mode"] = schema_value_comparable["scrape_mode"].value
+                assert schema_value_comparable == value, f"欄位 {field} 的比較失敗"
+            elif field == "scrape_phase":
+                assert schema_value == str_to_enum(value, ScrapePhase, field), f"欄位 {field} 的比較失敗"
+            elif field == "task_status":
+                assert schema_value == str_to_enum(value, TaskStatus, field), f"欄位 {field} 的比較失敗"
+            else:
+                assert schema_value == value, f"欄位 {field} 的比較失敗"
 
             # 驗證其他字段為 None
             for other_case in test_cases:
@@ -716,7 +731,7 @@ class TestCrawlerTasksUpdateSchema:
             elif field in ["is_auto", "is_active", "is_scheduled", "last_run_success"]:
                 value = False
             elif field == "task_args":
-                value = TASK_ARGS_DEFAULT
+                value = TASK_ARGS_DEFAULT # 原始值是包含字串 'scrape_mode': 'full_scrape' 的字典
             elif field == "notes":
                 value = "新備註"
             elif field == "last_run_at":
@@ -726,8 +741,10 @@ class TestCrawlerTasksUpdateSchema:
             elif field == "cron_expression":
                 value = "0 0 * * *"
             elif field == "scrape_phase":
+                # 注意：這裡直接賦值枚舉成員，比較時應該沒問題
                 value = ScrapePhase.CONTENT_SCRAPING
             elif field == "task_status":
+                 # 注意：這裡直接賦值枚舉成員，比較時應該沒問題
                 value = TaskStatus.RUNNING
             elif field == "retry_count":
                 value = 5
@@ -736,4 +753,20 @@ class TestCrawlerTasksUpdateSchema:
 
             data = {field: value}
             schema = CrawlerTasksUpdateSchema.model_validate(data)
-            assert getattr(schema, field) == value
+            schema_value = getattr(schema, field)
+
+            if field == "task_args":
+                # 對 task_args 應用與 test_partial_update 相同的特殊處理
+                assert isinstance(schema_value, dict), f"預期 schema.{field} 是字典"
+                assert isinstance(value, dict), f"預期原始值 {field} 是字典"
+                schema_value_comparable = schema_value.copy()
+                # Pydantic 會將 value['scrape_mode'](str) 轉為 schema_value['scrape_mode'](Enum)
+                if "scrape_mode" in schema_value_comparable and isinstance(schema_value_comparable["scrape_mode"], ScrapeMode):
+                     # 將驗證後的 Enum 轉回 str 再比較
+                     schema_value_comparable["scrape_mode"] = schema_value_comparable["scrape_mode"].value
+                # 現在比較 (修改後的 schema_value_comparable) 與 (原始 value)
+                assert schema_value_comparable == value, f"欄位 {field} 的比較失敗"
+            else:
+                # 對於所有其他欄位，直接比較驗證後的值和賦值
+                # (包括直接賦值 Enum 的 scrape_phase 和 task_status，它們應該能正確比較)
+                assert schema_value == value, f"欄位 {field} 的比較失敗"

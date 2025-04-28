@@ -331,7 +331,7 @@ class TestArticleCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             ArticleCreateSchema.model_validate(data_min)
-        assert "link: 無效的URL格式" in str(exc_info.value)
+        assert "link: 無效的 URL 格式: 'a'" in str(exc_info.value)
 
         # 測試最長有效長度
         data_max = {

@@ -157,7 +157,7 @@ class TestCrawlersCreateSchema:
         }
         with pytest.raises(ValidationError) as exc_info:
             CrawlersCreateSchema.model_validate(data_invalid_url)
-        assert "base_url: 無效的URL格式" in str(exc_info.value)
+        assert "base_url: 無效的 URL 格式: 'invalid_url" in str(exc_info.value)
 
     def test_crawlers_crawler_type_validation(self):
         """測試爬蟲類型的驗證"""
