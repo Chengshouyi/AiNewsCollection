@@ -78,8 +78,8 @@ class TestCrawlerTasksCreateSchema:
         assert schema.notes == "測試任務"
         assert schema.cron_expression == "*/10 * * * *"
         assert schema.last_run_message == "測試訊息"
-        assert schema.scrape_phase == ScrapePhase.INIT
-        assert schema.task_status == TaskStatus.INIT
+        assert schema.scrape_phase == ScrapePhase.INIT.value
+        assert schema.task_status == TaskStatus.INIT.value
         assert schema.retry_count == 0
 
         assert schema.task_args is not None
@@ -96,7 +96,7 @@ class TestCrawlerTasksCreateSchema:
         assert schema.task_args["save_to_csv"] is True
         assert schema.task_args["csv_file_prefix"] == "test"
         assert schema.task_args["save_to_database"] is True
-        assert schema.task_args["scrape_mode"] == ScrapeMode.FULL_SCRAPE
+        assert schema.task_args["scrape_mode"] == ScrapeMode.FULL_SCRAPE.value
         assert schema.task_args["get_links_by_task_id"] is True
         assert schema.task_args["article_links"] == []
         assert schema.task_args["max_cancel_wait"] == 30
@@ -181,8 +181,8 @@ class TestCrawlerTasksCreateSchema:
         assert schema.is_auto is True
         assert schema.is_active is True
         assert schema.notes == "測試任務"
-        assert schema.scrape_phase == ScrapePhase.INIT
-        assert schema.task_status == TaskStatus.RUNNING
+        assert schema.scrape_phase == ScrapePhase.INIT.value
+        assert schema.task_status == TaskStatus.RUNNING.value
         assert schema.retry_count == 0
 
         # task_args 測試
@@ -260,7 +260,7 @@ class TestCrawlerTasksCreateSchema:
         schema = CrawlerTasksCreateSchema.model_validate(data)
         assert schema.is_auto is True
         assert schema.is_active is True
-        assert schema.task_args == {**TASK_ARGS_DEFAULT, "scrape_mode": ScrapeMode.FULL_SCRAPE}
+        assert schema.task_args == TASK_ARGS_DEFAULT
         assert schema.notes is None
         assert schema.cron_expression is None
         assert schema.last_run_at is None
@@ -431,7 +431,7 @@ class TestCrawlerTasksCreateSchema:
                     expected_phase = ScrapePhase(phase.lower())
             else:
                 expected_phase = phase
-            assert schema.scrape_phase == expected_phase
+            assert schema.scrape_phase == expected_phase.value
 
     def test_task_status_validation(self):
         """測試任務狀態的驗證"""
@@ -471,7 +471,7 @@ class TestCrawlerTasksCreateSchema:
                     expected_status = TaskStatus(status.lower())
             else:
                 expected_status = status
-            assert schema.task_status == expected_status
+            assert schema.task_status == expected_status.value
 
         # 測試無效值
         invalid_statuses = ["invalid_status", "pending", 123, {}]
@@ -567,8 +567,8 @@ class TestCrawlerTasksUpdateSchema:
         assert schema.notes == "更新的備註"
         assert schema.cron_expression == "* */2 * * *"
         assert schema.last_run_message == "更新測試"
-        assert schema.scrape_phase == ScrapePhase.INIT
-        assert schema.task_status == TaskStatus.COMPLETED
+        assert schema.scrape_phase == ScrapePhase.INIT.value
+        assert schema.task_status == TaskStatus.COMPLETED.value
         assert schema.retry_count == 2
 
         # task_args 測試
@@ -696,9 +696,9 @@ class TestCrawlerTasksUpdateSchema:
                     schema_value_comparable["scrape_mode"] = schema_value_comparable["scrape_mode"].value
                 assert schema_value_comparable == value, f"欄位 {field} 的比較失敗"
             elif field == "scrape_phase":
-                assert schema_value == str_to_enum(value, ScrapePhase, field), f"欄位 {field} 的比較失敗"
+                assert schema_value == str_to_enum(value, ScrapePhase, field).value, f"欄位 {field} 的比較失敗"
             elif field == "task_status":
-                assert schema_value == str_to_enum(value, TaskStatus, field), f"欄位 {field} 的比較失敗"
+                assert schema_value == str_to_enum(value, TaskStatus, field).value, f"欄位 {field} 的比較失敗"
             else:
                 assert schema_value == value, f"欄位 {field} 的比較失敗"
 
@@ -742,10 +742,10 @@ class TestCrawlerTasksUpdateSchema:
                 value = "0 0 * * *"
             elif field == "scrape_phase":
                 # 注意：這裡直接賦值枚舉成員，比較時應該沒問題
-                value = ScrapePhase.CONTENT_SCRAPING
+                value = ScrapePhase.CONTENT_SCRAPING.value
             elif field == "task_status":
                  # 注意：這裡直接賦值枚舉成員，比較時應該沒問題
-                value = TaskStatus.RUNNING
+                value = TaskStatus.RUNNING.value
             elif field == "retry_count":
                 value = 5
             else:

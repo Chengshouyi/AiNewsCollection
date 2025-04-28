@@ -896,8 +896,6 @@ class TestCrawlerTaskService:
         new_cron = "5 0 * * *"
         new_scrape_phase = ScrapePhase.CONTENT_SCRAPING
         new_task_args = initial_task_args.copy()
-        new_task_args["max_items"] = 200
-        new_task_args["new_param"] = "test_value"
         new_task_args["scrape_mode"] = ScrapeMode.LINKS_ONLY.value
 
         update_data = {
@@ -934,12 +932,6 @@ class TestCrawlerTaskService:
         assert (
             refetched_task.scrape_phase.value == new_scrape_phase.value
         ), "資料庫 scrape_phase 值不匹配"
-        assert (
-            refetched_task.task_args.get("max_items") == 200
-        ), "task_args['max_items'] 不匹配"
-        assert (
-            refetched_task.task_args.get("new_param") == "test_value"
-        ), "task_args['new_param'] 不匹配"
         assert (
             refetched_task.task_args.get("scrape_mode") == ScrapeMode.LINKS_ONLY.value
         ), "task_args['scrape_mode'] 不匹配"

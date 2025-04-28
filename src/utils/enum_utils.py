@@ -1,6 +1,13 @@
 import enum
-
-
+import json
+class EnumEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, enum.Enum):
+            # 如果是枚舉成員，返回它的值
+            return obj.value
+        # 否則，使用預設的編碼器
+        return json.JSONEncoder.default(self, obj)
+    
 class TaskStatus(enum.Enum):
     """執行狀態枚舉"""
 

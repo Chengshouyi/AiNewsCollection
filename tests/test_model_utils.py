@@ -619,7 +619,7 @@ class TestValidateTaskArgs:
         result = validator(default_valid_args)
         # 比較枚舉的值而不是枚舉本身
         expected_args = default_valid_args.copy()
-        expected_args['scrape_mode'] = ScrapeMode(expected_args['scrape_mode']) # 或者直接比較 .value
+        # expected_args['scrape_mode'] = expected_args['scrape_mode'] # 或者直接比較 .value
         assert result == expected_args
         # 或者更簡單，只比較轉換後的枚舉值的字串表示
         # assert result['scrape_mode'].value == default_valid_args['scrape_mode']
@@ -702,7 +702,7 @@ class TestValidateTaskArgs:
         assert result is not None # 確保 result 不是 None
         assert "min_keywords" not in result or result["min_keywords"] is None # 或預設值
         # 確保其他欄位仍然存在且正確
-        assert result["scrape_mode"].value == args["scrape_mode"]
+        assert result["scrape_mode"] == args["scrape_mode"]
 
     def test_extra_field(self, default_valid_args):
         """測試包含額外未定義欄位的字典。"""
@@ -713,4 +713,4 @@ class TestValidateTaskArgs:
         result = validator(args)
         assert result is not None # 確保 result 不是 None
         assert "extra_param" not in result # 驗證後的結果不應包含額外欄位
-        assert result["scrape_mode"].value == args["scrape_mode"]
+        assert result["scrape_mode"] == args["scrape_mode"]

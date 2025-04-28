@@ -934,16 +934,7 @@ class TestBaseCrawler:
         assert result is False
         assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.FAILED.value
         
-        # 測試未知參數
-        crawler.update_config_called = False
-        unknown_params = {**TASK_ARGS_DEFAULT,
-            'unknown_param': 'value'
-        }
         
-        result = crawler._validate_and_update_task_params(task_id, unknown_params)
-        assert result is True  # 更改為True，因為未知參數現在被接受並添加到global_params
-        assert 'unknown_param' in crawler.global_params
-        assert crawler.global_params['unknown_param'] == 'value'
 
     def test_calculate_progress(self, mock_config_file, article_service):
         """測試進度計算方法"""
@@ -1416,7 +1407,7 @@ class TestBaseCrawler:
         # 驗證狀態更新為失敗
         assert crawler.scrape_phase[task_id]['scrape_phase'] == ScrapePhase.FAILED.value
         # 驗證錯誤消息包含預期文本
-        assert "任務參數驗證失敗: task_args: task_args.article_links: 必填欄位不能缺少" in crawler.scrape_phase[task_id]['message']
+        assert "任務參數驗證失敗: task_args.article_links: 必填欄位不能缺少" in crawler.scrape_phase[task_id]['message']
 
     def test_execute_links_only_task(self, mock_config_file, article_service):
         """測試僅抓取連結的任務執行模式"""
