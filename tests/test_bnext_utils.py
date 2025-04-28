@@ -1,9 +1,15 @@
+"""數位時代 (Bnext) 網站爬蟲工具模組的單元測試。"""
+
+from datetime import datetime, timezone
+from unittest.mock import patch
+
 import pytest
 from bs4 import BeautifulSoup
+
 from src.crawlers.bnext_utils import BnextUtils
-from unittest.mock import patch
-import time
-from datetime import datetime, timezone
+from src.utils.log_utils import LoggerSetup
+
+logger = LoggerSetup.setup_logger(__name__)
 
 class TestBnextUtils:
     def test_get_random_sleep_time_in_range(self):
