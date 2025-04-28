@@ -149,6 +149,24 @@ def initialize_default_crawler():
 def main():
     """執行應用程式的主要初始化邏輯"""
     try:
+        cleanup_logger = LoggerSetup.setup_logger("log_cleanup_task") # 使用 setup_logger 獲取 logger
+
+        try:
+            print("根據 .env 配置執行日誌清理...")
+            # 直接調用，函數內部會讀取 .env
+            deleted_list = LoggerSetup.cleanup_logs(logger=cleanup_logger)
+
+            # 你仍然可以用參數覆蓋 .env 的設置
+            # print("\n強制執行 Dry Run 清理 'specific_module' 5天前的日誌:")
+            # LoggerSetup.cleanup_logs(
+            #     module_name="specific_module",
+            #     keep_days=5,
+            #     dry_run=True, # 覆蓋 .env 中的 LOG_CLEANUP_DRY_RUN
+            #     logger=cleanup_logger
+            # )
+
+        except Exception as e:
+            cleanup_logger.error(f"日誌清理任務失敗: {e}", exc_info=True)
         try:
             scheduler = get_scheduler_service()
             scheduler_result = scheduler.start_scheduler()

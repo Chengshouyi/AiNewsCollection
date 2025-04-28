@@ -14,6 +14,7 @@ from typing import Any, Dict, List, Optional, Tuple, Type, cast
 
 # 第三方函式庫 imports
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.exc import DetachedInstanceError
 
 # 本地應用程式 imports
 from src.crawlers.crawler_factory import CrawlerFactory
@@ -394,6 +395,22 @@ class TaskExecutorService(BaseService[CrawlerTasks], ProgressListener):
                             )
                     return {"success": False, "message": f"執行時找不到任務 {task_id}"}
 
+                local_task_args = None
+
+                try:
+                    session.refresh(task)
+                    logger.debug("成功刷新任務 %s 的狀態", task_id)
+                    local_task_args = task.task_args or {}
+                    logger.debug("成功獲取任務 %s 的 task_args (提前獲取)", task_id)
+                except DetachedInstanceError as detached_e:
+                    logger.error("在 session.refresh 後立即訪問 task_args 仍發生 DetachedInstanceError: %s", detached_e, exc_info=True)
+                    error_msg = f"刷新任務後訪問 task_args 時發生 DetachedInstanceError: {detached_e}"
+                    return {"success": False, "message": error_msg, "task_status": TaskStatus.FAILED.value}
+                except Exception as refresh_or_access_err:
+                    logger.error("刷新任務 %s 或提前獲取 task_args 時出錯: %s", task_id, refresh_or_access_err, exc_info=True)
+                    error_msg = f"刷新任務或獲取 task_args 失敗: {refresh_or_access_err}"
+                    return {"success": False, "message": error_msg, "task_status": TaskStatus.FAILED.value}
+
                 crawler = crawler_repo.get_by_id(task.crawler_id)
                 if crawler:
                     crawler_name = crawler.crawler_name
@@ -446,9 +463,13 @@ class TaskExecutorService(BaseService[CrawlerTasks], ProgressListener):
                 with self.task_lock:
                     self.running_crawlers[task_id] = crawler_instance
 
-                task_args = task.task_args or {}
+                task_args = local_task_args
+
                 if kwargs:
+                    if task_args is None: task_args = {}
                     task_args.update(kwargs)
+                elif task_args is None:
+                    task_args = {}
 
                 result = crawler_instance.execute_task(task_id, task_args)
 

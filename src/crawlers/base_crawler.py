@@ -96,35 +96,70 @@ class BaseCrawler(ABC):
         raise NotImplementedError("子類別需要實作 _update_config 方法")
     
     def _load_site_config(self):
-        """載入爬蟲設定"""
+        """載入爬蟲設定，優先從環境變數 WEB_SITE_CONFIG_DIR 讀取目錄"""
         if self.config_file_name:
             try:
-                # 獲取專案根目錄
-                project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-                config_path = os.path.join(project_root, 'src', 'crawlers', 'configs', self.config_file_name)
-                logger.debug("嘗試讀取配置檔案路徑: %s", config_path)
+                # 從環境變數讀取設定檔目錄，若未設定則使用預設路徑
+                config_dir = os.getenv('WEB_SITE_CONFIG_DIR', os.path.join(os.path.dirname(__file__), 'configs'))
                 
+                # 確保 config_dir 是絕對路徑或相對於專案根目錄（假設 base_crawler.py 在 src/crawlers 下）
+                if not os.path.isabs(config_dir):
+                     # 假設腳本在 /app/src/crawlers/base_crawler.py
+                    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+                    config_dir = os.path.join(project_root, config_dir)
+                
+                config_path = os.path.join(config_dir, self.config_file_name)
+                
+                logger.debug("嘗試讀取配置檔案路徑: %s (來自目錄: %s)", config_path, config_dir)
+                
+                # 檢查檔案是否存在
+                if not os.path.exists(config_path):
+                    logger.error("找不到設定檔: %s", config_path)
+                    # 可以選擇是使用預設路徑下的檔案，還是直接拋出錯誤
+                    # 這裡選擇拋出錯誤，因為如果指定了環境變數但檔案不存在，通常是配置錯誤
+                    default_config_path = os.path.join(os.path.dirname(__file__), 'configs', self.config_file_name)
+                    if os.path.exists(default_config_path):
+                         logger.warning("在指定目錄 %s 中找不到設定檔，將嘗試使用預設路徑 %s", config_dir, default_config_path)
+                         config_path = default_config_path
+                    else:
+                         logger.error("在指定目錄和預設目錄中都找不到設定檔: %s", self.config_file_name)
+                         raise FileNotFoundError(f"找不到設定檔: {config_path} 或 {default_config_path}")
+
                 with open(config_path, 'r', encoding='utf-8') as f:
                     file_config = json.load(f)
                     # 使用文件配置更新默認配置
                     self.config_data.update(file_config)
                 
-                logger.debug("已載入爬蟲配置: %s", self.config_file_name)
-                logger.debug("已載入爬蟲配置: %s", self.config_data)
+                logger.debug("已載入爬蟲配置: %s (從 %s)", self.config_file_name, config_path)
+                logger.debug("已載入爬蟲配置內容: %s", self.config_data)
             except (json.JSONDecodeError, FileNotFoundError) as e:
-                logger.warning("載入配置文件失敗: %s，使用預設配置", e)
-                raise ValueError("未找到配置文件")
+                logger.warning("載入配置文件 %s 失敗: %s，請檢查路徑和檔案內容。", self.config_file_name, e)
+                # 根據需求決定是否拋出錯誤或使用預設值
+                raise ValueError(f"載入配置文件 {self.config_file_name} 失敗")
+            except Exception as e:
+                logger.error("載入配置文件 %s 時發生未預期錯誤: %s", self.config_file_name, e, exc_info=True)
+                raise ValueError(f"載入配置文件 {self.config_file_name} 時發生未預期錯誤")
         else:
-            logger.error("未找到配置文件")
-            raise ValueError("未找到配置文件")  
+            logger.error("未指定配置文件名稱 (config_file_name)")
+            raise ValueError("未指定配置文件名稱")  
         
 
     def _create_site_config(self):
         """創建站點配置"""
+        # 確保先載入配置
         if not self.config_data:
-            logger.debug("base_crawler - call_load_site_config()： 載入站點配置")
-            self._load_site_config()
-        
+             logger.debug("base_crawler - call_load_site_config()： 載入站點配置")
+             # _load_site_config 會在需要時被調用，這裡確保它在創建 SiteConfig 前執行
+             try:
+                 self._load_site_config()
+             except ValueError as e:
+                 logger.error("創建 SiteConfig 失敗，因為無法載入配置: %s", e)
+                 raise  # 重新拋出錯誤，阻止後續操作
+
+        if not self.config_data: # 再次檢查，如果載入失敗 config_data 仍為空
+             logger.error("SiteConfig 創建失敗：配置數據為空。")
+             raise ValueError("無法創建 SiteConfig，配置數據為空。")
+             
         logger.debug("base_crawler - call_create_site_config()： 創建 site_config")
         self.site_config = SiteConfig(
             name=self.config_data.get("name", None),

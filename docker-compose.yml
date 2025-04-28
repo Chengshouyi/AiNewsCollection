@@ -46,6 +46,7 @@ services:
       - "8001:8000" # 將主機的 8001 映射到容器的 8000
     volumes:
       - app-logs:/app/logs # 將日誌 volume 掛載到容器的 /app/logs
+      - data-volume:/app/data # 將 data volume 掛載到容器的 /app/data
     networks:
       - default
   # 將來擴充微服務時會使用 
@@ -72,6 +73,9 @@ volumes:
     driver: local # 定義 PostgreSQL 資料的 volume
   app-logs:
     # 定義 logs volume
+    driver: local
+  data-volume:
+    # 定義 data volume
     driver: local
 
 networks:
