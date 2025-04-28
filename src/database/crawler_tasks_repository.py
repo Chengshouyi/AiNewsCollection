@@ -619,34 +619,38 @@ class CrawlerTasksRepository(BaseRepository["CrawlerTasks"]):
                     )
 
                 try:
-                    cron_now = croniter(cron_expression, now)
-                    previous_scheduled_run = cron_now.get_prev(datetime)
-                    if previous_scheduled_run.tzinfo is None:
-                        previous_scheduled_run = enforce_utc_datetime_transform(
-                            previous_scheduled_run
-                        )
-                        logger.debug(
-                            "[find_due_tasks] Task ID %d: Forced previous_scheduled_run to UTC: %s",
-                            task_id,
-                            previous_scheduled_run.isoformat(),
-                        )
+                    # 計算相對於 last_run 的下一個執行時間
+                    cron_iter = croniter(cron_expression, last_run)
+                    next_scheduled_run_after_last = cron_iter.get_next(datetime)
+
+                    if next_scheduled_run_after_last.tzinfo is None:
+                       next_scheduled_run_after_last = enforce_utc_datetime_transform(
+                           next_scheduled_run_after_last
+                       )
+                       logger.debug(
+                           "[find_due_tasks] Task ID %d: Forced next_scheduled_run_after_last to UTC: %s",
+                           task_id,
+                           next_scheduled_run_after_last.isoformat(),
+                       )
+
 
                     logger.debug(
-                        "[find_due_tasks] Task ID %d: last_run=%s, previous_scheduled_run=%s, now=%s",
+                        "[find_due_tasks] Task ID %d: last_run=%s, next_scheduled_run_after_last=%s, now=%s",
                         task_id,
                         last_run.isoformat(),
-                        previous_scheduled_run.isoformat(),
+                        next_scheduled_run_after_last.isoformat(),
                         now.isoformat(),
                     )
 
-                    if last_run < previous_scheduled_run:
+                    # 比較 now 是否達到或超過下一個排定時間
+                    if now >= next_scheduled_run_after_last:
                         logger.debug(
-                            "[find_due_tasks] Task ID %d added. Condition met.", task_id
+                            "[find_due_tasks] Task ID %d added. Condition (now >= next_run) met.", task_id
                         )
                         due_task_ids.append(task_id)
                     else:
                         logger.debug(
-                            "[find_due_tasks] Task ID %d skipped. Condition not met.",
+                            "[find_due_tasks] Task ID %d skipped. Condition (now >= next_run) not met.",
                             task_id,
                         )
                         continue

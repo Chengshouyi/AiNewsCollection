@@ -1851,8 +1851,8 @@ class TestCrawlerTasksRepositoryValidation:
         assert validated_result.get("task_name") == "測試驗證任務"
         assert validated_result.get("crawler_id") == crawler_id
         assert validated_result.get("cron_expression") == "0 * * * *"
-        assert validated_result.get("scrape_phase") == ScrapePhase.INIT
-        assert validated_result.get("task_status") == TaskStatus.INIT
+        assert validated_result.get("scrape_phase") == ScrapePhase.INIT.value
+        assert validated_result.get("task_status") == TaskStatus.INIT.value
 
         invalid_data = valid_data.copy()
         del invalid_data["task_name"]
@@ -2053,8 +2053,8 @@ class TestComplexValidationScenarios:
             validated_data = repo_in_session.validate_data(
                 create_data, SchemaType.CREATE
             )
-            assert validated_data["scrape_phase"] == ScrapePhase.INIT
-            assert validated_data["task_status"] == TaskStatus.RUNNING
+            assert validated_data["scrape_phase"] == ScrapePhase.INIT.value
+            assert validated_data["task_status"] == TaskStatus.RUNNING.value
 
             # 使用 session 內的 repo 進行創建
             task = repo_in_session.create(validated_data)
@@ -2063,8 +2063,8 @@ class TestComplexValidationScenarios:
 
             # 斷言
             assert task.id is not None
-            assert task.scrape_phase == ScrapePhase.INIT
-            assert task.task_status == TaskStatus.RUNNING
+            assert task.scrape_phase == ScrapePhase.INIT.value
+            assert task.task_status == TaskStatus.RUNNING.value
 
             task_id = task.id
             # 此 scope 結束時 commit

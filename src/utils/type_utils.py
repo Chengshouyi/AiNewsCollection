@@ -54,7 +54,7 @@ class AwareDateTime(TypeDecorator):
         # 轉換為包含時區偏移的 ISO 8601 格式字串
         iso_string = aware_utc_dt.isoformat()
         # 使用 logger.debug 記錄綁定過程，避免 f-string
-        logger.debug("[AwareDateTime] Binding: %s -> %s", value, iso_string)
+        # logger.debug("[AwareDateTime] Binding: %s -> %s", value, iso_string)
         return iso_string
 
     def process_result_value(self, value: Optional[str], dialect) -> Optional[datetime]:
@@ -74,7 +74,7 @@ class AwareDateTime(TypeDecorator):
             # 解析 ISO 8601 格式字串
             dt = datetime.fromisoformat(value)
             # 使用 logger.debug 記錄載入過程，避免 f-string
-            logger.debug("[AwareDateTime] Loading: %s -> %s", value, dt)
+            # logger.debug("[AwareDateTime] Loading: %s -> %s", value, dt)
             # 再次強制轉換為 UTC 以確保一致性
             return enforce_utc_datetime_transform(dt)
         except (ValueError, TypeError) as e:

@@ -102,6 +102,12 @@ class CrawlerTasksCreateSchema(BaseCreateSchema):
     task_status: TaskStatusValidator = TaskStatus.INIT
     retry_count: RetryCount = 0
 
+    # 添加 model_config 來處理序列化
+    model_config = ConfigDict(
+        use_enum_values=True,  # 告訴 Pydantic 在序列化時使用 enum 的值
+        # 如果 task_args 是嵌套模型，可能需要 populate_by_name=True 等其他配置
+    )
+
     @model_validator(mode="before")
     @classmethod
     def validate_required_fields(cls, data):
@@ -133,6 +139,11 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
     scrape_phase: Optional[CurrentPhase] = None
     retry_count: Optional[RetryCount] = None
     task_status: Optional[TaskStatusValidator] = None
+
+    # 添加 model_config 來處理序列化
+    model_config = ConfigDict(
+        use_enum_values=True,  # 告訴 Pydantic 在序列化時使用 enum 的值
+    )
 
     @classmethod
     def get_immutable_fields(cls):

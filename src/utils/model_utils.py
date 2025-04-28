@@ -548,8 +548,8 @@ def validate_task_args(field_name: str, required: bool = False):
 
             if 'scrape_mode' in validated_args:
                 try:
-                    validated_scrape_mode = validate_scrape_mode('scrape_mode', required=True)(validated_args['scrape_mode'])
-                    validated_args['scrape_mode'] = validated_scrape_mode
+                    scrape_mode_instance = validate_scrape_mode('scrape_mode', required=True)(validated_args['scrape_mode'])
+                    validated_args['scrape_mode'] = scrape_mode_instance.value
                 except Exception as e:
                     msg = f"{field_name}.scrape_mode: {str(e)}"
                     logger.error(msg)
