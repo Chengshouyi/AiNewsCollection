@@ -1,14 +1,21 @@
-import pytest
-import logging
+"""測試 src.utils.repository_utils 中的字典更新函數。"""
+
+# Standard library
 from unittest.mock import MagicMock, patch
+
+# Third-party libraries
+import pytest
+
+# Local application imports
+from src.utils.log_utils import LoggerSetup
 from src.utils.repository_utils import (
-    deep_update_dict_field,
     _apply_deep_changes_inplace,
+    deep_update_dict_field,
     update_dict_field_inplace,
 )
 
-# Configure logging for tests if needed
-# logging.basicConfig(level=logging.DEBUG)
+# Setup logger
+logger = LoggerSetup.setup_logger(__name__) # pylint: disable=invalid-name
 
 # --- Tests for deep_update_dict_field (returns new dict) ---
 
@@ -74,7 +81,7 @@ def test_deep_update_current_not_dict():
     current = "not a dict"
     new = {'a': 1, 'b': 2}
     expected = {'a': 1, 'b': 2}
-    result = deep_update_dict_field(current, new, 'test_field')# type: ignore
+    result = deep_update_dict_field(current, new, 'test_field')# type: ignore # 保留類型忽略，因為這是預期行為
     assert result == expected
 
 def test_deep_update_no_changes():
@@ -139,8 +146,8 @@ def test_inplace_replace_dict_with_non_dict():
 def test_inplace_no_changes():
     """測試原地沒有變更的情況"""
     target = {'a': 1, 'nested': {'x': 10}}
-    original_target = target.copy() # Keep original for comparison
-    changes = {'a': 1} # Only provide existing value
+    original_target = target.copy() # 保留原始副本以進行比較
+    changes = {'a': 1} # 僅提供現有值
     made_changes = _apply_deep_changes_inplace(target, changes, 'test_field')
     assert target == original_target
     assert made_changes is False
@@ -158,10 +165,11 @@ def test_inplace_empty_changes():
 # --- Tests for update_dict_field_inplace (orchestrator) ---
 
 class MockEntity:
+    """用於測試的模擬實體類。"""
     def __init__(self, data=None):
         self.task_args = data
 
-@patch('src.utils.repository_utils.flag_modified') # Mock flag_modified
+@patch('src.utils.repository_utils.flag_modified') # 保留 patch decorator
 def test_orchestrator_inplace_updates_and_flags(mock_flag_modified):
     """測試 orchestrator 是否正確調用 inplace 更新並標記"""
     entity = MockEntity({'ai_only': False, 'max_pages': 10})
@@ -173,7 +181,7 @@ def test_orchestrator_inplace_updates_and_flags(mock_flag_modified):
     assert entity.task_args == {'ai_only': True, 'max_pages': 10, 'new_param': 5}
     mock_flag_modified.assert_called_once_with(entity, 'task_args')
 
-@patch('src.utils.repository_utils.flag_modified')
+@patch('src.utils.repository_utils.flag_modified') # 保留 patch decorator
 def test_orchestrator_inplace_no_changes_no_flag(mock_flag_modified):
     """測試 orchestrator 在無變更時不標記"""
     entity = MockEntity({'ai_only': False, 'max_pages': 10})
@@ -185,7 +193,7 @@ def test_orchestrator_inplace_no_changes_no_flag(mock_flag_modified):
     assert entity.task_args == {'ai_only': False, 'max_pages': 10}
     mock_flag_modified.assert_not_called()
 
-@patch('src.utils.repository_utils.flag_modified')
+@patch('src.utils.repository_utils.flag_modified') # 保留 patch decorator
 def test_orchestrator_inplace_field_not_dict_initializes(mock_flag_modified):
     """測試當欄位不是字典時，orchestrator 是否初始化並更新"""
     entity = MockEntity(None) # Field starts as None
@@ -199,7 +207,7 @@ def test_orchestrator_inplace_field_not_dict_initializes(mock_flag_modified):
 
 def test_orchestrator_inplace_field_does_not_exist():
     """測試當實體沒有該欄位時"""
-    entity = object() # A plain object without task_args
+    entity = object() # 一個沒有 task_args 的普通物件
     changes = {'ai_only': True}
     result = update_dict_field_inplace(entity, 'task_args', changes)
     assert result is False

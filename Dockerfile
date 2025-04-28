@@ -53,3 +53,21 @@ USER $USERNAME
 
 # 設定預設指令 (web 服務會在 docker-compose.yml 中覆蓋此指令)
 CMD ["python", "src/web/app.py"]
+
+# 假設您的應用程式是以 'appuser' 使用者和群組執行的
+# 如果使用者不存在，您可能需要先創建 user/group
+# RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+RUN mkdir -p /app/logs && chown ${USERNAME}:${USERNAME} /app/logs
+
+# 如果您是以 root 執行 (不推薦)
+# RUN mkdir -p /app/logs
+
+# 設定工作目錄等...
+WORKDIR /app
+# COPY . /app
+# RUN pip install ...
+
+# USER appuser # 切換到非 root 使用者 (如果適用的話)
+
+# ENTRYPOINT 或 CMD 指令
+# CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:8000", "src.web.app:app"]

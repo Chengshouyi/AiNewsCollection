@@ -75,7 +75,7 @@
         "db"
         // "worker"
     ],
-    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client && pip install --upgrade pip && pip install --user -r requirements.txt -r requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc",
+    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends postgresql-client && pip install --upgrade pip && pip install --user -r requirements.txt -r requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc && sudo mkdir -p /app/logs && sudo chown vscode:vscode /app/logs",
     "postStartCommand": "export PATH=\"/home/vscode/.local/bin:$PATH\" && alembic upgrade head",
     "remoteUser": "vscode"
 }
