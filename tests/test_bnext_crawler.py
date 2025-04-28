@@ -5,6 +5,7 @@ import json
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch, mock_open
+import os
 
 # 第三方函式庫
 import pandas as pd
@@ -55,22 +56,29 @@ TEST_CONFIG = {
 
 @pytest.fixture
 def mock_config_file(monkeypatch):
-    """模擬配置文件"""
-    import io
-    
-    # 將配置轉換為 JSON 字串
-    config_str = json.dumps(TEST_CONFIG)
-    
-    # 創建一個模擬的文件對象
-    mock_file = io.StringIO(config_str)
-    
-    # 創建一個模擬的 open 函數
-    def mock_open(*args, **kwargs):
-        # 重置讀取位置，以便多次讀取
-        mock_file.seek(0)
-        return mock_file
-        
-    monkeypatch.setattr('builtins.open', mock_open)
+    """模擬配置文件及其存在性"""
+    # --- Mock open ---
+    config_content = json.dumps(TEST_CONFIG)
+    # 使用 mock_open 替代 io.StringIO，更符合文件操作的模擬
+    mock_file = mock_open(read_data=config_content)
+    monkeypatch.setattr("builtins.open", mock_file)
+
+    # --- Mock os.path.exists ---
+    original_exists = os.path.exists
+    def mock_exists(path):
+        """模擬 os.path.exists，對測試配置文件返回 True"""
+        # 判斷是否是期望的測試配置文件路徑
+        # 這裡假設 _load_site_config 會檢查以 "test_bnext_config.json" 結尾的路徑
+        if isinstance(path, str) and path.endswith("test_bnext_config.json"):
+            # logger.debug(f"Mocking os.path.exists for: {path} -> True") # 可選的調試日誌
+            return True
+        # 對其他路徑，使用原始的 os.path.exists 函數
+        # logger.debug(f"Mocking os.path.exists for: {path} -> delegating to original") # 可選的調試日誌
+        return original_exists(path)
+
+    monkeypatch.setattr("os.path.exists", mock_exists)
+
+    # 返回檔名供測試使用
     return "test_bnext_config.json"
 
 @pytest.fixture
@@ -502,7 +510,7 @@ class TestBnextCrawler:
 
     def test_fetch_article_links_no_config(self, mock_article_service, mock_scraper, mock_extractor):
         """測試沒有配置時抓取文章列表"""
-        with pytest.raises(ValueError, match="未找到配置文件"):
+        with pytest.raises(ValueError, match="未指定配置文件名稱"):
             crawler = BnextCrawler(
                 config_file_name=None,
                 article_service=mock_article_service,

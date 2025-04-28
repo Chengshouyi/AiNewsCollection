@@ -54,7 +54,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # 確保複製的檔案擁有者是 appuser
 COPY --chown=${USERNAME}:${USERNAME} . /app
 # copy 預設爬蟲config檔案
-COPY --chown=${USERNAME}:${USERNAME} src/crawlers/confids/bnext_crawler_config.json /app/data/web_site_configs
+COPY --chown=${USERNAME}:${USERNAME} src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs
 
 # 設定最終用戶 (保持不變)
 USER $USERNAME

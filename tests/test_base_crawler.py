@@ -8,6 +8,7 @@ import json
 import logging # 保留 logging 以便 MockCrawlerForTest 中的 logger 屬性
 from typing import Dict, List, Any, Optional
 from unittest.mock import MagicMock, patch, mock_open
+import os
 
 # 第三方函式庫
 import pandas as pd
@@ -227,13 +228,31 @@ def article_service(initialized_db_manager: DatabaseManager): # 改為依賴 ini
 
 @pytest.fixture(scope="function")
 def mock_config_file(monkeypatch):
-    """模擬配置文件"""
-    def mock_open_file(*args, **kwargs):
-        mock = mock_open(read_data=json.dumps(TEST_CONFIG))
-        return mock(*args, **kwargs)
-    
-    monkeypatch.setattr("builtins.open", mock_open_file)
-    return "test_config.json"
+    """模擬配置文件和其存在性"""
+    config_content = json.dumps(TEST_CONFIG)
+    # config_path_to_mock = "/app/data/web_site_configs/test_config.json" # 或者基於環境變數的路徑
+    # default_config_path_to_mock = "/app/src/crawlers/configs/test_config.json"
+
+    # --- Mock open ---
+    mock_file = mock_open(read_data=config_content)
+    monkeypatch.setattr("builtins.open", mock_file)
+
+    # --- Mock os.path.exists ---
+    original_exists = os.path.exists
+    def mock_exists(path):
+        # 讓它對預期的測試配置文件路徑返回 True
+        # 注意：這裡的路徑需要與 _load_site_config 中計算出的路徑匹配
+        # 為了簡單起見，可以讓它對所有以 .json 結尾的路徑返回 True，
+        # 或者更精確地判斷 path 是否是我們期望 mock 的路徑
+        if isinstance(path, str) and path.endswith("test_config.json"):
+             # logger.debug(f"Mocking os.path.exists for: {path} -> True")
+             return True
+        # logger.debug(f"Mocking os.path.exists for: {path} -> delegating to original")
+        return original_exists(path) # 對其他路徑使用原始函數
+
+    monkeypatch.setattr("os.path.exists", mock_exists)
+
+    return "test_config.json" # 返回檔名供測試使用
 
 @pytest.fixture
 def logs_dir(tmp_path):
@@ -2208,7 +2227,7 @@ class TestBaseCrawler:
         
     def test_load_site_config_file_not_found(self, article_service):
         """測試配置檔案不存在的情況"""
-        with pytest.raises(ValueError, match="未找到配置文件"):
+        with pytest.raises(ValueError, match="載入配置文件 non_existent.json 失敗"):
             MockCrawlerForTest(config_file_name="non_existent.json", article_service=article_service)
             
     def test_load_site_config_invalid_json(self, mock_config_file, article_service, monkeypatch):
@@ -2227,7 +2246,7 @@ class TestBaseCrawler:
         monkeypatch.setattr("builtins.open", mock_open_file)
         
         # 創建爬蟲實例，應該會使用預設配置
-        with pytest.raises(ValueError, match="未找到配置文件"):
+        with pytest.raises(ValueError, match="載入配置文件 test_config.json 失敗"):
             MockCrawlerForTest(config_file_name="test_config.json", article_service=article_service)
 
 if __name__ == "__main__":

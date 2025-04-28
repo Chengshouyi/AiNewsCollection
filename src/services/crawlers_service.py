@@ -1014,7 +1014,7 @@ class CrawlersService(BaseService[Crawlers]):
             }
 
     def get_crawler_config(self, crawler_id: int) -> Dict[str, Any]:
-        """獲取爬蟲的配置檔案內容
+        """獲取爬蟲的配置檔案內容，優先從環境變數指定路徑讀取
 
         Args:
             crawler_id: 爬蟲ID
@@ -1023,7 +1023,7 @@ class CrawlersService(BaseService[Crawlers]):
             Dict[str, Any]: 配置檔案內容
                 success: 是否成功
                 message: 訊息
-                config: 配置檔案內容
+                config: 配置檔案內容 (字典) 或 None
         """
         try:
             with self._transaction() as session:
@@ -1040,76 +1040,95 @@ class CrawlersService(BaseService[Crawlers]):
 
                 crawler = crawler_repo.get_by_id(crawler_id)
                 if not crawler:
-                    logger.error("爬蟲設定不存在，ID=%s", crawler_id)
+                    logger.warning("爬蟲設定不存在，ID=%s", crawler_id)
                     return {
                         "success": False,
                         "message": f"爬蟲設定不存在，ID={crawler_id}",
                         "config": None,
                     }
+                
+                if not crawler.config_file_name:
+                     logger.warning("爬蟲 ID=%s 沒有配置檔案名稱。", crawler_id)
+                     return {
+                         "success": False,
+                         "message": f"爬蟲 ID={crawler_id} 未設定配置檔案名稱。",
+                         "config": None
+                     }
 
-                # 讀取配置檔案
+                config_filename = crawler.config_file_name
+                logger.debug("準備獲取爬蟲 ID=%s 的配置檔案: %s", crawler_id, config_filename)
+
+                # 1. 確定主要配置目錄 (優先使用環境變數)
+                #    預設值應與 update_crawler_config 和 Docker 設定一致
+                default_config_dir = "/app/data/web_site_configs"
+                config_dir = os.getenv('WEB_SITE_CONFIG_DIR', default_config_dir)
+                primary_config_path = os.path.join(config_dir, config_filename)
+                logger.debug("主要配置檔案路徑檢查: %s (來自目錄: %s)", primary_config_path, config_dir)
+
+                # 2. 確定後備配置目錄 (專案內預設)
+                #    假設服務運行在 /app 工作目錄下
+                fallback_config_dir = "/app/src/crawlers/configs"
+                fallback_config_path = os.path.join(fallback_config_dir, config_filename)
+                logger.debug("後備配置檔案路徑檢查: %s", fallback_config_path)
+
+                # 3. 檢查路徑並確定最終使用的路徑
+                final_config_path = None
+                if os.path.exists(primary_config_path):
+                    final_config_path = primary_config_path
+                    logger.info("找到配置檔案於主要路徑: %s", final_config_path)
+                elif os.path.exists(fallback_config_path):
+                    final_config_path = fallback_config_path
+                    logger.warning(
+                        "在主要路徑 %s 未找到配置檔案，使用後備路徑: %s",
+                        primary_config_path, final_config_path
+                    )
+                else:
+                    logger.error(
+                        "在主要路徑 (%s) 和後備路徑 (%s) 都找不到配置檔案: %s",
+                        primary_config_path, fallback_config_path, config_filename
+                    )
+                    return {
+                        "success": False,
+                        "message": f"配置檔案不存在：{config_filename} (檢查路徑 {config_dir} 和 {fallback_config_dir})",
+                        "config": None,
+                    }
+
+                # 4. 讀取並解析找到的配置檔案
                 try:
-                    # 獲取專案根目錄
-                    current_file = os.path.dirname(__file__)
-                    logger.info("當前檔案目錄: %s", current_file)
-
-                    project_root = os.path.abspath(
-                        os.path.join(current_file, "..", "..")
-                    )
-                    logger.info("專案根目錄: %s", project_root)
-
-                    config_path = os.path.join(
-                        project_root,
-                        "src",
-                        "crawlers",
-                        "configs",
-                        crawler.config_file_name,
-                    )
-                    logger.info("完整配置檔案路徑: %s", config_path)
-                    logger.info("配置檔案名稱: %s", crawler.config_file_name)
-                    logger.info(
-                        "資料庫中的 config_file_name: %s", crawler.config_file_name
-                    )
-                    logger.info("檔案是否存在: %s", os.path.exists(config_path))
-
-                    if not os.path.exists(config_path):
-                        logger.error("配置檔案不存在: %s", config_path)
-                        return {
-                            "success": False,
-                            "message": f"配置檔案不存在：{crawler.config_file_name}",
-                            "config": None,
-                        }
-
-                    with open(config_path, "r", encoding="utf-8") as f:
+                    with open(final_config_path, "r", encoding="utf-8") as f:
                         config_content = f.read()
-                        logger.info("讀取到的原始配置內容: %s", config_content)
+                        logger.debug("讀取到的原始配置內容 (來自 %s): %s", final_config_path, config_content[:200] + "...") # 限制日誌輸出長度
                         try:
                             config_data = json.loads(config_content)
-                            logger.info("成功解析配置檔案內容: %s", config_data)
+                            logger.info("成功解析配置檔案內容: %s", final_config_path)
                             return {
                                 "success": True,
                                 "message": "獲取配置檔案成功",
-                                "config": config_data,
+                                "config": config_data, # 返回解析後的字典
                             }
                         except json.JSONDecodeError as je:
-                            logger.error("配置檔案 JSON 解析錯誤: %s", str(je))
+                            logger.error("配置檔案 JSON 解析錯誤 (%s): %s", final_config_path, str(je))
                             return {
                                 "success": False,
-                                "message": f"配置檔案格式錯誤：{str(je)}",
+                                "message": f"配置檔案格式錯誤 ({config_filename}): {str(je)}",
                                 "config": None,
                             }
-
                 except Exception as e:
-                    logger.error("讀取配置檔案失敗: %s", str(e))
+                    logger.error("讀取配置檔案失敗 (%s): %s", final_config_path, str(e), exc_info=True)
                     return {
                         "success": False,
-                        "message": f"讀取配置檔案失敗：{str(e)}",
+                        "message": f"讀取配置檔案失敗 ({config_filename}): {str(e)}",
                         "config": None,
                     }
 
         except Exception as e:
-            logger.error("獲取爬蟲配置檔案失敗，ID=%s: %s", crawler_id, str(e))
-            raise e
+            logger.error("獲取爬蟲配置檔案時發生未預期錯誤，ID=%s: %s", crawler_id, str(e), exc_info=True)
+            # 避免向上拋出未處理的異常
+            return {
+                "success": False,
+                "message": f"處理請求時發生內部錯誤: {str(e)}",
+                "config": None
+            }
 
     def _clean_filename(self, filename: str) -> str:
         """清理檔案名稱，移除路徑並限制允許的字符。

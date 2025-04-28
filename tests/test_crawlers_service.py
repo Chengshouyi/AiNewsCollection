@@ -21,6 +21,7 @@ import pytest
 from sqlalchemy.orm import (
     sessionmaker,
 )  # Keep for potential direct session use if needed outside service
+from unittest.mock import MagicMock # <<< 導入標準 MagicMock
 
 # Local application imports
 from src.models.crawlers_model import Crawlers
@@ -160,10 +161,9 @@ def valid_config_file():
     """提供有效的配置檔案內容"""
     return {
         "name": "test_crawler",
-        "module_name": "test_module",
         "base_url": "https://example.com",
         "list_url_template": "{base_url}/categories/{category}",
-        "categories": ["test"],
+        "categories": {"test_category_key": "Test Category Display Name"},
         "full_categories": ["test"],
         "selectors": {
             "get_article_links": {
@@ -1032,148 +1032,124 @@ class TestCrawlersServiceTransactions:
         assert updated_result["crawler"].is_active == target_status  # 狀態應已改變
 
 
-# Mocking MagicMock as it was removed but used here
-class MagicMock:
-    def __init__(self, *args, **kwargs):
-        self.filename = kwargs.get("filename", "mock_file")
-        self.read_data = kwargs.get("read_data", b"")
-
-    def read(self):
-        return self.read_data
-
-
 class TestCrawlersServiceConfigFile:
     """測試爬蟲配置檔案相關功能"""
 
-    # @pytest.mark.skip(reason="validate_config_file is likely internal or moved")
     def test_validate_config_file(
         self, crawlers_service: CrawlersService, valid_config_file: Dict[str, Any]
     ):
         """測試配置檔案格式驗證"""
-        # Assuming validate_config_file is a public method or accessible for testing
-        # If it's internal, this test might need adjustment or removal.
-        try:
-            # Test valid config
-            assert crawlers_service.validate_config_file(valid_config_file) is True
-
-            # Test missing required field
-            invalid_config_missing_name = valid_config_file.copy()
-            del invalid_config_missing_name["name"]
-            assert (
-                crawlers_service.validate_config_file(invalid_config_missing_name)
-                is False
+        # Test valid config
+        assert crawlers_service.validate_config_file(valid_config_file) is True
+        invalid_config_missing_name = valid_config_file.copy()
+        del invalid_config_missing_name["name"]
+        assert (
+            crawlers_service.validate_config_file(invalid_config_missing_name)
+            is False
+        )
+        invalid_config_missing_selectors = valid_config_file.copy()
+        del invalid_config_missing_selectors["selectors"]
+        assert (
+            crawlers_service.validate_config_file(invalid_config_missing_selectors)
+            is False
+        )
+        invalid_config_missing_selector_key = valid_config_file.copy()
+        invalid_config_missing_selector_key["selectors"] = valid_config_file[
+            "selectors"
+        ].copy()
+        del invalid_config_missing_selector_key["selectors"]["get_article_links"]
+        assert (
+            crawlers_service.validate_config_file(
+                invalid_config_missing_selector_key
             )
+            is False
+        )
 
-            # Test missing selectors
-            invalid_config_missing_selectors = valid_config_file.copy()
-            del invalid_config_missing_selectors["selectors"]
-            assert (
-                crawlers_service.validate_config_file(invalid_config_missing_selectors)
-                is False
-            )
-
-            # Test missing required selector key
-            invalid_config_missing_selector_key = valid_config_file.copy()
-            # Deep copy selectors to avoid modifying original valid_config_file dict
-            invalid_config_missing_selector_key["selectors"] = valid_config_file[
-                "selectors"
-            ].copy()
-            del invalid_config_missing_selector_key["selectors"]["get_article_links"]
-            assert (
-                crawlers_service.validate_config_file(
-                    invalid_config_missing_selector_key
-                )
-                is False
-            )
-
-        except AttributeError:
-            pytest.skip(
-                "Skipping test_validate_config_file as method might be internal or refactored"
-            )
-
-    # @pytest.mark.skip(reason="Requires filesystem interaction, mock or adjust")
     def test_update_crawler_config(
         self,
         crawlers_service: CrawlersService,
         sample_crawlers: List[Dict[str, Any]],
         valid_config_file: Dict[str, Any],
         tmp_path,
+        monkeypatch,
     ):
         """測試更新爬蟲配置檔案"""
-        # 獲取一個現有的爬蟲 ID
+        # 1. 準備測試資料
         crawler_id = sample_crawlers[0]["id"]
-        config_filename = f"test_config_{crawler_id}.json"  # Use unique name
+        # 使用清理過的檔名
+        config_filename = crawlers_service._clean_filename(f"test_config_{crawler_id}.json")
 
-        # 創建模擬的檔案對象 (using custom MagicMock class)
-        mock_file = MagicMock(
-            filename=config_filename,
-            read_data=json.dumps(valid_config_file).encode("utf-8"),
-        )
+        # 2. 設置環境變數指向 tmp_path
+        config_dir = tmp_path / "test_configs" # 在 tmp_path 下創建子目錄
+        monkeypatch.setenv("WEB_SITE_CONFIG_DIR", str(config_dir))
+        logger.info(f"測試配置目錄設定為: {config_dir}")
 
-        # 準備爬蟲資料 (使用獲取的 ID 和新檔名)
+        # 3. 創建模擬的檔案對象
+        #    需要模擬 .filename 和 .read() -> bytes
+        mock_file = MagicMock()
+        mock_file.filename = config_filename # 提供原始檔名供清理
+        config_bytes = json.dumps(valid_config_file).encode("utf-8")
+        mock_file.read.return_value = config_bytes
+        # 模擬 seek (如果服務代碼中調用了 seek)
+        mock_file.seek = MagicMock()
+
+
+        # 4. 準備爬蟲資料 (用於更新數據庫)
         crawler_data = {
-            "crawler_name": sample_crawlers[0]["crawler_name"],  # Use existing name
-            "base_url": sample_crawlers[0]["base_url"],  # Use existing base_url
+            "crawler_name": sample_crawlers[0]["crawler_name"],
+            "base_url": sample_crawlers[0]["base_url"],
             "is_active": sample_crawlers[0]["is_active"],
             "crawler_type": sample_crawlers[0]["crawler_type"],
-            "config_file_name": config_filename,  # Assign the new filename
+            "config_file_name": config_filename, # 這裡需要與服務內部的 safe_filename 一致
+                                                 # 但服務內部會重新計算，所以這裡可以放原始或清理後的
+                                                 # 最好與服務內部的期望一致，即清理後的
         }
 
-        # 測試更新配置
+        # 5. 測試更新配置
         result = crawlers_service.update_crawler_config(
             crawler_id, mock_file, crawler_data
         )
 
-        assert result["success"] is True
+        # 6. 驗證服務層返回結果
+        assert result["success"] is True, f"更新失敗: {result.get('message')}"
         assert result["crawler"] is not None
         assert isinstance(result["crawler"], CrawlerReadSchema)
-        assert (
-            result["crawler"].config_file_name == config_filename
-        )  # Check if filename is updated
+        # 驗證資料庫中的檔名是否是清理後的檔名
+        assert result["crawler"].config_file_name == config_filename
         assert result["crawler"].id == crawler_id
 
-        # 驗證配置檔案是否已保存 (路徑可能需要調整)
-        # Construct the expected path based on the service's logic
-        # Assuming it saves relative to src/crawlers/configs
-        expected_config_dir = os.path.join(
-            os.path.dirname(__file__),  # Assuming tests directory structure
-            "..",  # Go up one level
-            "src",
-            "crawlers",
-            "configs",
-        )
-        config_path = os.path.join(expected_config_dir, config_filename)
+        # 7. 驗證配置檔案是否已保存到 tmp_path
+        expected_config_path = config_dir / config_filename
+        assert expected_config_path.exists(), f"配置文件未在預期路徑找到: {expected_config_path}"
 
-        # Ensure the directory exists before asserting file existence
-        os.makedirs(expected_config_dir, exist_ok=True)
-
-        assert os.path.exists(config_path), f"Config file not found at {config_path}"
-
-        # 驗證配置檔案內容
-        with open(config_path, "r", encoding="utf-8") as f:
+        # 8. 驗證配置檔案內容
+        with open(expected_config_path, "r", encoding="utf-8") as f:
             saved_config = json.load(f)
         assert saved_config == valid_config_file
+        logger.info(f"成功驗證已保存的配置文件內容於: {expected_config_path}")
 
-        # 清理測試檔案
-        if os.path.exists(config_path):
-            os.remove(config_path)
+        # tmp_path 會自動清理，無需手動 os.remove
 
-    # @pytest.mark.skip(reason="Requires filesystem interaction, mock or adjust")
     def test_update_crawler_config_invalid_json(
         self,
         crawlers_service: CrawlersService,
         sample_crawlers: List[Dict[str, Any]],
         tmp_path,
+        monkeypatch,
     ):
         """測試更新無效的 JSON 配置檔案"""
         crawler_id = sample_crawlers[0]["id"]
-        config_filename = f"invalid_json_{crawler_id}.json"
+        config_filename = crawlers_service._clean_filename(f"invalid_json_{crawler_id}.json")
 
-        # 創建模擬的檔案對象 (using custom MagicMock class)
-        mock_file = MagicMock(
-            filename=config_filename,
-            read_data=b"invalid json content{",  # Malformed JSON
-        )
+        # 設置環境變數
+        config_dir = tmp_path / "test_configs_invalid"
+        monkeypatch.setenv("WEB_SITE_CONFIG_DIR", str(config_dir))
+
+        # 創建模擬的檔案對象
+        mock_file = MagicMock()
+        mock_file.filename = config_filename
+        mock_file.read.return_value = b"invalid json content{" # Malformed JSON
+        mock_file.seek = MagicMock()
 
         # 準備爬蟲資料
         crawler_data = {
@@ -1190,30 +1166,37 @@ class TestCrawlersServiceConfigFile:
         )
         assert result["success"] is False
         assert "配置檔案不是有效的 JSON 格式" in result["message"]
+        # 驗證檔案未被創建
+        expected_config_path = config_dir / config_filename
+        assert not expected_config_path.exists()
 
-    # @pytest.mark.skip(reason="Requires filesystem interaction, mock or adjust")
     def test_update_crawler_config_invalid_format(
         self,
         crawlers_service: CrawlersService,
         sample_crawlers: List[Dict[str, Any]],
         tmp_path,
+        monkeypatch,
     ):
         """測試更新格式不正確的配置檔案 (缺少必要欄位)"""
         crawler_id = sample_crawlers[0]["id"]
-        config_filename = f"invalid_format_{crawler_id}.json"
+        config_filename = crawlers_service._clean_filename(f"invalid_format_{crawler_id}.json")
+
+        # 設置環境變數
+        config_dir = tmp_path / "test_configs_invalid_format"
+        monkeypatch.setenv("WEB_SITE_CONFIG_DIR", str(config_dir))
 
         # 創建格式不正確的配置檔案內容
         invalid_config = {
             "name": "test_crawler",
             "base_url": "https://example.com",
-            # 缺少 module_name, selectors 等必要欄位
+            # 缺少 selectors 等必要欄位
         }
 
-        # 創建模擬的檔案對象 (using custom MagicMock class)
-        mock_file = MagicMock(
-            filename=config_filename,
-            read_data=json.dumps(invalid_config).encode("utf-8"),
-        )
+        # 創建模擬的檔案對象
+        mock_file = MagicMock()
+        mock_file.filename = config_filename
+        mock_file.read.return_value = json.dumps(invalid_config).encode("utf-8")
+        mock_file.seek = MagicMock()
 
         # 準備爬蟲資料
         crawler_data = {
@@ -1229,4 +1212,53 @@ class TestCrawlersServiceConfigFile:
             crawler_id, mock_file, crawler_data
         )
         assert result["success"] is False
-        assert "配置檔案格式不正確" in result["message"]
+        assert "配置檔案格式或內容不正確" in result["message"] # 根據服務返回的錯誤訊息調整
+        # 驗證檔案未被創建
+        expected_config_path = config_dir / config_filename
+        assert not expected_config_path.exists()
+
+    def test_get_crawler_config(
+        self,
+        crawlers_service: CrawlersService,
+        sample_crawlers: List[Dict[str, Any]],
+        valid_config_file: Dict[str, Any],
+        tmp_path,
+        monkeypatch,
+    ):
+        """測試獲取爬蟲的配置檔案內容"""
+        # 1. 準備：先保存一個有效的配置檔案
+        crawler_id = sample_crawlers[0]["id"]
+        config_filename = sample_crawlers[0]["config_file_name"] # 使用 sample 中的檔名
+        config_dir = tmp_path / "get_test_configs"
+        config_path = config_dir / config_filename
+
+        # 設置環境變數讓服務能找到它
+        monkeypatch.setenv("WEB_SITE_CONFIG_DIR", str(config_dir))
+
+        # 創建目錄並寫入有效配置
+        config_dir.mkdir()
+        with open(config_path, "w", encoding="utf-8") as f:
+            json.dump(valid_config_file, f, indent=4)
+        logger.info(f"測試用的配置文件已創建於: {config_path}")
+
+        # 2. 執行獲取配置的服務方法
+        result = crawlers_service.get_crawler_config(crawler_id)
+
+        # 3. 驗證結果
+        assert result["success"] is True, f"獲取配置失敗: {result.get('message')}"
+        assert result["config"] is not None
+        assert result["config"] == valid_config_file
+
+        # 4. 測試獲取不存在爬蟲的配置
+        result_invalid_id = crawlers_service.get_crawler_config(999999)
+        assert result_invalid_id["success"] is False
+        assert "爬蟲設定不存在" in result_invalid_id["message"]
+
+        # 5. 測試配置文件不存在的情況
+        #   - 修改爬蟲記錄，使其指向一個不存在的檔名
+        crawlers_service.update_crawler(crawler_id, {"config_file_name": "non_existent.json"})
+        result_file_missing = crawlers_service.get_crawler_config(crawler_id)
+        assert result_file_missing["success"] is False
+        assert "配置檔案不存在" in result_file_missing["message"]
+        #   - 恢復檔名 (可選，取決於後續測試是否需要)
+        crawlers_service.update_crawler(crawler_id, {"config_file_name": config_filename})

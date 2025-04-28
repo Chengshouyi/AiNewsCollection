@@ -101,7 +101,7 @@ class BaseCrawler(ABC):
             try:
                 # 從環境變數讀取設定檔目錄，若未設定則使用預設路徑
                 config_dir = os.getenv('WEB_SITE_CONFIG_DIR', os.path.join(os.path.dirname(__file__), 'configs'))
-                
+                logger.debug("config_dir: %s", config_dir)
                 # 確保 config_dir 是絕對路徑或相對於專案根目錄（假設 base_crawler.py 在 src/crawlers 下）
                 if not os.path.isabs(config_dir):
                      # 假設腳本在 /app/src/crawlers/base_crawler.py
