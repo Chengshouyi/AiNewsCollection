@@ -1,17 +1,26 @@
-import pytest
+"""測試 Article API 相關路由的功能。"""
+# 標準函式庫
 import json
-from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Union, Optional, Sequence
+from unittest.mock import patch, MagicMock
+
+# 第三方函式庫
+import pytest
 from flask import Flask, jsonify
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import OperationalError # 移至此處
 
+# 本地應用程式
 from src.web.routes.article_api import article_bp
-from src.models.articles_schema import ArticleReadSchema, PaginatedArticleResponse
-import logging
+from src.models.articles_schema import ArticleReadSchema, PaginatedArticleResponse # 雖然被 Mock，但保留以防未來類型提示需要
+from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# flake8: noqa: F811
+# pylint: disable=redefined-outer-name
+
+# 設定 Logger
+logger = LoggerSetup.setup_logger(__name__)
 
 # --- 輔助模型 (用於 Mock Service) ---
 
@@ -75,7 +84,7 @@ class PaginatedArticleResponseMock(BaseModel):
 # --- 輔助函數 ---
 
 def compare_datetimes(dt1_str, dt2_obj, tolerance_seconds=5):
-    """比較日期時間字串與物件，允許誤差"""
+    """比較日期時間字串與物件，允許誤差。""" # 保持註解為中文
     try:
         dt1 = datetime.fromisoformat(dt1_str.replace('Z', '+00:00'))
         if dt2_obj.tzinfo is None:
@@ -87,7 +96,7 @@ def compare_datetimes(dt1_str, dt2_obj, tolerance_seconds=5):
         return False
 
 def compare_article_dicts(dict1, dict2, ignore_keys=['created_at', 'updated_at', 'published_at', 'category']):
-    """比較文章字典，忽略時間戳和分類"""
+    """比較文章字典，忽略時間戳和分類。""" # 保持註解為中文
     d1_copy = {k: v for k, v in dict1.items() if k not in ignore_keys}
     d2_copy = {k: v for k, v in dict2.items() if k not in ignore_keys}
     # 特殊處理 tags (列表順序可能不同)
@@ -99,8 +108,8 @@ def compare_article_dicts(dict1, dict2, ignore_keys=['created_at', 'updated_at',
 
 # --- Flask App 和 Client Fixtures ---
 @pytest.fixture
-def app(): # <-- 移除對 tables 的依賴
-    """創建測試用的 Flask 應用程式"""
+def app(): # 移除對 tables 的依賴
+    """創建測試用的 Flask 應用程式。""" # 保持註解為中文
     flask_app = Flask(__name__)
     flask_app.config['TESTING'] = True
     flask_app.config['JSON_SORT_KEYS'] = False
@@ -116,9 +125,9 @@ def app(): # <-- 移除對 tables 的依賴
          logger.error(f"Test Flask App Error Handler Caught: {e}", exc_info=True)
          # 檢查是否為 SQLAlchemy 的 OperationalError
          # 注意：這裡的 isinstance 檢查可能不夠精確，取決於異常鏈
-         from sqlalchemy.exc import OperationalError
+         # from sqlalchemy.exc import OperationalError # 移至檔案頂部
          if isinstance(e, OperationalError) and 'no such column' in str(e):
-              logger.error("Detected 'no such column' error - check database schema setup!")
+              logger.error("偵測到 'no such column' 錯誤 - 請檢查資料庫結構設定！") # 更新為中文
               # 仍然返回 500，但日誌提供了線索
               
          status_code = getattr(e, 'code', 500)
@@ -137,7 +146,7 @@ def client(app):
 
 @pytest.fixture
 def sample_articles_data():
-    """創建測試用的原始文章數據 (字典列表)"""
+    """創建測試用的原始文章數據 (字典列表)。""" # 保持註解為中文
     now = datetime.now(timezone.utc)
     return [
         {
@@ -164,7 +173,7 @@ def sample_articles_data():
 
 @pytest.fixture
 def mock_article_service(monkeypatch, sample_articles_data):
-    """模擬 ArticleService"""
+    """模擬 ArticleService。""" # 保持註解為中文
     class MockArticleService:
         def __init__(self):
             self.articles = {a['id']: ArticleReadSchemaMock(**a) for a in sample_articles_data}
@@ -276,13 +285,12 @@ def mock_article_service(monkeypatch, sample_articles_data):
                 title_match = keywords_lower in a.title.lower()
                 summary_val = a.summary # 獲取 summary 值
                 summary_match = summary_val and keywords_lower in summary_val.lower()
-                # --- 詳細調試 --- 
-                print(f"  Debug Filter: ID={a.id}, Title Match={title_match}, Summary='{summary_val}', Summary Match={summary_match}")
-                # --- 結束調試 --- 
+                # 移除調試打印
+                # print(f"  Debug Filter: ID={a.id}, Title Match={title_match}, Summary='{summary_val}', Summary Match={summary_match}")
                 if title_match or summary_match:
                     matched.append(a)
 
-            # --- 結束強制排序與過濾 ---
+            # --- 結束強制排序與過濾 --- # 移除多餘結束標記
 
             # 模擬排序 (現在是在已經預排序的基礎上，如果提供了 sort_by)
             if sort_by:
@@ -295,9 +303,8 @@ def mock_article_service(monkeypatch, sample_articles_data):
                 # 如果未指定排序，應用預設排序 (例如按 ID 升序)，確保分頁可預測
                 matched.sort(key=lambda a: a.id)
 
-            # --- 加入調試打印 --- 
-            print(f"\nDebug: Matched IDs before slicing (offset={offset}, limit={limit}): {[a.id for a in matched]}")
-            # --- 結束調試打印 --- 
+            # 移除調試打印
+            # print(f"\nDebug: Matched IDs before slicing (offset={offset}, limit={limit}): {[a.id for a in matched]}")
 
             # 模擬 limit/offset (注意: offset 是索引，limit 是數量)
             start = offset if offset is not None else 0
@@ -346,7 +353,7 @@ class TestArticleApiRoutes:
     """測試文章相關的 API 路由"""
 
     def test_get_articles_default(self, client, mock_article_service, sample_articles_data):
-        """測試取得文章列表 (預設分頁)"""
+        """測試取得文章列表 (預設分頁)。""" # 保持註解為中文
         response = client.get('/api/articles')
         assert response.status_code == 200
         result = json.loads(response.data)
@@ -371,7 +378,7 @@ class TestArticleApiRoutes:
 
 
     def test_get_articles_pagination(self, client, mock_article_service, sample_articles_data):
-        """測試取得文章列表 (指定分頁)"""
+        """測試取得文章列表 (指定分頁)。""" # 保持註解為中文
         page = 2
         per_page = 1
         response = client.get(f'/api/articles?page={page}&per_page={per_page}')
@@ -393,7 +400,7 @@ class TestArticleApiRoutes:
         assert compare_article_dicts(paginated_data['items'][0], expected_article_data)
 
     def test_get_articles_sorting(self, client, mock_article_service, sample_articles_data):
-        """測試取得文章列表 (排序)"""
+        """測試取得文章列表 (排序)。""" # 保持註解為中文
         response = client.get('/api/articles?sort_by=published_at&sort_desc=true') # 按發佈日期降序
         assert response.status_code == 200
         result = json.loads(response.data)
@@ -413,7 +420,7 @@ class TestArticleApiRoutes:
         assert items[0]['id'] == 1
 
     def test_get_articles_filtering(self, client, mock_article_service, sample_articles_data):
-        """測試取得文章列表 (篩選)"""
+        """測試取得文章列表 (篩選)。""" # 保持註解為中文
         filter_source = 'DevBlog'
         response = client.get(f'/api/articles?source={filter_source}')
         assert response.status_code == 200
@@ -431,7 +438,7 @@ class TestArticleApiRoutes:
         assert items[0]['id'] == 2
 
     def test_get_articles_preview(self, client, mock_article_service, sample_articles_data):
-        """測試取得文章列表 (預覽模式)"""
+        """測試取得文章列表 (預覽模式)。""" # 保持註解為中文
         preview_fields = "id,title,source"
         response = client.get(f'/api/articles?is_preview=true&preview_fields={preview_fields}')
         assert response.status_code == 200
@@ -451,7 +458,7 @@ class TestArticleApiRoutes:
         assert first_item['source'] == sample_articles_data[0]['source']
 
     def test_get_articles_empty(self, client, mock_article_service):
-        """測試取得文章列表為空"""
+        """測試取得文章列表為空。""" # 保持註解為中文
         mock_article_service.articles = {} # 清空模擬數據
         response = client.get('/api/articles')
         assert response.status_code == 200
@@ -463,7 +470,7 @@ class TestArticleApiRoutes:
         assert paginated_data['total'] == 0
 
     def test_get_articles_invalid_params(self, client, mock_article_service):
-        """測試取得文章列表時參數類型錯誤"""
+        """測試取得文章列表時參數類型錯誤。""" # 保持註解為中文
         response = client.get('/api/articles?page=abc')
         assert response.status_code == 400 # Flask-RESTx 或 Flask 本身會處理類型轉換錯誤
         result = json.loads(response.data)
@@ -472,7 +479,7 @@ class TestArticleApiRoutes:
 
     # === 測試單篇文章 ===
     def test_get_article_success(self, client, mock_article_service, sample_articles_data):
-        """測試成功取得單篇文章"""
+        """測試成功取得單篇文章。""" # 保持註解為中文
         target_id = 1
         target_article_data = sample_articles_data[0]
         response = client.get(f'/api/articles/{target_id}')
@@ -489,7 +496,7 @@ class TestArticleApiRoutes:
         assert compare_datetimes(fetched_article['published_at'], target_article_data['published_at'])
 
     def test_get_article_not_found(self, client, mock_article_service):
-        """測試取得不存在的文章"""
+        """測試取得不存在的文章。""" # 保持註解為中文
         non_existent_id = 999
         response = client.get(f'/api/articles/{non_existent_id}')
         assert response.status_code == 404
@@ -501,7 +508,7 @@ class TestArticleApiRoutes:
 
     # === 測試文章搜尋 ===
     def test_search_articles_success(self, client, mock_article_service, sample_articles_data):
-        """測試成功搜尋文章"""
+        """測試成功搜尋文章。""" # 保持註解為中文
         keyword = "Python"
         response = client.get(f'/api/articles/search?q={keyword}')
         assert response.status_code == 200
@@ -519,7 +526,7 @@ class TestArticleApiRoutes:
         assert compare_article_dicts(found_articles[0], expected_articles[0])
 
     def test_search_articles_pagination(self, client, mock_article_service):
-        """測試搜尋文章 (帶 limit/offset)"""
+        """測試搜尋文章 (帶 limit/offset)。""" # 保持註解為中文
         keyword = "summary" # 應該能匹配多個
         limit = 1
         offset = 1 # 跳過第一個結果
@@ -536,7 +543,7 @@ class TestArticleApiRoutes:
         assert found_articles[0]['id'] == 3
 
     def test_search_articles_preview(self, client, mock_article_service):
-        """測試搜尋文章 (預覽模式)"""
+        """測試搜尋文章 (預覽模式)。""" # 保持註解為中文
         keyword = "AI"
         preview_fields = "id,title"
         response = client.get(f'/api/articles/search?q={keyword}&is_preview=true&preview_fields={preview_fields}')
@@ -552,7 +559,7 @@ class TestArticleApiRoutes:
         assert first_item['id'] == 1
 
     def test_search_articles_not_found(self, client, mock_article_service):
-        """測試搜尋文章找不到結果"""
+        """測試搜尋文章找不到結果。""" # 保持註解為中文
         keyword = "NonExistentKeyword123"
         response = client.get(f'/api/articles/search?q={keyword}')
         assert response.status_code == 200 # API 仍然返回 200
@@ -563,7 +570,7 @@ class TestArticleApiRoutes:
         assert result['data'] == []
 
     def test_search_articles_missing_query(self, client):
-        """測試搜尋文章缺少關鍵字參數 q"""
+        """測試搜尋文章缺少關鍵字參數 q。""" # 保持註解為中文
         response = client.get('/api/articles/search')
         assert response.status_code == 400
         result = json.loads(response.data)
@@ -571,7 +578,7 @@ class TestArticleApiRoutes:
         assert "缺少搜尋關鍵字 'q'" in result['message']
 
     def test_search_articles_invalid_params(self, client, mock_article_service):
-        """測試搜尋文章時參數類型錯誤"""
+        """測試搜尋文章時參數類型錯誤。""" # 保持註解為中文
         response = client.get('/api/articles/search?q=test&limit=abc')
         assert response.status_code == 400 
         result = json.loads(response.data)

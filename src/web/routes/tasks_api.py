@@ -1,17 +1,24 @@
+"""定義與爬蟲任務相關的 Flask API 端點。"""
+import logging
+from typing import Dict, Any
+from enum import Enum
+
 from flask import Blueprint, jsonify, request
+
+# 本地應用程式導入
 from src.error.handle_api_error import handle_api_error
+from src.error.errors import ValidationError
 from src.models.crawler_tasks_model import ScrapeMode, ScrapePhase, TaskStatus
 from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT
-from typing import Dict, Any
 from src.services.crawler_task_service import CrawlerTaskService
-from src.services.service_container import get_scheduler_service, get_task_executor_service, get_crawler_task_service, get_article_service
-import logging
-from enum import Enum
-from src.error.errors import ValidationError
-# 設定 logger
-logging.basicConfig(level=logging.INFO, 
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+from src.services.service_container import (
+    get_scheduler_service, get_task_executor_service,
+    get_crawler_task_service, get_article_service
+)
+from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+
+# 使用統一的 logger
+logger = LoggerSetup.setup_logger(__name__)
 
 
 tasks_bp = Blueprint('tasks_api', __name__, url_prefix='/api/tasks')
@@ -73,7 +80,7 @@ def create_scheduled_task():
             scheduler = get_scheduler_service()
             scheduler_result = scheduler.add_or_update_task_to_scheduler(task)
             if not scheduler_result.get('success'):
-                logger.error(f"任務 {task.id} 已創建但添加到排程器失敗: {scheduler_result.get('message')}")
+                logger.error("任務 %s 已創建但添加到排程器失敗: %s", task.id, scheduler_result.get('message'))
                 response_message = f"{create_task_result.get('message', '任務創建成功')}, 但添加到排程器失敗: {scheduler_result.get('message')}"
                 return jsonify({
                     "success": True,
@@ -91,7 +98,7 @@ def create_scheduled_task():
         return handle_api_error(e)
 
 @tasks_bp.route('/scheduled/<int:task_id>', methods=['PUT'])
-def update_scheduled_task(task_id): # 移除了 is_active 參數，因為 PUT 通常不這樣傳遞狀態
+def update_scheduled_task(task_id):
     if not request.is_json:
          return jsonify(success=False, message='請求必須是 application/json'), 415
     if not request.data: # 檢查是否有實際的請求體
@@ -100,13 +107,13 @@ def update_scheduled_task(task_id): # 移除了 is_active 參數，因為 PUT �
     try:
         service = get_crawler_task_service()
 
-        # 獲取當前任務資料 (假設總是更新活躍任務)
+        # 獲取當前任務資料
         get_task_result = service.get_task_by_id(task_id, is_active=True)
         if not get_task_result.get('success'):
             return jsonify({"success": False, "message": get_task_result.get('message', '找不到任務')}), 404
 
         db_task = get_task_result.get('task')
-        if not db_task: # 再次確認 task 是否真的存在
+        if not db_task:
              return jsonify({"success": False, "message": "找不到任務對象"}), 404
         db_task_args = db_task.task_args or {} # 確保 task_args 是字典
 
@@ -143,7 +150,7 @@ def update_scheduled_task(task_id): # 移除了 is_active 參數，因為 PUT �
             scheduler = get_scheduler_service()
             scheduler_result = scheduler.add_or_update_task_to_scheduler(updated_task)
             if not scheduler_result.get('success'):
-                logger.error(f"任務 {task_id} 已更新但更新排程器失敗: {scheduler_result.get('message')}")
+                logger.error("任務 %s 已更新但更新排程器失敗: %s", task_id, scheduler_result.get('message'))
                 response_message = f"{update_result.get('message', '任務更新成功')}, 但更新排程器失敗: {scheduler_result.get('message')}"
                 return jsonify({
                     "success": True,
@@ -170,7 +177,7 @@ def delete_scheduled_task(task_id):
         scheduled_result = scheduler.remove_task_from_scheduler(task_id)
         # 即使排程器移除失敗 (可能原本就不在排程中)，也繼續嘗試刪除任務
         if not scheduled_result['success']:
-             logger.warning(f"從排程器移除任務 {task_id} 失敗或未找到: {scheduled_result.get('message')}")
+             logger.warning("從排程器移除任務 %s 失敗或未找到: %s", task_id, scheduled_result.get('message'))
 
         # 刪除資料庫中的任務
         result = service.delete_task(task_id)
@@ -196,9 +203,9 @@ def delete_scheduled_task(task_id):
 def fetch_full_article_manual_task():
     """抓取完整文章的手動任務端點 (創建新任務並立即執行)"""
     if not request.is_json:
-         return jsonify(success=False, message='請求必須是 application/json'), 415 # Unsupported Media Type
-    if not request.data: # 檢查是否有實際的請求體
-         return jsonify(success=False, message='缺少任務資料'), 400 # Bad Request
+         return jsonify(success=False, message='請求必須是 application/json'), 415
+    if not request.data:
+         return jsonify(success=False, message='缺少任務資料'), 400
     try:
         data = request.get_json() or {}
         if not data:
@@ -259,9 +266,9 @@ def get_task_status(task_id):
 def fetch_links_manual_task():
     """抓取連結的手動任務端點 (創建新任務並立即執行)"""
     if not request.is_json:
-         return jsonify(success=False, message='請求必須是 application/json'), 415 # Unsupported Media Type
-    if not request.data: # 檢查是否有實際的請求體
-         return jsonify(success=False, message='缺少任務資料'), 400 # Bad Request
+         return jsonify(success=False, message='請求必須是 application/json'), 415
+    if not request.data:
+         return jsonify(success=False, message='缺少任務資料'), 400
     try:
         service = get_crawler_task_service()
         data = request.get_json() or {}
@@ -316,12 +323,11 @@ def get_unscraped_links(task_id):
 def fetch_content_manual_task(task_id):
     """針對現有任務，觸發僅抓取內容的操作 (同步執行)"""
     if not request.is_json:
-         return jsonify(success=False, message='請求必須是 application/json'), 415 # Unsupported Media Type
-    if not request.data: # 檢查是否有實際的請求體
-         return jsonify(success=False, message='缺少任務資料'), 400 # Bad Request
+         return jsonify(success=False, message='請求必須是 application/json'), 415
+    if not request.data:
+         return jsonify(success=False, message='缺少任務資料'), 400
     try:
         data = request.get_json() or {}
-        # 移除 data 為空的檢查，因為可能只傳 task_id 而 task_args 由後續邏輯處理
 
         service = get_crawler_task_service()
         # 檢查任務是否存在且活躍
@@ -428,12 +434,12 @@ def test_crawler():
     try:
         data = request.get_json() or {}
         if not data:
-            logger.error(f"缺少測試資料: {data}")
+            logger.error("缺少測試資料: %s", data)
             return jsonify({"success": False, "message": "缺少測試資料"}), 400
             
         crawler_name = data.get('crawler_name')
         if not crawler_name:
-             logger.error(f"缺少 crawler_name: {data}")
+             logger.error("缺少 crawler_name: %s", data)
              return jsonify({"success": False, "message": "缺少 crawler_name"}), 400
 
         service = get_crawler_task_service()
@@ -467,7 +473,7 @@ def test_crawler():
             'last_run_success': None,
         }
 
-        logger.info(f"驗證模擬的任務數據: {task_data_for_validation}")
+        logger.info("驗證模擬的任務數據: %s", task_data_for_validation)
         try:
             validated_result = service.validate_task_data(task_data_for_validation, is_update=False)
         except Exception as e:
@@ -503,7 +509,7 @@ def test_crawler():
         status_code = 200 if response_data['success'] else 500
         return jsonify(response_data), status_code
     except Exception as e:
-        logger.error(f"測試爬蟲時發生錯誤: {str(e)}", exc_info=True)
+        logger.error("測試爬蟲時發生錯誤: %s", str(e), exc_info=True)
         return jsonify({
             'success': False,
             'message': f"測試時發生錯誤: {str(e)}"
@@ -540,9 +546,9 @@ def get_task_history(task_id):
         response_data = {
             'success': True,
             'message': result.get('message', '獲取任務歷史成功'),
-            'histories': histories_list,
+            'history': histories_list,
             # total_count 不再由 find_task_history 直接返回，但可以從列表長度計算
-            'total_count': len(histories_list) 
+            'total_count': len(histories_list)
         }
         return jsonify(response_data), 200
     except Exception as e:
@@ -576,7 +582,7 @@ def run_task(task_id):
         
         return jsonify(enhanced_result), 202  # Accepted
     except Exception as e:
-        logger.exception(f"執行任務 {task_id} 時出錯: {str(e)}")
+        logger.exception("執行任務 %s 時出錯: %s", task_id, str(e))
         return jsonify({
             'success': False, 
             'message': f'執行任務時出錯: {str(e)}',
@@ -606,17 +612,6 @@ def _setup_validate_task_data(task_data: Dict[str, Any], service: CrawlerTaskSer
     if 'scrape_mode' not in task_data['task_args']:
          task_data['task_args']['scrape_mode'] = scrape_mode
 
-    # --- 修改點：移除 get_links_by_task_id 和 article_links 的預設設置 ---
-    # 這些應由前端根據模式傳遞，或由 service 層在更新時處理
-    # if 'get_links_by_task_id' not in task_data['task_args']:
-    #     task_data['task_args']['get_links_by_task_id'] = False
-    # else:
-    #     task_data['task_args']['get_links_by_task_id'] = bool(task_data['task_args']['get_links_by_task_id'])
-    #
-    # if 'article_links' not in task_data['task_args']:
-    #     task_data['task_args']['article_links'] = []
-    # --- 修改結束 ---
-
     # 設置基本必要字段
     task_data['scrape_mode'] = scrape_mode
     task_data['is_auto'] = is_auto
@@ -637,25 +632,14 @@ def _setup_validate_task_data(task_data: Dict[str, Any], service: CrawlerTaskSer
 
     return validation_result
 
-# 對可能有嵌套scrape_phase的結果進行處理
-# def _normalize_response(response_data):
-#     if 'result' in response_data and 'scrape_phase' in response_data['result']:
-#         scrape_phase = response_data['result']['scrape_phase']
-#         if isinstance(scrape_phase, dict):
-#             # 扁平化嵌套結構
-#             response_data['result']['progress'] = scrape_phase.get('progress', 0)
-#             response_data['result']['phase_message'] = scrape_phase.get('message', '')
-#             response_data['result']['scrape_phase'] = scrape_phase.get('scrape_phase', 'unknown')
-#     return response_data
-
 # 通用任務端點
 @tasks_bp.route('', methods=['POST'])
 def create_task():
     """創建一個新任務（通用任務創建端點）"""
     if not request.is_json:
-         return jsonify(success=False, message='請求必須是 application/json'), 415 # Unsupported Media Type
-    if not request.data: # 檢查是否有實際的請求體
-         return jsonify(success=False, message='缺少任務資料'), 400 # Bad Request
+         return jsonify(success=False, message='請求必須是 application/json'), 415
+    if not request.data:
+         return jsonify(success=False, message='缺少任務資料'), 400
     data = request.get_json() or {}
     try:
         task_service = get_crawler_task_service()
@@ -703,7 +687,7 @@ def create_task():
             scheduler = get_scheduler_service()
             scheduler_result = scheduler.add_or_update_task_to_scheduler(task)
             if not scheduler_result.get('success'):
-                logger.error(f"任務 {task.id} 已創建但添加到排程器失敗: {scheduler_result.get('message')}")
+                logger.error("任務 %s 已創建但添加到排程器失敗: %s", task.id, scheduler_result.get('message'))
                 response_message = f"{create_task_result.get('message', '任務創建成功')}, 但添加到排程器失敗: {scheduler_result.get('message')}"
                 return jsonify({
                     "success": True,
@@ -718,7 +702,7 @@ def create_task():
             "task": task_data
         }), 201
     except Exception as e:
-        logger.exception(f"創建任務時出錯: {str(e)}")
+        logger.exception("創建任務時出錯: %s", str(e))
         return handle_api_error(e)
 
 # 通用任務更新端點
@@ -727,7 +711,7 @@ def update_task(task_id):
     """更新特定任務"""
     if not request.is_json:
          return jsonify(success=False, message='請求必須是 application/json'), 415
-    if not request.data: # 檢查是否有實際的請求體
+    if not request.data:
          return jsonify(success=False, message='缺少任務資料'), 400
     data = request.get_json() or {}
     try:
@@ -740,8 +724,8 @@ def update_task(task_id):
             return jsonify(update_result), status_code
 
         # 從結果中獲取更新的任務對象 (Pydantic Schema)
-        updated_task = update_result.get('task')
-        task_data = _prepare_task_for_response(updated_task)
+        # updated_task = update_result.get('task') # 這行變數未使用
+        # task_data = _prepare_task_for_response(updated_task) # 這行變數未使用
 
         final_task_data = _prepare_task_for_response(update_result.get('task'))
         return jsonify({
@@ -754,7 +738,7 @@ def update_task(task_id):
          logger.error(error_message, exc_info=True)
          return jsonify({"success": False, "message": error_message}), 400
     except Exception as e:
-        logger.exception(f"更新任務 {task_id} 時出錯: {str(e)}")
+        logger.exception("更新任務 %s 時出錯: %s", task_id, str(e))
         return handle_api_error(e)
 
 @tasks_bp.route('', methods=['GET'])
@@ -772,11 +756,11 @@ def get_all_tasks():
         # 使用 _prepare_task_for_response 處理每個任務對象，確保枚舉類型被正確序列化
         tasks_dict_list = [_prepare_task_for_response(task) for task in tasks_list]
         
-        logger.info(f"成功獲取 {len(tasks_dict_list)} 個任務")
+        logger.info("成功獲取 %s 個任務", len(tasks_dict_list))
         
         return jsonify({"success": True, "message": "獲取任務列表成功", "data": tasks_dict_list}), 200
     except Exception as e:
-        logger.exception(f"獲取任務列表時出錯: {str(e)}")
+        logger.exception("獲取任務列表時出錯: %s", str(e))
         return handle_api_error(e)
 
 @tasks_bp.route('/<int:task_id>', methods=['DELETE'])
@@ -798,7 +782,7 @@ def delete_task(task_id):
         if is_auto:
             scheduled_result = scheduler.remove_task_from_scheduler(task_id)
             if not scheduled_result['success']:
-                logger.warning(f"從排程器移除任務 {task_id} 失敗或未找到: {scheduled_result.get('message')}")
+                logger.warning("從排程器移除任務 %s 失敗或未找到: %s", task_id, scheduled_result.get('message'))
 
         # 刪除資料庫中的任務
         result = service.delete_task(task_id)
@@ -811,7 +795,7 @@ def delete_task(task_id):
             "message": result.get('message', f'任務 {task_id} 刪除成功')
         }), 200
     except Exception as e:
-        logger.exception(f"刪除任務 {task_id} 時出錯: {str(e)}")
+        logger.exception("刪除任務 %s 時出錯: %s", task_id, str(e))
         return handle_api_error(e)
 
 def _ensure_serializable(obj):
@@ -857,6 +841,6 @@ def _prepare_task_for_response(task_data):
     # 其他情況，嘗試轉換為字典
     try:
         return _ensure_serializable(dict(task_data))
-    except Exception:
-        logger.warning(f"無法將 {type(task_data)} 轉換為字典，返回None")
+    except Exception as e:
+        logger.warning("無法將 %s 轉換為字典，返回None. 錯誤: %s", type(task_data), e)
         return None

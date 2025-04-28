@@ -1,16 +1,21 @@
-import pytest
+"""測試爬蟲 API 路由 (/api/crawlers) 的功能。"""
 import json
-from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
+from unittest.mock import patch, MagicMock
+
+import pytest
 from flask import Flask, jsonify
-from src.web.routes.crawler_api import crawler_bp
+
 from src.error.errors import ValidationError
 from src.models.crawlers_schema import PaginatedCrawlerResponse, CrawlerReadSchema
-import logging
+from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+from src.web.routes.crawler_api import crawler_bp
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# flake8: noqa: F811
+# pylint: disable=redefined-outer-name
+
+logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
 
 # 輔助函數：比較字典（忽略時間精度問題）
 def compare_crawler_dicts(dict1, dict2, ignore_keys=['created_at', 'updated_at']):
@@ -598,7 +603,7 @@ class TestCrawlerApiRoutes:
         assert updated_crawler['crawler_name'] == update_data['crawler_name']
         assert updated_crawler['base_url'] == update_data['base_url']
         assert updated_crawler['is_active'] == update_data['is_active']
-        # 驗證 updated_at 是否已更新 (與創建時間不同)
+        # 驗證 updated_at 是否已更新
         original_crawler = mock_crawlers_service.crawlers[target_id] # 獲取更新後的 Mock 物件
         assert updated_crawler['updated_at'] != original_crawler.created_at.isoformat()
         # 比較 updated_at 與當前時間
