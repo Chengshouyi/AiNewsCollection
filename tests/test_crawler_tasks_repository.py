@@ -746,7 +746,7 @@ class TestCrawlerTasksRepository:
             and t.is_auto
             for t in hourly_tasks
         )
-        assert hourly_tasks[0].task_name == "每小時執行任務"
+        assert hourly_tasks[0].task_name == "每小時執行任務"  # type: ignore[attr-defined]
 
         with pytest.raises(ValidationError) as excinfo:
             crawler_tasks_repo.find_tasks_by_cron_expression("invalid cron")
@@ -838,7 +838,7 @@ class TestCrawlerTasksRepository:
                 created_task_ids[task.task_name] = task.id
 
             due_tasks = crawler_tasks_repo.find_due_tasks("0 * * * *")
-            found_ids = {task.id for task in due_tasks}
+            found_ids = {task.id for task in due_tasks}  # type: ignore[attr-defined]
             logger.info(f"Found due task IDs for cron '0 * * * *': {found_ids}")
             logger.info(f"Created task IDs: {created_task_ids}")
 
@@ -915,23 +915,29 @@ class TestCrawlerTasksRepository:
         assert all(
             isinstance(t, CrawlerTasks) and not t.last_run_success for t in failed_tasks
         )
-        assert failed_tasks[0].task_name == "失敗任務2"
+        assert failed_tasks[0].task_name == "失敗任務2"  # type: ignore[attr-defined]
         one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
         assert all(
-            task.last_run_at >= one_day_ago for task in failed_tasks if task.last_run_at
+            task.last_run_at >= one_day_ago  # type: ignore[attr-defined]
+            for task in failed_tasks
+            if task.last_run_at  # type: ignore[attr-defined]
         )
 
     def test_create_task_with_validation(
         self,
-        crawler_tasks_repo: CrawlerTasksRepository,
+        # crawler_tasks_repo: CrawlerTasksRepository, # 不再直接使用 fixture
         sample_crawler_data: Dict[str, Any],
         initialized_db_manager,
     ):
         """測試創建任務時的驗證規則"""
         crawler_id = sample_crawler_data["id"]
         with initialized_db_manager.session_scope() as session:
+            # 在 session 內創建 repo 實例
+            repo_in_session = CrawlerTasksRepository(session, CrawlerTasks)
+
             with pytest.raises(ValidationError) as excinfo:
-                crawler_tasks_repo.create(
+                # 使用 session 內的 repo 進行驗證性創建
+                repo_in_session.create(
                     {
                         "task_name": "測試任務",
                         "is_auto": True,
@@ -940,6 +946,7 @@ class TestCrawlerTasksRepository:
                         "scrape_phase": ScrapePhase.INIT,
                         "max_retries": 3,
                         "retry_count": 0,
+                        # 缺少 crawler_id
                     }
                 )
             assert "crawler_id" in str(excinfo.value) or "必填欄位缺失" in str(
@@ -958,9 +965,12 @@ class TestCrawlerTasksRepository:
                 "cron_expression": "0 * * * *",
                 "scrape_phase": ScrapePhase.INIT,
             }
-            task = crawler_tasks_repo.create(task_data)
-            session.commit()
-            assert task is not None
+            # 使用 session 內的 repo 創建任務
+            task = repo_in_session.create(task_data)
+            assert task is not None  # 先確認 create 有返回物件
+            session.flush()  # 寫入數據庫並獲取 ID，但不結束事務
+
+            # 現在可以進行斷言
             assert task.id is not None
             assert task.crawler_id == crawler_id
             assert task.is_auto is True
@@ -969,22 +979,26 @@ class TestCrawlerTasksRepository:
             assert task.task_args.get("ai_only") is False
             assert task.task_args.get("scrape_mode") == ScrapeMode.FULL_SCRAPE.value
 
-            task_id = task.id
+            task_id = task.id  # 在確認 id 非 None 後再賦值
+            # 此 with 區塊結束時，session_scope 會自動 commit
+
+        # 使用新的 session 驗證持久化
         with initialized_db_manager.session_scope() as session:
-            repo_in_session = CrawlerTasksRepository(session, CrawlerTasks)
-            persisted_task = repo_in_session.get_by_id(task_id)
+            repo_in_session_verify = CrawlerTasksRepository(session, CrawlerTasks)
+            persisted_task = repo_in_session_verify.get_by_id(task_id)
             assert persisted_task is not None
             assert persisted_task.task_name == "測試任務成功"
 
     def test_update_task_with_validation(
         self,
-        crawler_tasks_repo: CrawlerTasksRepository,
+        # crawler_tasks_repo: CrawlerTasksRepository, # 不再直接使用 fixture
         initialized_db_manager,
         sample_crawler_data: Dict[str, Any],
     ):
         """測試更新任務時的驗證規則"""
         crawler_id = sample_crawler_data["id"]
         task_id = None
+        # 創建初始任務
         with initialized_db_manager.session_scope() as session:
             repo_in_session = CrawlerTasksRepository(session, CrawlerTasks)
             task = repo_in_session.create(
@@ -1001,21 +1015,27 @@ class TestCrawlerTasksRepository:
                 }
             )
             assert task is not None
-            session.commit()
+            session.flush()  # 獲取 ID
             task_id = task.id
+            # 此 scope 結束時 commit 創建操作
 
         assert task_id is not None
 
-        with pytest.raises(ValidationError) as excinfo:
-            crawler_tasks_repo.update(
-                task_id,
-                {
-                    "crawler_id": 999,
-                    "cron_expression": "0 * * * *",
-                },
-            )
-        assert "不允許更新 crawler_id 欄位" in str(excinfo.value)
+        # 嘗試更新 crawler_id (預期失敗)
+        with initialized_db_manager.session_scope() as session:
+            repo_for_invalid_update = CrawlerTasksRepository(session, CrawlerTasks)
+            with pytest.raises(ValidationError) as excinfo:
+                repo_for_invalid_update.update(
+                    task_id,
+                    {
+                        "crawler_id": 999,
+                        "cron_expression": "0 * * * *",
+                    },
+                )
+            assert "不允許更新 crawler_id 欄位" in str(excinfo.value)
+            # 此 scope 結束時 rollback (因為拋出異常)
 
+        # 執行有效更新
         update_data = {
             "is_auto": True,
             "cron_expression": "0 * * * *",
@@ -1026,21 +1046,29 @@ class TestCrawlerTasksRepository:
             },
             "notes": "已更新",
         }
-        updated_task = crawler_tasks_repo.update(task_id, update_data)
-        assert updated_task is not None
-        assert updated_task.id == task_id
-        assert updated_task.is_auto is True
-        assert updated_task.cron_expression == "0 * * * *"
-        assert isinstance(updated_task.task_args, dict)
-        assert updated_task.task_args.get("ai_only") is True
-        assert updated_task.task_args.get("scrape_mode") == ScrapeMode.LINKS_ONLY.value
-        assert updated_task.notes == "已更新"
+        with initialized_db_manager.session_scope() as update_session:
+            repo_for_update = CrawlerTasksRepository(update_session, CrawlerTasks)
+            updated_task = repo_for_update.update(task_id, update_data)
 
-        with initialized_db_manager.session_scope() as session:
-            repo_in_session = CrawlerTasksRepository(session, CrawlerTasks)
-            persisted_task = repo_in_session.get_by_id(task_id)
+            # 在同一個 session 中驗證 update 返回值
+            assert updated_task is not None
+            assert updated_task.id == task_id
+            assert updated_task.is_auto is True
+            assert updated_task.cron_expression == "0 * * * *"
+            assert isinstance(updated_task.task_args, dict)
+            assert updated_task.task_args.get("ai_only") is True
+            assert (
+                updated_task.task_args.get("scrape_mode") == ScrapeMode.LINKS_ONLY.value
+            )
+            assert updated_task.notes == "已更新"
+            # 此 scope 結束時 commit 更新操作
+
+        # 使用新的 session 驗證持久化
+        with initialized_db_manager.session_scope() as verify_session:
+            repo_for_verify = CrawlerTasksRepository(verify_session, CrawlerTasks)
+            persisted_task = repo_for_verify.get_by_id(task_id)
             assert persisted_task is not None
-            assert persisted_task.is_auto is True
+            assert persisted_task.is_auto is True  # 現在這個應該通過了
             assert persisted_task.cron_expression == "0 * * * *"
             assert persisted_task.task_args.get("ai_only") is True
             assert persisted_task.notes == "已更新"
@@ -1359,7 +1387,8 @@ class TestCrawlerTasksRepository:
             assert updated_task_1.last_run_message == success_message
             assert updated_task_1.last_run_at == last_run_time_1
             if original_last_run_at:
-                assert updated_task_1.last_run_at > original_last_run_at
+                assert isinstance(original_last_run_at, datetime)  # 添加類型斷言
+                assert updated_task_1.last_run_at > original_last_run_at  # type: ignore[operator]
 
         time.sleep(0.01)
 
@@ -2000,7 +2029,7 @@ class TestComplexValidationScenarios:
 
     def test_create_with_string_enum(
         self,
-        crawler_tasks_repo: CrawlerTasksRepository,
+        # crawler_tasks_repo: CrawlerTasksRepository, # 不再直接使用 fixture
         sample_crawler_data: Dict[str, Any],
         initialized_db_manager,
     ):
@@ -2015,29 +2044,44 @@ class TestComplexValidationScenarios:
             "task_status": "running",
         }
 
-        validated_data = crawler_tasks_repo.validate_data(
-            create_data, SchemaType.CREATE
-        )
-        assert validated_data["scrape_phase"] == ScrapePhase.INIT
-        assert validated_data["task_status"] == TaskStatus.RUNNING
+        task_id = None
         with initialized_db_manager.session_scope() as session:
-            task = crawler_tasks_repo.create(validated_data)
-            session.commit()
+            # 在 session scope 內創建 repo
+            repo_in_session = CrawlerTasksRepository(session, CrawlerTasks)
+
+            # 使用 session 內的 repo 進行驗證
+            validated_data = repo_in_session.validate_data(
+                create_data, SchemaType.CREATE
+            )
+            assert validated_data["scrape_phase"] == ScrapePhase.INIT
+            assert validated_data["task_status"] == TaskStatus.RUNNING
+
+            # 使用 session 內的 repo 進行創建
+            task = repo_in_session.create(validated_data)
             assert task is not None
+            session.flush()  # 寫入 DB 並獲取 ID
+
+            # 斷言
             assert task.id is not None
             assert task.scrape_phase == ScrapePhase.INIT
             assert task.task_status == TaskStatus.RUNNING
 
             task_id = task.id
+            # 此 scope 結束時 commit
+
+        # 驗證數據庫持久化
         with initialized_db_manager.session_scope() as session:
-            repo_in_session = CrawlerTasksRepository(session, CrawlerTasks)
-            persisted_task = repo_in_session.get_by_id(task_id)
+            repo_in_session_verify = CrawlerTasksRepository(session, CrawlerTasks)
+            persisted_task = repo_in_session_verify.get_by_id(task_id)
             assert persisted_task is not None
             assert persisted_task.scrape_phase == ScrapePhase.INIT
             assert persisted_task.task_status == TaskStatus.RUNNING
 
-        invalid_data = create_data.copy()
-        invalid_data["scrape_phase"] = "invalid_phase"
-        with pytest.raises(ValidationError) as excinfo:
-            crawler_tasks_repo.validate_data(invalid_data, SchemaType.CREATE)
-        assert "scrape_phase: 無效的枚舉值" in str(excinfo.value)
+        # 測試無效枚舉值
+        with initialized_db_manager.session_scope() as session:
+            repo_in_session_invalid = CrawlerTasksRepository(session, CrawlerTasks)
+            invalid_data = create_data.copy()
+            invalid_data["scrape_phase"] = "invalid_phase"
+            with pytest.raises(ValidationError) as excinfo:
+                repo_in_session_invalid.validate_data(invalid_data, SchemaType.CREATE)
+            assert "scrape_phase: 無效的枚舉值" in str(excinfo.value)

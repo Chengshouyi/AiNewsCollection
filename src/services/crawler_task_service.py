@@ -172,9 +172,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
 
                     if task.is_auto:
                         try:
-                            scheduler_result = self._set_task_schedule(
-                                task_schema, session
-                            )
+                            scheduler_result = self._set_task_schedule(task, session)
                             if scheduler_result.get("success"):
                                 return {
                                     "success": True,
@@ -355,10 +353,10 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
                     )
 
                 # --- 處理排程器 ---
-                if final_update_result.get("success") and is_auto_task and task_schema:
+                if final_update_result.get("success") and is_auto_task and updated_task:
                     try:
                         result = self._set_task_schedule(
-                            task_schema, session, is_update=True
+                            updated_task, session, is_update=True
                         )
                         if not result.get("success"):
                             final_update_result["message"] = (
@@ -399,7 +397,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
 
     def _set_task_schedule(
         self,
-        task_schema: CrawlerTaskReadSchema,
+        task: CrawlerTasks,
         session: Session,
         is_update: bool = False,
     ) -> Dict:
@@ -408,10 +406,8 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         try:
             scheduler = get_scheduler_service()
             result = {}
-            # 修正：傳遞 session 參數給排程器
-            scheduler_result = scheduler.add_or_update_task_to_scheduler(
-                task_schema, session
-            )
+            # 修正：傳遞 ORM 對象 task
+            scheduler_result = scheduler.add_or_update_task_to_scheduler(task, session)
             if not scheduler_result.get("success"):
                 error_msg = f"更新排程器失敗: {scheduler_result.get('message')}"
                 logger.error("更新排程器失敗: %s", scheduler_result.get("message"))

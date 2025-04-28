@@ -41,4 +41,14 @@ def db_manager_for_test(monkeypatch):
     yield db_manager
 
     # 測試結束後清理資源
-    db_manager.cleanup()
+    try:
+        # 在 dispose 之前刪除所有表，確保下次 function scope 測試是乾淨的
+        logger.debug("Dropping all tables after test function...")
+        base = Base  # 確保 Base 已導入
+        db_manager.drop_tables(base)
+        logger.debug("All tables dropped.")
+    except Exception as e:
+        logger.error(f"Error dropping tables during cleanup: {e}", exc_info=True)
+    finally:
+        # 最終執行原始的 cleanup (dispose engine)
+        db_manager.cleanup()

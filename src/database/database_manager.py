@@ -19,6 +19,9 @@ from src.error.errors import (
     DatabaseConfigError,
     DatabaseConnectionError,
     DatabaseOperationError,
+    IntegrityValidationError,
+    InvalidOperationError,
+    ValidationError,
 )
 from src.utils.log_utils import LoggerSetup
 
@@ -262,41 +265,43 @@ def check_session(func):
 
     @wraps(func)
     def wrapper(self, *args, **kwargs):
-        # This decorator assumes 'self' has a 'session' attribute.
-        # DatabaseManager uses get_session() or session_scope().
-        # Ensure the class using this decorator manages 'session' correctly.
         session_instance: Optional[Session] = None
-        if hasattr(self, "session") and isinstance(
-            getattr(self, "session", None), Session
-        ):
-            session_instance = self.session
-        elif hasattr(self, "get_session") and callable(self.get_session):
-            # Attempt to get session if applicable, but be cautious
-            # as this might not be the intended use case for the decorator.
-            # Consider if the decorator is applied correctly.
-            logger.warning(
-                "check_session decorator used on class potentially without direct 'session' attribute. Attempting get_session()."
-            )
-            # We cannot reliably get and manage the session here without knowing
-            # the context (e.g., if it should be within a session_scope).
-            # This check might be better performed inside the decorated function itself.
-            # For now, we'll just check if a session attribute exists.
-            if not hasattr(self, "session"):
-                raise DatabaseConnectionError(
-                    "Class using check_session lacks a 'session' attribute."
+        try:  # Try block for getting/checking session
+            # This decorator assumes 'self' has a 'session' attribute.
+            # DatabaseManager uses get_session() or session_scope().
+            # Ensure the class using this decorator manages 'session' correctly.
+            if hasattr(self, "session") and isinstance(
+                getattr(self, "session", None), Session
+            ):
+                session_instance = self.session
+            elif hasattr(self, "get_session") and callable(self.get_session):
+                # Attempt to get session if applicable, but be cautious
+                # as this might not be the intended use case for the decorator.
+                # Consider if the decorator is applied correctly.
+                logger.warning(
+                    "check_session decorator used on class potentially without direct 'session' attribute. Attempting get_session()."
                 )
-            session_instance = getattr(self, "session", None)  # Re-check after warning
-        else:
-            raise DatabaseConnectionError(
-                "Class using check_session lacks a 'session' attribute or a 'get_session' method."
-            )
+                # We cannot reliably get and manage the session here without knowing
+                # the context (e.g., if it should be within a session_scope).
+                # This check might be better performed inside the decorated function itself.
+                # For now, we'll just check if a session attribute exists.
+                if not hasattr(self, "session"):
+                    raise DatabaseConnectionError(
+                        "Class using check_session lacks a 'session' attribute."
+                    )
+                session_instance = getattr(
+                    self, "session", None
+                )  # Re-check after warning
+            else:
+                raise DatabaseConnectionError(
+                    "Class using check_session lacks a 'session' attribute or a 'get_session' method."
+                )
 
-        try:
             # Check if the session instance obtained is valid
             if (
                 not session_instance
                 or not session_instance.is_active
-                or not session_instance.bind
+                or not session_instance.bind  # This check itself might raise AttributeError
             ):
                 logger.error(
                     "Database connection is closed or session is invalid. Session: %s",
@@ -305,23 +310,32 @@ def check_session(func):
                 raise DatabaseConnectionError("資料庫連接已關閉或 Session 無效")
 
             logger.debug("Session check passed for function: %s", func.__name__)
-            return func(self, *args, **kwargs)
 
-        except OperationalError as e:
+        except OperationalError as e:  # Catch errors during session check/retrieval
             error_msg = f"資料庫連接錯誤: {e}"
             logger.error("資料庫連接錯誤: %s", e)
             raise DatabaseConnectionError(error_msg) from e
-        except AttributeError as e:
-            # This might occur if 'session' exists but lacks expected properties (like 'bind')
+        except (
+            AttributeError
+        ) as e:  # Catch errors during session check/retrieval (e.g., session.bind)
             error_msg = f"資料庫會話屬性錯誤: {e}"
             logger.error("資料庫會話屬性錯誤: %s", e)
             raise DatabaseConnectionError(error_msg) from e
-        except DatabaseConnectionError as e:  # Re-raise specifically caught errors
+        except (
+            DatabaseConnectionError
+        ) as e:  # Re-raise specifically caught errors from check
             raise e
-        except Exception as e:  # Catch unexpected errors during the check
+        except (
+            Exception
+        ) as e:  # Catch OTHER unexpected errors *during the check itself*
             error_msg = f"執行 {func.__name__} 的會話檢查時發生意外錯誤: {e}"
             logger.error("執行 %s 的會話檢查時發生意外錯誤: %s", func.__name__, e)
-            # Decide if this should be wrapped as DatabaseConnectionError or re-raised
+            # Wrap ONLY if the error occurred *during the check*, not from func()
             raise DatabaseConnectionError(error_msg) from e
+
+        # If session check passed, call the original function *outside* the main check's try-except
+        # Allow exceptions raised by func() to propagate naturally, especially those
+        # that execute_query intends to preserve.
+        return func(self, *args, **kwargs)
 
     return wrapper

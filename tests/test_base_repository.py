@@ -9,7 +9,7 @@ from unittest.mock import patch
 import pytest
 from pydantic import BaseModel, field_validator
 from sqlalchemy import String
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, Session
 from sqlalchemy.exc import IntegrityError
 
 # Local application imports
@@ -174,12 +174,13 @@ def initialized_db_manager(db_manager_for_test):
 
 
 @pytest.fixture(scope="function")
-def repo(initialized_db_manager):
-    """為每個測試函數創建獨立的 Repository 實例，使用DB管理器提供的session"""
-    # The repository needs a session to initialize. We can get one from the manager.
-    # The actual session used for operations will come from session_scope within tests or repo methods.
-    with initialized_db_manager.session_scope() as session:
-        yield ModelRepositoryforTest(session, ModelForTest)
+def repo_factory(initialized_db_manager):
+    """提供一個工廠函數來創建綁定特定 session 的 repo 實例"""
+
+    def _create_repo(session: Session):
+        return ModelRepositoryforTest(session, ModelForTest)
+
+    return _create_repo
 
 
 @pytest.fixture(scope="function")
@@ -211,10 +212,13 @@ def sample_model_data_list(sample_model_data):
 
 # --- Test Class ---
 class TestBaseRepository:
-    def test_create_entity(self, repo, initialized_db_manager, sample_model_data):
+    def test_create_entity(
+        self, repo_factory, initialized_db_manager, sample_model_data
+    ):
         """測試創建實體的基本功能"""
         entity_id = None  # 初始化 entity_id
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             created_entity = repo.create(sample_model_data)
             session.flush()
             assert created_entity is not None
@@ -224,6 +228,7 @@ class TestBaseRepository:
 
         # 在新的 session 中驗證
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             # Use repo method to get data
             result = repo.get_by_id(entity_id)  # 使用之前獲取的 entity_id
 
@@ -233,11 +238,12 @@ class TestBaseRepository:
             assert result.link == "https://test.com/article"
 
     def test_create_entity_with_schema_internal_logic(
-        self, repo, initialized_db_manager, sample_model_data
+        self, repo_factory, initialized_db_manager, sample_model_data
     ):
         """測試 validate_data 和 _create_internal 的協同工作"""
         entity_id = None  # 初始化 entity_id
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             data_with_schema = sample_model_data.copy()
 
             validated_data = repo.validate_data(data_with_schema, SchemaType.CREATE)
@@ -259,13 +265,14 @@ class TestBaseRepository:
 
         # 在新的 session 中驗證
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             result = repo.get_by_id(entity_id)  # 使用之前獲取的 entity_id
             assert result is not None
             assert result.id == entity_id
             assert result.title == "測試文章"
             assert result.link == "https://test.com/article"
 
-    def test_create_entity_validation_error(self, repo, initialized_db_manager):
+    def test_create_entity_validation_error(self, repo_factory, initialized_db_manager):
         """測試創建實體時捕獲自定義的 ValidationError"""
         invalid_data = {
             "name": "test_name",
@@ -277,14 +284,21 @@ class TestBaseRepository:
 
         with initialized_db_manager.session_scope():  # No commit needed as error happens before
             with pytest.raises(ValidationError) as excinfo:
+                # Need repo instance even if commit fails
+                repo = repo_factory(
+                    initialized_db_manager.get_session()
+                )  # Use factory, get session directly
                 repo.create(invalid_data)
 
         assert "不能為空" in str(excinfo.value)
 
-    def test_update_entity(self, repo, initialized_db_manager, sample_model_data):
+    def test_update_entity(
+        self, repo_factory, initialized_db_manager, sample_model_data
+    ):
         """測試更新實體的基本功能"""
         entity_id = None
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             created_entity = repo.create(sample_model_data)
             session.flush()  # <--- 在斷言 ID 之前 flush
             assert created_entity is not None and created_entity.id is not None
@@ -293,11 +307,13 @@ class TestBaseRepository:
 
         update_data = {"title": "更新後的文章", "summary": "這是更新後的摘要"}
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             updated_entity = repo.update(entity_id, update_data)
             assert updated_entity is not None
             # Commit via scope
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             result = repo.get_by_id(entity_id)
             assert result is not None
             assert result.id == entity_id
@@ -306,11 +322,12 @@ class TestBaseRepository:
             assert result.link == "https://test.com/article"
 
     def test_update_entity_with_schema_internal_logic(
-        self, repo, initialized_db_manager, sample_model_data
+        self, repo_factory, initialized_db_manager, sample_model_data
     ):
         """測試 validate_data 和 _update_internal 的協同工作"""
         entity_id = None
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             created_entity = repo.create(sample_model_data)
             assert created_entity is not None  # 先確認物件已創建
             session.flush()  # <--- 在斷言 ID 之前 flush
@@ -323,6 +340,7 @@ class TestBaseRepository:
             "summary": "這是使用Schema更新後的摘要",
         }
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             validated_payload = repo.validate_data(update_data, SchemaType.UPDATE)
             assert validated_payload is not None
             assert "title" in validated_payload
@@ -336,25 +354,30 @@ class TestBaseRepository:
             # Commit via scope
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             result = repo.get_by_id(entity_id)
             assert result is not None
             assert result.id == entity_id
             assert result.title == "使用Schema更新後的文章"
             assert result.summary == "這是使用Schema更新後的摘要"
 
-    def test_update_nonexistent_entity(self, repo, initialized_db_manager):
+    def test_update_nonexistent_entity(self, repo_factory, initialized_db_manager):
         """測試更新不存在的實體時拋出 DatabaseOperationError"""
         non_existent_id = 999
-        with initialized_db_manager.session_scope():  # No commit needed
+        with initialized_db_manager.session_scope() as session:  # No commit needed
+            repo = repo_factory(session)  # Use factory
             with pytest.raises(DatabaseOperationError) as excinfo:
                 repo.update(non_existent_id, {"title": "新標題"})
 
         assert f"找不到ID為{non_existent_id}的實體" in str(excinfo.value)
 
-    def test_delete_entity(self, repo, initialized_db_manager, sample_model_data):
+    def test_delete_entity(
+        self, repo_factory, initialized_db_manager, sample_model_data
+    ):
         """測試刪除實體的基本功能"""
         entity_id = None
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             created_entity = repo.create(sample_model_data)
             session.flush()  # <--- 在斷言 ID 之前 flush
             assert created_entity is not None and created_entity.id is not None
@@ -363,27 +386,31 @@ class TestBaseRepository:
 
         delete_result = False
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             delete_result = repo.delete(entity_id)
             # Commit via scope
 
         assert delete_result is True
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             assert repo.get_by_id(entity_id) is None
 
-    def test_delete_nonexistent_entity(self, repo, initialized_db_manager):
+    def test_delete_nonexistent_entity(self, repo_factory, initialized_db_manager):
         """測試刪除不存在的實體返回 False"""
         non_existent_id = 999
         delete_result = False
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             delete_result = repo.delete(non_existent_id)
             # Commit via scope
 
         assert delete_result is False
 
-    def test_get_by_id(self, repo, initialized_db_manager, sample_model_data):
+    def test_get_by_id(self, repo_factory, initialized_db_manager, sample_model_data):
         """測試根據 ID 獲取實體"""
         entity_id = None
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             created_entity = repo.create(sample_model_data)
             session.flush()
             assert created_entity is not None and created_entity.id is not None
@@ -391,34 +418,41 @@ class TestBaseRepository:
         # Commit via scope
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             result = repo.get_by_id(entity_id)
             assert result is not None
             assert result.id == entity_id
             assert result.title == "測試文章"
 
-    def test_find_all_basic(self, repo, initialized_db_manager, sample_model_data_list):
+    def test_find_all_basic(
+        self, repo_factory, initialized_db_manager, sample_model_data_list
+    ):
         """測試 find_all 獲取所有實體 (非預覽模式)"""
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             for data in sample_model_data_list:
                 repo.create(data)
             # Commit via scope
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             results = repo.find_all()
             assert results is not None
             assert len(results) == len(sample_model_data_list)
             assert all(isinstance(item, ModelForTest) for item in results)
 
     def test_find_all_with_sorting(
-        self, repo, initialized_db_manager, sample_model_data_list
+        self, repo_factory, initialized_db_manager, sample_model_data_list
     ):
         """測試 find_all 獲取所有實體並排序 (非預覽模式)"""
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             for data in sample_model_data_list:
                 repo.create(data)
             # Commit via scope
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             results_asc = repo.find_all(sort_by="title", sort_desc=False)
             assert [item.title for item in results_asc] == [
                 f"測試文章{i}" for i in range(5)
@@ -426,6 +460,7 @@ class TestBaseRepository:
             assert all(isinstance(item, ModelForTest) for item in results_asc)
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             results_desc = repo.find_all(sort_by="title", sort_desc=True)
             assert [item.title for item in results_desc] == [
                 f"測試文章{i}" for i in range(4, -1, -1)
@@ -433,15 +468,17 @@ class TestBaseRepository:
             assert all(isinstance(item, ModelForTest) for item in results_desc)
 
     def test_find_all_with_pagination(
-        self, repo, initialized_db_manager, sample_model_data_list
+        self, repo_factory, initialized_db_manager, sample_model_data_list
     ):
         """測試 find_all 獲取所有實體並分頁 (非預覽模式)"""
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             for data in sample_model_data_list:
                 repo.create(data)
             # Commit via scope
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             # Note: Default sorting might affect which items are returned
             # Add explicit sort for predictable pagination results
             results = repo.find_all(sort_by="name", sort_desc=False, limit=2, offset=2)
@@ -451,16 +488,18 @@ class TestBaseRepository:
             assert all(isinstance(item, ModelForTest) for item in results)
 
     def test_find_all_preview(
-        self, repo, initialized_db_manager, sample_model_data_list
+        self, repo_factory, initialized_db_manager, sample_model_data_list
     ):
         """測試 find_all 預覽模式"""
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             for data in sample_model_data_list:
                 repo.create(data)
             # Commit via scope
 
         preview_fields = ["title", "link"]
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             results = repo.find_all(is_preview=True, preview_fields=preview_fields)
 
             assert results is not None
@@ -471,16 +510,18 @@ class TestBaseRepository:
                 assert item["title"].startswith("測試文章")
 
     def test_find_all_preview_with_sort_limit(
-        self, repo, initialized_db_manager, sample_model_data_list
+        self, repo_factory, initialized_db_manager, sample_model_data_list
     ):
         """測試 find_all 預覽模式帶排序和分頁"""
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             for data in sample_model_data_list:
                 repo.create(data)
             # Commit via scope
 
         preview_fields = ["name", "source"]
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             results = repo.find_all(
                 sort_by="source",
                 sort_desc=False,
@@ -499,15 +540,17 @@ class TestBaseRepository:
             assert set(results[0].keys()) == set(preview_fields)
 
     def test_find_all_preview_invalid_fields(
-        self, repo, initialized_db_manager, sample_model_data_list
+        self, repo_factory, initialized_db_manager, sample_model_data_list
     ):
         """測試 find_all 預覽模式但欄位無效，應返回完整物件"""
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             for data in sample_model_data_list:
                 repo.create(data)
             # Commit via scope
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             results = repo.find_all(
                 is_preview=True, preview_fields=["invalid_field", "non_existent"]
             )
@@ -515,24 +558,27 @@ class TestBaseRepository:
             # It should return full model instances if preview fields are invalid
             assert all(isinstance(item, ModelForTest) for item in results)
 
-    def test_find_all_invalid_sort_key(self, repo, initialized_db_manager):
+    def test_find_all_invalid_sort_key(self, repo_factory, initialized_db_manager):
         """測試 find_all 使用無效排序欄位"""
-        with initialized_db_manager.session_scope():  # No db action needed, just repo call
+        with initialized_db_manager.session_scope() as session:  # No db action needed, just repo call
+            repo = repo_factory(session)  # Use factory
             with pytest.raises(InvalidOperationError) as excinfo:
                 repo.find_all(sort_by="invalid_column")
         assert "無效的排序欄位: invalid_column" in str(excinfo.value)
 
     def test_integrity_error_handling_on_commit(
-        self, repo, initialized_db_manager, sample_model_data
+        self, repo_factory, initialized_db_manager, sample_model_data
     ):
         """測試在 session_scope 結束時捕獲 sqlalchemy.exc.IntegrityError (Unique Constraint)"""
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             repo.create(sample_model_data)
             # Commit via scope
 
         # Try to create again, violating unique constraint
         with pytest.raises(DatabaseOperationError) as excinfo:
             with initialized_db_manager.session_scope() as session:
+                repo = repo_factory(session)  # Use factory
                 repo.create(sample_model_data)
                 # Error occurs on commit at scope exit
 
@@ -541,66 +587,85 @@ class TestBaseRepository:
 
         # Verify rollback happened (no second entry)
         with initialized_db_manager.session_scope() as session:
+            # No need for repo factory here, just querying count
             count = session.query(ModelForTest).count()
             assert count == 1
 
-    def test_get_schema_class(self, repo):
+    def test_get_schema_class(self, repo_factory, initialized_db_manager):
         """測試獲取schema類的方法"""
-        assert repo.get_schema_class(SchemaType.CREATE) == ModelCreateSchema
-        assert repo.get_schema_class(SchemaType.UPDATE) == ModelUpdateSchema
-        assert repo.get_schema_class(SchemaType.LIST) == ModelCreateSchema
-        assert repo.get_schema_class(SchemaType.DETAIL) == ModelCreateSchema
-        assert repo.get_schema_class() == ModelCreateSchema
+        # Need an instance to call the method, but doesn't need db interaction
+        with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
+            assert repo.get_schema_class(SchemaType.CREATE) == ModelCreateSchema
+            assert repo.get_schema_class(SchemaType.UPDATE) == ModelUpdateSchema
+            assert repo.get_schema_class(SchemaType.LIST) == ModelCreateSchema
+            assert repo.get_schema_class(SchemaType.DETAIL) == ModelCreateSchema
+            assert repo.get_schema_class() == ModelCreateSchema
 
-    def test_validate_data(self, repo, sample_model_data):
+    def test_validate_data(
+        self, repo_factory, initialized_db_manager, sample_model_data
+    ):
         """測試 validate_data 方法"""
-        validated_create = repo.validate_data(sample_model_data, SchemaType.CREATE)
-        assert validated_create is not None
-        assert validated_create["title"] == "測試文章"
-        assert validated_create["link"] == "https://test.com/article"
-        assert all(
-            key in validated_create for key in ModelCreateSchema.get_required_fields()
-        )
+        # Need an instance to call the method
+        with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
+            validated_create = repo.validate_data(sample_model_data, SchemaType.CREATE)
+            assert validated_create is not None
+            assert validated_create["title"] == "測試文章"
+            assert validated_create["link"] == "https://test.com/article"
+            assert all(
+                key in validated_create
+                for key in ModelCreateSchema.get_required_fields()
+            )
 
-        update_data = {"title": "更新的標題", "summary": "新摘要"}
-        validated_update = repo.validate_data(update_data, SchemaType.UPDATE)
-        assert validated_update is not None
-        assert validated_update["title"] == "更新的標題"
-        assert validated_update["summary"] == "新摘要"
-        assert "link" not in validated_update
+            update_data = {"title": "更新的標題", "summary": "新摘要"}
+            validated_update = repo.validate_data(update_data, SchemaType.UPDATE)
+            assert validated_update is not None
+            assert validated_update["title"] == "更新的標題"
+            assert validated_update["summary"] == "新摘要"
+            assert "link" not in validated_update
 
-        invalid_data = sample_model_data.copy()
-        invalid_data["title"] = ""
+            invalid_data = sample_model_data.copy()
+            invalid_data["title"] = ""
 
-        with pytest.raises(ValidationError) as excinfo:
-            repo.validate_data(invalid_data, SchemaType.CREATE)
+            with pytest.raises(ValidationError) as excinfo:
+                repo.validate_data(invalid_data, SchemaType.CREATE)
 
-        assert "不能為空" in str(excinfo.value)
-        assert "CREATE 資料驗證失敗" in str(excinfo.value)
+            assert "不能為空" in str(excinfo.value)
+            assert "CREATE 資料驗證失敗" in str(excinfo.value)
 
-    def test_validate_and_supplement_create_success(self, repo, sample_model_data):
+    def test_validate_and_supplement_create_success(
+        self, repo_factory, initialized_db_manager, sample_model_data
+    ):
         """測試 _validate_and_supplement_required_fields 創建成功"""
-        validated_data = repo.validate_data(sample_model_data, SchemaType.CREATE)
-        # Simulate calling internal method (assuming ok for test)
-        final_data = repo._validate_and_supplement_required_fields(validated_data)
-        assert final_data is not None
+        with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
+            validated_data = repo.validate_data(sample_model_data, SchemaType.CREATE)
+            # Simulate calling internal method (assuming ok for test)
+            final_data = repo._validate_and_supplement_required_fields(validated_data)
+            assert final_data is not None
 
-    def test_validate_and_supplement_create_error(self, repo, sample_model_data):
+    def test_validate_and_supplement_create_error(
+        self, repo_factory, initialized_db_manager, sample_model_data
+    ):
         """測試 _validate_and_supplement_required_fields 創建失敗"""
-        validated_data = repo.validate_data(sample_model_data, SchemaType.CREATE)
-        validated_data["title"] = ""  # Make it invalid *after* initial validation
-        with pytest.raises(ValidationError) as excinfo:
-            # Simulate calling internal method
-            repo._validate_and_supplement_required_fields(validated_data)
-        assert "必填欄位值無效" in str(excinfo.value)
-        assert "title" in str(excinfo.value)
+        with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
+            validated_data = repo.validate_data(sample_model_data, SchemaType.CREATE)
+            validated_data["title"] = ""  # Make it invalid *after* initial validation
+            with pytest.raises(ValidationError) as excinfo:
+                # Simulate calling internal method
+                repo._validate_and_supplement_required_fields(validated_data)
+            assert "必填欄位值無效" in str(excinfo.value)
+            assert "title" in str(excinfo.value)
 
     def test_validate_and_supplement_update_supplement(
-        self, repo, initialized_db_manager, sample_model_data
+        self, repo_factory, initialized_db_manager, sample_model_data
     ):
         """測試 _validate_and_supplement_required_fields 更新補充"""
         entity_id = None
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             created_entity = repo.create(sample_model_data)
             assert created_entity is not None
             session.flush()  # <--- 加入 flush 確保 ID 生成
@@ -609,6 +674,7 @@ class TestBaseRepository:
             # Commit via scope
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             update_payload = {"summary": "New Summary"}
             validated_payload = repo.validate_data(update_payload, SchemaType.UPDATE)
 
@@ -625,12 +691,13 @@ class TestBaseRepository:
             assert final_data["summary"] == "New Summary"
 
     def test_validate_and_supplement_update_error(
-        self, repo, initialized_db_manager, sample_model_data
+        self, repo_factory, initialized_db_manager, sample_model_data
     ):
         """測試 _validate_and_supplement_required_fields 更新檢查到無效的現有值"""
         entity_id = None
         # Create an entity with an initially invalid field (bypassing repo.create validation)
         with initialized_db_manager.session_scope() as session:
+            # repo = repo_factory(session) # No repo needed here, directly use model
             invalid_initial_data = sample_model_data.copy()
             invalid_initial_data["title"] = ""
             invalid_initial_data["link"] = "https://test.com/invalid_update"
@@ -639,6 +706,7 @@ class TestBaseRepository:
             # Commit via scope
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             # Fetch the invalid entity
             existing_entity = (
                 session.query(ModelForTest)
@@ -664,10 +732,11 @@ class TestBaseRepository:
         assert "title" in str(excinfo.value)
 
     def test_create_internal_validation_error(
-        self, repo, initialized_db_manager, sample_model_data
+        self, repo_factory, initialized_db_manager, sample_model_data
     ):
         """測試 _create_internal 捕捉 _validate_and_supplement 的錯誤"""
-        with initialized_db_manager.session_scope():  # No commit needed
+        with initialized_db_manager.session_scope() as session:  # No commit needed
+            repo = repo_factory(session)  # Use factory
             # Mock the internal validation to raise an error
             with patch.object(
                 repo,
@@ -683,12 +752,13 @@ class TestBaseRepository:
             assert "模擬必填欄位錯誤" in str(excinfo.value)
 
     def test_update_internal_immutable_field(
-        self, repo, initialized_db_manager, sample_model_data
+        self, repo_factory, initialized_db_manager, sample_model_data
     ):
         """測試 _update_internal 忽略不可變欄位"""
         entity_id = None
         original_name = sample_model_data["name"]
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             created = repo.create(sample_model_data)
             assert created is not None  # 確認物件已創建
             session.flush()  # <--- 加入 flush 確保 ID 生成
@@ -697,6 +767,7 @@ class TestBaseRepository:
             # Commit via scope
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             # Mock get_immutable_fields for the update schema
             with patch.object(
                 ModelUpdateSchema, "get_immutable_fields", return_value=["name"]
@@ -720,23 +791,27 @@ class TestBaseRepository:
                 # Commit via scope
 
         with initialized_db_manager.session_scope() as session:
+            repo = repo_factory(session)  # Use factory
             result = repo.get_by_id(entity_id)
             assert result.title == "New Title"  # Title should be updated
             assert result.name == original_name  # Name should remain unchanged
 
-    def test_execute_query_wraps_exception(self, repo, initialized_db_manager):
+    def test_execute_query_wraps_exception(self, repo_factory, initialized_db_manager):
         """測試 execute_query 正常包裝非預期異常"""
 
         def faulty_query():
             raise ValueError("Something went wrong")
 
-        with initialized_db_manager.session_scope():  # No db action needed
+        with initialized_db_manager.session_scope() as session:  # No db action needed
+            repo = repo_factory(session)  # Use factory
             with pytest.raises(DatabaseOperationError) as excinfo:
                 repo.execute_query(faulty_query, err_msg="Test Error")
         assert "Test Error: Something went wrong" in str(excinfo.value)
         assert isinstance(excinfo.value.__cause__, ValueError)
 
-    def test_execute_query_preserves_exception(self, repo, initialized_db_manager):
+    def test_execute_query_preserves_exception(
+        self, repo_factory, initialized_db_manager
+    ):
         """測試 execute_query 保留指定的異常類型"""
 
         def integrity_error_query():
@@ -745,7 +820,8 @@ class TestBaseRepository:
                 "Mock IntegrityError", params=None, orig=ValueError("orig")
             )
 
-        with initialized_db_manager.session_scope():  # No db action needed
+        with initialized_db_manager.session_scope() as session:  # No db action needed
+            repo = repo_factory(session)  # Use factory
             # By default, IntegrityError should be preserved
             with pytest.raises(IntegrityError):
                 repo.execute_query(integrity_error_query)
@@ -762,8 +838,3 @@ class TestBaseRepository:
         )
         assert validated_create is not None
         assert validated_create["title"] == "測試文章"
-
-        invalid_data = sample_model_data.copy()
-        invalid_data["title"] = ""
-        with pytest.raises(ValidationError):
-            ModelRepositoryforTest.validate_data(invalid_data, SchemaType.CREATE)
