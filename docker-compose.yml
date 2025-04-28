@@ -44,6 +44,8 @@ services:
         # condition: service_started # 或者只等待 db 啟動 (如果沒有 healthcheck)
     ports:
       - "8001:8000" # 將主機的 8001 映射到容器的 8000
+    volumes:
+      - app-logs:/app/logs # 將日誌 volume 掛載到容器的 /app/logs
     networks:
       - default
   # 將來擴充微服務時會使用 

@@ -1,6 +1,11 @@
+"""測試 API 請求參數解析工具 (api_utils) 的功能。"""
+
 import pytest
 from werkzeug.datastructures import MultiDict
 from src.utils.api_utils import parse_and_validate_common_query_params
+from src.utils.log_utils import LoggerSetup
+
+logger = LoggerSetup.setup_logger(__name__)
 
 def test_parse_default_params():
     """測試沒有提供參數時的預設值。"""
