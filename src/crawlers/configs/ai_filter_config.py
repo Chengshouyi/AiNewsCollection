@@ -1,12 +1,20 @@
-# AI相關常數和設定
+"""定義用於篩選 AI 相關內容的關鍵字、分類和優先級設定。"""
+
+# 標準函式庫導入
 from typing import Set
+
+# 本地應用程式導入
+from src.utils.log_utils import LoggerSetup
+
+# 設定統一的 logger (雖然此設定檔目前未使用 logger，但依指示加入)
+logger = LoggerSetup.setup_logger(__name__)
 
 # AI相關關鍵字集合，用於篩選文章
 AI_KEYWORDS: Set[str] = {
     # 一般AI技術名詞
     'ai', '人工智能', '人工智慧', '機器學習', 'machine learning', 'ml', 'deep learning', '深度學習',
     '神經網絡', '神經網路', 'neural network', '大型語言模型', 'llm', 'large language model',
-    '生成式ai', '生成式人工智慧', 'generative ai', '人工智能技術', 'nlp', '自然語言處理',
+    '生成式ai', '生成式人工智慧', 'generative ai', '人工智能技術', 'nlp', '自然語言處理', # Natural Language Processing
     'chatgpt', 'claude', 'gemini', 'gpt', 'openai', 'anthropic',
     
     # AI應用
@@ -32,7 +40,7 @@ AI_CATEGORIES: Set[str] = {
     'deep learning', '深度學習', '大語言模型', 'llm', '生成式ai'
 }
 
-# 優先級高的關鍵字 - 這些出現即可判定為AI相關
+# 優先級高的關鍵字 - 出現這些即可判定為AI相關
 HIGH_PRIORITY_KEYWORDS: Set[str] = {
     'chatgpt', 'gpt-4', 'gpt-3', 'claude', 'gemini', 'llama', 'midjourney', 'stable diffusion',
     '大語言模型', 'llm', '生成式ai', 'generative ai', '人工智慧'
@@ -41,11 +49,15 @@ HIGH_PRIORITY_KEYWORDS: Set[str] = {
 def register_additional_keywords(*keywords: str) -> None:
     """註冊額外的AI關鍵字"""
     global AI_KEYWORDS
+    # 可以在這裡加入 log，例如記錄新增了哪些關鍵字
+    # logger.info("新增 AI 關鍵字: %s", ", ".join(keywords))
     for keyword in keywords:
         AI_KEYWORDS.add(keyword.lower())
 
 def register_additional_categories(*categories: str) -> None:
     """註冊額外的AI分類"""
     global AI_CATEGORIES
+    # 可以在這裡加入 log，例如記錄新增了哪些分類
+    # logger.info("新增 AI 分類: %s", ", ".join(categories))
     for category in categories:
         AI_CATEGORIES.add(category.lower())

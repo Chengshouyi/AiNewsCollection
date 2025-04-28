@@ -1,9 +1,25 @@
+"""測試 src.crawlers.configs.base_config 中的預設設定和輔助函數。"""
+
+# 標準函式庫導入
+import time
+from unittest.mock import patch
+# import random # random 只在 patch 中使用，不需要直接導入
+
+# 第三方函式庫導入
 import pytest
 import requests
-from src.crawlers.configs.base_config import DEFAULT_HEADERS, DEFAULT_TIMEOUT, DEFAULT_MAX_RETRIES, DEFAULT_RETRY_DELAY, DEFAULT_MIN_DELAY, DEFAULT_MAX_DELAY, DEFAULT_REQUEST_CONFIG, get_default_session, random_sleep
-import time
-import random
-from unittest.mock import patch
+
+# 本地應用程式導入
+from src.crawlers.configs.base_config import (
+    DEFAULT_HEADERS, DEFAULT_TIMEOUT, DEFAULT_MAX_RETRIES,
+    DEFAULT_RETRY_DELAY, DEFAULT_MIN_DELAY, DEFAULT_MAX_DELAY,
+    DEFAULT_REQUEST_CONFIG, get_default_session, random_sleep
+)
+from src.utils.log_utils import LoggerSetup
+
+# 設定統一的 logger
+logger = LoggerSetup.setup_logger(__name__)
+
 
 def test_default_headers():
     """測試預設的 HTTP 請求頭是否包含必要的欄位"""
@@ -45,10 +61,11 @@ def test_default_request_config():
     assert "max_retries" in DEFAULT_REQUEST_CONFIG
     assert isinstance(DEFAULT_REQUEST_CONFIG["max_retries"], int)
     assert "retry_delay" in DEFAULT_REQUEST_CONFIG
-    assert isinstance(DEFAULT_REQUEST_CONFIG["retry_delay"], int) # 原本程式碼是 float，但 DEFAULT_REQUEST_CONFIG 中是 int
+    # 根據 base_config.py，retry_delay 在 DEFAULT_REQUEST_CONFIG 中確實是 int
+    assert isinstance(DEFAULT_REQUEST_CONFIG["retry_delay"], int)
 
 def test_get_default_session():
-    """測試 get_default_session 函數是否返回一個 requests.Session 物件
+    """測試 get_default_session 函數是否返回 requests.Session 物件
     且該物件的 headers 是否包含預設的請求頭
     """
     session = get_default_session()
@@ -65,8 +82,8 @@ def test_random_sleep_within_range():
     random_sleep(min_seconds=min_delay, max_seconds=max_delay)
     end_time = time.time()
     elapsed_time = end_time - start_time
-    # 由於標記為跳過，這個斷言不會再執行，但保留它以供參考
-    assert min_delay <= elapsed_time <= max_delay + 1.0  # 允許較大誤差以適應不同系統環境
+    # 允許較大誤差以適應不同系統環境和執行時間
+    assert min_delay <= elapsed_time <= max_delay + 0.5
 
 def test_random_sleep_invalid_range():
     """測試當最小值大於最大值時是否拋出異常"""
@@ -81,7 +98,7 @@ def test_random_sleep_negative_values():
         random_sleep(min_seconds=1.0, max_seconds=-1.0)
 
 @patch('time.sleep')
-@patch('random.uniform')
+@patch('random.uniform') # patch 會處理 random 的模擬，無需導入 random
 def test_random_sleep_calls(mock_uniform, mock_sleep):
     """測試 random_sleep 函數是否正確調用 random.uniform 和 time.sleep"""
     min_delay = 2.0
@@ -90,13 +107,15 @@ def test_random_sleep_calls(mock_uniform, mock_sleep):
     random_sleep(min_seconds=min_delay, max_seconds=max_delay)
     mock_uniform.assert_called_once_with(min_delay, max_delay)
     mock_sleep.assert_called_once_with(mock_uniform.return_value)
-    
+
 @pytest.mark.skip(reason="時間相關的測試，在不同環境下可能不穩定")
 def test_random_sleep_default_values():
     """測試 random_sleep 函數的預設參數是否正常工作"""
+    # 由於使用了預設值，需要確保 base_config 中的預設值被正確使用
+    # 預設值為 DEFAULT_MIN_DELAY = 1.5, DEFAULT_MAX_DELAY = 3.5
     start_time = time.time()
-    time.sleep(1.0)  # 確保至少等待 1 秒
     random_sleep()  # 使用預設參數
     end_time = time.time()
     elapsed_time = end_time - start_time
-    assert 2.0 <= elapsed_time <= 5.0  # 預設範圍是 1.0 到 3.0 秒，加上額外的 1 秒等待以及一些允許誤差
+    # 允許一些誤差
+    assert DEFAULT_MIN_DELAY <= elapsed_time <= DEFAULT_MAX_DELAY + 0.5
