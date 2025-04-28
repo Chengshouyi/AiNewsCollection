@@ -47,6 +47,12 @@ class DatabaseManager:
                 )
 
             logger.info("DatabaseManager initializing with URL: %s", self.database_url)
+            echo_str = os.environ.get("SQLALCHEMY_ECHO", "False")
+            if echo_str == "True":
+                echo = True
+            else:
+                echo = False
+            logger.info("SQLALCHEMY_ECHO: %s", echo)
             self.engine = create_engine(
                 self.database_url,
                 poolclass=QueuePool,
@@ -54,6 +60,7 @@ class DatabaseManager:
                 max_overflow=20,
                 pool_recycle=3600,
                 pool_pre_ping=True,
+                echo=echo,
             )
             self._verify_connection()
             self._session_factory = sessionmaker(bind=self.engine)
