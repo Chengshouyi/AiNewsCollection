@@ -549,6 +549,7 @@ def validate_task_args(field_name: str, required: bool = False):
             if 'scrape_mode' in validated_args:
                 try:
                     scrape_mode_instance = validate_scrape_mode('scrape_mode', required=True)(validated_args['scrape_mode'])
+                    # 千萬不要改這行，一定要保持傳入value，不然會引起Json序列化錯誤 
                     validated_args['scrape_mode'] = scrape_mode_instance.value
                 except Exception as e:
                     msg = f"{field_name}.scrape_mode: {str(e)}"

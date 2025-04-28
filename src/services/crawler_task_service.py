@@ -1370,59 +1370,54 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
             return {"success": False, "message": "max_retries 不能為負數", "task": None}
         try:
             with self._transaction() as session:
-                tasks_repo = cast(
-                    CrawlerTasksRepository, self._get_repository("CrawlerTask", session)
-                )
-                task = tasks_repo.get_by_id(task_id)
+                # 直接從 session 獲取受管理的 task 物件
+                task = session.get(CrawlerTasks, task_id)
                 if not task:
                     return {"success": False, "message": "任務不存在", "task": None}
 
                 # 獲取當前的 task_args，如果為 None 則初始化
                 current_args = task.task_args if task.task_args is not None else {}
-                # 創建副本進行修改
+
+                # 檢查值是否真的改變了
+                if current_args.get("max_retries") == max_retries:
+                    logger.info(
+                        f"任務 ID {task_id} 的最大重試次數已為 {max_retries}，無需更新。"
+                    )
+                    task_schema = CrawlerTaskReadSchema.model_validate(task)
+                    return {
+                        "success": True,
+                        "message": "最大重試次數未變更",
+                        "task": task_schema,
+                    }
+
+                # 創建副本進行修改 (好習慣，雖然在這個模式下可能非必需)
                 new_args = current_args.copy()
                 new_args["max_retries"] = max_retries
 
-                # 使用 repo 的 update 方法更新 task_args
-                # update 方法會調用 validate_data，其中 validate_task_args 會驗證 task_args
-                updated_task = tasks_repo.update(task_id, {"task_args": new_args})
+                # --- 修改開始 ---
+                # 直接更新 task 物件的 task_args
+                task.task_args = new_args
+                # 標記 task_args 欄位已被修改，確保 JSONB/JSON 更新能被偵測到
+                flag_modified(task, "task_args")
+                # --- 修改結束 ---
 
-                if updated_task:
-                    session.flush()
-                    session.refresh(updated_task)
-                    logger.info(
-                        f"任務 ID {task_id} 的最大重試次數已更新為 {max_retries} 並準備提交。"
-                    )
-                    task_schema = CrawlerTaskReadSchema.model_validate(updated_task)
-                    return {
-                        "success": True,
-                        "message": "最大重試次數更新成功",
-                        "task": task_schema,
-                    }
-                else:
-                    # update 返回 None 可能是因為 task_args 驗證失敗或內部錯誤
-                    # 檢查是否是因為值未變
-                    if (
-                        task.task_args
-                        and task.task_args.get("max_retries") == max_retries
-                    ):
-                        logger.info(
-                            f"任務 ID {task_id} 的最大重試次數已為 {max_retries}，無需更新。"
-                        )
-                        task_schema = CrawlerTaskReadSchema.model_validate(task)
-                        return {
-                            "success": True,
-                            "message": "最大重試次數未變更",
-                            "task": task_schema,
-                        }
-                    else:
-                        return {
-                            "success": False,
-                            "message": "更新最大重試次數時 Repository 未返回更新後的實例",
-                            "task": None,
-                        }
+                # 不需要顯式調用 repo.update()，事務提交時會處理 task 的變更
 
-        except ValidationError as e:  # 捕捉來自 update/validate_data 的錯誤
+                # 在事務提交前 flush 和 refresh 以獲取更新後的狀態 (可選，但有助於確保返回最新數據)
+                session.flush()
+                session.refresh(task)
+
+                logger.info(
+                    f"任務 ID {task_id} 的最大重試次數已更新為 {max_retries} 並準備提交。"
+                )
+                task_schema = CrawlerTaskReadSchema.model_validate(task)
+                return {
+                    "success": True,
+                    "message": "最大重試次數更新成功",
+                    "task": task_schema,
+                }
+
+        except ValidationError as e:  # 捕捉可能的驗證錯誤 (雖然這裡直接修改，但保留以防萬一)
             logger.error("更新任務 %s 最大重試次數驗證失敗: %s", task_id, e)
             return {"success": False, "message": f"驗證失敗: {e}", "task": None}
         except (DatabaseOperationError, InvalidOperationError) as e:
