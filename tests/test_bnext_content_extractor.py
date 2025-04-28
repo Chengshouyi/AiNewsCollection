@@ -1,11 +1,18 @@
+"""測試 BnextContentExtractor 的功能。"""
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from datetime import datetime, timezone
+from unittest.mock import Mock, patch  # 保留 patch 因為它在測試中有用到
+
 import pandas as pd
 from bs4 import BeautifulSoup
-from datetime import datetime, timezone
+
 
 from src.crawlers.bnext_content_extractor import BnextContentExtractor
 from src.crawlers.configs.site_config import SiteConfig
+from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+
+logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+
 
 @pytest.fixture
 def mock_config():
@@ -16,24 +23,24 @@ def mock_config():
     # 根據 bnext_crawler_config.json 設定正確的選擇器
     config.selectors = {
         'get_article_contents': {
-            'content_container': "body > div.main-body-content > div > div.article-lw.pb-4.lg\\:py-4",
-            'published_date': "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > span:nth-child(1)",
-            'category': "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > a",
-            'title': "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > h1",
-            'summary': "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div:nth-child(3)",
+            'content_container': r"body > div.main-body-content > div > div.article-lw.pb-4.lg\:py-4",
+            'published_date': r"#hero > div.rgt.md\:my-6.lg\:mr-6 > div.pc.h-full.hidden.lg\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > span:nth-child(1)",
+            'category': r"#hero > div.rgt.md\:my-6.lg\:mr-6 > div.pc.h-full.hidden.lg\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > a",
+            'title': r"#hero > div.rgt.md\:my-6.lg\:mr-6 > div.pc.h-full.hidden.lg\:flex.flex-col.gap-2.tracking-wide.leading-normal > h1",
+            'summary': r"#hero > div.rgt.md\:my-6.lg\:mr-6 > div.pc.h-full.hidden.lg\:flex.flex-col.gap-2.tracking-wide.leading-normal > div:nth-child(3)",
             'tags': {
-                'container': "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.flex-wrap",
+                'container': r"#hero > div.rgt.md\:my-6.lg\:mr-6 > div.pc.h-full.hidden.lg\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.flex-wrap",
                 'tag': "a"
             },
-            'author': "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-2.items-center.text-sm.text-gray-800 > a",
-            'content': "#article > div > div.left > div > div.center.flex.flex-col.gap-4 > div.htmlview.article-content"
+            'author': r"#hero > div.rgt.md\:my-6.lg\:mr-6 > div.pc.h-full.hidden.lg\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-2.items-center.text-sm.text-gray-800 > a",
+            'content': r"#article > div > div.left > div > div.center.flex.flex-col.gap-4 > div.htmlview.article-content"
         }
     }
-    
+
     # 添加其他必要的配置項
     config.categories = ["ai", "tech", "iot", "smartmedical", "smartcity"]
-    config.full_categories = ["ai", "tech", "iot", "smartmedical", "smartcity", 
-                              "cloudcomputing", "security", "articles", "5g", 
+    config.full_categories = ["ai", "tech", "iot", "smartmedical", "smartcity",
+                              "cloudcomputing", "security", "articles", "5g",
                               "car", "blockchain", "energy", "semiconductor", "manufacture"]
     config.article_settings = {
         "max_pages": 3,
@@ -54,12 +61,12 @@ def mock_config():
     config.url_file_extensions = [".html", ""]
     config.date_format = "%Y-%m-%d"
     config.list_url_template = "{base_url}/categories/{category}"
-    
+
     # 模擬方法
     config.get_category_url = Mock(return_value="https://www.bnext.com.tw/categories/ai")
     config.validate = Mock(return_value=True)
     config.validate_url = Mock(return_value=True)
-    
+
     return config
 
 @pytest.fixture
@@ -158,13 +165,13 @@ def test_get_article_content_success(mock_is_ai_related, mock_get_article_column
     mock_response.status_code = 200
     mock_response.text = example_html
     mock_get.return_value = mock_response
-    
+
     # 設置模擬的 BnextUtils 方法
     mock_get_soup.return_value = BeautifulSoup(example_html, 'html.parser')
-    
+
     # 設置 is_ai_related 返回值
     mock_is_ai_related.return_value = True
-    
+
     # 設置 get_article_columns_dict 返回值
     expected_result = {
         'title': 'DeepL讓開會沒有「老外」！德鐵、日經都在用的AI快譯通，記者會即時上字也難不倒',
@@ -186,20 +193,20 @@ def test_get_article_content_success(mock_is_ai_related, mock_get_article_column
         'task_id': None
     }
     mock_get_article_columns.return_value = expected_result
-    
+
     # 測試 _get_article_content 方法
     result = extractor._get_article_content(
         'https://www.bnext.com.tw/article/82812/deepl-ai100',
         ai_only=True,
         min_keywords=3
     )
-    
+
     # 只驗證結果
     assert result is not None
     assert result['title'] == 'DeepL讓開會沒有「老外」！德鐵、日經都在用的AI快譯通，記者會即時上字也難不倒'
     assert result['category'] == 'AI與大數據'
     assert result['tags'] == 'Google,人工智慧,AI'
-    assert result['is_ai_related'] == True
+    assert result['is_ai_related'] is True
     assert result['scrape_status'] == 'content_scraped'
     assert result['scrape_error'] is None
     assert result['last_scrape_attempt'] is not None
@@ -211,14 +218,14 @@ def test_get_article_content_request_failed(mock_get, extractor):
     mock_response = Mock()
     mock_response.status_code = 404
     mock_get.return_value = mock_response
-    
+
     # 測試 _get_article_content 方法
     result = extractor._get_article_content(
         'https://www.bnext.com.tw/article/invalid',
         ai_only=True,
         min_keywords=3
     )
-    
+
     # 驗證結果
     assert result is None
 
@@ -233,13 +240,13 @@ def test_get_article_content_not_ai_related(mock_is_ai_related, mock_get_article
     mock_response.status_code = 200
     mock_response.text = example_html
     mock_get.return_value = mock_response
-    
+
     # 設置模擬的 BnextUtils 方法
     mock_get_soup.return_value = BeautifulSoup(example_html, 'html.parser')
-    
+
     # 設置 is_ai_related 返回值
     mock_is_ai_related.return_value = False
-    
+
     # 設置初始 get_article_columns_dict 返回值
     mock_article_data = {
         'title': '非AI相關文章標題',
@@ -260,21 +267,21 @@ def test_get_article_content_not_ai_related(mock_is_ai_related, mock_get_article
         'last_scrape_attempt': datetime.now(timezone.utc),
         'task_id': None
     }
-    
+
     mock_get_article_columns.return_value = mock_article_data
-    
+
     # 測試 _get_article_content 方法
     result = extractor._get_article_content(
         'https://www.bnext.com.tw/article/12345/non-ai',
         ai_only=True,
         min_keywords=3
     )
-    
+
     # 驗證結果
     assert result is not None
     assert result['scrape_status'] == 'content_scraped'
     assert result['scrape_error'] == "文章不符合 AI 相關條件"
-    assert result['is_ai_related'] == False
+    assert result['is_ai_related'] is False
     assert result['last_scrape_attempt'] is not None
 
 @patch('src.crawlers.bnext_content_extractor.BnextContentExtractor._get_article_content')
@@ -291,7 +298,7 @@ def test_batch_get_articles_content_with_new_fields(mock_get_content, extractor)
         'last_scrape_attempt': [None, None, None],
         'task_id': [None, None, None]
     })
-    
+
     # 設置模擬的返回值
     article1 = {
         'title': '文章1',
@@ -314,12 +321,12 @@ def test_batch_get_articles_content_with_new_fields(mock_get_content, extractor)
         'task_id': 123
     }
     article3 = None  # 模擬失敗
-    
+
     mock_get_content.side_effect = [article1, article2, article3]
-    
+
     # 調用測試方法
     result = extractor.batch_get_articles_content(test_df, num_articles=3, ai_only=True, min_keywords=3)
-    
+
     # 驗證結果
     assert len(result) == 3  # 包含失敗的文章
     assert result[0]['scrape_status'] == 'content_scraped'
@@ -331,8 +338,10 @@ def test_extract_article_parts(mock_get_article_columns, extractor, example_html
     """測試提取文章各部分"""
     # 創建 BeautifulSoup 對象
     soup = BeautifulSoup(example_html, 'html.parser')
-    article_container = soup.select('div.article-lw.pb-4.lg\\:py-4')
-    
+    # 確保使用正確的 CSS 選擇器來獲取容器
+    content_selector = extractor.site_config.selectors['get_article_contents']['content_container']
+    article_container = soup.select_one(content_selector) # 使用 select_one
+
     # 設置 get_article_columns_dict 的返回值
     expected_result = {
         'title': 'DeepL讓開會沒有「老外」！德鐵、日經都在用的AI快譯通，記者會即時上字也難不倒',
@@ -341,7 +350,7 @@ def test_extract_article_parts(mock_get_article_columns, extractor, example_html
         'link': 'https://test.com/article',
         'category': 'AI與大數據',
         'published_at': '2025.04.04',
-        'author': '吳玲臻,陳君毅',
+        'author': '吳玲臻,陳君毅', # 假設有多位作者
         'source': 'bnext',
         'source_url': 'https://www.bnext.com.tw',
         'article_type': None,
@@ -350,28 +359,26 @@ def test_extract_article_parts(mock_get_article_columns, extractor, example_html
         'is_scraped': True
     }
     mock_get_article_columns.return_value = expected_result
-    
+
     # 執行測試
     result = extractor._extract_article_parts(
-        article_container,
+        article_container, # 傳遞單個元素而非列表
         soup,
         extractor.site_config.selectors['get_article_contents'],
-        'https://test.com/article',
-        ai_only=True
+        'https://test.com/article'
     )
-    
+
     # 驗證結果
     assert result == expected_result
 
 def test_extract_article_parts_no_container(extractor):
     """測試提取文章各部分時沒有容器"""
     result = extractor._extract_article_parts(
-        [],
+        None, # 傳遞 None 而非空列表
         BeautifulSoup('', 'html.parser'),
         extractor.site_config.selectors['get_article_contents'],
-        'https://test.com/article',
-        ai_only=True
+        'https://test.com/article'
     )
-    
+
     # 驗證結果
     assert result is None
