@@ -1071,12 +1071,23 @@ class CrawlersService(BaseService[Crawlers]):
                 fallback_config_path = os.path.join(fallback_config_dir, config_filename)
                 logger.debug("後備配置檔案路徑檢查: %s", fallback_config_path)
 
+                # --- 添加詳細日誌以進行除錯 ---
+                env_var_value = os.getenv('WEB_SITE_CONFIG_DIR')
+                logger.debug(f"[DEBUG] 環境變數 WEB_SITE_CONFIG_DIR: {env_var_value}")
+                logger.debug(f"[DEBUG] 檢查主要路徑: {primary_config_path}")
+                primary_exists = os.path.exists(primary_config_path)
+                logger.debug(f"[DEBUG] 主要路徑 os.path.exists 結果: {primary_exists}")
+                logger.debug(f"[DEBUG] 檢查後備路徑: {fallback_config_path}")
+                fallback_exists = os.path.exists(fallback_config_path)
+                logger.debug(f"[DEBUG] 後備路徑 os.path.exists 結果: {fallback_exists}")
+                # --- 日誌結束 ---
+
                 # 3. 檢查路徑並確定最終使用的路徑
                 final_config_path = None
-                if os.path.exists(primary_config_path):
+                if primary_exists:
                     final_config_path = primary_config_path
                     logger.info("找到配置檔案於主要路徑: %s", final_config_path)
-                elif os.path.exists(fallback_config_path):
+                elif fallback_exists:
                     final_config_path = fallback_config_path
                     logger.warning(
                         "在主要路徑 %s 未找到配置檔案，使用後備路徑: %s",
@@ -1212,11 +1223,12 @@ class CrawlersService(BaseService[Crawlers]):
              logger.error("配置檔案中的 'list_url_template' 必須是有效的非空字串")
              return False
 
-        # 驗證 categories 是否為非空字典
+        # --- 修改：驗證 categories 是否為非空列表 ---
         categories_value = config_data.get("categories")
-        if not isinstance(categories_value, dict) or not categories_value:
-             logger.error("配置檔案中的 'categories' 必須是有效的非空字典")
+        if not isinstance(categories_value, list) or not categories_value:
+             logger.error("配置檔案中的 'categories' 必須是有效的非空列表")
              return False
+        # --- 修改結束 ---
 
         # 驗證 selectors 結構
         selectors = config_data.get("selectors", {})
@@ -1243,143 +1255,107 @@ class CrawlersService(BaseService[Crawlers]):
     def update_crawler_config(
         self, crawler_id: int, config_file, crawler_data: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """更新爬蟲的配置檔案，儲存到 WEB_SITE_CONFIG_DIR 指定路徑，並清理檔名"""
+        """更新爬蟲的配置檔案，根據 crawler_name 安全命名並儲存到 WEB_SITE_CONFIG_DIR 指定路徑"""
         try:
             with self._transaction() as session:
                 crawler_repo = cast(
                     CrawlersRepository, self._get_repository("Crawler", session)
                 )
                 if not crawler_repo:
-                    return {
-                        "success": False,
-                        "message": "無法取得資料庫存取器",
-                        "crawler": None,
-                    }
+                    return { "success": False, "message": "無法取得資料庫存取器", "crawler": None }
 
                 # 1. 檢查爬蟲是否存在
                 crawler = crawler_repo.get_by_id(crawler_id)
                 if not crawler:
-                    return {
-                        "success": False,
-                        "message": f"爬蟲設定不存在，ID={crawler_id}",
-                        "crawler": None,
-                    }
+                    return { "success": False, "message": f"爬蟲設定不存在，ID={crawler_id}", "crawler": None }
+                
+                # --- 新增：檢查 crawler_name 是否存在 ---
+                if not crawler.crawler_name:
+                     logger.error("爬蟲 ID=%s 的 crawler_name 為空，無法生成檔名。", crawler_id)
+                     return { "success": False, "message": "無法生成配置檔名，爬蟲名稱為空。", "crawler": None }
 
                 # 2. 處理上傳的配置檔案
-                if not config_file or not config_file.filename:
-                     return {
-                         "success": False,
-                         "message": "未提供有效的配置檔案",
-                         "crawler": None
-                     }
-                     
-                # 清理檔名
-                original_filename = config_file.filename
-                safe_filename = self._clean_filename(original_filename)
-                
-                if not safe_filename: # 如果清理後檔名變空（理論上_clean_filename會處理，但多一層防護）
-                    return {
-                        "success": False,
-                        "message": "無法生成有效的安全檔名",
-                        "crawler": None,
-                    }
+                if not config_file: # 簡化檢查，主要檢查物件是否存在
+                     return { "success": False, "message": "未提供有效的配置檔案", "crawler": None }
 
-                # 限制檔案類型 (檢查清理後的檔名)
+                # --- 修改：基於 crawler_name 生成檔名 ---
+                # 構建基礎檔名，例如 "數位時代爬蟲.json"
+                base_filename = f"{crawler.crawler_name}.json"
+                # 清理這個構建出來的檔名
+                safe_filename = self._clean_filename(base_filename)
+
+                if not safe_filename:
+                    logger.error("根據 crawler_name '%s' 無法生成有效的安全檔名。", crawler.crawler_name)
+                    return { "success": False, "message": "無法根據爬蟲名稱生成有效的安全檔名。", "crawler": None }
+
+                # 可以在這裡對生成的檔名進行擴展名檢查（如果需要）
                 allowed_extensions = {'.json'}
                 _, ext = os.path.splitext(safe_filename)
                 if ext.lower() not in allowed_extensions:
-                     return {
-                         "success": False,
-                         "message": f"不支援的檔案類型 '{ext}'. 請上傳 JSON 檔案。",
-                         "crawler": None
-                     }
+                     logger.error("生成的檔名 '%s' 副檔名不合法。", safe_filename)
+                     # 這種情況理論上不應該發生，因為我們強制加了 .json
+                     return { "success": False, "message": f"生成的檔名副檔名不合法: '{ext}'", "crawler": None }
 
-                # 保存配置檔案
+                # 3. 保存配置檔案
                 try:
-                    # 讀取配置檔案內容
+                    # 讀取並驗證上傳的內容
                     config_content = config_file.read()
-                    # 重置讀取指針，以便後續可能需要再次讀取
-                    config_file.seek(0) 
-
+                    config_file.seek(0)
                     try:
-                        # 解析 JSON 內容
                         config_data = json.loads(config_content)
                     except json.JSONDecodeError as je:
-                        logger.error("配置檔案 JSON 解析錯誤: %s", je)
-                        return {
-                            "success": False,
-                            "message": f"配置檔案不是有效的 JSON 格式: {je}",
-                            "crawler": None,
-                        }
+                        logger.error("上傳的配置檔案 JSON 解析錯誤: %s", je)
+                        return { "success": False, "message": f"上傳的配置檔案不是有效的 JSON 格式: {je}", "crawler": None }
                     except Exception as e:
-                         logger.error("讀取或解析配置檔案時發生錯誤: %s", e)
-                         return {
-                             "success": False,
-                             "message": f"處理配置檔案時發生錯誤: {e}",
-                             "crawler": None
-                         }
+                         logger.error("讀取或解析上傳的配置檔案時發生錯誤: %s", e)
+                         return { "success": False, "message": f"處理上傳的配置檔案時出錯: {e}", "crawler": None }
 
+                    # 驗證 JSON 內容格式
                     if not self.validate_config_file(config_data):
-                        return {
-                            "success": False,
-                            "message": "配置檔案格式或內容不正確，請檢查日誌獲取詳細資訊。",
-                            "crawler": None,
-                        }
-                        
+                        return { "success": False, "message": "上傳的配置檔案格式或內容不正確。", "crawler": None }
+
+                    # 可選：檢查內容中的 name 是否與 crawler.crawler_name 匹配
                     if config_data.get("name") != crawler.crawler_name:
                         logger.warning(
-                            "配置檔案中的 name '%s' 與資料庫中的 crawler_name '%s' 不符。將以資料庫為準，但建議保持一致。",
+                            "配置檔案內容中的 name '%s' 與爬蟲名稱 '%s' 不符，但仍將保存。建議保持一致。",
                              config_data.get("name"), crawler.crawler_name
                         )
 
-
-                    # 獲取配置檔案儲存目錄
-                    # 優先從環境變數讀取，提供預設值
-                    # **重要**: 這裡的預設路徑需要根據你的部署環境和專案結構確定
-                    # 假設服務運行在容器內，且 volume 掛載到了 /app/data
-                    default_config_dir = "/app/data/web_site_configs" 
+                    # 獲取目標儲存目錄
+                    default_config_dir = "/app/data/web_site_configs"
                     config_dir = os.getenv('WEB_SITE_CONFIG_DIR', default_config_dir)
-
-                    # 確保目錄存在
                     try:
                         os.makedirs(config_dir, exist_ok=True)
                         logger.info("確保配置目錄存在: %s", config_dir)
                     except OSError as e:
                         logger.error("創建配置目錄 %s 失敗: %s", config_dir, e)
-                        return {
-                            "success": False,
-                            "message": f"無法創建配置目錄: {e}",
-                            "crawler": None,
-                        }
+                        return { "success": False, "message": f"無法創建配置目錄: {e}", "crawler": None }
 
-                    # 使用清理後的檔名構建完整路徑
+                    # 使用新生成的安全檔名保存
                     config_path = os.path.join(config_dir, safe_filename)
-                    
                     logger.info("準備將配置檔案寫入: %s", config_path)
-                    
                     with open(config_path, "w", encoding="utf-8") as f:
                         json.dump(config_data, f, indent=4, ensure_ascii=False)
-                    
                     logger.info("配置檔案已成功儲存到: %s", config_path)
 
-
-                    # 3. 更新爬蟲資料庫記錄
+                    # 4. 更新爬蟲資料庫記錄
                     crawler_data_update = crawler_data.copy()
-                    crawler_data_update["config_file_name"] = safe_filename # 使用清理後的檔名
+                    crawler_data_update["config_file_name"] = safe_filename # <<< 更新為新的檔名
                     crawler_data_update["updated_at"] = datetime.now(timezone.utc)
-                    
-                    if 'id' in crawler_data_update:
-                        del crawler_data_update['id'] 
+
+                    if 'id' in crawler_data_update: del crawler_data_update['id']
 
                     try:
                          validated_data = CrawlersUpdateSchema.model_validate(crawler_data_update).model_dump(exclude_unset=True)
                     except Exception as validation_error:
                         logger.error("更新爬蟲資料驗證失敗: %s", validation_error)
-                        return {
-                             "success": False,
-                             "message": f"爬蟲設定更新資料驗證失敗: {validation_error}",
-                             "crawler": None
-                        }
+                        # 考慮回滾已保存的檔案
+                        try:
+                            if os.path.exists(config_path): os.remove(config_path)
+                            logger.warning("因資料庫更新驗證失敗，已回滾（刪除）剛保存的檔案: %s", config_path)
+                        except Exception as rollback_error:
+                            logger.error("回滾（刪除）檔案 %s 失敗: %s", config_path, rollback_error)
+                        return { "success": False, "message": f"爬蟲設定更新資料驗證失敗: {validation_error}", "crawler": None }
 
                     logger.debug("準備更新資料庫，ID=%s, 數據=%s", crawler_id, validated_data)
                     result = crawler_repo.update(crawler_id, validated_data)
@@ -1388,33 +1364,173 @@ class CrawlersService(BaseService[Crawlers]):
                         session.flush()
                         session.refresh(result)
                         crawler_schema = CrawlerReadSchema.model_validate(result)
-                        logger.info("爬蟲設定和配置檔案更新成功，ID=%s", crawler_id)
-                        return {
-                            "success": True,
-                            "message": "爬蟲設定和配置檔案更新成功",
-                            "crawler": crawler_schema,
-                        }
+                        logger.info("爬蟲設定和配置檔案更新成功，ID=%s，新檔名: %s", crawler_id, safe_filename)
+                        return { "success": True, "message": "爬蟲設定和配置檔案更新成功", "crawler": crawler_schema }
                     else:
                         logger.warning("更新爬蟲設定失敗或無變更，ID=%s", crawler_id)
-                        return {
-                            "success": False, 
-                            "message": "更新爬蟲設定失敗或無變更",
-                            "crawler": None, 
-                        }
-
+                        # 考慮回滾
+                        try:
+                            if os.path.exists(config_path): os.remove(config_path)
+                            logger.warning("因資料庫更新失敗或無變更，已回滾（刪除）剛保存的檔案: %s", config_path)
+                        except Exception as rollback_error:
+                            logger.error("回滾（刪除）檔案 %s 失敗: %s", config_path, rollback_error)
+                        return { "success": False, "message": "更新爬蟲設定失敗或無變更", "crawler": None }
 
                 except Exception as e:
                     logger.error("處理或保存配置檔案時發生錯誤: %s", str(e), exc_info=True)
-                    return {
-                        "success": False,
-                        "message": f"處理或保存配置檔案時發生錯誤: {str(e)}",
-                        "crawler": None,
-                    }
+                    # 如果在這一步出錯，檔案可能未成功寫入或部分寫入，不需要顯式回滾
+                    return { "success": False, "message": f"處理或保存配置檔案時發生錯誤: {str(e)}", "crawler": None }
 
         except Exception as e:
             logger.error("更新爬蟲配置檔案的整體操作失敗，ID=%s: %s", crawler_id, str(e), exc_info=True)
+            return { "success": False, "message": f"更新爬蟲配置時發生未預期錯誤: {str(e)}", "crawler": None }
+
+    def create_crawler_with_config(
+        self, crawler_data: Dict[str, Any], config_file
+    ) -> Dict[str, Any]:
+        """
+        創建新爬蟲設定並處理其配置檔案，確保操作的原子性。
+        如果配置檔案處理失敗，則整個創建操作將回滾。
+        """
+        saved_config_path: Optional[str] = None # 用於記錄已保存檔案的路徑，以便失敗時回滾
+
+        try:
+            with self._transaction() as session:
+                crawler_repo = cast(
+                    CrawlersRepository, self._get_repository("Crawler", session)
+                )
+                if not crawler_repo:
+                    return { "success": False, "message": "無法取得資料庫存取器", "crawler": None }
+
+                # --- 1. 驗證爬蟲基本資料 ---
+                now = datetime.now(timezone.utc)
+                crawler_data.update({"created_at": now, "updated_at": now})
+                try:
+                    # 初始驗證，檔名可能稍後生成
+                    temp_validated_data = CrawlersCreateSchema.model_validate(
+                        crawler_data
+                    ).model_dump()
+                    crawler_name = temp_validated_data.get("crawler_name")
+                    if not crawler_name:
+                         # Schema 應該會捕捉到，但再次確認
+                         raise ValueError("爬蟲名稱 (crawler_name) 不得為空。")
+                except Exception as e:
+                    logger.error("爬蟲基本資料驗證失敗: %s", e)
+                    return { "success": False, "message": f"爬蟲基本資料驗證失敗: {str(e)}", "crawler": None }
+
+                # --- 2. 處理和驗證配置檔案 ---
+                if not config_file:
+                    return { "success": False, "message": "未提供配置檔案", "crawler": None }
+
+                try:
+                    config_content = config_file.read()
+                    config_file.seek(0) # 重設指針以備後用 (如果需要)
+                    config_data_from_file = json.loads(config_content)
+                except json.JSONDecodeError as je:
+                    logger.error("上傳的配置檔案 JSON 解析錯誤: %s", je)
+                    return { "success": False, "message": f"配置檔案不是有效的 JSON 格式: {je}", "crawler": None }
+                except Exception as e:
+                     logger.error("讀取或解析配置檔案時發生錯誤: %s", e)
+                     return { "success": False, "message": f"讀取配置檔案時出錯: {e}", "crawler": None }
+
+                # 驗證檔案內容格式
+                if not self.validate_config_file(config_data_from_file):
+                    # validate_config_file 內部會記錄詳細錯誤
+                    return { "success": False, "message": "配置檔案格式或內容不正確。", "crawler": None }
+
+                # 可選：檢查檔案內容的 name 是否與爬蟲資料中的 name 一致
+                if config_data_from_file.get("name") != crawler_name:
+                    logger.warning(
+                        "配置檔案內容中的 name '%s' 與爬蟲名稱 '%s' 不符。建議保持一致。",
+                         config_data_from_file.get("name"), crawler_name
+                    )
+                    # 根據需求決定是否要強制中止
+                    # return { "success": False, "message": "配置檔案中的 name 與爬蟲名稱不符。", "crawler": None }
+
+
+                # --- 3. 生成安全檔名 ---
+                base_filename = f"{crawler_name}.json"
+                safe_filename = self._clean_filename(base_filename)
+                if not safe_filename:
+                    logger.error("根據爬蟲名稱 '%s' 無法生成有效的安全檔名。", crawler_name)
+                    return { "success": False, "message": "無法根據爬蟲名稱生成有效的安全檔名。", "crawler": None }
+
+                # --- 4. 儲存配置檔案 ---
+                default_config_dir = "/app/data/web_site_configs"
+                config_dir = os.getenv('WEB_SITE_CONFIG_DIR', default_config_dir)
+                try:
+                    os.makedirs(config_dir, exist_ok=True)
+                except OSError as e:
+                    logger.error("創建配置目錄 %s 失敗: %s", config_dir, e)
+                    return { "success": False, "message": f"無法創建配置目錄: {e}", "crawler": None }
+
+                config_path = os.path.join(config_dir, safe_filename)
+                logger.info("準備將配置檔案寫入: %s", config_path)
+                try:
+                    with open(config_path, "w", encoding="utf-8") as f:
+                        json.dump(config_data_from_file, f, indent=4, ensure_ascii=False)
+                    saved_config_path = config_path # 記錄已保存的路徑
+                    logger.info("配置檔案已成功儲存到: %s", saved_config_path)
+                except Exception as e:
+                    logger.error("儲存配置檔案失敗 (%s): %s", config_path, e)
+                    # 即使這裡失敗，事務也會回滾，無需手動刪除檔案
+                    return { "success": False, "message": f"儲存配置檔案失敗: {e}", "crawler": None }
+
+
+                # --- 5. 儲存爬蟲資料到資料庫 ---
+                # 更新 validated_data 中的檔名
+                temp_validated_data["config_file_name"] = safe_filename
+
+                # 再次驗證（可選，因為欄位已填寫）
+                try:
+                    final_validated_data = CrawlersCreateSchema.model_validate(
+                        temp_validated_data
+                    ).model_dump()
+                except Exception as e:
+                     # 理論上不應該在這裡失敗，但以防萬一
+                     logger.error("最終資料驗證失敗（異常情況）: %s", e)
+                     # 觸發事務回滾 + 檔案刪除
+                     raise RuntimeError(f"最終資料驗證失敗: {e}") from e
+
+
+                logger.debug("準備將爬蟲資料寫入資料庫: %s", final_validated_data)
+                try:
+                    result = crawler_repo.create(final_validated_data)
+                    if result and not instance_state(result).detached:
+                        session.flush()
+                        session.refresh(result)
+                        crawler_schema = CrawlerReadSchema.model_validate(result)
+                        logger.info("爬蟲設定和配置檔案創建成功，ID=%s", result.id)
+                        # 成功完成，返回結果
+                        return {
+                            "success": True,
+                            "message": "爬蟲設定和配置檔案創建成功",
+                            "crawler": crawler_schema,
+                        }
+                    else:
+                        # repo.create 返回 None 或 detached，視為失敗
+                        logger.error("資料庫創建爬蟲記錄失敗，repo.create 未返回有效實例。")
+                        # 觸發事務回滾 + 檔案刪除
+                        raise RuntimeError("資料庫創建爬蟲記錄失敗。")
+
+                except Exception as db_error:
+                    logger.error("儲存爬蟲資料到資料庫時失敗: %s", db_error)
+                    # 觸發事務回滾 + 檔案刪除
+                    raise db_error # 重新拋出，確保事務回滾並進入外層 except
+
+
+        except Exception as e:
+            logger.error("創建爬蟲與配置檔案的整體操作失敗: %s", str(e), exc_info=True)
+            # --- 嘗試回滾已保存的檔案 ---
+            if saved_config_path and os.path.exists(saved_config_path):
+                try:
+                    os.remove(saved_config_path)
+                    logger.warning("因操作失敗，已回滾（刪除）先前保存的配置檔案: %s", saved_config_path)
+                except Exception as rollback_error:
+                    logger.error("回滾（刪除）檔案 %s 失敗: %s", saved_config_path, rollback_error)
+            # 返回失敗訊息
             return {
-                 "success": False,
-                 "message": f"更新爬蟲配置時發生未預期錯誤: {str(e)}",
-                 "crawler": None
+                "success": False,
+                "message": f"創建爬蟲失敗: {str(e)}", # 提供更清晰的錯誤訊息
+                "crawler": None
             }

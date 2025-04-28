@@ -40,44 +40,62 @@ def get_crawlers():
         return handle_api_error(e)
 
 @crawler_bp.route('', methods=['POST'])
-def create_crawler():
-    """新增一個爬蟲設定"""
-    if not request.is_json:
-         return jsonify(success=False, message='請求必須是 application/json'), 415
-    if not request.data:
-         return jsonify(success=False, message='缺少任務資料'), 400
+def create_crawler_with_config_route():
+    """新增一個爬蟲設定及其配置檔案 (使用 multipart/form-data)"""
+    # --- 修改：檢查 multipart/form-data ---
+    if 'config_file' not in request.files:
+        return jsonify({"success": False, "message": "請求中未包含 'config_file' 部分"}), 400
+
+    config_file = request.files['config_file']
+    if not config_file or not config_file.filename:
+        return jsonify({"success": False, "message": "未選擇或上傳有效的配置檔案"}), 400
+
+    # 可以在這裡添加對檔案類型的基本檢查 (例如，是否為 .json)
+    if not config_file.filename.lower().endswith('.json'):
+        return jsonify({"success": False, "message": "配置檔案必須是 .json 格式"}), 400
+
+    # --- 修改：獲取表單中的 JSON 字串資料 ---
+    crawler_data_str = request.form.get('crawler_data')
+    if not crawler_data_str:
+        return jsonify({"success": False, "message": "請求中未包含 'crawler_data' 表單欄位"}), 400
+
+    try:
+        # 解析 JSON 字串為字典
+        crawler_data = json.loads(crawler_data_str)
+        if not isinstance(crawler_data, dict):
+             raise json.JSONDecodeError("crawler_data 必須是 JSON 物件", crawler_data_str, 0)
+    except json.JSONDecodeError as e:
+        logger.error("解析 'crawler_data' JSON 字串失敗: %s", e)
+        return jsonify({"success": False, "message": f"爬蟲資料 (crawler_data) 格式錯誤: {e}"}), 400
+
+    # --- 修改：獲取服務並調用新方法 ---
     service: CrawlersService = get_crawlers_service()
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"success": False, "message": "請求體為空或非 JSON 格式"}), 400
-
-        # 檢查必要欄位
-        required_fields = ['crawler_name', 'module_name', 'base_url', 'crawler_type', 'config_file_name']
-        missing_fields = [field for field in required_fields if field not in data]
-        if missing_fields:
-            return jsonify({
-                "success": False, 
-                "message": f"缺少必要欄位: {', '.join(missing_fields)}"
-            }), 400
-
-        result = service.create_crawler(data)
+        # 調用新的服務方法，傳遞字典和檔案對象
+        result = service.create_crawler_with_config(crawler_data, config_file)
 
         if not result.get('success'):
-            # Service 層返回失敗，可能是驗證失敗或資料庫錯誤
-            status_code = 400 if "驗證失敗" in result.get('message', '') else 500
+            # Service 層返回失敗，可能是驗證失敗(400)或內部錯誤(500)
+            # 根據錯誤訊息判斷狀態碼
+            status_code = 400 if "驗證失敗" in result.get('message', '') or \
+                                  "格式錯誤" in result.get('message', '') or \
+                                  "不正確" in result.get('message', '') or \
+                                  "不得為空" in result.get('message', '') or \
+                                  "無法生成" in result.get('message', '') else 500
             return jsonify(result), status_code
 
         crawler_schema: Optional[CrawlerReadSchema] = result.get('crawler')
         if crawler_schema is None:
-            logger.error("創建爬蟲成功但 Service 未返回爬蟲物件")
+            logger.error("創建爬蟲與配置成功但 Service 未返回爬蟲物件")
+            # 這種情況理論上不應該發生，如果發生了是內部錯誤
             return jsonify({"success": False, "message": "創建爬蟲後未能獲取結果"}), 500
 
         # 將 Schema 轉為字典並返回
         result['crawler'] = crawler_schema.model_dump()
-        return jsonify(result), 201
+        return jsonify(result), 201 # 201 Created
 
     except Exception as e:
+        # 捕獲服務層或其他地方可能拋出的未預期異常
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>', methods=['GET'])
@@ -471,50 +489,4 @@ def get_crawler_config(crawler_id):
         return jsonify(result), 200
     except Exception as e:
         logger.error("獲取爬蟲配置時發生異常: %s", str(e), exc_info=True)
-        return handle_api_error(e)
-
-@crawler_bp.route('/<int:crawler_id>/config', methods=['PUT'])
-def update_crawler_config(crawler_id):
-    """更新爬蟲的配置檔案"""
-    try:
-        if 'config_file' not in request.files:
-            return jsonify({"success": False, "message": "未提供配置檔案"}), 400
-            
-        config_file = request.files['config_file']
-        if not config_file.filename:
-            return jsonify({"success": False, "message": "未選擇檔案"}), 400
-            
-        if not config_file.filename.endswith('.json'):
-            return jsonify({"success": False, "message": "配置檔案必須是 JSON 格式"}), 400
-            
-        # 獲取爬蟲資料
-        crawler_data_str = request.form.get('crawler_data')
-        if not crawler_data_str:
-            return jsonify({"success": False, "message": "未提供爬蟲資料"}), 400
-            
-        try:
-            crawler_data = json.loads(crawler_data_str)
-            # 檢查必要欄位
-            required_fields = ['crawler_name', 'module_name', 'base_url', 'crawler_type']
-            missing_fields = [field for field in required_fields if field not in crawler_data]
-            if missing_fields:
-                return jsonify({
-                    "success": False, 
-                    "message": f"缺少必要欄位: {', '.join(missing_fields)}"
-                }), 400
-        except json.JSONDecodeError:
-            return jsonify({"success": False, "message": "爬蟲資料格式錯誤"}), 400
-            
-        service: CrawlersService = get_crawlers_service()
-        result = service.update_crawler_config(crawler_id, config_file, crawler_data)
-        
-        if not result.get('success'):
-            return jsonify(result), 500
-            
-        # 將 CrawlerReadSchema 轉換為字典
-        if result.get('crawler'):
-            result['crawler'] = result['crawler'].model_dump()
-            
-        return jsonify(result), 200
-    except Exception as e:
         return handle_api_error(e)

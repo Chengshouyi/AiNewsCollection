@@ -21,6 +21,7 @@ class Crawlers(Base, BaseEntity):
 
     欄位說明：
     - crawler_name: 爬蟲名稱：爬蟲的class名稱，用來實例化爬蟲，例如：BnextCrawler
+    - module_name: 爬蟲模組名稱：爬蟲的模組名稱，例如：bnext
     - base_url: 爬取目標：爬蟲的爬取目標，例如：https://www.bnext.com.tw
     - is_active: 是否啟用：爬蟲是否啟用，例如：True
     - crawler_type: 爬蟲類型：爬蟲的類型，例如：bnext
