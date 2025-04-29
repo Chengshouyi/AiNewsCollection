@@ -186,3 +186,7 @@ cython_debug/
 .pypirc
 
 .ai/
+
+#debug for SQLite
+file::memory:
+filememory
