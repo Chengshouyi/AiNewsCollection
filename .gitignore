@@ -178,3 +178,4 @@ cython_debug/
 
 # test db
 file::memory:
+filememory
