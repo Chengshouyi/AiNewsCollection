@@ -268,7 +268,7 @@ if __name__ == "__main__":
         socketio.run(
             app,
             debug=True,
-            host="0.0.0.0", # 允許外部連接
+            host="::", # 允許來自所有 IPv4 和 IPv6 地址的連接
             port=5000,
             use_reloader=False, # 避免與背景執行緒衝突
             allow_unsafe_werkzeug=True, # 在某些情況下 debug 模式需要

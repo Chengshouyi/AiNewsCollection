@@ -3,6 +3,7 @@ import json
 from typing import Optional, List
 
 from flask import Blueprint, jsonify, request
+from werkzeug.datastructures import FileStorage
 
 from src.crawlers.crawler_factory import CrawlerFactory
 from src.error.handle_api_error import handle_api_error
@@ -121,37 +122,74 @@ def get_crawler(crawler_id):
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>', methods=['PUT'])
-def update_crawler(crawler_id):
-    """更新特定爬蟲設定"""
-    if not request.is_json:
-         return jsonify(success=False, message='請求必須是 application/json'), 415
-    if not request.data:
-         return jsonify(success=False, message='缺少任務資料'), 400
+def update_crawler_with_config_route(crawler_id):
+    """
+    更新特定爬蟲設定及其配置檔案 (使用 multipart/form-data)。
+    預期包含 'crawler_data' (JSON 字串) 和可選的 'config_file'。
+    """
+    logger.info("接收到更新爬蟲（含配置）的請求，ID=%s (multipart/form-data)", crawler_id)
+
+    # --- 檢查 multipart/form-data 中的 crawler_data ---
+    crawler_data_str = request.form.get('crawler_data')
+    if not crawler_data_str:
+        logger.error("請求中未包含 'crawler_data' 表單欄位")
+        return jsonify({"success": False, "message": "請求中未包含 'crawler_data' 表單欄位"}), 400
+
+    try:
+        # 解析 JSON 字串為字典
+        crawler_data = json.loads(crawler_data_str)
+        if not isinstance(crawler_data, dict):
+             raise json.JSONDecodeError("crawler_data 必須是 JSON 物件", crawler_data_str, 0)
+        logger.debug("解析後的 crawler_data: %s", crawler_data)
+    except json.JSONDecodeError as e:
+        logger.error("解析 'crawler_data' JSON 字串失敗: %s", e)
+        return jsonify({"success": False, "message": f"爬蟲資料 (crawler_data) 格式錯誤: {e}"}), 400
+
+    # --- 檢查是否有配置檔案上傳 ---
+    config_file: Optional[FileStorage] = request.files.get('config_file')
+    if config_file:
+        if not config_file.filename:
+            logger.warning("提供了 config_file 部分，但檔名為空，將忽略此檔案。")
+            config_file = None # 視為未提供有效檔案
+        else:
+             # 基本檢查檔案類型 (例如，是否為 .json)
+             if not config_file.filename.lower().endswith('.json'):
+                 logger.error("上傳的配置檔案 '%s' 副檔名不是 .json", config_file.filename)
+                 return jsonify({"success": False, "message": "配置檔案必須是 .json 格式"}), 400
+             logger.info("檢測到上傳的配置檔案: %s", config_file.filename)
+    else:
+        logger.info("請求中未包含新的 'config_file'，將使用現有配置。")
+
+
+    # --- 獲取服務並調用新的更新方法 ---
     service: CrawlersService = get_crawlers_service()
     try:
-        data = request.get_json()
-        if not data:
-             return jsonify({"success": False, "message": "請求體為空或非 JSON 格式"}), 400
-
-        # 驗證在 Service 內部進行
-        result = service.update_crawler(crawler_id, data)
+        # 調用新的服務方法，傳遞 crawler_id, 字典和可能的檔案對象
+        result = service.update_crawler_with_config(crawler_id, crawler_data, config_file)
 
         if not result.get('success'):
-             # 可能是找不到 (404) 或驗證失敗 (400) 或其他錯誤 (500)
-             status_code = 404 if "不存在" in result.get('message', '') else \
-                           400 if "驗證失敗" in result.get('message', '') else 500
-             return jsonify(result), status_code
+            # Service 層返回失敗
+            status_code = 404 if "不存在" in result.get('message', '') else \
+                          400 if "驗證失敗" in result.get('message', '') or \
+                                 "格式錯誤" in result.get('message', '') or \
+                                 "不正確" in result.get('message', '') or \
+                                 "無法生成" in result.get('message', '') else 500
+            logger.error("更新爬蟲（含配置）失敗 (Service 層返回): %s", result.get('message'))
+            return jsonify(result), status_code
 
         updated_crawler_schema: Optional[CrawlerReadSchema] = result.get('crawler')
         if updated_crawler_schema is None:
-             logger.error("更新爬蟲成功但 Service 未返回爬蟲物件 (ID: %s)", crawler_id)
-             return jsonify({"success": False, "message": "更新爬蟲後未能獲取結果"}), 500
+            logger.error("更新爬蟲成功但 Service 未返回爬蟲物件 (ID: %s)", crawler_id)
+            return jsonify({"success": False, "message": "更新爬蟲後未能獲取結果"}), 500
 
         # 將 Schema 轉為字典並返回
         result['crawler'] = updated_crawler_schema.model_dump()
-        return jsonify(result), 200
+        logger.info("爬蟲（含配置）更新成功，ID=%s", crawler_id)
+        return jsonify(result), 200 # 200 OK
 
     except Exception as e:
+        # 捕獲服務層或其他地方可能拋出的未預期異常
+        logger.exception("處理更新爬蟲（含配置）請求時發生未預期異常，ID=%s", crawler_id)
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>', methods=['DELETE'])

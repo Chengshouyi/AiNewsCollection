@@ -163,8 +163,8 @@ def valid_config_file():
         "name": "test_crawler",
         "base_url": "https://example.com",
         "list_url_template": "{base_url}/categories/{category}",
-        "categories": {"test_category_key": "Test Category Display Name"},
-        "full_categories": ["test"],
+        "categories": ["test_category_key"],
+        "full_categories": ["test_category_key"],
         "selectors": {
             "get_article_links": {
                 "articles_container": "div.articles",
