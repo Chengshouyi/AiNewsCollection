@@ -82,11 +82,104 @@
 * 主題過濾：根據關鍵詞或標籤篩選文章。
 * 通知系統：新文章到達時通過電子郵件或 RSS 通知。
 
+## 未來擴展藍圖 (Future Expansion Roadmap)
+
+本節概述了系統未來的發展方向和技術規劃，旨在將系統從新聞收集平台擴展為一個整合 RAG 技術的智能知識問答系統。
+
+### 1. 資料轉換引擎 (Data Transformation Engine)
+
+*   **目標:** 將已爬取、清洗過的新聞文章轉換並儲存到適合 RAG (Retrieval-Augmented Generation) 應用的向量資料庫中。
+*   **功能規劃:**
+    *   **文章分塊 (Chunking):** 將長篇文章切分成較小的、語意完整的文本塊，以便進行有效的向量嵌入。
+        *   *規劃技術:* LangChain 的 `RecursiveCharacterTextSplitter` 或類似的文本分割工具，可根據語意邊界（如段落）進行分割。
+    *   **向量嵌入 (Embedding):** 使用嵌入模型將文本塊轉換為向量表示。
+        *   *規劃技術:* **m3e-base** (中文優化嵌入模型)，透過 `sentence-transformers` 或 LangChain 的 `HuggingFaceEmbeddings` 整合。
+    *   **向量儲存 (Vector Storage):** 將文本塊及其向量儲存到向量資料庫中，並包含原文連結、來源等元數據 (Metadata)。
+        *   *規劃技術:* **Chroma** (輕量級、易於本地部署)，可透過 LangChain 的 `Chroma` 整合。
+    *   **轉換任務管理:**
+        *   提供 Web UI 介面，用於觸發、監控和管理資料轉換任務 (例如，轉換特定時間範圍或來源的文章)。
+        *   顯示轉換進度、成功/失敗的文本塊數量等資訊。
+        *   *規劃實現:* 類似現有的爬蟲任務管理，使用獨立的背景任務 (如 Celery 或 APScheduler) 執行轉換，並透過 WebSocket 更新前端狀態。需要新的資料庫模型來追蹤轉換任務狀態。
+
+### 2. 智能問答對話系統 (Intelligent Q&A System)
+
+*   **目標:** 基於已轉換的領域知識庫（向量資料庫），整合大型語言模型 (LLM) 提供中文問答能力。
+*   **功能規劃:**
+    *   **RAG 核心實現:**
+        *   接收使用者問題。
+        *   將問題轉換為向量。
+        *   在向量資料庫中搜尋與問題向量最相關的文本塊 (上下文)。
+        *   將原始問題和檢索到的上下文組合成提示 (Prompt)。
+        *   將提示傳送給大型語言模型 (LLM) 生成答案。
+        *   *規劃技術:* LangChain 提供完整的 RAG 鏈 (`RetrievalQA`) 實現框架，可整合向量資料庫 (Chroma)、嵌入模型 (m3e-base) 和 LLM (ChatGLM-6B)。
+    *   **在地大型語言模型 (Local LLM) 整合:**
+        *   整合開源的中文大型語言模型進行答案生成，確保資料私密性。
+        *   *規劃技術:* **ChatGLM-6B** (或其更新版本)。需要研究如何高效部署和調用此模型，可能需要獨立的 GPU 伺服器或使用 Ollama、vLLM 等工具進行本地部署和 API 封裝。
+    *   **問答介面:**
+        *   **自由問答:** 提供一個類似聊天機器人的介面，讓使用者自由輸入問題。
+        *   **預設問答模板:** 提供針對常見問題（如 "最近 AI 有哪些重要新聞？", "某某技術的最新進展是什麼？"）的按鈕或選項，簡化使用者操作。
+        *   **答案來源追溯:** 在生成的答案旁顯示參考的原始文章連結，增加可信度。
+        *   *規劃實現:* 使用 Flask-SocketIO 實現即時的問答互動，前端使用 JavaScript 處理使用者輸入和顯示結果。
+
+### 3. 新聞速報儀表板 (News Dashboard)
+
+*   **目標:** 提供一個視覺化的儀表板，快速概覽近期新聞熱點和趨勢。
+*   **功能規劃:**
+    *   **新聞詞雲 (Word Cloud):** 分析近期 (如過去 24 小時或 7 天) 文章標題或內容，生成詞雲圖，突顯熱門關鍵詞。
+        *   *規劃技術:* 使用 `jieba` 進行中文分詞，`wordcloud` 庫生成詞雲圖。可在後端定期生成圖片，或前端使用 JavaScript 詞雲庫 (如 `wordcloud2.js`)。
+    *   **條列摘要 (Bulleted Summaries):** 對於特定主題或來源的最新文章，自動生成簡短的條列式摘要。
+        *   *規劃技術:* 可以利用整合的 LLM (如 ChatGLM-6B) 進行摘要生成，或者使用傳統的抽取式摘要算法 (如 TextRank)。
+    *   **關鍵字相關文章連結 (Related Articles by Keyword):** 點擊詞雲中的關鍵字或選擇特定主題，快速連結到包含該關鍵字的相關文章列表。
+        *   *規劃實現:* 擴展現有的文章搜尋功能，或在資料轉換階段建立關鍵字索引。
+
 ## 系統架構
 
 以下是本系統的架構圖：
 
 ![系統架構圖](sys_arh.jpg)
+
+### 設計考量
+
+本系統採用了常見的分層架構模式，特別是在資料處理方面，以提高模組化、可測試性和可維護性。關鍵的分層如下：
+
+1.  **`src/models` (資料模型層):**
+    *   **職責:** 定義應用程式的資料結構。
+    *   **內容:** 包含兩種類型的模型：
+        *   **SQLAlchemy 模型 (繼承自 `database.base_model.Base`):** 用於定義資料庫表格的結構、欄位和關聯性。這些模型由 SQLAlchemy ORM 用於與資料庫互動。
+        *   **Pydantic 模型 (繼承自 `pydantic.BaseModel` 或 `base_schema.BaseSchema`):** 主要用於 API 的請求/回應資料驗證、序列化/反序列化，以及在不同服務層之間傳遞結構化資料。它們確保了資料在系統內部流動時的格式一致性和有效性。
+    *   **範例:** `ArticlesModel` (SQLAlchemy), `ArticleCreateSchema` (Pydantic)。
+
+2.  **`src/database` (資料存取層 - Repository 模式):**
+    *   **職責:** 封裝所有與資料庫直接互動的邏輯 (CRUD - Create, Read, Update, Delete)。
+    *   **內容:** 包含 Repository 類別，每個類別通常對應一個 SQLAlchemy 模型。Repository 方法接收或返回 Pydantic 模型或 SQLAlchemy 模型實例，內部則使用 SQLAlchemy Session 執行資料庫操作。
+    *   **目的:** 將資料庫查詢邏輯與業務邏輯分離，使得更換資料庫或修改查詢方式時，對上層服務的影響最小化。它提供了一個清晰的介面來存取特定類型的資料。
+    *   **範例:** `ArticlesRepository` 提供了新增、查詢、更新、刪除 `ArticlesModel` 的方法。
+
+3.  **`src/services` (服務層/業務邏輯層):**
+    *   **職責:** 實現應用程式的核心業務邏輯和工作流程。
+    *   **內容:** 包含 Service 類別。服務層會協調不同的操作，例如：接收來自 API 層的請求 (通常是 Pydantic 模型)，調用一個或多個 Repository 方法來存取或修改資料，執行業務規則計算或轉換，最後可能返回結果 (通常也是 Pydantic 模型) 給 API 層。
+    *   **目的:** 保持業務邏輯的集中和獨立性。使得 API 層 (Web 路由) 更輕量，只負責處理 HTTP 請求和回應，而將複雜的邏輯委派給服務層。
+    *   **範例:** `ArticleService` 可能包含一個 `create_article` 方法，該方法會接收 Pydantic 的 `ArticleCreateSchema`，調用 `ArticlesRepository.add()` 來儲存文章，並可能執行一些額外的驗證或處理。
+
+**其他值得注意的設計:**
+
+*   **依賴注入 (Dependency Injection):** 雖然沒有明確使用框架，但透過將 Repository 實例傳遞給 Service 的建構子 (或方法)，實現了基本的依賴注入概念，提高了可測試性 (可以 mock Repository)。(參見 `service_container.py` 的應用方式)
+*   **設定管理 (`src/config`):** 集中管理應用程式的設定，方便根據不同環境 (開發/生產) 調整。
+*   **錯誤處理 (`src/error`):** 定義了自訂的錯誤類別和處理機制，以提供更一致和友好的錯誤回饋。
+*   **介面定義 (`src/interface`):** 定義了如 `BaseCrawlerInterface` 等抽象介面，確保不同爬蟲實作遵循一致的合約。
+
+這種分層設計使得系統各部分的職責更加清晰，降低了耦合度，有利於團隊協作和長期維護。
+
+## 技術堆疊
+
+* **程式語言:** Python 3.9
+* **後端框架:** Flask (with Jinja2), Gunicorn
+* **前端技術:** HTML, CSS, JavaScript (AJAX with jQuery/Fetch), Socket.IO Client (for WebSockets)
+* **資料庫:** PostgreSQL 15, SQLAlchemy, Psycopg2, Alembic
+* **容器化:** Docker, Docker Compose
+* **核心庫:** Requests, Beautiful Soup 4, Pandas, NumPy, APScheduler, Schedule, Flask-SocketIO, Pydantic, python-dotenv
+* **開發/測試:** Pytest, Pylint, Black, isort, Coverage
+* **開發環境:** VS Code Dev Containers
 
 ## 資料夾架構
 
@@ -259,7 +352,13 @@
    flask run --host=0.0.0.0 --port=8000 --debug
    ```
 
-9. **訪問:** 應用程式將在 `http://localhost:8001` (根據 `docker-compose.override.yml` 的端口映射)。資料庫可透過 `localhost:5432` 訪問。
+9. **(建議) 執行測試:** 為了確認環境設定完整且核心功能運作正常，建議執行測試套件：
+   ```bash
+   # 確保仍在 web 容器內，或重新進入
+   docker-compose -f docker-compose.yml -f docker-compose.override.yml exec web pytest tests
+   ```
+
+10. **訪問:** 應用程式將在 `http://localhost:8001` (根據 `docker-compose.override.yml` 的端口映射)。資料庫可透過 `localhost:5432` 訪問。
 
 **開發環境特性:**
 
@@ -329,174 +428,47 @@
 
 ## 使用範例
 
-您可以透過 Web UI 或直接呼叫 API 來使用系統。以下是一些基於測試案例的 API 使用範例 (使用 `curl`，假設服務運行在 `localhost:8001`)，更多的範例請參閱` /tests` (測試資料庫使用SQLite memory DB)：
+您可以透過 Web UI 或直接呼叫 API 來使用系統。以下是一些基於測試案例的 API 使用範例 (使用 `curl`，假設服務運行在 `localhost:8001`)，完整的測試案例涵蓋了更多功能，您可以在 `tests/` 目錄下找到它們 (測試資料庫使用 SQLite memory DB)：
 
-### 爬蟲管理 (範例)
+<details>
+<summary>點擊展開測試檔案列表 (`tests/`)</summary>
 
-* **獲取所有爬蟲:**
-  
-  ```bash
-  curl -X GET http://localhost:8001/api/crawlers/
-  ```
-* **創建一個新爬蟲 (假設配置檔為 config.json):**
-  
-  ```bash
-  # 注意：實際創建可能需要透過 UI 或更複雜的客戶端來處理 multipart/form-data
-  # 以下為示意
-  curl -X POST http://localhost:8001/api/crawlers/ \
-       -H "Content-Type: multipart/form-data" \
-       -F "crawler_name=範例爬蟲" \
-       -F "crawler_type=GenericNews" \
-       -F "target_site=example.com" \
-       -F "config_file=@/path/to/your/config.json"
-  ```
-* **獲取 ID 為 1 的爬蟲:**
-  
-  ```bash
-  curl -X GET http://localhost:8001/api/crawlers/1
-  ```
-* **更新 ID 為 1 的爬蟲:**
-  
-  ```bash
-  curl -X PUT http://localhost:8001/api/crawlers/1 \
-       -H "Content-Type: application/json" \
-       -d '{"description": "更新後的描述"}'
-  ```
-* **刪除 ID 為 1 的爬蟲:**
-  
-  ```bash
-  curl -X DELETE http://localhost:8001/api/crawlers/1
-  ```
-* **測試爬蟲 (觸發測試任務):**
-  
-  ```bash
-  curl -X POST http://localhost:8001/api/tasks/test_crawler \
-       -H "Content-Type: application/json" \
-       -d '{"crawler_id": 1, "test_url": "http://example.com/news/123"}'
-  ```
-
-### 任務管理 (範例)
-
-* **創建自動排程任務 (每小時執行一次 ID 為 1 的爬蟲):**
-  
-  ```bash
-  curl -X POST http://localhost:8001/api/tasks/scheduled \
-       -H "Content-Type: application/json" \
-       -d '{"task_name": "每小時新聞", "crawler_id": 1, "cron_expression": "0 * * * *", "is_ai_related_filter": false}'
-  ```
-* **啟動手動完整爬取任務 (使用 ID 為 2 的爬蟲):**
-  
-  ```bash
-  curl -X POST http://localhost:8001/api/tasks/manual/start \
-       -H "Content-Type: application/json" \
-       -d '{"crawler_id": 2, "task_name": "手動爬取科技新聞", "article_limit": 10}'
-  ```
-* **獲取 ID 為 5 的手動任務狀態:**
-  
-  ```bash
-  curl -X GET http://localhost:8001/api/tasks/manual/5/status
-  ```
-* **手動觸發 ID 為 3 的 (排程) 任務:**
-  
-  ```bash
-  curl -X POST http://localhost:8001/api/tasks/3/run
-  ```
-* **取消 ID 為 6 的任務:**
-  
-  ```bash
-  curl -X POST http://localhost:8001/api/tasks/6/cancel
-  ```
-
-### 文章查詢 (範例)
-
-* **獲取第一頁文章 (預設每頁 10 篇):**
-  
-  ```bash
-  curl -X GET http://localhost:8001/api/articles/
-  ```
-* **獲取第二頁文章，每頁 20 篇:**
-  
-  ```bash
-  curl -X GET http://localhost:8001/api/articles/?page=2&per_page=20
-  ```
-* **搜尋標題或內容包含 "人工智慧" 的文章:**
-  
-  ```bash
-  curl -X GET "http://localhost:8001/api/articles/search?q=人工智慧"
-  ```
-* **獲取 ID 為 100 的文章詳情:**
-  
-  ```bash
-  curl -X GET http://localhost:8001/api/articles/100
-  ```
-
-## 如何新增爬蟲
-
-若要擴展系統以支援新的新聞網站，請遵循以下步驟：
-
-1.  **創建爬蟲類別:**
-    *   在 `src/crawlers/` 目錄下創建一個新的 Python 檔案，例如 `my_new_crawler.py`。
-    *   定義一個新的類別，繼承自 `src.crawlers.base_crawler.BaseCrawler`。
-    *   實作必要的抽象方法，至少包含：
-        *   `_fetch_article_links(self, task_id: int)`: 抓取目標網站的文章列表頁面，解析出文章標題、連結、發布時間等基本資訊，並返回 Pandas DataFrame。
-        *   `_fetch_articles(self, task_id: int)`: 根據 `self.articles_df` 中儲存的連結，逐一或批量抓取文章的完整內容 (作者、內文、標籤等)，並返回包含這些詳細資訊的字典列表。
-        *   `_update_config(self)`: 當任務參數更新時，可能需要更新內部使用的爬蟲或擷取器實例的設定。
-    *   您可以參考 `src/crawlers/bnext_crawler.py` 作為實作範例，它可能進一步將抓取列表和抓取內容的邏輯分別封裝在不同的輔助類別中 (如 `BnextScraper` 和 `BnextContentExtractor`)。
-
-2.  **設計設定檔 (Config File):**
-    *   在 `src/crawlers/configs/` 目錄下創建一個新的 JSON 設定檔，例如 `my_new_crawler_config.json`。
-    *   此檔案定義了爬蟲行為所需的參數，例如：
-        *   `base_url`: 目標網站的基礎 URL。
-        *   `list_url_template`: 文章列表頁面的 URL 模板。
-        *   `categories`: 要爬取的網站分類。
-        *   `selectors`: 用於從 HTML 中提取特定元素 (如標題、內容、日期) 的 CSS 選擇器。
-    *   請參考 `src/crawlers/configs/bnext_crawler_config.json` 的結構和內容。
-    *   **注意:** 設定檔的檔案名稱（不含副檔名）將作為爬蟲類型 (`crawler_type`) 的唯一標識符。
-
-3.  **透過 Web UI 新增爬蟲:**
-    *   啟動應用程式並訪問爬蟲管理頁面 (`/crawlers`)。
-    *   點擊「新增爬蟲」按鈕。
-    *   填寫表單：
-        *   **爬蟲名稱 (Crawler Name):** 給您的爬蟲取一個描述性的名稱。
-        *   **爬蟲類型 (Crawler Type):** 填寫您在步驟 2 中設定檔的**檔案名稱 (不含 `.json` 副檔名)**，例如 `my_new_crawler`。這將用於系統動態載入對應的爬蟲類別。
-        *   **目標站點 (Target Site):** 填寫目標網站的域名，例如 `mynewssite.com`。
-        *   **描述 (Description):** (可選) 簡要描述爬蟲。
-        *   **設定檔 (Config File):** 上傳您在步驟 2 中創建的 JSON 設定檔。
-    *   提交表單。系統會將設定檔儲存到 `/app/data/web_site_configs/` (容器內路徑，對應到 volume 掛載的 `data/web_site_configs` 目錄)。
-
-4.  **測試爬蟲:**
-    *   在爬蟲管理頁面找到您新增的爬蟲。
-    *   點擊「測試」按鈕。
-    *   輸入一個目標網站的文章 URL 進行測試。
-    *   觀察 WebSocket 回傳的即時狀態，檢查是否能成功抓取文章內容。
-    *   您也可以創建手動任務 (`/tasks` 頁面) 來測試完整的連結抓取和內容抓取流程。
-
-## 部署指南
-
-建議使用 **Docker Compose** 進行部署。
-
-1. **確保伺服器已安裝 Docker 和 Docker Compose。**
-2. **將專案程式碼部署到伺服器。**
-3. **在專案根目錄創建 `.env` 文件，填入生產環境的安全配置 (參考 [生產環境設定](#生產環境) 部分)。** 這是最關鍵的步驟。
-4. **(可選) 預先建置映像檔:** `docker-compose build`
-5. **啟動服務:** `docker-compose up -d`
-6. **(首次) 執行資料庫遷移:** `docker-compose exec web alembic upgrade head`
-7. **設置反向代理 (如 Nginx):** 強烈建議使用 Nginx 或類似工具處理 HTTPS、端口轉發 (例如 80/443 -> 8001) 和負載均衡 (如果需要)。
-8. **配置資料庫備份策略。**
-9. **考慮設置集中式日誌管理和監控系統。**
-
-## 貢獻
-
-歡迎各種形式的貢獻！如果您想做出貢獻，請參考以下步驟：
-
-1. Fork 本倉庫。
-2. 創建您的特性分支 (`git checkout -b feature/AmazingFeature`)。
-3. 提交您的更改 (`git commit -m 'Add some AmazingFeature'`)。
-4. 將您的分支推送到遠程倉庫 (`git push origin feature/AmazingFeature`)。
-5. 開啟一個 Pull Request。
-
-請確保您的程式碼符合風格要求並包含必要的測試。
-
-## 授權條款
-
-本專案採用 MIT 授權條款。詳情請參閱 [LICENSE](LICENSE) 文件。
+*   `test_ai_fillter_config.py`
+*   `test_api_utils.py`
+*   `test_article_analyzer.py`
+*   `test_article_api_routes.py`
+*   `test_article_service.py`
+*   `test_articles_model.py`
+*   `test_articles_repository.py`
+*   `test_articles_schema.py`
+*   `test_base_config.py`
+*   `test_base_crawler.py`
+*   `test_base_model.py`
+*   `test_base_repository.py`
+*   `test_base_schema.py`
+*   `test_base_service.py`
+*   `test_bnext_content_extractor.py`
+*   `test_bnext_crawler.py`
+*   `test_bnext_crawler_config_json.py`
+*   `test_bnext_scraper.py`
+*   `test_bnext_utils.py`
+*   `test_crawler_api_routes.py`
+*   `test_crawler_factory.py`
+*   `test_crawler_task_history_model.py`
+*   `test_crawler_task_history_repository.py`
+*   `test_crawler_task_history_schema.py`
+*   `test_crawler_task_history_service.py`
+*   `test_crawler_task_service.py`
+*   `test_crawler_tasks_model.py`
+*   `test_crawler_tasks_repository.py`
+*   `test_crawler_tasks_schema.py`
+*   `test_crawlers_model.py`
+*   `test_crawlers_repository.py`
+*   `test_crawlers_schema.py`
+*   `test_crawlers_service.py`
+*   `test_database_manager.py`
+*   `test_datetime_utils.py`
+*   `test_handle_api_error.py`
+*   `test_model_utils.py`
+*   `test_repository_utils.py`
+*   `
