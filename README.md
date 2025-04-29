@@ -24,6 +24,7 @@
 * [部署指南](#部署指南)
 * [貢獻](#貢獻)
 * [維護者](#維護者)
+* [如何新增爬蟲](#如何新增爬蟲)
 * [授權條款](#授權條款)
 
 ## 背景
@@ -428,6 +429,47 @@
   ```bash
   curl -X GET http://localhost:8001/api/articles/100
   ```
+
+## 如何新增爬蟲
+
+若要擴展系統以支援新的新聞網站，請遵循以下步驟：
+
+1.  **創建爬蟲類別:**
+    *   在 `src/crawlers/` 目錄下創建一個新的 Python 檔案，例如 `my_new_crawler.py`。
+    *   定義一個新的類別，繼承自 `src.crawlers.base_crawler.BaseCrawler`。
+    *   實作必要的抽象方法，至少包含：
+        *   `_fetch_article_links(self, task_id: int)`: 抓取目標網站的文章列表頁面，解析出文章標題、連結、發布時間等基本資訊，並返回 Pandas DataFrame。
+        *   `_fetch_articles(self, task_id: int)`: 根據 `self.articles_df` 中儲存的連結，逐一或批量抓取文章的完整內容 (作者、內文、標籤等)，並返回包含這些詳細資訊的字典列表。
+        *   `_update_config(self)`: 當任務參數更新時，可能需要更新內部使用的爬蟲或擷取器實例的設定。
+    *   您可以參考 `src/crawlers/bnext_crawler.py` 作為實作範例，它可能進一步將抓取列表和抓取內容的邏輯分別封裝在不同的輔助類別中 (如 `BnextScraper` 和 `BnextContentExtractor`)。
+
+2.  **設計設定檔 (Config File):**
+    *   在 `src/crawlers/configs/` 目錄下創建一個新的 JSON 設定檔，例如 `my_new_crawler_config.json`。
+    *   此檔案定義了爬蟲行為所需的參數，例如：
+        *   `base_url`: 目標網站的基礎 URL。
+        *   `list_url_template`: 文章列表頁面的 URL 模板。
+        *   `categories`: 要爬取的網站分類。
+        *   `selectors`: 用於從 HTML 中提取特定元素 (如標題、內容、日期) 的 CSS 選擇器。
+    *   請參考 `src/crawlers/configs/bnext_crawler_config.json` 的結構和內容。
+    *   **注意:** 設定檔的檔案名稱（不含副檔名）將作為爬蟲類型 (`crawler_type`) 的唯一標識符。
+
+3.  **透過 Web UI 新增爬蟲:**
+    *   啟動應用程式並訪問爬蟲管理頁面 (`/crawlers`)。
+    *   點擊「新增爬蟲」按鈕。
+    *   填寫表單：
+        *   **爬蟲名稱 (Crawler Name):** 給您的爬蟲取一個描述性的名稱。
+        *   **爬蟲類型 (Crawler Type):** 填寫您在步驟 2 中設定檔的**檔案名稱 (不含 `.json` 副檔名)**，例如 `my_new_crawler`。這將用於系統動態載入對應的爬蟲類別。
+        *   **目標站點 (Target Site):** 填寫目標網站的域名，例如 `mynewssite.com`。
+        *   **描述 (Description):** (可選) 簡要描述爬蟲。
+        *   **設定檔 (Config File):** 上傳您在步驟 2 中創建的 JSON 設定檔。
+    *   提交表單。系統會將設定檔儲存到 `/app/data/web_site_configs/` (容器內路徑，對應到 volume 掛載的 `data/web_site_configs` 目錄)。
+
+4.  **測試爬蟲:**
+    *   在爬蟲管理頁面找到您新增的爬蟲。
+    *   點擊「測試」按鈕。
+    *   輸入一個目標網站的文章 URL 進行測試。
+    *   觀察 WebSocket 回傳的即時狀態，檢查是否能成功抓取文章內容。
+    *   您也可以創建手動任務 (`/tasks` 頁面) 來測試完整的連結抓取和內容抓取流程。
 
 ## 部署指南
 
