@@ -433,42 +433,269 @@
 <details>
 <summary>點擊展開測試檔案列表 (`tests/`)</summary>
 
-*   `test_ai_fillter_config.py`
-*   `test_api_utils.py`
-*   `test_article_analyzer.py`
-*   `test_article_api_routes.py`
-*   `test_article_service.py`
-*   `test_articles_model.py`
-*   `test_articles_repository.py`
-*   `test_articles_schema.py`
-*   `test_base_config.py`
-*   `test_base_crawler.py`
-*   `test_base_model.py`
-*   `test_base_repository.py`
-*   `test_base_schema.py`
-*   `test_base_service.py`
-*   `test_bnext_content_extractor.py`
-*   `test_bnext_crawler.py`
-*   `test_bnext_crawler_config_json.py`
-*   `test_bnext_scraper.py`
-*   `test_bnext_utils.py`
-*   `test_crawler_api_routes.py`
-*   `test_crawler_factory.py`
-*   `test_crawler_task_history_model.py`
-*   `test_crawler_task_history_repository.py`
-*   `test_crawler_task_history_schema.py`
-*   `test_crawler_task_history_service.py`
-*   `test_crawler_task_service.py`
-*   `test_crawler_tasks_model.py`
-*   `test_crawler_tasks_repository.py`
-*   `test_crawler_tasks_schema.py`
-*   `test_crawlers_model.py`
-*   `test_crawlers_repository.py`
-*   `test_crawlers_schema.py`
-*   `test_crawlers_service.py`
-*   `test_database_manager.py`
-*   `test_datetime_utils.py`
-*   `test_handle_api_error.py`
-*   `test_model_utils.py`
-*   `test_repository_utils.py`
-*   `
+*   `test_ai_fillter_config.py` - 測試 AI 過濾器配置 (ai_filter_config) 的相關功能。
+*   `test_api_utils.py` - 測試 API 請求參數解析工具 (api_utils) 的功能。
+*   `test_article_analyzer.py` - 測試 ArticleAnalyzer 類別的功能。
+*   `test_article_api_routes.py` - 測試 Article API 相關路由的功能。
+*   `test_article_service.py` - 測試 ArticleService 的功能，包括 CRUD、批量操作、搜索、統計、狀態更新和錯誤處理。
+*   `test_articles_model.py` - 針對 Articles 相關模型進行單元測試，驗證其資料結構與資料庫互動行為。
+*   `test_articles_repository.py` - 測試 ArticlesRepository 的功能，包括 CRUD、搜索、過濾、分頁、批次操作和統計。
+*   `test_articles_schema.py` - 測試 ArticleCreateSchema 與 ArticleUpdateSchema 的資料驗證功能。
+*   `test_base_config.py` - 測試 src.crawlers.configs.base_config 中的預設設定和輔助函數。
+*   `test_base_crawler.py` - 測試 BaseCrawler 類及其相關功能的單元測試。
+*   `test_base_model.py` - 測試 Base 模型的功能。
+*   `test_base_repository.py` - 測試 BaseRepository 的功能。
+*   `test_base_schema.py` - 測試 BaseCreateSchema 與 BaseUpdateSchema 的功能與資料庫互動。
+*   `test_base_service.py` - 測試 BaseService 及其相關元件的功能，包括 CRUD、事務管理、錯誤處理和儲存庫互動。
+*   `test_bnext_content_extractor.py` - 測試 BnextContentExtractor 的功能。
+*   `test_bnext_crawler.py` - 測試 BnextCrawler 類及其相關功能的單元測試。
+*   `test_bnext_crawler_config_json.py` - 測試 bnext_crawler_config.json 設定檔的載入、結構和值的正確性。
+*   `test_bnext_scraper.py` - 測試 BnextScraper 類別的功能。
+*   `test_bnext_utils.py` - 數位時代 (Bnext) 網站爬蟲工具模組的單元測試。
+*   `test_crawler_api_routes.py` - 測試爬蟲 API 路由 (/api/crawlers) 的功能。
+*   `test_crawler_factory.py` - 測試 CrawlerFactory 的功能。
+*   `test_crawler_task_history_model.py` - 測試 CrawlerTaskHistory 模型的功能，包括創建、欄位驗證、時間轉換等。
+*   `test_crawler_task_history_repository.py` - 測試 CrawlerTaskHistoryRepository 的功能，包括 CRUD、查找、過濾、統計、狀態更新和錯誤處理。
+*   `test_crawler_task_history_schema.py` - 測試 CrawlerTaskHistoryCreateSchema 和 CrawlerTaskHistoryUpdateSchema 的功能，包括欄位驗證和資料轉換。
+*   `test_crawler_task_history_service.py` - 測試 CrawlerTaskHistoryService 的功能，涵蓋 CRUD 操作、查詢功能以及錯誤處理等。
+*   `test_crawler_task_service.py` - 測試 CrawlerTaskService 的功能，包括 CRUD、任務狀態管理、排程、歷史記錄查詢、重試機制和錯誤處理。
+*   `test_crawler_tasks_model.py` - 測試 CrawlerTasks 模型的功能，包括任務創建、欄位驗證、狀態轉換和資料序列化等功能。
+*   `test_crawler_tasks_repository.py` - 測試 CrawlerTasksRepository 的功能。
+*   `test_crawlers_schema.py` - 測試 Crawlers schema 驗證功能。
+*   `test_crawlers_service.py` - 測試 CrawlersService (爬蟲管理服務) 的 CRUD、批量操作、搜尋、狀態切換、統計、配置處理和錯誤處理。
+*   `test_database_manager.py` - 測試 src.database.database_manager 模組的功能，包括初始化、健康檢查、事務管理和表創建。
+*   `test_datetime_utils.py` - 測試日期時間工具函數 (datetime_utils) 的功能。
+*   `test_handle_api_error.py` - 測試 src.error.handle_api_error 中的 API 錯誤處理函數。
+*   `test_model_utils.py` - 測試 src.utils.model_utils 中的驗證函數。
+*   `test_repository_utils.py` - 測試 src.utils.repository_utils 中的字典更新函數。
+</details>
+
+### 爬蟲管理 (範例)
+
+1.  **取得所有爬蟲設定:**
+    ```bash
+    curl -X GET http://localhost:8001/api/crawlers/
+    ```
+
+2.  **新增爬蟲設定 (以 Bnext 為例):**
+    ```bash
+    # 假設 test_bnext_config.json 存在於測試目錄
+    curl -X POST -F "crawler_data={'crawler_name': 'Bnext_Test', 'module_name': 'bnext_crawler', 'base_url': 'https://www.bnext.com.tw', 'crawler_type': 'web', 'is_active': true}" -F "config_file=@tests/fixtures/test_bnext_config.json" http://localhost:8001/api/crawlers/
+    ```
+    *(注意: 上述 `crawler_data` 內的引號可能需要根據您的 shell 環境調整)*
+
+3.  **更新爬蟲設定:**
+    ```bash
+    curl -X PUT -H "Content-Type: application/json" -d '{"crawler_name": "Bnext_Updated", "is_active": false}' http://localhost:8001/api/crawlers/YOUR_CRAWLER_ID
+    ```
+
+4.  **刪除爬蟲設定:**
+    ```bash
+    curl -X DELETE http://localhost:8001/api/crawlers/YOUR_CRAWLER_ID
+    ```
+
+### 任務管理 (範例)
+
+1.  **創建排程任務:**
+    ```bash
+    curl -X POST -H "Content-Type: application/json" -d '{"task_name": "Daily Bnext AI News", "crawler_id": YOUR_BNEXT_CRAWLER_ID, "cron_expression": "0 1 * * *", "task_args": {"ai_only": true}}' http://localhost:8001/api/tasks/scheduled
+    ```
+
+2.  **啟動手動連結收集任務:**
+    ```bash
+    curl -X POST -H "Content-Type: application/json" -d '{"crawler_id": YOUR_BNEXT_CRAWLER_ID, "task_args": {"num_articles": 5}}' http://localhost:8001/api/tasks/manual/collect-links
+    ```
+
+3.  **獲取手動任務狀態:**
+    ```bash
+    curl -X GET http://localhost:8001/api/tasks/manual/YOUR_MANUAL_TASK_ID/status
+    ```
+
+4.  **為已完成連結收集的任務啟動內容抓取:**
+    ```bash
+    # 假設從 /links 端點獲取了 target_article_ids
+    curl -X POST -H "Content-Type: application/json" -d '{"target_article_ids": [1, 2, 3]}' http://localhost:8001/api/tasks/manual/YOUR_LINK_COLLECTION_TASK_ID/fetch-content
+    ```
+
+5.  **取消正在運行的任務:**
+    ```bash
+    curl -X POST http://localhost:8001/api/tasks/YOUR_TASK_ID/cancel
+    ```
+
+### 文章查詢 (範例)
+
+1.  **獲取文章列表 (分頁/排序):**
+    ```bash
+    curl -X GET "http://localhost:8001/api/articles/?page=2&per_page=20&sort_by=published_at&sort_desc=true"
+    ```
+
+2.  **根據關鍵字搜尋文章:**
+    ```bash
+    curl -X GET "http://localhost:8001/api/articles/search?q=AI%20應用"
+    ```
+
+### 文章查詢 (範例)
+
+本節提供基本的生產環境部署建議。
+
+1.  **伺服器準備:**
+    *   準備一台 Linux 伺服器 (建議 Ubuntu 或 CentOS)。
+    *   安裝 Docker 和 Docker Compose。
+    *   確保防火牆允許目標端口 (預設 8001 或您配置的反向代理端口)。
+
+2.  **取得程式碼:**
+    ```bash
+    git clone https://github.com/Chengshouyi/AiNewsCollection.git
+    cd AiNewsCollection
+    ```
+
+3. **配置 `.env` 文件 (非常重要):**
+    *   複製 `.env.example` 為 `.env`。
+    *   編輯 `.env` 文件，填寫**安全且唯一**的生產環境配置，特別是：
+        *   `POSTGRES_PASSWORD`: 設定強密碼。
+        *   `SECRET_KEY`: 設定複雜且隨機的金鑰。
+        *   根據需求調整 `LOG_LEVEL`, `LOG_OUTPUT_MODE`, `LOG_CLEANUP_KEEP_DAYS` 等日誌設定。
+        *   **切勿將 `.env` 文件提交到版本控制系統!**
+
+4. **啟動服務:**
+    ```bash
+    docker-compose up -d
+    ```
+    *   此命令將使用 `docker-compose.yml` (生產配置) 啟動服務。
+    *   `-d` 表示在後台運行。
+
+5. **資料庫遷移:**
+    *   首次部署或資料庫模型有變更時，執行遷移：
+        ```bash
+        docker-compose exec web alembic upgrade head
+        ```
+
+6. **(建議) 配置反向代理 (Nginx):**
+    *   使用 Nginx 作為反向代理可以提供 HTTPS 加密、負載均衡 (如果需要擴展) 和更方便的端口管理。
+    *   **範例 Nginx 配置 (`/etc/nginx/sites-available/ainews`):**
+        ```nginx
+        server {
+            listen 80; # 監聽 HTTP
+            listen [::]:80;
+            server_name your_domain.com www.your_domain.com; # 替換為您的域名
+
+            # (可選) HTTP 重定向到 HTTPS
+            location / {
+                return 301 https://$host$request_uri;
+            }
+
+            # (可選) Certbot ACME challenge
+            location ~ /.well-known/acme-challenge/ {
+                allow all;
+                root /var/www/html; # 根據 Certbot 設定調整
+            }
+        }
+
+        server {
+            listen 443 ssl http2; # 監聽 HTTPS
+            listen [::]:443 ssl http2;
+            server_name your_domain.com www.your_domain.com; # 替換為您的域名
+
+            # SSL 憑證路徑 (使用 Certbot 取得)
+            ssl_certificate /etc/letsencrypt/live/your_domain.com/fullchain.pem;
+            ssl_certificate_key /etc/letsencrypt/live/your_domain.com/privkey.pem;
+            include /etc/letsencrypt/options-ssl-nginx.conf;
+            ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+            location / {
+                proxy_pass http://127.0.0.1:8001; # 將請求轉發到 Docker 容器的 8001 端口
+                proxy_set_header Host $host;
+                proxy_set_header X-Real-IP $remote_addr;
+                proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                proxy_set_header X-Forwarded-Proto $scheme;
+
+                # WebSocket 支持 (如果需要)
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+            }
+        }
+        ```
+    *   啟用配置: `sudo ln -s /etc/nginx/sites-available/ainews /etc/nginx/sites-enabled/`
+    *   測試配置: `sudo nginx -t`
+    *   重載 Nginx: `sudo systemctl reload nginx`
+    *   使用 Certbot 獲取 SSL 憑證: `sudo certbot --nginx -d your_domain.com -d www.your_domain.com`
+
+7. **訪問:**
+    *   如果配置了 Nginx，透過 `https://your_domain.com` 訪問。
+    *   如果未配置 Nginx，透過 `http://YOUR_SERVER_IP:8001` 訪問 (不建議在生產環境直接暴露)。
+
+8. **維護與更新:**
+    *   **更新程式碼:**
+        ```bash
+        cd AiNewsCollection
+        git pull origin main # 或您的主分支
+        docker-compose down # 停止當前服務
+        docker-compose build # 重建映像檔 (如果 Dockerfile 或依賴有變更)
+        docker-compose up -d # 重新啟動服務
+        docker-compose exec web alembic upgrade head # 如果模型有變更
+        ```
+    *   **查看日誌:**
+        ```bash
+        docker-compose logs -f web # 查看 web 服務的即時日誌
+        docker-compose logs -f worker # 查看 worker 服務的即時日誌 (如果有的話)
+        ```
+
+## 貢獻
+
+歡迎各種形式的貢獻！如果您想做出貢獻，請參考以下步驟：
+
+1. Fork 本倉庫。
+2. 創建您的特性分支 (`git checkout -b feature/AmazingFeature`)。
+3. 提交您的更改 (`git commit -m 'Add some AmazingFeature'`)。
+4. 將您的分支推送到遠程倉庫 (`git push origin feature/AmazingFeature`)。
+5. 開啟一個 Pull Request。
+
+## 維護者
+
+*   **Chengshouyi** - [GitHub Profile](https://github.com/Chengshouyi)
+
+## 如何新增爬蟲
+
+若要擴展系統以支援新的新聞網站，請遵循以下步驟：
+
+1.  **創建爬蟲類別:**
+    *   在 `src/crawlers/` 目錄下創建一個新的 Python 檔案，例如 `my_new_crawler.py`。
+    *   定義一個新的類別，繼承自 `src.crawlers.base_crawler.BaseCrawler`。
+    *   實作必要的抽象方法，至少包含：
+        *   `_fetch_article_links(self, task_id: int)`: 抓取目標網站的文章列表頁面，解析出文章標題、連結、發布時間等基本資訊，並返回 Pandas DataFrame。
+        *   `_fetch_articles(self, task_id: int)`: 根據 `self.articles_df` 中儲存的連結，逐一或批量抓取文章的完整內容 (作者、內文、標籤等)，並返回包含這些詳細資訊的字典列表。
+        *   `_update_config(self)`: 當任務參數更新時，可能需要更新內部使用的爬蟲或擷取器實例的設定。
+    *   您可以參考 `src/crawlers/bnext_crawler.py` 作為實作範例，它可能進一步將抓取列表和抓取內容的邏輯分別封裝在不同的輔助類別中 (如 `BnextScraper` 和 `BnextContentExtractor`)。
+
+2.  **設計設定檔 (Config File):**
+    *   在 `src/crawlers/configs/` 目錄下創建一個新的 JSON 設定檔，例如 `my_new_crawler_config.json`。
+    *   此檔案定義了爬蟲行為所需的參數，例如：
+        *   `base_url`: 目標網站的基礎 URL。
+        *   `list_url_template`: 文章列表頁面的 URL 模板。
+        *   `categories`: 要爬取的網站分類。
+        *   `selectors`: 用於從 HTML 中提取特定元素 (如標題、內容、日期) 的 CSS 選擇器。
+    *   請參考 `src/crawlers/configs/bnext_crawler_config.json` 的結構和內容。
+    *   **注意:** 設定檔的檔案名稱（不含副檔名）將作為爬蟲類型 (`crawler_type`) 的唯一標識符。
+
+3.  **透過 Web UI 新增爬蟲:**
+    *   啟動應用程式並訪問爬蟲管理頁面 (`/crawlers`)。
+    *   點擊「新增爬蟲」按鈕。
+    *   填寫表單：
+        *   **爬蟲名稱 (Crawler Name):** 給您的爬蟲取一個描述性的名稱。
+        *   **爬蟲類型 (Crawler Type):** 填寫您在步驟 2 中設定檔的**檔案名稱 (不含 `.json` 副檔名)**，例如 `my_new_crawler`。這將用於系統動態載入對應的爬蟲類別。
+        *   **目標站點 (Target Site):** 填寫目標網站的域名，例如 `mynewssite.com`。
+        *   **描述 (Description):** (可選) 簡要描述爬蟲。
+        *   **設定檔 (Config File):** 上傳您在步驟 2 中創建的 JSON 設定檔。
+    *   提交表單。系統會將設定檔儲存到 `/app/data/web_site_configs/` (容器內路徑，對應到 volume 掛載的 `data/web_site_configs` 目錄)。
+
+4.  **測試爬蟲:**
+    *   在爬蟲管理頁面找到您新增的爬蟲。
+    *   點擊「測試」按鈕。
+    *   輸入一個目標網站的文章 URL 進行測試。
+    *   觀察 WebSocket 回傳的即時狀態，檢查是否能成功抓取文章內容。
+    *   您也可以創建手動任務 (`/tasks` 頁面) 來測試完整的連結抓取和內容抓取流程。
+
+## 授權條款
+
+本項目採用 MIT 授權條款。詳情請見 [LICENSE](LICENSE) 文件。
