@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block title %}任務管理 - AI 新聞收集器{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1>任務管理</h1>
+    <button type="button" class="btn btn-primary" id="add-task-btn">
+        <i class="bi bi-plus-circle"></i> 新增任務
+    </button>
+</div>
+
+<!-- 將錯誤提示改為一個更友好的信息，告知用戶無需擔心，移除d-none使其預設顯示 -->
+<div class="alert alert-info alert-dismissible fade show d-none" role="alert" id="no-tasks-alert">
+    <h4 class="alert-heading">暫無任務</h4>
+    <p>目前資料庫中沒有任何任務，您可以點擊右上角的「新增任務」按鈕來添加。</p>
+    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+</div>
+
+<!-- 使用固定的最小高度來避免表格載入時的畫面跳動 -->
+<div class="table-responsive" style="min-height: 200px;">
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th scope="col">ID</th>
+                <th scope="col">名稱</th>
+                <th scope="col">爬蟲</th>
+                <th scope="col">類型</th>
+                <th scope="col">週期</th>
+                <th scope="col">狀態</th>
+                <th scope="col">進度</th>
+                <th scope="col">執行時間</th>
+                <th scope="col">操作</th>
+            </tr>
+        </thead>
+        <tbody id="tasks-table-body">
+            <!-- AJAX 內容將加載於此 -->
+        </tbody>
+    </table>
+</div>
+
+<!-- 任務新增/修改表單模態框 -->
+<div class="modal fade" id="task-modal" tabindex="-1" aria-labelledby="task-modal-label" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="task-modal-label">新增任務</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="task-form">
+                    <input type="hidden" id="task-id">
+                    <div class="mb-3">
+                        <label for="task-name" class="form-label">任務名稱</label>
+                        <input type="text" class="form-control" id="task-name" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="crawler-id" class="form-label">選擇爬蟲</label>
+                        <select class="form-select" id="crawler-id" required>
+                            <option value="">請選擇...</option>
+                            <!-- 爬蟲選項將由 JS 動態加載 -->
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label for="task-type" class="form-label">任務類型</label>
+                        <select class="form-select" id="task-type" required>
+                            <option value="">請選擇...</option>
+                            <option value="auto">自動執行</option>
+                            <option value="manual">手動執行</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="schedule-container">
+                        <!-- 自動執行時顯示排程設定 -->
+                    </div>
+
+                    <!-- 爬蟲參數區域 -->
+                    <div class="card mb-3">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                            <span>爬蟲參數設定</span>
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="toggle-advanced-params">
+                                <i class="bi bi-chevron-down"></i>
+                            </button>
+                        </div>
+                        <div class="card-body" id="advanced-params-container">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="max-pages" class="form-label">最大頁數</label>
+                                    <input type="number" class="form-control" id="max-pages" min="1" value="10">
+                                    <div class="form-text">爬取頁面的最大數量</div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="max-retries" class="form-label">最大重試次數</label>
+                                    <input type="number" class="form-control" id="max-retries" min="0" value="3">
+                                    <div class="form-text">請求失敗時的重試次數</div>
+                                </div>
+                            </div>
+                            <div class="row align-items-center">
+                                <div class="col-md-6 mb-3" id="limit-num-articles-checkbox-container">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="is-limit-num-articles">
+                                        <label class="form-check-label" for="is-limit-num-articles">
+                                            是否限制抓取文章數量
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-3 d-none" id="num-articles-container">
+                                    <label for="num-articles" class="form-label">文章數量</label>
+                                    <input type="number" class="form-control" id="num-articles" min="1" value="10">
+                                    <div class="form-text">最多爬取的文章數量</div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="retry-delay" class="form-label">重試延遲 (秒)</label>
+                                    <input type="number" class="form-control" id="retry-delay" min="0" step="0.5"
+                                        value="2.0">
+                                    <div class="form-text">重試間隔時間</div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="timeout" class="form-label">超時時間 (秒)</label>
+                                    <input type="number" class="form-control" id="timeout" min="1" value="10">
+                                    <div class="form-text">請求超時時間</div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="min-keywords" class="form-label">最小關鍵字數</label>
+                                    <input type="number" class="form-control" id="min-keywords" min="1" value="3">
+                                    <div class="form-text">關鍵字提取的最小數量</div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-12 mb-3">
+                                    <label for="scrape-mode" class="form-label">爬取模式</label>
+                                    <select class="form-select" id="scrape-mode">
+                                        <option value="full_scrape">完整爬取</option>
+                                        <option value="links_only">僅爬取連結</option>
+                                        <option value="content_only">僅爬取內容</option>
+                                    </select>
+                                    <div class="form-text">選擇爬取的內容範圍</div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <div class="form-check mt-4">
+                                        <input class="form-check-input" type="checkbox" id="save-partial-results"
+                                            checked>
+                                        <label class="form-check-label" for="save-partial-results">
+                                            取消時保存部分結果
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <div class="form-check mt-4">
+                                        <input class="form-check-input" type="checkbox" id="save-to-csv">
+                                        <label class="form-check-label" for="save-to-csv">
+                                            儲存到CSV文件
+                                        </label>
+                                    </div>
+                                    <div id="csv-prefix-container" class="d-none mt-2">
+                                        <label for="csv-file-prefix" class="form-label">CSV檔案前綴</label>
+                                        <input type="text" class="form-control" id="csv-file-prefix" placeholder="可選">
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-12 mb-3">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="ai-only">
+                                        <label class="form-check-label" for="ai-only">
+                                            AI 相關（只抓取與 AI 相關的文章）
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label for="task-remark" class="form-label">備註</label>
+                                <textarea class="form-control" id="task-remark" rows="3"></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3 d-none" id="content-only-links-container">
+                        <label for="article-links-input" class="form-label d-none" id="content-only-links-label">文章連結
+                            (CONTENT_ONLY 模式)</label>
+                        <textarea class="form-control d-none" id="article-links-input" rows="5"
+                            placeholder="請每行輸入一個文章連結..."></textarea>
+                        <div class="form-text d-none" id="content-only-links-form-text">
+                            僅在「新增任務」且選擇「僅爬取內容」模式時需要填寫。
+                        </div>
+                        <div class="alert alert-info mt-2 d-none" role="alert" id="content-only-edit-notice">
+                            編輯模式下，將使用此任務先前抓取的連結進行文章內容爬取。若無先前抓取的連結，任務更新將會失敗。
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="save-task-btn">儲存</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 確認刪除模態框 -->
+<div class="modal fade" id="delete-task-modal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">確認刪除</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                確定要刪除此任務嗎？此操作無法撤銷。
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-danger" id="confirm-delete-task-btn">確認刪除</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 手動爬取連結選擇模態框 -->
+<div class="modal fade" id="manual-links-modal" tabindex="-1" aria-labelledby="manual-links-modal-label"
+    aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="manual-links-modal-label">選擇要爬取的連結</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6>已抓取的連結列表</h6>
+                        <div>
+                            <button class="btn btn-sm btn-outline-primary" id="select-all-links">全選</button>
+                            <button class="btn btn-sm btn-outline-secondary" id="deselect-all-links">取消全選</button>
+                        </div>
+                    </div>
+                    <div class="links-container" style="max-height: 60vh; overflow-y: auto;">
+                        <table class="table table-sm">
+                            <thead>
+                                <tr>
+                                    <th scope="col" style="width: 50px;">選擇</th>
+                                    <th scope="col">標題</th>
+                                    <th scope="col">連結</th>
+                                    <th scope="col">發布日期</th>
+                                </tr>
+                            </thead>
+                            <tbody id="manual-links-table-body">
+                                <!-- 連結列表將動態加載 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div id="manual-links-status">
+                    已選擇 <span id="selected-links-count">0</span> 個連結。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">取消</button>
+                <button type="button" class="btn btn-primary" id="start-fetch-articles-btn">開始爬取文章</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/tasks.js') }}"></script>
+{% endblock %}
