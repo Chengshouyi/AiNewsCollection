@@ -547,7 +547,7 @@
     curl -X GET "http://localhost:8001/api/articles/search?q=AI%20應用"
     ```
 
-### 生產環境佈署指南
+### 佈署指南
 
 本節提供基本的生產環境部署建議。
 
@@ -654,20 +654,6 @@
         docker-compose logs -f worker # 查看 worker 服務的即時日誌 (如果有的話)
         ```
 
-## 貢獻
-
-歡迎各種形式的貢獻！如果您想做出貢獻，請參考以下步驟：
-
-1. Fork 本倉庫。
-2. 創建您的特性分支 (`git checkout -b feature/AmazingFeature`)。
-3. 提交您的更改 (`git commit -m 'Add some AmazingFeature'`)。
-4. 將您的分支推送到遠程倉庫 (`git push origin feature/AmazingFeature`)。
-5. 開啟一個 Pull Request。
-
-## 維護者
-
-*   **Chengshouyi** - [GitHub Profile](https://github.com/Chengshouyi)
-
 ## 如何新增爬蟲
 
 若要擴展系統以支援新的新聞網站，請遵循以下步驟：
@@ -708,6 +694,20 @@
     *   輸入一個目標網站的文章 URL 進行測試。
     *   觀察 WebSocket 回傳的即時狀態，檢查是否能成功抓取文章內容。
     *   您也可以創建手動任務 (`/tasks` 頁面) 來測試完整的連結抓取和內容抓取流程。
+
+## 貢獻
+
+歡迎各種形式的貢獻！如果您想做出貢獻，請參考以下步驟：
+
+1. Fork 本倉庫。
+2. 創建您的特性分支 (`git checkout -b feature/AmazingFeature`)。
+3. 提交您的更改 (`git commit -m 'Add some AmazingFeature'`)。
+4. 將您的分支推送到遠程倉庫 (`git push origin feature/AmazingFeature`)。
+5. 開啟一個 Pull Request。
+
+## 維護者
+
+*   **Chengshouyi** - [GitHub Profile](https://github.com/Chengshouyi)
 
 ## 授權條款
 
