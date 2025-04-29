@@ -21,7 +21,7 @@
   * [爬蟲管理](#爬蟲管理-範例)
   * [任務管理](#任務管理-範例)
   * [文章查詢](#文章查詢-範例)
-* [部署指南](#部署指南)
+* [佈署指南](#佈署指南)
 * [貢獻](#貢獻)
 * [維護者](#維護者)
 * [如何新增爬蟲](#如何新增爬蟲)
@@ -312,7 +312,7 @@
 
 3. **進入目錄:** `cd YOUR_REPOSITORY`
 
-4. **配置環境變數 (可選):** 在專案根目錄創建 `.env` 文件可覆蓋 `docker-compose.yml` 中的預設資料庫設定。
+4. **配置環境變數 (必要):** 在專案根目錄創建 `.env` 文件可覆蓋 `docker-compose.yml` 中的預設資料庫設定。
    
    ```dotenv
    # .env (開發環境範例)
@@ -547,7 +547,7 @@
     curl -X GET "http://localhost:8001/api/articles/search?q=AI%20應用"
     ```
 
-### 文章查詢 (範例)
+### 佈署指南
 
 本節提供基本的生產環境部署建議。
 
@@ -654,20 +654,6 @@
         docker-compose logs -f worker # 查看 worker 服務的即時日誌 (如果有的話)
         ```
 
-## 貢獻
-
-歡迎各種形式的貢獻！如果您想做出貢獻，請參考以下步驟：
-
-1. Fork 本倉庫。
-2. 創建您的特性分支 (`git checkout -b feature/AmazingFeature`)。
-3. 提交您的更改 (`git commit -m 'Add some AmazingFeature'`)。
-4. 將您的分支推送到遠程倉庫 (`git push origin feature/AmazingFeature`)。
-5. 開啟一個 Pull Request。
-
-## 維護者
-
-*   **Chengshouyi** - [GitHub Profile](https://github.com/Chengshouyi)
-
 ## 如何新增爬蟲
 
 若要擴展系統以支援新的新聞網站，請遵循以下步驟：
@@ -682,14 +668,14 @@
     *   您可以參考 `src/crawlers/bnext_crawler.py` 作為實作範例，它可能進一步將抓取列表和抓取內容的邏輯分別封裝在不同的輔助類別中 (如 `BnextScraper` 和 `BnextContentExtractor`)。
 
 2.  **設計設定檔 (Config File):**
-    *   在 `src/crawlers/configs/` 目錄下創建一個新的 JSON 設定檔，例如 `my_new_crawler_config.json`。
+    *   在電腦任一目錄下創建一個新的 JSON 設定檔，例如 `my_new_crawler_config.json`。
     *   此檔案定義了爬蟲行為所需的參數，例如：
         *   `base_url`: 目標網站的基礎 URL。
         *   `list_url_template`: 文章列表頁面的 URL 模板。
         *   `categories`: 要爬取的網站分類。
         *   `selectors`: 用於從 HTML 中提取特定元素 (如標題、內容、日期) 的 CSS 選擇器。
     *   請參考 `src/crawlers/configs/bnext_crawler_config.json` 的結構和內容。
-    *   **注意:** 設定檔的檔案名稱（不含副檔名）將作為爬蟲類型 (`crawler_type`) 的唯一標識符。
+    *   **注意:** 設定檔的檔案名稱（不含副檔名）將在上傳後被更改為爬蟲的名稱(crawler_name)，這也是爬蟲資料在資料庫中的唯一標識符。
 
 3.  **透過 Web UI 新增爬蟲:**
     *   啟動應用程式並訪問爬蟲管理頁面 (`/crawlers`)。
@@ -708,6 +694,20 @@
     *   輸入一個目標網站的文章 URL 進行測試。
     *   觀察 WebSocket 回傳的即時狀態，檢查是否能成功抓取文章內容。
     *   您也可以創建手動任務 (`/tasks` 頁面) 來測試完整的連結抓取和內容抓取流程。
+
+## 貢獻
+
+歡迎各種形式的貢獻！如果您想做出貢獻，請參考以下步驟：
+
+1. Fork 本倉庫。
+2. 創建您的特性分支 (`git checkout -b feature/AmazingFeature`)。
+3. 提交您的更改 (`git commit -m 'Add some AmazingFeature'`)。
+4. 將您的分支推送到遠程倉庫 (`git push origin feature/AmazingFeature`)。
+5. 開啟一個 Pull Request。
+
+## 維護者
+
+*   **Chengshouyi** - [GitHub Profile](https://github.com/Chengshouyi)
 
 ## 授權條款
 
