@@ -48,7 +48,6 @@ HIGH_PRIORITY_KEYWORDS: Set[str] = {
 
 def register_additional_keywords(*keywords: str) -> None:
     """註冊額外的AI關鍵字"""
-    global AI_KEYWORDS
     # 可以在這裡加入 log，例如記錄新增了哪些關鍵字
     # logger.info("新增 AI 關鍵字: %s", ", ".join(keywords))
     for keyword in keywords:
@@ -56,7 +55,6 @@ def register_additional_keywords(*keywords: str) -> None:
 
 def register_additional_categories(*categories: str) -> None:
     """註冊額外的AI分類"""
-    global AI_CATEGORIES
     # 可以在這裡加入 log，例如記錄新增了哪些分類
     # logger.info("新增 AI 分類: %s", ", ".join(categories))
     for category in categories:
