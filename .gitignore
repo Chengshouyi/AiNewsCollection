@@ -175,3 +175,6 @@ cython_debug/
 .pypirc
 
 .ai/
+
+# test db
+file::memory:
