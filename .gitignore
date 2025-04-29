@@ -1,4 +1,9 @@
 # Byte-compiled / optimized / DLL files
+
+# sqlite
+file::memory:
+
+# cache
 __pycache__/
 *.py[cod]
 *$py.class
@@ -138,6 +143,7 @@ celerybeat.pid
 
 # Environments
 .env
+.env.prod
 .venv
 env/
 venv/
@@ -181,3 +187,7 @@ cython_debug/
 
 .ai/
 filememory
+<<<<<<< HEAD
+=======
+src/crawlers/configs/tech_news_crawler_config.json
+>>>>>>> feature/api

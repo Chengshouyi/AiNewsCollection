@@ -1,14 +1,10 @@
 {
-    "name": "bnext",
     "base_url": "https://www.bnext.com.tw",
-    "list_url_template": "{base_url}/categories/{category}",
     "categories": [
         "ai",
-        "tech",
-        "iot",
-        "smartmedical",
-        "smartcity"
+        "tech"
     ],
+    "date_format": "%Y-%m-%d",
     "full_categories": [
         "ai",
         "tech",
@@ -25,62 +21,47 @@
         "semiconductor",
         "manufacture"
     ],
-    "article_settings": {
-        "max_pages": 3,
-        "ai_only": true,
-        "num_articles": 10,
-        "min_keywords": 3,
-        "from_db_link": false
-    },
-    "extraction_settings": {
-        "num_articles": 3,
-        "min_keywords": 3
-    },
-    "storage_settings": {
-        "save_to_csv": true,
-        "csv_file_name": "articles_bnext.csv",
-        "save_to_database": false
-    },
-    "valid_domains": [
-        "https://www.bnext.com.tw"
-    ],
-    "url_patterns": [
-        "/categories/",
-        "/articles/"
-    ],
-    "url_file_extensions": [
-        ".html",
-        ""
-    ],
-    "date_format": "%Y-%m-%d",
+    "list_url_template": "{base_url}/categories/{category}",
+    "name": "bnext",
     "selectors": {
-        "get_article_links": {
-            "articles_container": "body > div.main-body-content > div > div.pc.hidden.lg\\:block",
-            "category": "div.border-b.pb-4.text-center.text-3xl.font-medium.mb-8.flex.items-center.justify-center.gap-2 > span",
-            "link": "div.grid.grid-cols-6.gap-4.relative.h-full > a",
-            "title": "div.grid.grid-cols-6.gap-4.relative.h-full > div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > h2",
-            "summary": "div.grid.grid-cols-6.gap-4.relative.h-full > div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex-grow.pt-4.text-lg.text-gray-500",
-            "published_age": "div.grid.grid-cols-6.gap-4.relative.h-full > div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex.relative.items-center.gap-2.text-gray-500.text-sm > span:nth-child(3)",
-            "article_grid_container": {
-                "container": "div.grid.grid-cols-4.gap-8.xl\\:gap-6",
-                "link": "a",
-                "title": "h2",
-                "summary": "div.text-sm.text-justify.font-normal.text-gray-500.three-line-text.tracking-wide",
-                "published_age": "div.flex.relative.items-center.gap-2.text-xs.text-gray-500.font-normal > span:nth-child(3)"
-            }
-        },
         "get_article_contents": {
+            "author": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-2.items-center.text-sm.text-gray-800 > a",
+            "category": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > a",
+            "content": "#article > div > div.left > div > div.center.flex.flex-col.gap-4 > div.htmlview.article-content",
             "content_container": "body > div.main-body-content",
             "published_date": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > span:nth-child(1)",
-            "category": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.items-center.text-sm.text-gray-800 > a",
-            "title": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > h1",
             "summary": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div:nth-child(3)",
             "tags": {
                 "container": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-1.flex-wrap",
                 "tag": "a"
             },
-            "author": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > div.flex.gap-2.items-center.text-sm.text-gray-800 > a",
-            "content": "#article > div > div.left > div > div.center.flex.flex-col.gap-4 > div.htmlview.article-content"
+            "title": "#hero > div.rgt.md\\:my-6.lg\\:mr-6 > div.pc.h-full.hidden.lg\\:flex.flex-col.gap-2.tracking-wide.leading-normal > h1"
+        },
+        "get_article_links": {
+            "article_grid_container": {
+                "container": "div.grid.grid-cols-4.gap-8.xl\\:gap-6",
+                "link": "a",
+                "published_age": "div.flex.relative.items-center.gap-2.text-xs.text-gray-500.font-normal > span:nth-child(3)",
+                "summary": "div.text-sm.text-justify.font-normal.text-gray-500.three-line-text.tracking-wide",
+                "title": "h2"
+            },
+            "articles_container": "body > div.main-body-content > div > div.pc.hidden.lg\\:block",
+            "category": "div.border-b.pb-4.text-center.text-3xl.font-medium.mb-8.flex.items-center.justify-center.gap-2 > span",
+            "link": "div.grid.grid-cols-6.gap-4.relative.h-full > a",
+            "published_age": "div.grid.grid-cols-6.gap-4.relative.h-full > div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex.relative.items-center.gap-2.text-gray-500.text-sm > span:nth-child(3)",
+            "summary": "div.grid.grid-cols-6.gap-4.relative.h-full > div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > div.flex-grow.pt-4.text-lg.text-gray-500",
+            "title": "div.grid.grid-cols-6.gap-4.relative.h-full > div.col-span-3.flex.flex-col.flex-grow.gap-y-3.m-4 > h2"
         }
-    }
+    },
+    "url_file_extensions": [
+        ".html",
+        ""
+    ],
+    "url_patterns": [
+        "/categories/",
+        "/articles/"
+    ],
+    "valid_domains": [
+        "https://www.bnext.com.tw"
+    ]
 }

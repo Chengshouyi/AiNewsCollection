@@ -1,13 +1,24 @@
-from typing import Dict, Final
-import requests
+"""定義爬蟲的基礎通用配置，如請求頭、超時、重試和延遲設定。"""
+
+# 標準函式庫導入
 import time
 import random
-import logging
+import logging # 移除舊的 logger 設定
+from typing import Dict, Final
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+# 第三方函式庫導入
+import requests
 
-"""基礎配置模組，包含爬蟲的通用配置項"""
+# 本地應用程式導入
+from src.utils.log_utils import LoggerSetup
+
+# 設定統一的 logger
+logger = LoggerSetup.setup_logger(__name__)
+
+# 移除舊的 logging.basicConfig
+# logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+# logger = logging.getLogger(__name__)
+
 
 # HTTP請求頭
 DEFAULT_HEADERS: Dict[str, str] = {
@@ -27,34 +38,38 @@ DEFAULT_RETRY_DELAY: Final[float] = 2.0
 DEFAULT_MIN_DELAY: Final[float] = 1.5
 DEFAULT_MAX_DELAY: Final[float] = 3.5
 
-DEFAULT_REQUEST_CONFIG = {
+# 預設請求配置字典 (注意: 這裡的 retry_delay 是 int，與 DEFAULT_RETRY_DELAY 不同)
+DEFAULT_REQUEST_CONFIG: Dict[str, int] = {
     'timeout': 10,
     'max_retries': 3,
-    'retry_delay': 2
+    'retry_delay': 2 # 這裡使用整數 2
 }
 
 def get_default_session() -> requests.Session:
-    """創建預設的 requests 會話"""
+    """創建預設的 requests 會話，並應用預設請求頭。"""
     session = requests.Session()
     session.headers.update(DEFAULT_HEADERS)
     return session
 
-def random_sleep(min_seconds: float = 1.0, max_seconds: float = 3.0) -> None:
+def random_sleep(min_seconds: float = DEFAULT_MIN_DELAY, max_seconds: float = DEFAULT_MAX_DELAY) -> None:
     """隨機暫停，避免請求過於頻繁
-    
+
+    使用模組級別的 DEFAULT_MIN_DELAY 和 DEFAULT_MAX_DELAY 作為預設值。
+
     Args:
-        min_seconds (float): 最小暫停時間（秒），預設為 1.0 秒
-        max_seconds (float): 最大暫停時間（秒），預設為 3.0 秒
-        
+        min_seconds (float): 最小暫停時間（秒）。
+        max_seconds (float): 最大暫停時間（秒）。
+
     Raises:
-        ValueError: 當 min_seconds 大於 max_seconds 時
-        ValueError: 當 min_seconds 或 max_seconds 小於 0 時
+        ValueError: 當 min_seconds 大於 max_seconds 時。
+        ValueError: 當 min_seconds 或 max_seconds 小於 0 時。
     """
     if min_seconds < 0 or max_seconds < 0:
         raise ValueError("暫停時間不能小於 0 秒")
     if min_seconds > max_seconds:
         raise ValueError("最小暫停時間不能大於最大暫停時間")
-        
+
     sleep_time = random.uniform(min_seconds, max_seconds)
-    logger.debug(f"等待 {sleep_time:.2f} 秒...")
+    # 使用標準格式化避免 PylintW1203
+    logger.debug("等待 %.2f 秒...", sleep_time)
     time.sleep(sleep_time)

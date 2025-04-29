@@ -1,696 +1,735 @@
+"""測試排程服務 (SchedulerService) 的單元測試"""
+
+# 標準函式庫
+from datetime import datetime, timedelta, timezone
+from unittest.mock import ANY, MagicMock, patch
+
+# 第三方函式庫
 import pytest
-from unittest.mock import MagicMock, patch, call
-from datetime import datetime, timezone, timedelta
 import pytz
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from apscheduler.schedulers import SchedulerNotRunningError
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.orm import Session
 
-from src.services.scheduler_service import SchedulerService
-from src.services.base_service import BaseService
-from src.services.task_executor import TaskExecutor
+# 本地應用程式 imports
 from src.database.crawler_tasks_repository import CrawlerTasksRepository
-from src.models.crawler_tasks_model import CrawlerTasks
-from src.models.base_model import Base
-from src.models.crawlers_model import Crawlers
 from src.database.database_manager import DatabaseManager
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
-from apscheduler.triggers.cron import CronTrigger
+from src.models.base_model import Base
+from src.models.crawler_tasks_model import CrawlerTasks, ScrapeMode, ScrapePhase
+from src.models.crawlers_model import Crawlers
+from src.services.scheduler_service import SchedulerService
+from src.services.task_executor_service import TaskExecutorService
+from src.utils.enum_utils import TaskStatus
+from src.utils.log_utils import LoggerSetup
+
+# flake8: noqa: F811
+# pylint: disable=redefined-outer-name
+
+# 設定統一 logger
+logger = LoggerSetup.setup_logger(__name__)
 
 
-# 測試固定裝置 (Fixtures)
-@pytest.fixture(scope="session")
-def engine():
-    """創建測試用的資料庫引擎"""
-    return create_engine('sqlite:///:memory:')
+# --- Fixtures ---
 
 
-@pytest.fixture(scope="session")
-def tables(engine):
-    """創建資料表結構"""
+@pytest.fixture(scope="function")
+def initialized_db_manager(db_manager_for_test: DatabaseManager):
+    """
+    提供一個配置好的 DatabaseManager 實例，確保資料表存在並在每次測試前清理。
+    依賴來自 conftest.py 的 db_manager_for_test。
+    """
+    logger.debug("為排程服務測試函數創建資料表...")
+    engine = db_manager_for_test.engine
     Base.metadata.create_all(engine)
-    yield
-    Base.metadata.drop_all(engine)
+    logger.debug("資料表已創建。")
+
+    logger.debug("測試前清理資料表...")
+    with db_manager_for_test.session_scope() as session:
+        try:
+            session.execute(text("DELETE FROM apscheduler_jobs"))
+            session.commit()
+            logger.debug("apscheduler_jobs 資料表已清理。")
+        except OperationalError as e:
+            if "no such table" in str(e).lower():
+                logger.warning("刪除時未找到 'apscheduler_jobs' 資料表，已跳過。")
+                session.rollback()
+            else:
+                logger.error(
+                    f"清理 apscheduler_jobs 時發生 OperationalError: {e}",
+                    exc_info=True,
+                )
+                session.rollback()
+                raise
+        except Exception as e:
+            logger.error(f"清理 apscheduler_jobs 時發生未預期錯誤: {e}", exc_info=True)
+            session.rollback()
+            raise
+
+        session.query(CrawlerTasks).delete()
+        session.query(Crawlers).delete()
+        session.commit()
+        logger.debug("CrawlerTasks 和 Crawlers 資料表已清理。")
+
+    yield db_manager_for_test
 
 
 @pytest.fixture(scope="function")
-def session_factory(engine, tables):
-    """建立會話工廠"""
-    return sessionmaker(bind=engine)
+def task_executor_service(initialized_db_manager: DatabaseManager):
+    """創建任務執行服務實例"""
+    service = TaskExecutorService(db_manager=initialized_db_manager)
+    return service
 
 
 @pytest.fixture(scope="function")
-def session(session_factory):
-    """建立測試用會話"""
-    session = session_factory()
-    try:
-        yield session
-    finally:
-        session.close()
+def scheduler_service_with_mocks(
+    initialized_db_manager: DatabaseManager, task_executor_service: TaskExecutorService
+):
+    """創建排程服務實例並返回服務和 mock 排程器"""
+    with patch(
+        "apscheduler.schedulers.background.BackgroundScheduler"
+    ) as mock_scheduler_class:
+        mock_scheduler = MagicMock()
+        mock_scheduler_class.return_value = mock_scheduler
+        mock_scheduler.get_jobs.return_value = []
+
+        service = SchedulerService(task_executor_service, initialized_db_manager)
+
+        try:
+            yield service, mock_scheduler
+        finally:
+            if service.scheduler_status["running"]:
+                try:
+                    service.stop_scheduler()
+                except SchedulerNotRunningError:
+                    logger.warning(
+                        "排程器狀態標記為運行中，但在停止時 APScheduler 引發 SchedulerNotRunningError。已忽略。"
+                    )
+                except Exception as e:
+                    logger.error(
+                        f"Fixture 清理期間停止排程器時發生錯誤: {e}",
+                        exc_info=True,
+                    )
 
 
 @pytest.fixture(scope="function")
-def db_manager(engine):
-    """模擬資料庫管理器"""
-    mock_db_manager = MagicMock(spec=DatabaseManager)
-    mock_db_manager.engine = engine
-    mock_db_manager.db_url = 'sqlite:///:memory:'
-    mock_db_manager.Session = sessionmaker(bind=engine)
-    
-    return mock_db_manager
+def sample_crawler_data(initialized_db_manager: DatabaseManager) -> dict:
+    """創建一個測試用的爬蟲資料，返回包含 ID 的字典"""
+    crawler_id = None
+    crawler_data = {
+        "crawler_name": "TestCrawler",
+        "module_name": "test_module",
+        "base_url": "https://test.com",
+        "is_active": True,
+        "crawler_type": "RSS",
+        "config_file_name": "test_config.json",
+    }
+    with initialized_db_manager.session_scope() as session:
+        crawler = Crawlers(**crawler_data)
+        session.add(crawler)
+        session.flush()
+        crawler_id = crawler.id
+        session.commit()
+        logger.debug(f"已創建範例爬蟲資料，ID: {crawler_id}")
+    crawler_data["id"] = crawler_id
+    return crawler_data
 
 
 @pytest.fixture(scope="function")
-def crawler_tasks_repo():
-    """建立測試用爬蟲任務儲存庫"""
-    # 使用 MagicMock 而不是真實的儲存庫
-    return MagicMock(spec=CrawlerTasksRepository)
+def sample_tasks_data(
+    initialized_db_manager: DatabaseManager, sample_crawler_data: dict
+) -> dict:
+    """創建多個測試用的爬蟲任務資料，返回包含任務名稱到 {id, data} 映射的字典"""
+    crawler_id = sample_crawler_data["id"]
+    tasks_details = {}
+
+    tasks_to_create = [
+        {
+            "task_name": "Auto Task",
+            "crawler_id": crawler_id,
+            "cron_expression": "0 */6 * * *",
+            "is_auto": True,
+            "is_active": True,
+            "is_scheduled": False,
+            "task_args": {"scrape_mode": ScrapeMode.FULL_SCRAPE.value},
+            "scrape_phase": ScrapePhase.INIT,
+            "task_status": TaskStatus.INIT,
+            "retry_count": 0,
+        },
+        {
+            "task_name": "Manual Task",
+            "crawler_id": crawler_id,
+            "cron_expression": "0 0 * * *",
+            "is_auto": False,
+            "is_active": True,
+            "is_scheduled": False,
+            "task_args": {"scrape_mode": ScrapeMode.LINKS_ONLY.value},
+            "scrape_phase": ScrapePhase.INIT,
+            "task_status": TaskStatus.INIT,
+            "retry_count": 0,
+        },
+        {
+            "task_name": "Scheduled Task",
+            "crawler_id": crawler_id,
+            "cron_expression": "*/30 * * * *",
+            "is_auto": True,
+            "is_active": True,
+            "is_scheduled": True,
+            "task_args": {"scrape_mode": ScrapeMode.CONTENT_ONLY.value},
+            "scrape_phase": ScrapePhase.INIT,
+            "task_status": TaskStatus.INIT,
+            "retry_count": 0,
+        },
+    ]
+
+    with initialized_db_manager.session_scope() as session:
+        created_tasks = []
+        for task_data in tasks_to_create:
+            task = CrawlerTasks(**task_data)
+            session.add(task)
+            created_tasks.append(task)
+        session.flush()
+
+        for i, task in enumerate(created_tasks):
+            task_name = tasks_to_create[i]["task_name"]
+            task_dict = {
+                column.name: getattr(task, column.name)
+                for column in task.__table__.columns
+            }
+            if isinstance(task_dict.get("scrape_phase"), ScrapePhase):
+                task_dict["scrape_phase"] = task_dict["scrape_phase"].value
+            if isinstance(task_dict.get("task_status"), TaskStatus):
+                task_dict["task_status"] = task_dict["task_status"].value
+            tasks_details[task_name] = task_dict
+        session.commit()
+        logger.debug(f"已創建範例任務資料 (字典格式): {tasks_details}")
+
+    return tasks_details
 
 
-@pytest.fixture(scope="function")
-def task_executor():
-    """模擬任務執行器"""
-    return MagicMock(spec=TaskExecutor)
-
-
-@pytest.fixture(scope="function")
-def clean_db(session):
-    """清空資料庫"""
-    session.query(CrawlerTasks).delete()
-    session.query(Crawlers).delete()
-    session.commit()
-
-
-@pytest.fixture(scope="function")
-def sample_crawler(session, clean_db):
-    """創建測試用爬蟲"""
-    crawler = Crawlers(
-        crawler_name="測試爬蟲",
-        base_url="https://example.com",
-        is_active=True,
-        crawler_type="news",
-        config_file_name="test_crawler_config.json"
-    )
-    session.add(crawler)
-    session.commit()
-    return crawler
-
-
-@pytest.fixture(scope="function")
-def sample_tasks():
-    """創建測試用任務 mock 對象"""
-    tasks = []
-    
-    # 建立3個測試任務
-    for i in range(3):
-        task = MagicMock(spec=CrawlerTasks)
-        task.id = i + 1
-        
-        if i == 0:
-            task.task_name = "每小時任務"
-            task.is_auto = True
-            task.cron_expression = "0 * * * *"  # 每小時執行
-        elif i == 1:
-            task.task_name = "每天任務"
-            task.is_auto = True
-            task.cron_expression = "0 0 * * *"  # 每天執行
-        else:
-            task.task_name = "手動任務"
-            task.is_auto = False
-            task.cron_expression = "0 0 * * *"  # 不會自動執行
-            
-        tasks.append(task)
-        
-    return tasks
-
-
-@pytest.fixture(scope="function")
-def mock_scheduler():
-    """建立模擬的 APScheduler"""
-    mock_scheduler = MagicMock(spec=BackgroundScheduler)
-    # 設置需要的方法
-    mock_scheduler.get_jobs.return_value = []
-    mock_scheduler.add_job.return_value = MagicMock()
-    mock_scheduler.remove_job.return_value = None
-    mock_scheduler.start.return_value = None
-    mock_scheduler.shutdown.return_value = None
-    mock_scheduler.pause.return_value = None
-    return mock_scheduler
-
-
-@pytest.fixture(scope="function")
-def scheduler_service(db_manager, crawler_tasks_repo, task_executor, mock_scheduler):
-    """建立待測試的排程服務"""
-    with patch('src.services.scheduler_service.BackgroundScheduler', return_value=mock_scheduler):
-        with patch('src.services.scheduler_service.SQLAlchemyJobStore', return_value=MagicMock()):
-            # 創建服務，確保傳入正確的初始參數
-            service = SchedulerService(
-                crawler_tasks_repo=crawler_tasks_repo,
-                task_executor=task_executor,
-                db_manager=db_manager
-            )
-            
-            # 直接將 cron_scheduler 替換為 mock_scheduler，確保一致性
-            service.cron_scheduler = mock_scheduler
-            
-            yield service
-            # 確保排程器在測試後被清理
-            service.cleanup()
-
-
-@pytest.fixture(scope="function")
-def mock_real_scheduler():
-    """使用 mock 但保留行為的 BackgroundScheduler"""
-    real_scheduler = MagicMock(spec=BackgroundScheduler)
-    # 設置必要的方法和屬性
-    real_scheduler.get_jobs.return_value = []
-    real_scheduler.start.return_value = None
-    real_scheduler.pause.return_value = None
-    real_scheduler.shutdown.return_value = None
-    real_scheduler.add_job.return_value = MagicMock()
-    real_scheduler.remove_job.return_value = None
-    real_scheduler.get_job.side_effect = lambda job_id: None
-    
-    return real_scheduler
+# --- Tests ---
 
 
 class TestSchedulerService:
-    """排程服務測試類"""
-    
-    def test_init(self, db_manager, task_executor):
-        """測試初始化功能"""
-        mock_scheduler = MagicMock(spec=BackgroundScheduler)
-        mock_jobstore = MagicMock(spec=SQLAlchemyJobStore)
-        mock_repo = MagicMock(spec=CrawlerTasksRepository)
-        
-        # 為了確保初始化時正確設置屬性，重置 mock 狀態
-        mock_scheduler.reset_mock()
-        mock_jobstore.reset_mock()
-        
-        with patch('src.services.scheduler_service.BackgroundScheduler', return_value=mock_scheduler) as mock_bg_scheduler:
-            with patch('src.services.scheduler_service.SQLAlchemyJobStore', return_value=mock_jobstore) as mock_jobstore_class:
-                # 測試傳入儲存庫的情況
-                service = SchedulerService(
-                    crawler_tasks_repo=mock_repo,
-                    task_executor=task_executor,
-                    db_manager=db_manager
-                )
-                
-                # 檢查屬性初始化
-                assert service.crawler_tasks_repo is mock_repo  # 使用 is 檢查是否是同一個對象
-                assert service.task_executor == task_executor
-                assert service.cron_scheduler == mock_scheduler
-                assert service.scheduler_status['running'] is False
-                assert service.scheduler_status['job_count'] == 0
-                assert service.scheduler_status['last_start_time'] is None
-                assert service.scheduler_status['last_shutdown_time'] is None
-                
-                # 檢查 SQLAlchemyJobStore 正確初始化
-                mock_jobstore_class.assert_called_once()
-                call_args = mock_jobstore_class.call_args
-                assert call_args.kwargs['url'] == db_manager.db_url
-                assert call_args.kwargs['engine'] == db_manager.engine
-                assert call_args.kwargs['tablename'] == 'apscheduler_jobs'
-                
-                # 檢查 BackgroundScheduler 正確初始化
-                mock_bg_scheduler.assert_called_once()
-                scheduler_call_args = mock_bg_scheduler.call_args
-                assert 'jobstores' in scheduler_call_args.kwargs
-                assert 'executors' in scheduler_call_args.kwargs
-                assert 'job_defaults' in scheduler_call_args.kwargs
-                assert scheduler_call_args.kwargs['timezone'] == pytz.UTC
-    
-    def test_get_repository_mapping(self, scheduler_service):
-        """測試儲存庫映射"""
-        mapping = scheduler_service._get_repository_mapping()
-        assert 'CrawlerTask' in mapping
-        assert mapping['CrawlerTask'][0] == CrawlerTasksRepository
-        assert mapping['CrawlerTask'][1] == CrawlerTasks
-    
-    def test_get_task_repo(self):
-        """測試獲取任務儲存庫"""
-        # 創建一個新的服務實例
-        mock_db_manager = MagicMock(spec=DatabaseManager)
-        mock_db_manager.engine = MagicMock()
-        mock_db_manager.db_url = 'sqlite:///:memory:'
-        mock_db_manager.Session = MagicMock(return_value=MagicMock())
-        
-        # 創建一個測試用的存儲庫
-        mock_repo = MagicMock(spec=CrawlerTasksRepository)
-        
-        # 使用 patch.object 模擬 _get_repository 方法
-        with patch.object(BaseService, '_get_repository') as mock_get_repo:
-            mock_get_repo.return_value = mock_repo
-            
-            # 創建服務實例，這會調用一次 _get_repository
-            service = SchedulerService(
-                crawler_tasks_repo=None,  # 設為 None 強制使用 _get_task_repo
-                task_executor=None,
-                db_manager=mock_db_manager
-            )
-            
-            # 重置 mock 以清除初始化時的調用
-            mock_get_repo.reset_mock()
-            
-            # 測試 _get_task_repo 方法
-            repo = service._get_task_repo()
-            
-            # 驗證結果
-            assert repo is mock_repo
-            mock_get_repo.assert_called_once_with('CrawlerTask')
-    
-    def test_start_scheduler(self, scheduler_service, sample_tasks):
+    """測試排程服務"""
+
+    @pytest.fixture(scope="function")
+    def scheduler_service_for_init(
+        self,
+        initialized_db_manager: DatabaseManager,
+        task_executor_service: TaskExecutorService,
+    ):
+        """創建排程服務實例 (僅用於 test_init)"""
+        with patch(
+            "apscheduler.schedulers.background.BackgroundScheduler"
+        ) as mock_scheduler_class:
+            mock_scheduler = MagicMock()
+            mock_scheduler_class.return_value = mock_scheduler
+            mock_scheduler.get_jobs.return_value = []
+            service = SchedulerService(task_executor_service, initialized_db_manager)
+            yield service
+            if service.scheduler_status["running"]:
+                service.stop_scheduler()
+
+    def test_init(
+        self,
+        scheduler_service_for_init: SchedulerService,
+        initialized_db_manager: DatabaseManager,
+        task_executor_service: TaskExecutorService,
+    ):
+        """測試排程服務初始化"""
+        scheduler_service = scheduler_service_for_init
+        assert scheduler_service.db_manager is initialized_db_manager
+        assert scheduler_service.task_executor_service is task_executor_service
+        assert scheduler_service.cron_scheduler is not None
+        assert scheduler_service.scheduler_status["running"] is False
+        assert scheduler_service.scheduler_status["job_count"] == 0
+
+    def test_start_scheduler(
+        self,
+        scheduler_service_with_mocks,
+        sample_tasks_data: dict,
+        initialized_db_manager: DatabaseManager,
+    ):
         """測試啟動排程器"""
-        # 模擬自動任務查詢
-        scheduler_service.crawler_tasks_repo.find_auto_tasks.return_value = [t for t in sample_tasks if t.is_auto]
-        
-        # 測試啟動排程器
-        with patch.object(scheduler_service, '_schedule_task', return_value=True) as mock_schedule:
+        scheduler_service, _ = scheduler_service_with_mocks
+        auto_task_id = sample_tasks_data["Auto Task"]["id"]
+        manual_task_id = sample_tasks_data["Manual Task"]["id"]
+        scheduled_task_id = sample_tasks_data["Scheduled Task"]["id"]
+
+        with patch.object(
+            scheduler_service, "_schedule_task", return_value=True
+        ) as mock_schedule, patch.object(
+            scheduler_service.cron_scheduler, "start"
+        ) as mock_start_on_instance:
+
             result = scheduler_service.start_scheduler()
-            
-            # 驗證結果
-            assert result['success'] is True
-            assert "調度器已啟動" in result['message']
-            assert scheduler_service.scheduler_status['running'] is True
-            
-            # 驗證方法調用
-            scheduler_service.crawler_tasks_repo.find_auto_tasks.assert_called_once()
-            assert mock_schedule.call_count == 2  # 應該為2個自動任務調用
-            scheduler_service.cron_scheduler.start.assert_called_once()
-    
-    def test_start_scheduler_already_running(self, scheduler_service):
-        """測試在排程器已運行時啟動"""
-        scheduler_service.scheduler_status['running'] = True
-        result = scheduler_service.start_scheduler()
-        
-        assert result['success'] is False
-        assert "調度器已在運行中" in result['message']
-        # 驗證並未調用儲存庫或啟動排程器
-        scheduler_service.crawler_tasks_repo.find_auto_tasks.assert_not_called()
-    
-    def test_stop_scheduler(self, scheduler_service):
+
+        assert result["success"] is True
+        assert "調度器已啟動" in result["message"]
+        assert scheduler_service.scheduler_status["running"] is True
+
+        with initialized_db_manager.session_scope() as session:
+            auto_task_db = session.get(CrawlerTasks, auto_task_id)
+            manual_task_db = session.get(CrawlerTasks, manual_task_id)
+            scheduled_task_db = session.get(CrawlerTasks, scheduled_task_id)
+
+            assert auto_task_db is not None
+            assert auto_task_db.is_scheduled is True
+            assert manual_task_db is not None
+            assert manual_task_db.is_scheduled is False
+            assert scheduled_task_db is not None
+            assert scheduled_task_db.is_scheduled is True
+
+        mock_start_on_instance.assert_called_once()
+
+        expected_auto_tasks_count = sum(
+            1 for task_data in sample_tasks_data.values() if task_data.get("is_auto")
+        )
+        assert mock_schedule.call_count == expected_auto_tasks_count
+
+    def test_stop_scheduler(self, scheduler_service_with_mocks):
         """測試停止排程器"""
-        # 設置排程器為運行狀態
-        scheduler_service.scheduler_status['running'] = True
-        scheduler_service.scheduler_status['job_count'] = 2
-        scheduler_service.cron_scheduler.get_jobs.return_value = [MagicMock(), MagicMock()]
-        
-        # 停止排程器
-        result = scheduler_service.stop_scheduler()
-        
-        # 驗證結果
-        assert result['success'] is True
-        assert "調度器已暫停" in result['message']
-        assert scheduler_service.scheduler_status['running'] is False
-        assert scheduler_service.scheduler_status['job_count'] == 2  # 保留任務數量
-        assert scheduler_service.scheduler_status['last_shutdown_time'] is not None
-        
-        # 驗證方法調用
-        scheduler_service.cron_scheduler.pause.assert_called_once()
-        scheduler_service.cron_scheduler.get_jobs.assert_called_once()
-    
-    def test_stop_scheduler_not_running(self, scheduler_service):
-        """測試在排程器未運行時停止"""
-        scheduler_service.scheduler_status['running'] = False
-        result = scheduler_service.stop_scheduler()
-        
-        assert result['success'] is False
-        assert "調度器未運行" in result['message']
-        # 驗證並未調用停止方法
-        scheduler_service.cron_scheduler.pause.assert_not_called()
-    
-    def test_schedule_task(self, scheduler_service, sample_tasks):
-        """測試排程單個任務"""
-        task = sample_tasks[0]  # 使用第一個自動任務
-        
-        # 模擬 CronTrigger
-        with patch('src.services.scheduler_service.CronTrigger') as mock_trigger:
-            mock_trigger_instance = MagicMock()
-            mock_trigger.from_crontab.return_value = mock_trigger_instance
-            
-            # 執行測試
-            result = scheduler_service._schedule_task(task)
-            
-            # 驗證結果
+        scheduler_service, _ = scheduler_service_with_mocks
+        scheduler_service.scheduler_status["running"] = True
+        scheduler_service.scheduler_status["job_count"] = 5
+
+        with patch.object(
+            scheduler_service.cron_scheduler, "pause"
+        ) as mock_pause_on_instance:
+            result = scheduler_service.stop_scheduler()
+
+        assert result["success"] is True
+        assert "調度器已暫停" in result["message"]
+        assert scheduler_service.scheduler_status["running"] is False
+        mock_pause_on_instance.assert_called_once()
+
+    def test_schedule_task(
+        self,
+        scheduler_service_with_mocks,
+        sample_tasks_data: dict,
+        initialized_db_manager: DatabaseManager,
+    ):
+        """測試設定任務排程 (_schedule_task 內部方法)"""
+        scheduler_service, _ = scheduler_service_with_mocks
+        auto_task_id = sample_tasks_data["Auto Task"]["id"]
+        expected_task_args = sample_tasks_data["Auto Task"]["task_args"]
+        expected_task_name = sample_tasks_data["Auto Task"]["task_name"]
+        job_id = f"task_{auto_task_id}"
+
+        with initialized_db_manager.session_scope() as session:
+            auto_task_obj = session.get(CrawlerTasks, auto_task_id)
+            assert auto_task_obj is not None
+
+            with patch.object(
+                scheduler_service.cron_scheduler, "add_job"
+            ) as mock_add_job_on_instance:
+                result = scheduler_service._schedule_task(auto_task_obj)
+
             assert result is True
-            
-            # 驗證方法調用
-            mock_trigger.from_crontab.assert_called_once_with(task.cron_expression, timezone=pytz.UTC)
-            scheduler_service.cron_scheduler.add_job.assert_called_once()
-            
-            # 驗證 add_job 參數
-            call_args = scheduler_service.cron_scheduler.add_job.call_args
-            assert call_args.kwargs['func'] == scheduler_service._trigger_task
-            assert call_args.kwargs['trigger'] == mock_trigger_instance
-            
-            # 檢查 task_id 是否在參數中
-            if hasattr(call_args, 'args') and len(call_args.args) > 0:
-                # 如果 args 存在且不為空，檢查第一個位置參數
-                assert task.id in call_args.args[0]
-            else:
-                # 如果沒有位置參數，檢查 kwargs 中的 args 列表
-                assert 'args' in call_args.kwargs
-                # 驗證 args 是一個列表，第一個元素是 task_id
-                assert isinstance(call_args.kwargs['args'], list)
-                assert call_args.kwargs['args'][0] == task.id
-            
-            assert call_args.kwargs['id'] == f"task_{task.id}"
-            assert call_args.kwargs['name'] == task.task_name
-            assert call_args.kwargs['replace_existing'] is True
-            assert call_args.kwargs['misfire_grace_time'] == 3600
-            assert 'task_args' in call_args.kwargs['kwargs']
-            assert call_args.kwargs['jobstore'] == 'default'
-    
-    def test_schedule_task_no_cron(self, scheduler_service, sample_tasks):
-        """測試排程沒有 cron 表達式的任務"""
-        task = sample_tasks[0]
-        task.cron_expression = None
-        
-        result = scheduler_service._schedule_task(task)
-        
-        assert result is False
-        scheduler_service.cron_scheduler.add_job.assert_not_called()
-    
-    def test_schedule_task_error(self, scheduler_service, sample_tasks):
-        """測試排程任務發生錯誤"""
-        task = sample_tasks[0]
-        scheduler_service.cron_scheduler.add_job.side_effect = Exception("測試錯誤")
-        
-        with patch('src.services.scheduler_service.CronTrigger'):
-            result = scheduler_service._schedule_task(task)
-            
-            assert result is False
-            scheduler_service.cron_scheduler.add_job.assert_called_once()
-    
-    def test_trigger_task(self, scheduler_service, task_executor, sample_tasks):
-        """測試觸發任務執行"""
-        task = sample_tasks[0]
-        task_id = task.id
-        
-        # 模擬儲存庫返回任務
-        scheduler_service.crawler_tasks_repo.get_by_id.return_value = task
-        
-        # 準備測試參數
-        task_args = {'task_id': task_id, 'task_name': task.task_name}
-        
-        # 執行測試
-        scheduler_service._trigger_task(task_id, task_args)
-        
-        # 驗證方法調用
-        scheduler_service.crawler_tasks_repo.get_by_id.assert_called_once_with(task_id)
-        task_executor.execute_task.assert_called_once_with(task)
-    
-    def test_trigger_task_not_found(self, scheduler_service, task_executor):
-        """測試觸發不存在的任務"""
-        task_id = 999
-        task_args = {'task_id': task_id, 'task_name': 'Missing Task'}
-        
-        # 確保清理之前的任何調用記錄
-        scheduler_service.cron_scheduler.reset_mock()
-        
-        # 模擬儲存庫找不到任務
-        scheduler_service.crawler_tasks_repo.get_by_id.return_value = None
-        scheduler_service.scheduler_status['running'] = True
-        
-        # 執行測試
-        scheduler_service._trigger_task(task_id, task_args)
-        
-        # 驗證方法調用
-        scheduler_service.crawler_tasks_repo.get_by_id.assert_called_once_with(task_id)
-        task_executor.execute_task.assert_not_called()
-        scheduler_service.cron_scheduler.remove_job.assert_called_once_with(f"task_{task_id}")
-    
-    def test_trigger_task_not_auto(self, scheduler_service, task_executor, sample_tasks):
-        """測試觸發非自動執行的任務"""
-        task = sample_tasks[2]  # 手動任務
-        task_id = task.id
-        
-        # 模擬儲存庫返回任務
-        scheduler_service.crawler_tasks_repo.get_by_id.return_value = task
-        
-        # 執行測試
-        scheduler_service._trigger_task(task_id)
-        
-        # 驗證方法調用
-        scheduler_service.crawler_tasks_repo.get_by_id.assert_called_once_with(task_id)
-        task_executor.execute_task.assert_not_called()
-    
-    def test_reload_scheduler(self, scheduler_service, sample_tasks):
-        """測試重載排程器"""
-        # 設置排程器為運行狀態
-        scheduler_service.scheduler_status['running'] = True
-        
-        # 模擬現有任務和資料庫任務
-        mock_job1 = MagicMock()
-        mock_job1.id = f"task_{sample_tasks[0].id}"
-        mock_job1.trigger = MagicMock()
-        mock_job1.trigger.expression = sample_tasks[0].cron_expression
-        
-        mock_job2 = MagicMock()
-        mock_job2.id = "task_999"  # 不存在於資料庫的任務
-        mock_job2.trigger = MagicMock()
-        mock_job2.trigger.expression = "* * * * *"
-        
-        scheduler_service.cron_scheduler.get_jobs.return_value = [mock_job1, mock_job2]
-        scheduler_service.cron_scheduler.get_job.return_value = mock_job1
-        
-        # 模擬資料庫任務
-        scheduler_service.crawler_tasks_repo.find_auto_tasks.return_value = [t for t in sample_tasks if t.is_auto]
-        
-        # 執行測試
-        with patch.object(scheduler_service, '_schedule_task', return_value=True) as mock_schedule:
+
+            mock_add_job_on_instance.assert_called_once_with(
+                func=scheduler_service._trigger_task,
+                trigger=ANY,
+                args=[auto_task_id],
+                id=job_id,
+                name=expected_task_name,
+                replace_existing=True,
+                misfire_grace_time=1800,
+                kwargs={"task_args": expected_task_args},
+                jobstore="default",
+            )
+
+            mock_add_job_on_instance.reset_mock()
+            auto_task_obj.cron_expression = None
+            session.flush()
+            result_no_cron = scheduler_service._schedule_task(auto_task_obj)
+
+            assert result_no_cron is False
+            mock_add_job_on_instance.assert_not_called()
+
+    @patch("src.database.crawler_tasks_repository.CrawlerTasksRepository.get_by_id")
+    @patch("src.services.scheduler_service.get_task_executor_service")
+    def test_trigger_task(
+        self,
+        mock_get_executor,
+        mock_get_by_id,
+        scheduler_service_with_mocks,
+        sample_tasks_data: dict,
+        initialized_db_manager: DatabaseManager,
+    ):
+        """測試觸發任務執行 (_trigger_task 內部方法)"""
+        scheduler_service, _ = scheduler_service_with_mocks
+        auto_task_id = sample_tasks_data["Auto Task"]["id"]
+        manual_task_id = sample_tasks_data["Manual Task"]["id"]
+        auto_task_args = sample_tasks_data["Auto Task"]["task_args"]
+        manual_task_args = sample_tasks_data["Manual Task"]["task_args"]
+
+        mock_auto_task_data = sample_tasks_data["Auto Task"]
+        mock_manual_task_data = sample_tasks_data["Manual Task"]
+
+        mock_auto_task_obj = MagicMock(spec=CrawlerTasks, **mock_auto_task_data)
+        mock_manual_task_obj = MagicMock(spec=CrawlerTasks, **mock_manual_task_data)
+
+        mock_get_by_id.return_value = mock_auto_task_obj
+        mock_executor_instance = MagicMock()
+        mock_get_executor.return_value = mock_executor_instance
+
+        scheduler_service._trigger_task(auto_task_id, auto_task_args)
+        mock_get_executor.assert_called_once()
+        mock_executor_instance.execute_task.assert_called_once_with(
+            auto_task_id, auto_task_args
+        )
+
+        mock_get_by_id.return_value = None
+        mock_get_executor.reset_mock()
+        mock_executor_instance.reset_mock()
+        scheduler_service._trigger_task(999, {"some": "args"})
+        mock_get_executor.assert_not_called()
+        mock_executor_instance.execute_task.assert_not_called()
+
+        mock_get_by_id.return_value = mock_manual_task_obj
+        mock_get_executor.reset_mock()
+        mock_executor_instance.reset_mock()
+        scheduler_service._trigger_task(manual_task_id, manual_task_args)
+        mock_get_executor.assert_not_called()
+        mock_executor_instance.execute_task.assert_not_called()
+
+    def test_add_or_update_task_to_scheduler(
+        self,
+        scheduler_service_with_mocks,
+        sample_tasks_data: dict,
+        initialized_db_manager: DatabaseManager,
+    ):
+        """測試新增或更新任務到排程器"""
+        scheduler_service, _ = scheduler_service_with_mocks
+        auto_task_id = sample_tasks_data["Auto Task"]["id"]
+        job_id = f"task_{auto_task_id}"
+
+        with initialized_db_manager.session_scope() as session:
+            auto_task_obj = session.get(CrawlerTasks, auto_task_id)
+            assert auto_task_obj is not None
+
+            with patch.object(
+                scheduler_service, "_schedule_task", return_value=True
+            ) as mock_schedule_add, patch.object(
+                scheduler_service.cron_scheduler, "get_job", return_value=None
+            ) as mock_get_job_add:
+                result_add = scheduler_service.add_or_update_task_to_scheduler(
+                    auto_task_obj, session
+                )
+
+            assert result_add["success"] is True
+            assert result_add["added_count"] == 1
+            assert result_add["updated_count"] == 0
+            mock_get_job_add.assert_called_once_with(job_id)
+            mock_schedule_add.assert_called_once_with(auto_task_obj)
+
+            session.refresh(auto_task_obj)
+            assert auto_task_obj.is_scheduled is True
+
+        with initialized_db_manager.session_scope() as session:
+            auto_task_obj_for_update = session.get(CrawlerTasks, auto_task_id)
+            assert auto_task_obj_for_update is not None
+
+            original_cron = auto_task_obj_for_update.cron_expression
+            auto_task_obj_for_update.cron_expression = "0 1 * * *"
+            assert original_cron != auto_task_obj_for_update.cron_expression
+
+            mock_job_exists = MagicMock(id=job_id)
+            mock_job_exists.trigger = MagicMock()
+            mock_job_exists.trigger.expression = original_cron
+
+            with patch.object(
+                scheduler_service, "_schedule_task", return_value=True
+            ) as mock_schedule_update, patch.object(
+                scheduler_service.cron_scheduler,
+                "get_job",
+                return_value=mock_job_exists,
+            ) as mock_get_job_update, patch.object(
+                scheduler_service.cron_scheduler, "remove_job"
+            ) as mock_remove_job_update:
+                result_update = scheduler_service.add_or_update_task_to_scheduler(
+                    auto_task_obj_for_update, session
+                )
+
+            assert result_update["success"] is True
+            assert result_update["added_count"] == 0
+            assert result_update["updated_count"] == 1
+            mock_get_job_update.assert_called_once_with(job_id)
+            mock_remove_job_update.assert_called_once_with(job_id)
+            mock_schedule_update.assert_called_once_with(auto_task_obj_for_update)
+
+            session.refresh(auto_task_obj_for_update)
+            assert auto_task_obj_for_update.is_scheduled is True
+            assert auto_task_obj_for_update.cron_expression == "0 1 * * *"
+
+        with initialized_db_manager.session_scope() as session:
+            auto_task_obj_for_fail = session.get(CrawlerTasks, auto_task_id)
+            assert auto_task_obj_for_fail is not None
+            original_scheduled_state = auto_task_obj_for_fail.is_scheduled
+
+            with patch.object(
+                scheduler_service, "_schedule_task", return_value=False
+            ) as mock_schedule_fail, patch.object(
+                scheduler_service.cron_scheduler, "get_job", return_value=None
+            ) as mock_get_job_fail:
+                result_fail = scheduler_service.add_or_update_task_to_scheduler(
+                    auto_task_obj_for_fail, session
+                )
+
+            assert result_fail["success"] is False
+            assert result_fail["added_count"] == 0
+            assert result_fail["updated_count"] == 0
+            mock_get_job_fail.assert_called_once_with(job_id)
+            mock_schedule_fail.assert_called_once_with(auto_task_obj_for_fail)
+
+            session.refresh(auto_task_obj_for_fail)
+            assert auto_task_obj_for_fail.is_scheduled == original_scheduled_state
+
+    def test_remove_task_from_scheduler(
+        self,
+        scheduler_service_with_mocks,
+        sample_tasks_data: dict,
+        initialized_db_manager: DatabaseManager,
+    ):
+        """測試從排程器移除任務"""
+        scheduler_service, _ = scheduler_service_with_mocks
+        scheduled_task_id = sample_tasks_data["Scheduled Task"]["id"]
+        job_id = f"task_{scheduled_task_id}"
+
+        with initialized_db_manager.session_scope() as session:
+            task = session.get(CrawlerTasks, scheduled_task_id)
+            assert task is not None
+            task.is_scheduled = True
+            session.commit()
+
+        with patch.object(
+            scheduler_service.cron_scheduler, "remove_job"
+        ) as mock_remove_job_on_instance:
+            result = scheduler_service.remove_task_from_scheduler(scheduled_task_id)
+
+        assert result["success"] is True
+        assert f"從排程移除任務 {scheduled_task_id}" in result["message"]
+
+        with initialized_db_manager.session_scope() as session:
+            updated_task = session.get(CrawlerTasks, scheduled_task_id)
+            assert updated_task is not None
+            assert updated_task.is_scheduled is False
+
+        mock_remove_job_on_instance.assert_called_once_with(job_id)
+
+    def test_reload_scheduler(
+        self,
+        scheduler_service_with_mocks,
+        sample_tasks_data: dict,
+        initialized_db_manager: DatabaseManager,
+    ):
+        """測試重新載入排程器"""
+        scheduler_service, _ = scheduler_service_with_mocks
+        scheduler_service.scheduler_status["running"] = True
+
+        auto_task_id = sample_tasks_data["Auto Task"]["id"]
+        scheduled_task_id = sample_tasks_data["Scheduled Task"]["id"]
+
+        mock_job_auto = MagicMock(id=f"task_{auto_task_id}")
+        mock_job_stale = MagicMock(id="task_999")
+
+        recorded_task_ids_for_add_update = []
+
+        def add_update_side_effect(task_obj, session_arg):
+            recorded_task_ids_for_add_update.append(task_obj.id)
+            return {"success": True, "added_count": 1, "updated_count": 0}
+
+        with patch.object(
+            scheduler_service.cron_scheduler,
+            "get_jobs",
+        ) as mock_get_jobs, patch.object(
+            scheduler_service.cron_scheduler, "remove_job"
+        ) as mock_remove_job, patch.object(
+            scheduler_service,
+            "add_or_update_task_to_scheduler",
+            side_effect=add_update_side_effect,
+        ) as mock_add_update:
+
+            mock_get_jobs.side_effect = [
+                [mock_job_auto, mock_job_stale],
+                [mock_job_auto],
+            ]
             result = scheduler_service.reload_scheduler()
-            
-            # 驗證結果
-            assert result['success'] is True
-            assert "調度器已重載" in result['message']
-            
-            # 驗證方法調用
-            scheduler_service.crawler_tasks_repo.find_auto_tasks.assert_called_once()
-            scheduler_service.cron_scheduler.get_jobs.assert_called()
-            
-            # 驗證 task_999 被移除 (不使用 assert_called_once_with，而是檢查是否被調用過)
-            scheduler_service.cron_scheduler.remove_job.assert_any_call("task_999")
-    
-    def test_reload_scheduler_not_running(self, scheduler_service):
-        """測試在排程器未運行時重載"""
-        scheduler_service.scheduler_status['running'] = False
-        result = scheduler_service.reload_scheduler()
-        
-        assert result['success'] is False
-        assert "調度器未運行" in result['message']
-        
-        # 驗證未調用其他方法
-        scheduler_service.crawler_tasks_repo.find_auto_tasks.assert_not_called()
-    
-    def test_get_scheduler_status(self, scheduler_service):
+
+        assert result["success"] is True
+        assert "調度器已重載" in result["message"]
+        assert "移除 1 個任務" in result["message"]
+        assert "更新 0 個任務" in result["message"]
+        assert "新增 2 個任務" in result["message"]
+
+        assert mock_get_jobs.call_count == 2
+
+        mock_remove_job.assert_called_once_with(mock_job_stale.id)
+        assert mock_add_update.call_count == 2
+        expected_task_ids_called = {auto_task_id, scheduled_task_id}
+        assert set(recorded_task_ids_for_add_update) == expected_task_ids_called
+
+        actual_calls_args = mock_add_update.call_args_list
+        assert all(isinstance(call[0][1], Session) for call in actual_calls_args)
+
+        scheduler_service.scheduler_status["running"] = False
+        mock_get_jobs.reset_mock()
+        mock_remove_job.reset_mock()
+        mock_add_update.reset_mock()
+
+        result_not_running = scheduler_service.reload_scheduler()
+        assert result_not_running["success"] is False
+        assert "調度器未運行" in result_not_running["message"]
+        mock_get_jobs.assert_not_called()
+        mock_remove_job.assert_not_called()
+        mock_add_update.assert_not_called()
+
+    def test_get_scheduler_status(self, scheduler_service_with_mocks):
         """測試獲取排程器狀態"""
-        # 設置排程器狀態
-        scheduler_service.scheduler_status['running'] = True
-        scheduler_service.cron_scheduler.get_jobs.return_value = [MagicMock(), MagicMock()]
-        
-        # 執行測試
-        result = scheduler_service.get_scheduler_status()
-        
-        # 驗證結果
-        assert result['success'] is True
-        assert "獲取調度器狀態成功" in result['message']
-        assert result['status'] == scheduler_service.scheduler_status
-        assert result['status']['job_count'] == 2
-        
-        # 驗證方法調用
-        scheduler_service.cron_scheduler.get_jobs.assert_called_once()
-    
-    def test_get_persisted_jobs_info(self, scheduler_service, sample_tasks):
-        """測試獲取持久化任務信息"""
-        # 模擬任務
-        mock_job = MagicMock()
-        mock_job.id = f"task_{sample_tasks[0].id}"
-        mock_job.name = sample_tasks[0].task_name
-        mock_job.next_run_time = datetime.now(timezone.utc)
-        mock_job.trigger = MagicMock()
-        mock_job.trigger.expression = sample_tasks[0].cron_expression
-        mock_job.misfire_grace_time = 3600
-        
-        scheduler_service.cron_scheduler.get_jobs.return_value = [mock_job]
-        
-        # 模擬儲存庫返回任務
-        scheduler_service.crawler_tasks_repo.get_by_id.return_value = sample_tasks[0]
-        
-        # 執行測試
-        result = scheduler_service.get_persisted_jobs_info()
-        
-        # 驗證結果
-        assert result['success'] is True
-        assert "獲取 1 個持久化任務信息" in result['message']
-        assert len(result['jobs']) == 1
-        
-        job_info = result['jobs'][0]
-        assert job_info['id'] == mock_job.id
-        assert job_info['name'] == mock_job.name
-        assert job_info['next_run_time'] == mock_job.next_run_time.isoformat()
-        assert job_info['cron_expression'] == mock_job.trigger.expression
-        assert job_info['task_id'] == sample_tasks[0].id
-        assert job_info['exists_in_db'] is True
-        assert job_info['task_name'] == sample_tasks[0].task_name
-        
-        # 驗證方法調用
-        scheduler_service.cron_scheduler.get_jobs.assert_called_once()
-        scheduler_service.crawler_tasks_repo.get_by_id.assert_called_once_with(sample_tasks[0].id)
-    
-    def test_get_persisted_jobs_info_with_nonexistent_task(self, scheduler_service):
-        """測試獲取包含不存在的任務的持久化任務信息"""
-        # 模擬任務
-        mock_job = MagicMock()
-        mock_job.id = "task_999"  # 不存在於資料庫的任務
-        mock_job.name = "Missing Task"
-        mock_job.next_run_time = datetime.now(timezone.utc)
-        mock_job.trigger = MagicMock()
-        mock_job.trigger.expression = "* * * * *"
-        mock_job.misfire_grace_time = 3600
-        
-        scheduler_service.cron_scheduler.get_jobs.return_value = [mock_job]
-        
-        # 模擬儲存庫找不到任務
-        scheduler_service.crawler_tasks_repo.get_by_id.return_value = None
-        
-        # 執行測試
-        result = scheduler_service.get_persisted_jobs_info()
-        
-        # 驗證結果
-        assert result['success'] is True
-        assert len(result['jobs']) == 1
-        
-        job_info = result['jobs'][0]
-        assert job_info['task_id'] == 999
-        assert job_info['exists_in_db'] is False
-        
-        # 驗證方法調用
-        scheduler_service.crawler_tasks_repo.get_by_id.assert_called_once_with(999)
+        scheduler_service, _ = scheduler_service_with_mocks
+        now = datetime.now(timezone.utc)
+        scheduler_service.scheduler_status = {
+            "running": True,
+            "job_count": 0,
+            "last_start_time": now,
+            "last_shutdown_time": None,
+        }
 
+        mock_job1 = MagicMock(id="task_1")
+        mock_job2 = MagicMock(id="task_2")
+        with patch.object(
+            scheduler_service.cron_scheduler,
+            "get_jobs",
+            return_value=[mock_job1, mock_job2],
+        ) as mock_get_jobs:
+            result = scheduler_service.get_scheduler_status()
 
-class TestSchedulerServiceIntegration:
-    """排程服務整合測試"""
-    
-    def test_scheduler_lifecycle(self, db_manager, crawler_tasks_repo, task_executor, sample_tasks, mock_real_scheduler):
-        """測試排程器完整生命週期"""
-        with patch('src.services.scheduler_service.BackgroundScheduler', return_value=mock_real_scheduler):
-            with patch('src.services.scheduler_service.SQLAlchemyJobStore', return_value=MagicMock()):
-                # 創建服務
-                service = SchedulerService(
-                    crawler_tasks_repo=crawler_tasks_repo,
-                    task_executor=task_executor,
-                    db_manager=db_manager
-                )
-                
-                # 確保直接使用我們的 mock
-                service.cron_scheduler = mock_real_scheduler
-                
-                # 重置所有之前的調用記錄
-                mock_real_scheduler.reset_mock()
-                
-                # 模擬排程任務
-                with patch.object(service, '_schedule_task', return_value=True):
-                    # 啟動排程器
-                    start_result = service.start_scheduler()
-                    assert start_result['success'] is True
-                    assert service.scheduler_status['running'] is True
-                    
-                    # 設置 get_jobs 返回值，模擬任務已被加入
-                    mock_job = MagicMock()
-                    mock_job.id = f"task_{sample_tasks[0].id}"
-                    mock_job.name = sample_tasks[0].task_name
-                    mock_job.next_run_time = datetime.now(timezone.utc)
-                    service.cron_scheduler.get_jobs.return_value = [mock_job]
-                    service.scheduler_status['job_count'] = 1
-                    
-                    # 獲取任務信息
-                    jobs_info = service.get_persisted_jobs_info()
-                    assert jobs_info['success'] is True
-                    assert len(jobs_info['jobs']) == 1
-                    
-                    # 停止排程器
-                    stop_result = service.stop_scheduler()
-                    assert stop_result['success'] is True
-                    assert service.scheduler_status['running'] is False
-                
-                # 清理資源
-                service.cleanup()
-    
-    def test_scheduler_persistence(self, db_manager, crawler_tasks_repo, task_executor, sample_tasks):
-        """測試排程器任務持久化"""
-        # 此測試模擬持久化存儲，但不實際使用資料庫
-        mock_scheduler1 = MagicMock(spec=BackgroundScheduler)
-        mock_scheduler2 = MagicMock(spec=BackgroundScheduler)
-        
-        # 保存任務數量的變量，確保在兩個上下文之間可見
-        jobs_count = 0
-        
-        # 第一個服務實例
-        with patch('src.services.scheduler_service.BackgroundScheduler', return_value=mock_scheduler1):
-            with patch('src.services.scheduler_service.SQLAlchemyJobStore', return_value=MagicMock()):
-                service1 = SchedulerService(
-                    crawler_tasks_repo=crawler_tasks_repo,
-                    task_executor=task_executor,
-                    db_manager=db_manager
-                )
-                
-                # 確保使用我們的 mock
-                service1.cron_scheduler = mock_scheduler1
-                
-                # 模擬排程任務
-                with patch.object(service1, '_schedule_task', return_value=True):
-                    # 啟動排程器
-                    service1.start_scheduler()
-                    
-                    # 設置 get_jobs 返回值，模擬任務已被加入
-                    mock_job = MagicMock()
-                    mock_job.id = f"task_{sample_tasks[0].id}"
-                    mock_job.name = sample_tasks[0].task_name
-                    mock_job.next_run_time = datetime.now(timezone.utc)
-                    service1.cron_scheduler.get_jobs.return_value = [mock_job]
-                    service1.scheduler_status['job_count'] = 1
-                    
-                    # 保存任務數量以供後續使用
-                    jobs_count = service1.scheduler_status['job_count']
-                    assert jobs_count > 0
-                    
-                    # 停止但不清除任務
-                    service1.stop_scheduler()
-                    service1.cleanup()
-        
-        # 第二個服務實例，應該能夠恢復任務
-        # 在真實世界中，這裡會連接到同一個資料庫，從而恢復任務
-        # 在測試中，我們模擬這個行為
-        with patch('src.services.scheduler_service.BackgroundScheduler', return_value=mock_scheduler2):
-            with patch('src.services.scheduler_service.SQLAlchemyJobStore', return_value=MagicMock()):
-                service2 = SchedulerService(
-                    crawler_tasks_repo=crawler_tasks_repo,
-                    task_executor=task_executor,
-                    db_manager=db_manager
-                )
-                
-                # 確保使用我們的 mock
-                service2.cron_scheduler = mock_scheduler2
-                
-                # 設置 get_jobs 返回值，模擬從持久化存儲中恢復的任務
-                mock_job = MagicMock()
-                mock_job.id = f"task_{sample_tasks[0].id}"
-                mock_job.name = sample_tasks[0].task_name
-                mock_job.next_run_time = datetime.now(timezone.utc)
-                service2.cron_scheduler.get_jobs.return_value = [mock_job]
-                
-                # 啟動排程器，應該能讀取到持久化的任務
-                with patch.object(service2, '_schedule_task', return_value=True):
-                    service2.start_scheduler()
-                    service2.scheduler_status['job_count'] = jobs_count
-                    assert service2.scheduler_status['job_count'] == jobs_count
-                    
-                    # 獲取任務信息
-                    jobs_info = service2.get_persisted_jobs_info()
-                    assert jobs_info['success'] is True
-                    assert len(jobs_info['jobs']) == jobs_count
-                
-                # 清理資源
-                service2.stop_scheduler()
-                service2.cleanup()
+        assert result["success"] is True
+        assert result["message"] == "獲取調度器狀態成功"
+        status = result["status"]
+        assert status["running"] is True
+        assert status["job_count"] == 2
+        assert status["last_start_time"] == now
+        assert status["last_shutdown_time"] is None
+        mock_get_jobs.assert_called_once()
+
+    def test_get_persisted_jobs_info(
+        self,
+        scheduler_service_with_mocks,
+        sample_tasks_data: dict,
+        initialized_db_manager: DatabaseManager,
+    ):
+        """測試獲取持久化任務的詳細信息"""
+        scheduler_service, _ = scheduler_service_with_mocks
+        auto_task_data = sample_tasks_data["Auto Task"]
+        manual_task_data = sample_tasks_data["Manual Task"]
+        auto_task_id = auto_task_data["id"]
+        manual_task_id = manual_task_data["id"]
+
+        mock_job_auto = MagicMock()
+        mock_job_auto.id = f"task_{auto_task_id}"
+        mock_job_auto.name = auto_task_data["task_name"]
+        mock_job_auto.next_run_time = datetime.now(timezone.utc) + timedelta(hours=1)
+        mock_trigger_auto = MagicMock()
+        mock_trigger_auto.__str__.return_value = (
+            f"CronTrigger: {auto_task_data['cron_expression']}"
+        )
+        mock_trigger_auto.expression = auto_task_data["cron_expression"]
+        mock_job_auto.trigger = mock_trigger_auto
+        mock_job_auto.misfire_grace_time = 3600
+
+        mock_job_manual = MagicMock()
+        mock_job_manual.id = f"task_{manual_task_id}"
+        mock_job_manual.name = manual_task_data["task_name"]
+        mock_job_manual.next_run_time = None
+        mock_trigger_manual = MagicMock()
+        mock_trigger_manual.__str__.return_value = (
+            f"CronTrigger: {manual_task_data['cron_expression']}"
+        )
+        mock_trigger_manual.expression = manual_task_data["cron_expression"]
+        mock_job_manual.trigger = mock_trigger_manual
+        mock_job_manual.misfire_grace_time = 3600
+
+        mock_job_stale = MagicMock(id="task_999", name="Stale Job")
+        mock_job_stale.next_run_time = datetime.now(timezone.utc) + timedelta(
+            minutes=10
+        )
+        mock_trigger_stale = MagicMock(
+            __str__=lambda _: "CronTrigger: 0 0 * * *", expression="0 0 * * *"
+        )
+        mock_job_stale.trigger = mock_trigger_stale
+        mock_job_stale.misfire_grace_time = 3600
+
+        with patch.object(
+            scheduler_service.cron_scheduler,
+            "get_jobs",
+            return_value=[mock_job_auto, mock_job_manual, mock_job_stale],
+        ) as mock_get_jobs:
+            result = scheduler_service.get_persisted_jobs_info()
+
+        assert result["success"] is True
+        assert len(result["jobs"]) == 3
+
+        job_info_auto = next(
+            (j for j in result["jobs"] if j["id"] == mock_job_auto.id), None
+        )
+        job_info_manual = next(
+            (j for j in result["jobs"] if j["id"] == mock_job_manual.id), None
+        )
+        job_info_stale = next(
+            (j for j in result["jobs"] if j["id"] == mock_job_stale.id), None
+        )
+
+        assert job_info_auto is not None
+        assert job_info_auto["task_id"] == auto_task_id
+        assert job_info_auto["exists_in_db"] is True
+        assert job_info_auto["task_name"] == auto_task_data["task_name"]
+        assert job_info_auto["is_auto_in_db"] == auto_task_data["is_auto"]
+        assert job_info_auto["is_scheduled_in_db"] == auto_task_data["is_scheduled"]
+        assert job_info_auto["cron_expression"] == mock_trigger_auto.expression
+        assert (
+            job_info_auto["cron_expression_in_db"] == auto_task_data["cron_expression"]
+        )
+        assert job_info_auto["next_run_time"] == mock_job_auto.next_run_time.isoformat()
+        assert job_info_auto["misfire_grace_time"] == mock_job_auto.misfire_grace_time
+        assert job_info_auto["trigger"] == str(mock_trigger_auto)
+        assert job_info_auto["active"] is True
+
+        assert job_info_manual is not None
+        assert job_info_manual["task_id"] == manual_task_id
+        assert job_info_manual["exists_in_db"] is True
+        assert job_info_manual["task_name"] == manual_task_data["task_name"]
+        assert job_info_manual["is_auto_in_db"] == manual_task_data["is_auto"]
+        assert job_info_manual["is_scheduled_in_db"] == manual_task_data["is_scheduled"]
+        assert job_info_manual["cron_expression"] == mock_trigger_manual.expression
+        assert (
+            job_info_manual["cron_expression_in_db"]
+            == manual_task_data["cron_expression"]
+        )
+        assert job_info_manual["next_run_time"] is None
+        assert (
+            job_info_manual["misfire_grace_time"] == mock_job_manual.misfire_grace_time
+        )
+        assert job_info_manual["trigger"] == str(mock_trigger_manual)
+        assert job_info_manual["active"] is False
+
+        assert job_info_stale is not None
+        assert job_info_stale["task_id"] == 999
+        assert job_info_stale["exists_in_db"] is False
+        assert job_info_stale["name"] == mock_job_stale.name
+        assert job_info_stale["cron_expression"] == mock_trigger_stale.expression
+        assert (
+            job_info_stale["next_run_time"] == mock_job_stale.next_run_time.isoformat()
+        )
+        assert job_info_stale["trigger"] == str(mock_trigger_stale)
+        assert job_info_stale["misfire_grace_time"] == mock_job_stale.misfire_grace_time
+        assert job_info_stale["active"] is True
+
+        assert "task_name" not in job_info_stale
+        assert "is_auto_in_db" not in job_info_stale
+        assert "is_scheduled_in_db" not in job_info_stale
+        assert "cron_expression_in_db" not in job_info_stale
+
+        mock_get_jobs.assert_called_once()

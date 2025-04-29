@@ -1,8 +1,15 @@
+"""數位時代 (Bnext) 網站爬蟲工具模組的單元測試。"""
+
+from datetime import datetime, timezone
+from unittest.mock import patch
+
 import pytest
 from bs4 import BeautifulSoup
+
 from src.crawlers.bnext_utils import BnextUtils
-from unittest.mock import patch
-import time
+from src.utils.log_utils import LoggerSetup
+
+logger = LoggerSetup.setup_logger(__name__)
 
 class TestBnextUtils:
     def test_get_random_sleep_time_in_range(self):
@@ -116,3 +123,84 @@ class TestBnextUtils:
                 assert soup.title.string == 'Test'
             if soup.h1:
                 assert soup.h1.text == 'Hello'
+
+    def test_get_article_columns_dict_with_new_fields(self):
+        """測試 get_article_columns_dict 方法能夠正確處理新增的欄位"""
+        title = "測試標題"
+        link = "https://example.com/article"
+        current_time = datetime.now(timezone.utc)
+        scrape_status = "pending"
+        scrape_error = "測試錯誤"
+        task_id = 123
+        
+        result = BnextUtils.get_article_columns_dict(
+            title=title,
+            link=link,
+            scrape_status=scrape_status,
+            scrape_error=scrape_error,
+            last_scrape_attempt=current_time,
+            task_id=task_id
+        )
+        
+        assert result['title'] == title
+        assert result['link'] == link
+        assert result['scrape_status'] == scrape_status
+        assert result['scrape_error'] == scrape_error
+        assert result['last_scrape_attempt'] == current_time
+        assert result['task_id'] == task_id
+
+    def test_get_article_columns_dict_for_df_with_new_fields(self):
+        """測試 get_article_columns_dict_for_df 方法能夠正確處理新增的欄位"""
+        title = "測試標題"
+        link = "https://example.com/article"
+        current_time = datetime.now(timezone.utc)
+        scrape_status = "content_scraped"
+        scrape_error = "測試錯誤"
+        task_id = 456
+        
+        result = BnextUtils.get_article_columns_dict_for_df(
+            title=title,
+            link=link,
+            scrape_status=scrape_status,
+            scrape_error=scrape_error,
+            last_scrape_attempt=current_time,
+            task_id=task_id
+        )
+        
+        assert result['title'] == [title]
+        assert result['link'] == [link]
+        assert result['scrape_status'] == [scrape_status]
+        assert result['scrape_error'] == [scrape_error]
+        assert result['last_scrape_attempt'] == [current_time]
+        assert result['task_id'] == [task_id]
+
+    def test_process_articles_to_dataframe_with_new_fields(self):
+        """測試 process_articles_to_dataframe 方法能夠正確處理包含新欄位的文章列表"""
+        current_time = datetime.now(timezone.utc)
+        article1 = {
+            'title': '文章1',
+            'link': 'https://example.com/article1',
+            'scrape_status': 'content_scraped',
+            'scrape_error': None,
+            'last_scrape_attempt': current_time,
+            'task_id': 789
+        }
+        article2 = {
+            'title': '文章2',
+            'link': 'https://example.com/article2',
+            'scrape_status': 'failed',
+            'scrape_error': '連接錯誤',
+            'last_scrape_attempt': current_time,
+            'task_id': 789
+        }
+        
+        df = BnextUtils.process_articles_to_dataframe([article1, article2])
+        
+        assert len(df) == 2
+        assert 'scrape_status' in df.columns
+        assert 'scrape_error' in df.columns
+        assert 'last_scrape_attempt' in df.columns
+        assert 'task_id' in df.columns
+        assert df.iloc[0]['scrape_status'] == 'content_scraped'
+        assert df.iloc[1]['scrape_error'] == '連接錯誤'
+        assert df.iloc[0]['task_id'] == 789

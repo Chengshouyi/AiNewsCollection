@@ -1,132 +1,177 @@
+"""
+提供基礎服務類別，用於管理資料庫存取和儲存庫生命週期。
+"""
+
 import logging
-from typing import Dict, Any, Optional, Type, TypeVar, Generic, List
 from contextlib import contextmanager
+from typing import Any, Dict, Generic, List, Optional, Tuple, Type, TypeVar, cast
 
+from sqlalchemy.orm import Session
+
+from src.config import get_db_manager
+from src.database.base_repository import BaseRepository, SchemaType
 from src.database.database_manager import DatabaseManager
-from src.database.base_repository import BaseRepository
-from src.models.base_model import Base
 from src.error.errors import DatabaseOperationError, ValidationError
+from src.error.service_errors import ServiceInitializationError
+from src.models.base_model import Base
+from src.utils.log_utils import LoggerSetup
 
-# 設定 logger
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
+logger = LoggerSetup.setup_logger(__name__)
 
-T = TypeVar('T', bound=Base)
+T = TypeVar("T", bound=Base)
+
 
 class BaseService(Generic[T]):
     """
     基礎服務類，負責管理資料庫存取及儲存庫生命週期
     """
-    
+
     def __init__(self, db_manager: Optional[DatabaseManager] = None):
         """
         初始化服務
-        
+
         Args:
             db_manager: 資料庫管理器實例 (如果為None，則創建一個新的)
         """
-        self.db_manager = db_manager or DatabaseManager()
-        self._repositories = {}
-    
-    def _get_repository_mapping(self) -> Dict[str, tuple]:
+        try:
+            self.db_manager = db_manager or get_db_manager()
+            if not self.db_manager:
+                raise ServiceInitializationError(
+                    "DatabaseManager could not be initialized."
+                )
+            self.repositories: Dict[str, BaseRepository] = {}
+            self._repositories_mapping = self._get_repository_mapping()
+        except Exception as e:
+            logger.error("BaseService initialization failed: %s", e, exc_info=True)
+            raise ServiceInitializationError(
+                f"Failed to initialize BaseService: {e}"
+            ) from e
+
+    def _get_repository_mapping(
+        self,
+    ) -> Dict[str, Tuple[Type[BaseRepository], Type[T]]]:
         """
         獲取儲存庫映射表，需要被子類重寫
-        
+
         Returns:
             儲存庫名稱到 (儲存庫類, 模型類) 的映射字典
         """
         raise NotImplementedError("子類必須實現此方法提供儲存庫映射")
-    
-    def _get_repository(self, repository_name: str) -> BaseRepository[T]:
+
+    def _get_repository(
+        self, repository_name: str, session: Session
+    ) -> BaseRepository[T]:
         """
         獲取指定的儲存庫實例
-        
+
         Args:
             repository_name: 儲存庫名稱
-        
+            session: 資料庫會話實例
+
         Returns:
             儲存庫實例
-        
+
         Raises:
             DatabaseOperationError: 獲取儲存庫失敗
         """
         try:
-            # 如果已經有此儲存庫實例，直接返回
-            if repository_name in self._repositories:
-                return self._repositories[repository_name]
-            
-            # 獲取儲存庫映射
             repository_mapping = self._get_repository_mapping()
-            
+
             if repository_name not in repository_mapping:
                 error_msg = f"未知的儲存庫名稱: {repository_name}"
                 logger.error(error_msg)
                 raise DatabaseOperationError(error_msg)
-            
-            # 獲取儲存庫類和模型類
+
             repository_class, model_class = repository_mapping[repository_name]
-            
-            # 創建會話
-            session = self.db_manager.Session()
-            
-            # 創建儲存庫實例
             repository = repository_class(session, model_class)
-            
-            # 保存儲存庫實例以便重用
-            self._repositories[repository_name] = repository
-            
             return repository
         except Exception as e:
-            error_msg = f"獲取儲存庫失敗: {str(e)}"
+            error_msg = f"獲取儲存庫 {repository_name} 失敗: {str(e)}"
             logger.error(error_msg)
             raise DatabaseOperationError(error_msg) from e
-    
+
     @contextmanager
     def _transaction(self):
         """
-        事務上下文管理器，用於包裹需要在單一事務中執行的多個操作
-        
+        事務上下文管理器，創建並管理 Session 的生命週期。
+
         Yields:
-            無返回值，僅作為上下文管理器使用
-        
+            session: 資料庫會話實例
+
         Raises:
-            Exception: 任何在事務中發生的異常
+            DatabaseOperationError: 底層資料庫操作失敗
+            Exception: 任何在事務中發生的其他異常 (會被重新引發)
         """
-        # 確保所有儲存庫使用同一個session
-        session = None
-        if self._repositories:
-            # 獲取第一個儲存庫的session
-            session = next(iter(self._repositories.values())).session
-        
-        if not session:
-            # 如果沒有儲存庫或儲存庫沒有session，創建一個新的
-            session = self.db_manager.Session()
-        
         try:
-            yield
-            session.commit()
+            # self.db_manager.session_scope() 已經處理了 SQLAlchemyError -> DatabaseOperationError 的轉換
+            # 以及回滾和 Session 關閉
+            with self.db_manager.session_scope() as session:
+                yield session
+        except DatabaseOperationError as db_err:
+            # 捕獲來自 session_scope 的資料庫操作錯誤
+            logger.error(
+                "Transaction failed within BaseService due to DatabaseOperationError: %s",
+                db_err,
+                exc_info=True,
+            )
+            # 直接重新引發，因為它已經是我們期望的錯誤類型
+            raise
         except Exception as e:
-            session.rollback()
+            # 捕獲任何其他類型的異常 (例如，應用程式邏輯錯誤，或測試中故意引發的錯誤)
+            logger.error(
+                "未預期的錯誤，事務因非資料庫錯誤而中止: %s", str(e), exc_info=True
+            )
+            # 直接重新引發原始異常，而不是包裝它
+            # 這樣上層調用者 (包括測試) 可以捕獲到原始的錯誤類型
+            raise
+
+    def validate_data(
+        self, repository_name: str, entity_data: Dict[str, Any], schema_type: SchemaType
+    ) -> Dict[str, Any]:
+        """
+        公開方法：根據 repository_name 呼叫對應 Repository 的類別驗證方法。
+
+        Args:
+            repository_name: 儲存庫的名稱 (對應 _get_repository_mapping 中的鍵)。
+            entity_data: 待驗證的原始字典資料。
+            schema_type: 決定使用 CreateSchema 還是 UpdateSchema。
+
+        Returns:
+            Dict[str, Any]: 驗證並處理過的字典資料。
+
+        Raises:
+            DatabaseOperationError: 如果找不到對應的儲存庫類。
+            ValidationError: 如果資料驗證失敗。
+            Exception: 其他非預期錯誤。
+        """
+        try:
+            repository_mapping = self._get_repository_mapping()
+            if repository_name not in repository_mapping:
+                error_msg = f"未知的儲存庫名稱: {repository_name}"
+                logger.error(error_msg)
+                raise DatabaseOperationError(error_msg)
+
+            repository_class, _ = repository_mapping[repository_name]
+
+            # 調用 Repository 類別上的 validate_data 方法
+            validated_data = repository_class.validate_data(entity_data, schema_type)
+            return validated_data
+
+        except (DatabaseOperationError, ValidationError) as e:
             raise e
-    
+        except Exception as e:
+            error_msg = f"在 Service 層執行 {repository_name} 的 validate_data 時發生錯誤: {str(e)}"
+            logger.error(error_msg, exc_info=True)
+            raise ValidationError(error_msg) from e
+
     def cleanup(self):
-        """
-        清理服務使用的資源，關閉所有儲存庫的會話
-        """
-        for repository in self._repositories.values():
-            if repository and repository.session:
-                try:
-                    repository.session.close()
-                except Exception as e:
-                    logger.warning(f"關閉session時出錯 (忽略): {e}")
-        
-        # 清空儲存庫字典
-        self._repositories.clear()
-    
+        """清理服務資源"""
+        # 實際的清理由 DatabaseManager 處理
+        if hasattr(self.db_manager, "close_session"):
+            self.db_manager.close_session()
+
     def __del__(self):
-        """
-        析構方法，確保資源被釋放
-        """
+        """確保清理方法被呼叫"""
         self.cleanup()
 
     def __enter__(self):
@@ -134,4 +179,5 @@ class BaseService(Generic[T]):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.cleanup()
-        return False  # 允許異常傳播
+        # 保持 False 以便異常能傳播
+        return False

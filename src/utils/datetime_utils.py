@@ -1,11 +1,12 @@
+"""提供日期時間處理相關的工具函數，例如時區轉換和格式化。"""
+
 from datetime import datetime, timezone
 import logging
 import pytz
-# 設定 logger
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
 
+from src.utils.log_utils import LoggerSetup
 
+logger = LoggerSetup.setup_logger(__name__)
 
 def enforce_utc_datetime_transform(value: datetime) -> datetime:
     """將 datetime 轉換為 UTC 時區
@@ -16,24 +17,17 @@ def enforce_utc_datetime_transform(value: datetime) -> datetime:
     Returns:
         datetime: 轉換為 UTC 時區的 datetime 值
     """
-     # Option 1: Assume naive is UTC (Safer if unsure)
     if value.tzinfo is None:  # Naive datetime
+        # 假設 Naive datetime 是 UTC
         utc_value = value.replace(tzinfo=timezone.utc)
-    # Option 2: Assume naive is local and convert (More complex, needs local tz)
-        # try:
-        #     import tzlocal
-        #     local_tz = tzlocal.get_localzone()
-        #     aware_local_dt = local_tz.localize(dt)
-        #     return aware_local_dt.astimezone(timezone.utc)
-        # except ImportError:
-        #     # Fallback if tzlocal is not installed - treat as UTC
-        #     return dt.replace(tzinfo=timezone.utc)
     elif value.tzinfo == timezone.utc:
-        return value # Already UTC
+        # 已經是 UTC，直接返回
+        return value
     else:  # Aware datetime
+        # 轉換為 UTC
         utc_value = value.astimezone(timezone.utc)
     
-    logger.debug(f"轉換時間為 UTC：{value} -> {utc_value}")
+    logger.debug("轉換時間為 UTC：%s -> %s", value, utc_value)
     return utc_value 
 
 def convert_str_to_utc_ISO_str(value: str, tz: str = 'Asia/Taipei') -> str:
@@ -61,7 +55,7 @@ def convert_str_to_utc_ISO_str(value: str, tz: str = 'Asia/Taipei') -> str:
             # 如果失敗，嘗試解析只有日期的格式
             dt = datetime.strptime(value, '%Y-%m-%d')
         except ValueError as e:
-            logger.error(f"日期格式解析錯誤: {value}")
+            logger.error("日期格式解析錯誤: %s", value)
             raise ValueError(f"不支援的日期格式: {value}，請使用 YYYY-MM-DD 或 YYYY.MM.DD 格式") from e
     
     # 設定時區
@@ -74,7 +68,7 @@ def convert_str_to_utc_ISO_str(value: str, tz: str = 'Asia/Taipei') -> str:
     # 轉換為 ISO 格式字串
     iso_str = utc_dt.isoformat()
     
-    logger.debug(f"轉換時間為 UTC ISO 格式：{value} ({tz}) -> {iso_str}")
+    logger.debug("轉換時間為 UTC ISO 格式：%s (%s) -> %s", value, tz, iso_str)
     return iso_str
 
 def convert_str_to_utc_datetime(value: str, tz: str = 'Asia/Taipei') -> datetime:
@@ -102,7 +96,7 @@ def convert_str_to_utc_datetime(value: str, tz: str = 'Asia/Taipei') -> datetime
             # 如果失敗，嘗試解析只有日期的格式
             dt = datetime.strptime(value, '%Y-%m-%d')
         except ValueError as e:
-            logger.error(f"日期格式解析錯誤: {value}")
+            logger.error("日期格式解析錯誤: %s", value)
             raise ValueError(f"不支援的日期格式: {value}，請使用 YYYY-MM-DD 或 YYYY.MM.DD 格式") from e
     
     # 設定時區  
@@ -112,7 +106,7 @@ def convert_str_to_utc_datetime(value: str, tz: str = 'Asia/Taipei') -> datetime
     # 轉換為 UTC
     utc_dt = localized_dt.astimezone(pytz.UTC)  
     
-    logger.debug(f"轉換時間為 UTC：{value} ({tz}) -> {utc_dt}")
+    logger.debug("轉換時間為 UTC：%s (%s) -> %s", value, tz, utc_dt)
     return utc_dt
 
 
