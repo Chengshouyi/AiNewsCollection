@@ -312,7 +312,7 @@
 
 3. **進入目錄:** `cd YOUR_REPOSITORY`
 
-4. **配置環境變數 (可選):** 在專案根目錄創建 `.env` 文件可覆蓋 `docker-compose.yml` 中的預設資料庫設定。
+4. **配置環境變數 (必要):** 在專案根目錄創建 `.env` 文件可覆蓋 `docker-compose.yml` 中的預設資料庫設定。
    
    ```dotenv
    # .env (開發環境範例)
@@ -547,7 +547,7 @@
     curl -X GET "http://localhost:8001/api/articles/search?q=AI%20應用"
     ```
 
-### 文章查詢 (範例)
+### 生產環境佈署指南
 
 本節提供基本的生產環境部署建議。
 
@@ -682,14 +682,14 @@
     *   您可以參考 `src/crawlers/bnext_crawler.py` 作為實作範例，它可能進一步將抓取列表和抓取內容的邏輯分別封裝在不同的輔助類別中 (如 `BnextScraper` 和 `BnextContentExtractor`)。
 
 2.  **設計設定檔 (Config File):**
-    *   在 `src/crawlers/configs/` 目錄下創建一個新的 JSON 設定檔，例如 `my_new_crawler_config.json`。
+    *   在電腦任一目錄下創建一個新的 JSON 設定檔，例如 `my_new_crawler_config.json`。
     *   此檔案定義了爬蟲行為所需的參數，例如：
         *   `base_url`: 目標網站的基礎 URL。
         *   `list_url_template`: 文章列表頁面的 URL 模板。
         *   `categories`: 要爬取的網站分類。
         *   `selectors`: 用於從 HTML 中提取特定元素 (如標題、內容、日期) 的 CSS 選擇器。
     *   請參考 `src/crawlers/configs/bnext_crawler_config.json` 的結構和內容。
-    *   **注意:** 設定檔的檔案名稱（不含副檔名）將作為爬蟲類型 (`crawler_type`) 的唯一標識符。
+    *   **注意:** 設定檔的檔案名稱（不含副檔名）將在上傳後被更改為爬蟲的名稱(crawler_name)，這也是爬蟲資料在資料庫中的唯一標識符。
 
 3.  **透過 Web UI 新增爬蟲:**
     *   啟動應用程式並訪問爬蟲管理頁面 (`/crawlers`)。
