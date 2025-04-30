@@ -45,7 +45,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # 將 appuser 的 local bin 加入 PATH
-ENV PATH="/home/appuser/.local/bin:${PATH}"
+ENV PATH="/home/${USERNAME}/.local/bin:${PATH}"
 # 切換回 root 以複製程式碼並設定正確的擁有者
 # (或者保持 appuser 並確保所有複製的檔案擁有者正確)
 # USER root

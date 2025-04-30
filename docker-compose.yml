@@ -24,20 +24,20 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
   migrate:
+    # <--- 確保 migrate 服務定義在這裡
     build:
       context: .
-      dockerfile: Dockerfile # 使用包含 ENV PATH 修改的 Dockerfile
+      dockerfile: Dockerfile # 使用生產環境的 Dockerfile
     container_name: ainews-migrate
     depends_on:
       db:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-ainews_user}:${POSTGRES_PASSWORD:-your_strong_password}@db:5432/${POSTGRES_DB:-ainews}
-    # --- 修改這裡 ---
-    # 因為 Dockerfile 中設定了 PATH，可以直接用命令名稱
-    command: [ "alembic", "upgrade", "head" ]
-    # --- 修改結束 ---
+    # 使用你選擇的 alembic 執行方式 (直接命令或絕對路徑)
+    command: [ "alembic", "upgrade", "head" ] # 假設生產 Dockerfile 已設定 PATH
     restart: 'no'
     networks:
       - default
@@ -54,9 +54,11 @@ services:
       # 使用 ${VAR_NAME:-default} 語法可以從 .env 文件讀取變數
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-ainews_user}:${POSTGRES_PASSWORD:-your_strong_password}@db:5432/${POSTGRES_DB:-ainews}
       - SECRET_KEY=${SECRET_KEY:-your_very_strong_production_secret_key_here} # 應從 .env 文件讀取!
+
     depends_on:
-      db:
-        condition: service_healthy # 依賴 db 的健康檢查 (如果定義了 healthcheck)
+      # <--- 確保 web 依賴 migrate
+      migrate:
+        condition: service_completed_successfully
         # condition: service_started # 或者只等待 db 啟動 (如果沒有 healthcheck)
     ports:
       - "8001:8000" # 將主機的 8001 映射到容器的 8000
