@@ -1,6 +1,7 @@
 """測試 src.web.routes.tasks_api 中的 API 路由功能"""
 import json
 import enum
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
 from unittest.mock import patch, MagicMock
@@ -14,12 +15,12 @@ from src.error.handle_api_error import handle_api_error
 from src.models.crawler_tasks_model import ScrapePhase, ScrapeMode, TaskStatus, TASK_ARGS_DEFAULT
 from src.models.crawler_tasks_schema import CrawlerTaskReadSchema
 from src.models.crawler_task_history_schema import CrawlerTaskHistoryReadSchema
-from src.utils.log_utils import LoggerSetup # 使用統一的 logger
+ # 使用統一的 logger
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__) # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger # 使用統一的 logger
 
 @pytest.fixture
 def app():

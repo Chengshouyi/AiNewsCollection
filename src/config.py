@@ -1,13 +1,14 @@
-from src.database.database_manager import DatabaseManager
-from src.models.base_model import Base
 from typing import Optional
+import logging
 import os
 from datetime import timezone
 import pytz
 import time
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+from src.database.database_manager import DatabaseManager
+from src.models.base_model import Base
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # 專案根目錄
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

@@ -6,6 +6,7 @@
 """
 
 import os
+import logging
 from contextlib import contextmanager
 from functools import wraps
 from typing import Optional, Type
@@ -23,9 +24,9 @@ from src.error.errors import (
     InvalidOperationError,
     ValidationError,
 )
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class DatabaseManager:
@@ -46,7 +47,7 @@ class DatabaseManager:
                     "DATABASE_URL environment variable is not set."
                 )
 
-            logger.info("DatabaseManager initializing with URL: %s", self.database_url)
+            logger.debug("DatabaseManager initializing with URL: %s", self.database_url)
             echo_str = os.environ.get("SQLALCHEMY_ECHO", "False")
             if echo_str == "True":
                 echo = True

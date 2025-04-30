@@ -19,9 +19,9 @@ from src.services.task_executor_service import TaskExecutorService
 from src.error.errors import DatabaseOperationError
 from src.services.service_container import get_task_executor_service
 from src.config import get_db_manager
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class SchedulerService(BaseService[CrawlerTasks]):

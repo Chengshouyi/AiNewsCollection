@@ -9,6 +9,7 @@
 """
 
 import math
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any  # 引入 List, Dict, Any
 
@@ -23,12 +24,12 @@ from src.error.errors import (
 from src.models.base_model import Base  # Base is needed for initialized_db_manager
 from src.models.crawlers_model import Crawlers
 from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
-from src.utils.log_utils import LoggerSetup
+
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 # 使用 db_manager_for_test 的 fixture ---

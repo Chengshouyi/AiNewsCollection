@@ -13,8 +13,13 @@ load_dotenv()
 
 class LoggerSetup:
     """日誌設置工具類
-    # 基本使用
-    logger = LoggerSetup.setup_logger('my_module')
+    # 基本使用 (在應用程式入口調用一次)
+    # LoggerSetup.configure_logging()
+
+    # 其他模塊直接使用 standard logging:
+    # import logging
+    # logger = logging.getLogger(__name__)
+    # logger.info("Some message")
 
     # 使用自定義日誌級別
     logger = LoggerSetup.setup_logger('my_module', level=logging.DEBUG)
@@ -30,179 +35,143 @@ class LoggerSetup:
 
     """
 
+    _configured = False # 類變量，防止重複配置
+
     @staticmethod
-    def setup_logger(
-        module_name: str,
+    def configure_logging(
         log_dir: str = "logs",
         level: int = logging.INFO,
         log_format: Optional[str] = None,
         date_format: Optional[str] = None,
-    ) -> logging.Logger:
+    ):
         """
-        設置日誌記錄器
+        配置根日誌記錄器。此方法應在應用程式啟動時調用一次。
 
         Args:
-            module_name (str): 模組名稱，用於日誌記錄
-            log_dir (str): 日誌目錄
-            level (int): 日誌級別 (可被環境變數 LOG_LEVEL 覆蓋)
+            log_dir (str): 日誌目錄 (相對於專案根目錄 /app)
+            level (int): 預設日誌級別 (可被環境變數 LOG_LEVEL 覆蓋)
             log_format (str, optional): 日誌格式，如果為None則使用預設格式
             date_format (str, optional): 日期格式，如果為None則使用預設格式
-
-        Returns:
-            logging.Logger: 配置好的日誌記錄器
 
         環境變數:
             LOG_LEVEL: 設置日誌級別 (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL)
             LOG_OUTPUT_MODE: 控制日誌輸出目的地 ('console', 'file', 'both'). 預設為 'both'.
         """
-        try:
-            # 專案根目錄 (假設在容器內的 /app)
-            project_root = "/app"
-            log_dir_path = os.path.join(project_root, log_dir)
-            # 確保日誌目錄存在
-            if not os.path.exists(log_dir_path):
-                os.makedirs(log_dir_path)
+        # 防止重複配置
+        if LoggerSetup._configured:
+            # 可以選擇性地打印一個 debug 消息或直接返回
+            # print("Logging already configured.")
+            return
 
-            taipei_tz = pytz.timezone("Asia/Taipei")
-            current_time = datetime.now(pytz.UTC).astimezone(taipei_tz)
-            timestamp = current_time.strftime("%Y%m%d_%H%M%S")
-            log_filename = os.path.join(log_dir_path, f'{module_name}_{timestamp}.log')
+        root_logger = logging.getLogger() # 獲取根記錄器
 
-            if log_format is None:
-                log_format = (
-                    "%(asctime)s.%(msecs)03d [%(levelname)s] %(name)s - %(message)s"
-                )
+        # --- 設置級別 ---
+        log_level_str_env = os.getenv("LOG_LEVEL")
+        effective_level = level
 
-            if date_format is None:
-                date_format = "%Y-%m-%d %H:%M:%S"
+        if log_level_str_env:
+            level_name_upper = log_level_str_env.strip().upper()
+            level_map = logging._nameToLevel
+            if level_name_upper in level_map:
+                effective_level = level_map[level_name_upper]
+            else:
+                # 使用 print 因為此時 logger 可能還未完全設置
+                print(f"警告: 環境變數 LOG_LEVEL 值 '{log_level_str_env}' 無效，將使用預設級別 {logging.getLevelName(level)}")
 
-            logger = logging.getLogger(module_name)
+        root_logger.setLevel(effective_level)
 
-            if logger.handlers:
-                for handler in logger.handlers[:]:
-                    logger.removeHandler(handler)
+        # --- 格式化器 ---
+        if log_format is None:
+            log_format = (
+                "%(asctime)s.%(msecs)03d [%(levelname)s] %(name)s - %(message)s"
+            )
+        if date_format is None:
+            date_format = "%Y-%m-%d %H:%M:%S"
 
-            # 從環境變數讀取日誌級別，若未設置則使用傳入的 level
-            log_level_str_env = os.getenv("LOG_LEVEL")
-            effective_level = level  # 預設使用傳入的整數級別
+        taipei_tz = pytz.timezone("Asia/Taipei")
+        class TaipeiFormatter(logging.Formatter):
+            def converter(self, timestamp):
+                dt = datetime.fromtimestamp(timestamp, pytz.UTC)
+                return dt.astimezone(taipei_tz)
 
-            if log_level_str_env:
-                level_name_upper = log_level_str_env.strip().upper()
-                level_map = logging._nameToLevel # 使用內部映射替代 getLevelNamesMapping()
-                if level_name_upper in level_map:
-                    effective_level = level_map[level_name_upper] # 使用映射查找整數級別
+            def formatTime(self, record, datefmt=None):
+                dt = self.converter(record.created)
+                fmt = datefmt or self._style._fmt.split('.')[0]
+                if self._style._fmt.endswith('.%(msecs)03d'):
+                    s = dt.strftime(fmt)
+                    return f"{s}.{record.msecs:03d}"
                 else:
-                    # 如果環境變數值無效，發出警告並使用預設值
-                    # 注意：此時 logger 的 handler 可能還未完全配置好，使用 print 可能更可靠
-                    print(f"警告: 環境變數 LOG_LEVEL 值 '{log_level_str_env}' 無效，將使用預設級別 {logging.getLevelName(level)}")
-                    # 或者如果 logger 已經有基本 handler:
-                    # logger.warning(f"環境變數 LOG_LEVEL 值 '{log_level_str_env}' 無效，將使用預設級別 {logging.getLevelName(level)}")
+                    return dt.strftime(fmt)
 
-            logger.setLevel(effective_level)
+        formatter = TaipeiFormatter(log_format, date_format)
 
-            # 從環境變數讀取輸出模式
-            log_output_mode = os.getenv("LOG_OUTPUT_MODE", "both").lower()
+        # --- 清理現有 Handlers (以防萬一，通常根記錄器默認沒有) ---
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
 
-            class TaipeiFormatter(logging.Formatter):
-                def converter(self, timestamp):
-                    dt = datetime.fromtimestamp(timestamp, pytz.UTC)
-                    return dt.astimezone(taipei_tz)
+        # --- 添加 Handlers ---
+        log_output_mode = os.getenv("LOG_OUTPUT_MODE", "both").lower()
+        output_destinations = []
 
-                def formatTime(self, record, datefmt=None):
-                    dt = self.converter(record.created)
-                    fmt = datefmt or self._style._fmt.split('.')[0] # 從主格式獲取日期格式
-                    if self._style._fmt.endswith('.%(msecs)03d'):
-                        s = dt.strftime(fmt)
-                        return f"{s}.{record.msecs:03d}"
-                    else:
-                         return dt.strftime(fmt)
+        # 控制台 Handler
+        if log_output_mode in ["console", "both"]:
+            console_handler = logging.StreamHandler()
+            console_handler.setFormatter(formatter)
+            root_logger.addHandler(console_handler)
+            output_destinations.append("控制台")
 
-            formatter = TaipeiFormatter(log_format, date_format)
+        # 文件 Handler
+        if log_output_mode in ["file", "both"]:
+            try:
+                project_root = "/app"
+                log_dir_path = os.path.join(project_root, log_dir)
+                if not os.path.exists(log_dir_path):
+                    os.makedirs(log_dir_path)
 
-            output_destinations = []
+                current_time = datetime.now(pytz.UTC).astimezone(taipei_tz)
+                timestamp = current_time.strftime("%Y%m%d_%HM") # 簡化文件名，避免過多文件
+                log_filename = os.path.join(log_dir_path, f'app_{timestamp}.log') # 通用文件名
 
-            # 根據模式添加控制台處理器
-            if log_output_mode in ["console", "both"]:
-                console_handler = logging.StreamHandler()
-                console_handler.setFormatter(formatter)
-                logger.addHandler(console_handler)
-                output_destinations.append("控制台")
-
-            # 根據模式添加文件處理器
-            if log_output_mode in ["file", "both"]:
-                # 啟用文件處理器
                 file_handler = logging.FileHandler(
                     filename=log_filename,
                     encoding='utf-8',
                     mode='a'
                 )
                 file_handler.setFormatter(formatter)
-                logger.addHandler(file_handler)
+                root_logger.addHandler(file_handler)
                 output_destinations.append("文件")
+            except Exception as e:
+                 print(f"錯誤：無法設置文件日誌處理器: {e}")
 
-            logger.propagate = False
 
-            init_message = f"日誌系統初始化完成 ({' + '.join(output_destinations)})"
-            if not output_destinations:
-                init_message = "警告：未配置任何日誌輸出目的地 (LOG_OUTPUT_MODE 可能設置為無效值)"
-                logger.warning(init_message) # 如果沒有 handler，這條可能無法輸出
-            else:
-                logger.debug(init_message)
-                if "文件" in output_destinations:
-                    logger.debug("日誌文件路徑: %s", log_filename)
+        init_message = f"根日誌系統初始化完成 ({' + '.join(output_destinations)})"
+        if not output_destinations:
+            init_message = "警告：未配置任何日誌輸出目的地 (LOG_OUTPUT_MODE 可能設置為無效值)"
+            print(init_message)
+        else:
+            root_logger.info(init_message) # 使用 INFO 級別報告初始化完成
+            if "文件" in output_destinations:
+                 root_logger.info("日誌文件可能位於: %s", log_dir_path) # 不再打印精確文件名以防歧義
 
-            logger.debug("當前時間 (台北): %s", current_time.strftime('%Y-%m-%d %H:%M:%S %Z'))
-
-            return logger
-
-        except Exception as e:
-            # 使用基本配置處理初始化錯誤
-            basic_logger = logging.getLogger(f"{module_name}_setup_error")
-            if not basic_logger.handlers:
-                basic_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-                console_handler = logging.StreamHandler()
-                console_handler.setFormatter(basic_formatter)
-                basic_logger.addHandler(console_handler)
-                basic_logger.setLevel(logging.ERROR) # 確保錯誤能被看到
-
-            basic_logger.error("日誌系統初始化失敗: %s", str(e), exc_info=True)
-            return basic_logger # 返回基本 logger 以便至少能記錄錯誤
+        # 標記為已配置
+        LoggerSetup._configured = True
 
     @staticmethod
     def set_debug_mode(logger: logging.Logger, enable: bool = False):
-        """
-        啟用或禁用調試模式
-
-        Args:
-            logger (logging.Logger): 要設置的日誌記錄器
-            enable (bool): 是否啟用調試模式
-        """
-        # 優先使用環境變數 LOG_LEVEL，如果存在則不應手動切換
-        log_level_env = os.getenv("LOG_LEVEL")
-        if log_level_env:
-             current_level = logger.getEffectiveLevel()
-             new_level = logging.DEBUG if enable else logging.getLevelName(log_level_env.upper())
-             if new_level != current_level:
-                 logger.warning("LOG_LEVEL 環境變數已設置 (%s)，set_debug_mode 可能不會按預期工作。", log_level_env)
-             # 即使有環境變數，仍然允許臨時切換，但給出警告
-             logger.setLevel(new_level)
-
-        else:
-            # 如果沒有環境變數，則根據 enable 切換 INFO 和 DEBUG
-            current_level_name = logging.getLevelName(logger.level)
-            default_level = logging.INFO # 假設預設非調試級別是 INFO
-            new_level = logging.DEBUG if enable else default_level
-            if new_level != logger.level:
-                logger.info(f"日誌級別從 {current_level_name} 切換到 {logging.getLevelName(new_level)}")
-                logger.setLevel(new_level)
+        # 這個方法現在操作的是傳入的 logger，可能不再需要，
+        # 或者應該調整為直接設置根 logger 的級別，但要小心副作用。
+        # 暫時保留原樣，但調用時需謹慎。
+        # 更好的方法是透過環境變數 LOG_LEVEL 控制。
+        # ... (原有的 set_debug_mode 邏輯) ...
+        pass # 暫時禁用，因為直接修改根記錄器級別影響全局
 
     @staticmethod
     def cleanup_logs(
         log_dir: Optional[str] = None,
-        module_name: Optional[str] = None,
+        module_name: Optional[str] = None, # 參數保留，但可能不再精確匹配文件名
         keep_days: Optional[int] = None,
         dry_run: bool = False,
-        logger: Optional[logging.Logger] = None
+        logger: Optional[logging.Logger] = None # 保持允許傳入 logger
     ) -> List[str]:
         """
         清理指定目錄下的日誌文件。
@@ -239,21 +208,28 @@ class LoggerSetup:
             LOG_CLEANUP_DRY_RUN: 設為 "true" 或 "1" 以啟用 Dry Run 模式 (預設: "false")
         """
         if logger is None:
-            # 如果沒有提供 logger，創建一個簡單的
+            # 如果沒有提供 logger，創建一個簡單的或獲取根 logger
             logger = logging.getLogger("LogCleanup")
-            if not logger.handlers:
-                handler = logging.StreamHandler()
-                formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-                handler.setFormatter(formatter)
-                logger.addHandler(handler)
-                logger.setLevel(logging.INFO)
+            if not logger.handlers: # 確保 cleanup logger 有 handler
+                 if logging.getLogger().hasHandlers(): # 嘗試繼承根 logger 的 handler
+                      pass # 繼承即可
+                 else: # 如果根 logger 也沒配置好，加一個 console handler
+                    handler = logging.StreamHandler()
+                    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+                    handler.setFormatter(formatter)
+                    logger.addHandler(handler)
+                    logger.setLevel(logging.INFO)
 
+
+        # --- 其餘邏輯基本保持不變，但文件名匹配模式可能需要調整 ---
         # 讀取環境變數，函數參數優先
         final_log_dir = log_dir if log_dir is not None else os.getenv("LOG_CLEANUP_LOG_DIR", "logs")
-        final_module_name = module_name if module_name is not None else os.getenv("LOG_CLEANUP_MODULE_NAME", "")
-        # 如果環境變數是空字串，視為 None (清理所有模組)
-        if final_module_name == "":
-            final_module_name = None
+        # final_module_name = module_name if module_name is not None else os.getenv("LOG_CLEANUP_MODULE_NAME", "")
+        # 注意：由於文件名現在是 app_timestamp.log，module_name 不再直接適用於過濾文件名
+        # 如果仍想按模塊清理，需要改變日誌記錄方式或文件名格式。
+        # 暫時忽略 module_name 過濾條件。
+        if module_name:
+             logger.warning("Log cleanup by module_name is currently not supported with the new root logger file naming scheme.")
 
         final_keep_days = keep_days # 函數參數優先
 
@@ -276,9 +252,9 @@ class LoggerSetup:
         if final_keep_days is not None and final_keep_days < 0:
             raise ValueError("keep_days 不能是負數")
 
-        # Dry run: 函數參數優先，否則讀取環境變數
+        # Dry run: ... (邏輯保持不變) ...
         final_dry_run = dry_run
-        if not final_dry_run: # 只有當函數參數沒設為 True 時，才檢查環境變數
+        if not final_dry_run:
             dry_run_env = os.getenv("LOG_CLEANUP_DRY_RUN", "false").lower()
             final_dry_run = dry_run_env in ["true", "1", "yes"]
 
@@ -290,15 +266,15 @@ class LoggerSetup:
             raise FileNotFoundError(f"日誌目錄不存在: {log_dir_path}")
 
         logger.info(f"{'Dry run: ' if final_dry_run else ''}開始清理日誌目錄: {log_dir_path}")
-        if final_module_name:
-            logger.info(f"目標模組: {final_module_name}")
+        # if final_module_name: # 移除模塊過濾日誌
+        #     logger.info(f"目標模塊: {final_module_name}")
         if final_keep_days is not None:
             logger.info(f"保留天數: {final_keep_days}")
         else:
              logger.info("未設置保留天數，將刪除所有符合條件的日誌。")
 
-        # --- 以下邏輯與之前類似，使用 final_xxx 變數 ---
-        timestamp_pattern = re.compile(r"_(\d{8}_\d{6})\.log$")
+        # 調整文件名模式以匹配 app_*.log
+        timestamp_pattern = re.compile(r"app_(\d{8}_\d{4})\.log$") # 匹配 YYYYMMDD_HHMM
         files_to_delete = []
         now = datetime.now(timezone.utc)
         cutoff_time = now - timedelta(days=final_keep_days) if final_keep_days is not None else None
@@ -307,26 +283,26 @@ class LoggerSetup:
             for filename in os.listdir(log_dir_path):
                 file_path = os.path.join(log_dir_path, filename)
 
-                if not os.path.isfile(file_path) or not filename.endswith(".log"):
+                if not os.path.isfile(file_path) or not filename.startswith("app_") or not filename.endswith(".log"):
                     continue
 
-                if final_module_name and not filename.startswith(final_module_name + "_"):
-                    continue
+                # if final_module_name and not filename.startswith(final_module_name + "_"): # 移除模塊名檢查
+                #     continue
 
                 match = timestamp_pattern.search(filename)
                 if not match:
-                    # logger.debug(f"Skipping file with non-matching format: {filename}") # 減少囉嗦程度
                     continue
 
                 timestamp_str = match.group(1)
                 try:
-                    naive_dt = datetime.strptime(timestamp_str, "%Y%m%d_%H%M%S")
-                    taipei_tz = pytz.timezone("Asia/Taipei") # 保持與 setup_logger 一致
+                    # 根據新的格式解析
+                    naive_dt = datetime.strptime(timestamp_str, "%Y%m%d_%H%M")
+                    # 假設文件名中的時間是台北時間 (因為是這樣生成的)
+                    taipei_tz = pytz.timezone("Asia/Taipei")
                     local_dt = taipei_tz.localize(naive_dt)
                     file_time_utc = local_dt.astimezone(timezone.utc)
 
                     if cutoff_time and file_time_utc >= cutoff_time:
-                        # logger.debug(f"Keeping newer file: {filename} (Time: {file_time_utc})")
                         continue
                 except ValueError:
                     logger.warning(f"無法解析文件名的時間戳: {filename}")

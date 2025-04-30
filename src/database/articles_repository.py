@@ -1,6 +1,7 @@
 """此模組定義 ArticlesRepository 類別，用於處理與文章相關的資料庫操作。"""
 
 from datetime import datetime, timezone, timedelta
+import logging
 from typing import (
     Optional,
     List,
@@ -26,10 +27,10 @@ from src.error.errors import (
 )
 from src.models.articles_model import Articles, ArticleScrapeStatus
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 # 使用統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class ArticlesRepository(BaseRepository[Articles]):

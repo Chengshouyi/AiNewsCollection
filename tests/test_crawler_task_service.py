@@ -10,6 +10,7 @@
 """
 
 # Standard library imports
+import logging
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List
 from unittest.mock import call
@@ -36,12 +37,12 @@ from src.models.crawler_task_history_schema import CrawlerTaskHistoryReadSchema
 from src.utils.enum_utils import TaskStatus, ScrapePhase, ScrapeMode
 from src.error.errors import ValidationError
 from src.utils.datetime_utils import enforce_utc_datetime_transform
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 # 使用 db_manager_for_test 的 Fixture

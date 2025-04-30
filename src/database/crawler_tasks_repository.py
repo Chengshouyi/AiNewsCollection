@@ -43,10 +43,10 @@ from src.error.errors import (
 from src.utils.datetime_utils import enforce_utc_datetime_transform
 from src.utils.enum_utils import TaskStatus, ScrapePhase, ScrapeMode
 from src.utils.model_utils import validate_cron_expression
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 # 設定 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class CrawlerTasksRepository(BaseRepository["CrawlerTasks"]):

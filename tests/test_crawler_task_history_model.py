@@ -3,6 +3,7 @@
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
+import logging
 from datetime import datetime, timezone, timedelta
 
 import pytest
@@ -10,9 +11,9 @@ import pytest
 from src.error.errors import ValidationError
 from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.utils.enum_utils import TaskStatus
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class TestCrawlerTaskHistoryModel:

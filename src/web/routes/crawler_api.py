@@ -1,6 +1,7 @@
 """定義爬蟲相關 API 路由 (Blueprint: crawler_bp)。"""
 import json
 from typing import Optional, List
+import logging
 
 from flask import Blueprint, jsonify, request
 from werkzeug.datastructures import FileStorage
@@ -10,9 +11,9 @@ from src.error.handle_api_error import handle_api_error
 from src.models.crawlers_schema import CrawlerReadSchema, PaginatedCrawlerResponse
 from src.services.crawlers_service import CrawlersService
 from src.services.service_container import get_crawlers_service
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # 創建藍圖
 crawler_bp = Blueprint('crawlerapi', __name__, url_prefix='/api/crawlers')

@@ -17,10 +17,10 @@ from src.error.service_errors import (
     ServiceError, ServiceExecutionError, ServiceInitializationError,
     ServiceCleanupError, ServiceShutdownError
 )
-from src.utils.log_utils import LoggerSetup
+
 
 # 設定統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 def handle_api_error(error: Exception) -> tuple[Response, int]:

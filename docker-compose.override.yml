@@ -30,6 +30,16 @@ services:
       # 如果你需要用 debugpy 等工具進行遠程除錯，可以再增加端口映射
       # - "5678:5678"
       # restart: 'no' # 開發時可能不需要自動重啟
+  migrate:
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      # <--- 關鍵：確保 migrate 服務也能看到最新的程式碼
+      - .:/app
+    user: vscode
+    command: bash -c "pip install --user -r requirements.txt && export PATH=\"/home/vscode/.local/bin:$PATH\" && alembic upgrade head"
+
 
       # 將來擴充微服務時會使用 
       # worker:

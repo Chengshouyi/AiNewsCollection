@@ -9,12 +9,12 @@ from sqlalchemy.orm import sessionmaker
 from src.models.articles_model import Articles, ArticleScrapeStatus
 from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.base_model import Base
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 @pytest.fixture(scope="function")

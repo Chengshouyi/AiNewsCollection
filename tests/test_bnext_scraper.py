@@ -1,4 +1,5 @@
 """測試 BnextScraper 類別的功能。"""
+import logging
 import time
 import random
 from datetime import datetime, timezone
@@ -12,9 +13,9 @@ from src.crawlers.bnext_scraper import BnextScraper
 from src.crawlers.configs.site_config import SiteConfig
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers import bnext_utils # Keep this for patching
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 @pytest.fixture
 def mock_config():

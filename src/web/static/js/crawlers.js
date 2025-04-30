@@ -117,9 +117,8 @@ function setupWebSocket() {
     }
 
     // 連接到Socket.IO服務器
-    const socketUrl = `${location.protocol}//${document.domain}:${location.port}/tasks`;
-    console.log(`嘗試連接到WebSocket: ${socketUrl}`);
-    socket = io.connect(socketUrl);
+    console.log(`嘗試連接到WebSocket: /tasks`);
+    socket = io('/tasks');
 
     socket.on('connect', () => {
         console.log('Socket.IO連接到/tasks成功');

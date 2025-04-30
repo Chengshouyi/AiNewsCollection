@@ -2,13 +2,14 @@
 
 from datetime import datetime, timezone
 from typing import Optional, Annotated
+import logging
 
 from pydantic import BaseModel, model_validator, Field, BeforeValidator
 
 from src.utils.model_utils import validate_positive_int, validate_datetime
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 # 通用字段定義
 Id = Annotated[

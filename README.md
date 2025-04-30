@@ -305,138 +305,141 @@
 
 ### 開發環境
 
-1. **前置需求:** 安裝 Docker 和 Docker Compose。
+1.  **前置需求:** 安裝 Docker 和 Docker Compose。
 
-2. **克隆倉庫:** `git clone https://github.com/Chengshouyi/AiNewsCollection.git`
+2.  **克隆倉庫:** `git clone https://github.com/Chengshouyi/AiNewsCollection.git`
 
-3. **進入目錄:** `cd YOUR_REPOSITORY`
+3.  **進入目錄:** `cd AiNewsCollection` (將 `AiNewsCollection` 替換為您的實際倉庫目錄名稱)
 
-4. **配置環境變數 (必要):** 在專案根目錄創建 `.env` 文件可覆蓋 `docker-compose.yml` 中的預設資料庫設定。
-   
-   ```dotenv
-   # .env (開發環境範例)
-   # --- Database Settings ---
-   POSTGRES_DB=ainews_dev
-   POSTGRES_USER=dev_user
-   # Use a simple password for local dev, or keep it the same as prod if preferred
-   POSTGRES_PASSWORD=dev_password123Y5%jsjfjdjfg
-   # --- Flask Settings ---
-   # Development specific secret key (less critical than production)
-   SECRET_KEY=a_simple_dev_secret_key
-   # --- Worker Settings ---
-   SCHEDULE_RELOAD_INTERVAL_SEC=1200 # Maybe less frequent reloading in dev
-   # --- Log Settings ---
-   LOG_LEVEL=DEBUG  # DEBUG
-   LOG_OUTPUT_MODE=console  # 只輸出到控制台  file:只輸出到文件 both:同時輸出到控制台和文件 (預設)
-   LOG_CLEANUP_LOG_DIR=logs   # 可選：指定不同的日誌目錄 相對於/app
-   LOG_CLEANUP_MODULE_NAME=""  # 可選：只清理 'main_app' 模組的日誌，或""清理全部
-   LOG_CLEANUP_KEEP_DAYS=""         # 可選：保留最近 n 天的日誌，或""刪除全部
-   LOG_CLEANUP_DRY_RUN=false         # 可選：啟用 Dry Run (建議測試時使用) true/false
-   
-   # --- SQL settings ---
-   SQLALCHEMY_ECHO=False   #True
-   
-   # --- data locate setting ---
-   WEB_SITE_CONFIG_DIR=/app/data/web_site_configs  #不可變更
-   ```
+4.  **配置環境變數 (必要):** 在專案根目錄創建 `.env` 文件。您可以使用 `.env.example` 作為模板。開發環境的 `.env` 文件至少應包含資料庫連接資訊。**請勿提交 `.env` 文件到版本控制系統。**
 
-5. **安裝開發依賴:** 確保 `requirements-dev.txt` 中的依賴已安裝 (若使用 Dev Container，通常會自動處理)。
+    ```dotenv
+    # .env (開發環境範例)
+    # --- Database Settings ---
+    POSTGRES_DB=ainews_dev
+    POSTGRES_USER=dev_user
+    # Use a simple password for local dev
+    POSTGRES_PASSWORD=dev_password123Y5%jsjfjdjfg
+    # --- Flask Settings ---
+    SECRET_KEY=a_simple_dev_secret_key
+    # --- Worker Settings (如果使用) ---
+    # SCHEDULE_RELOAD_INTERVAL_SEC=1200
+    # --- Log Settings ---
+    LOG_LEVEL=DEBUG
+    LOG_OUTPUT_MODE=console
+    # LOG_CLEANUP_LOG_DIR=logs
+    # LOG_CLEANUP_MODULE_NAME=""
+    # LOG_CLEANUP_KEEP_DAYS=""
+    # LOG_CLEANUP_DRY_RUN=false
+    # --- SQL settings ---
+    SQLALCHEMY_ECHO=False
+    # --- data locate setting ---
+    WEB_SITE_CONFIG_DIR=/app/data/web_site_configs #不可變更
+    ```
 
-6. **啟動服務:**
-   
-   ```bash
-   docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d
-   ```
+5.  **啟動服務:**
+    *   在專案根目錄執行以下命令：
+        ```bash
+        docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d
+        ```
+    *   此命令會根據 `docker-compose.yml` 和 `docker-compose.override.yml` 啟動開發環境所需的所有服務（資料庫 `db`、遷移服務 `migrate`、Web 服務 `web`）。
+    *   `migrate` 服務會在 `db` 服務準備就緒後自動執行資料庫遷移 (`alembic upgrade head`)。
+    *   `web` 服務將使用 `.devcontainer/Dockerfile` 構建，並啟動一個基礎容器 (執行 `sleep infinity`)，等待您手動啟動 Flask 應用。
 
-7. **資料庫遷移:** (首次啟動或模型變更後)
-   
-   ```bash
-   docker-compose -f docker-compose.yml -f docker-compose.override.yml exec web alembic upgrade head
-   ```
+6.  **手動啟動 Flask 應用:**
+    *   由於 `web` 容器在開發模式下僅啟動 `sleep infinity`，您需要進入容器來啟動 Flask 開發伺服器：
+        ```bash
+        # 進入 web 容器
+        docker-compose -f docker-compose.yml -f docker-compose.override.yml exec web bash
 
-8. **啟動 Flask 應用:** `docker-compose.override.yml` 將 web 服務的啟動指令設為 `sleep infinity`，您需要進入容器手動啟動 Flask 開發伺服器 (或透過 VS Code Dev Container 設定)。
-   
-   ```bash
-   # 進入 web 容器
-   docker-compose -f docker-compose.yml -f docker-compose.override.yml exec web bash
-   
-   # 在容器內啟動 Flask (範例)
-   flask run --host=0.0.0.0 --port=8000 --debug
-   ```
+        # 在容器內啟動 Flask (範例，會自動監聽程式碼變更)
+        flask run --host=0.0.0.0 --port=8000 --debug
+        ```
+    *   或者，如果您使用 VS Code Dev Containers，通常會有預設的啟動任務。
 
-9. **(建議) 執行測試:** 為了確認環境設定完整且核心功能運作正常，建議執行測試套件：
-   ```bash
-   # 確保仍在 web 容器內，或重新進入
-   docker-compose -f docker-compose.yml -f docker-compose.override.yml exec web pytest tests
-   ```
+7.  **(可選) 手動執行資料庫遷移:**
+    *   雖然 `migrate` 服務會在 `docker-compose up` 時自動運行遷移，但如果您在開發過程中需要再次手動執行遷移，可以使用：
+        ```bash
+        docker-compose -f docker-compose.yml -f docker-compose.override.yml exec migrate alembic upgrade head
+        ```
 
-10. **訪問:** 應用程式將在 `http://localhost:8001` (根據 `docker-compose.override.yml` 的端口映射)。資料庫可透過 `localhost:5432` 訪問。
+8.  **執行測試:**
+    *   為了確認環境設定完整且核心功能運作正常，建議執行測試套件：
+        ```bash
+        # 在主機上執行，命令會進入 web 容器執行 pytest
+        docker-compose -f docker-compose.yml -f docker-compose.override.yml exec web pytest tests
+        ```
+
+9.  **訪問:**
+    *   應用程式將在 `http://localhost:8001` (根據 `docker-compose.override.yml` 的端口映射)。
+    *   資料庫可透過 `localhost:5432` 訪問 (例如使用 DBeaver, pgAdmin)。
 
 **開發環境特性:**
 
-* 使用 `.devcontainer/Dockerfile` 建置 `web` 服務。
-* 安裝 `requirements.txt` 和 `requirements-dev.txt` 中的依賴。
-* `FLASK_ENV=development`。
-* 本地程式碼目錄掛載到 `/app`，支援熱加載。
-* 資料庫端口映射到主機 `5432`。
-* Web 服務端口映射到主機 `8001`。
+*   使用 `.devcontainer/Dockerfile` 建置 `web` 和 `migrate` 服務。
+*   安裝 `requirements.txt` 和 `requirements-dev.txt` 中的依賴。
+*   `FLASK_ENV=development`。
+*   本地專案根目錄 (`.`) 掛載到容器的 `/app` 目錄，支援程式碼熱加載。
+*   `migrate` 服務在啟動時自動執行資料庫遷移。
+*   Web 服務 (`web`) 啟動命令為 `sleep infinity`，需要手動進入容器啟動 `flask run`。
+*   資料庫端口 (`db`) 映射到主機 `5432`。
+*   Web 服務端口 (`web`) 映射到主機 `8001`。
 
 ### 生產環境
 
-1. **前置需求:** 在生產伺服器上安裝 Docker 和 Docker Compose。
-2. **取得程式碼:** 將專案複製或 clone 到伺服器。
-3. **創建 `.env` 文件 (極度重要):** 在專案根目錄創建 `.env` 文件，並填入**安全**的生產環境配置。**切勿**使用預設值或提交此文件到版本控制。
-   
-   ```dotenv
-   # .env (生產環境範例 - 請務必替換為真實且安全的值!)
-   
-   # --- Database Settings ---
-   POSTGRES_DB=ainews_prod
-   POSTGRES_USER=dev_prod
-   # Use a simple password for local dev, or keep it the same as prod if preferred
-   POSTGRES_PASSWORD=prod_password123Y5%jsjfjdjfg
-   # --- Flask Settings ---
-   # Development specific secret key (less critical than production)
-   SECRET_KEY=a_simple_prod_secret_key
-   # --- Worker Settings ---
-   SCHEDULE_RELOAD_INTERVAL_SEC=1200 # Maybe less frequent reloading in dev
-   # --- Log Settings ---
-   LOG_LEVEL=INFO  # DEBUG
-   LOG_OUTPUT_MODE=both  # 只輸出到控制台  file:只輸出到文件 both:同時輸出到控制台和文件 (預設)
-   LOG_CLEANUP_LOG_DIR=logs   # 可選：指定不同的日誌目錄 相對於/app
-   LOG_CLEANUP_MODULE_NAME=""  # 可選：只清理 'main_app' 模組的日誌，或""清理全部
-   LOG_CLEANUP_KEEP_DAYS=7         # 可選：保留最近 n 天的日誌，或""刪除全部
-   LOG_CLEANUP_DRY_RUN=false         # 可選：啟用 Dry Run (建議測試時使用) true/false
-   
-   # --- SQL settings ---
-   SQLALCHEMY_ECHO=False   #True
-   
-   # --- data locate setting ---
-   WEB_SITE_CONFIG_DIR=/app/data/web_site_configs  #不可變更
-   ```
-4. **建置映像檔 (可選):** `docker-compose build` (如果尚未建置或需要更新)。
-5. **啟動服務:**
-   
-   ```bash
-   docker-compose up -d
-   ```
-6. **資料庫遷移:** (首次啟動或模型變更後)
-   
-   ```bash
-   docker-compose exec web alembic upgrade head
-   ```
-7. **訪問:** 應用程式將在 `http://YOUR_SERVER_IP:8001`。建議配置反向代理 (如 Nginx) 來處理 HTTPS 和端口轉發。
+1.  **前置需求:** 在生產伺服器上安裝 Docker 和 Docker Compose。
+2.  **取得程式碼:** 將專案複製或 clone 到伺服器。
+3.  **創建 `.env` 文件 (極度重要):** 在專案根目錄創建 `.env` 文件，並填入**安全**的生產環境配置。**切勿**使用預設值或提交此文件到版本控制。
+    *   **務必**設定強壯的 `POSTGRES_PASSWORD` 和 `SECRET_KEY`。
+    *   參考 `.env.example` 和開發環境的 `.env` 文件結構。建議生產環境 `LOG_LEVEL` 設為 `INFO` 或更高。
+
+    ```dotenv
+    # .env (生產環境範例 - 請務必替換為真實且安全的值!)
+
+    # --- Database Settings ---
+    POSTGRES_DB=ainews_prod
+    POSTGRES_USER=prod_user # 建議使用不同於開發環境的用戶名
+    POSTGRES_PASSWORD=a_very_strong_and_unique_password # <<< 極度重要
+    # --- Flask Settings ---
+    SECRET_KEY=another_very_strong_random_secret_key # <<< 極度重要
+    # --- Worker Settings (如果使用) ---
+    # SCHEDULE_RELOAD_INTERVAL_SEC=1800
+    # --- Log Settings ---
+    LOG_LEVEL=INFO # 生產建議 INFO 或 WARNING
+    LOG_OUTPUT_MODE=both # 或 file
+    LOG_CLEANUP_LOG_DIR=logs
+    # LOG_CLEANUP_MODULE_NAME=""
+    LOG_CLEANUP_KEEP_DAYS=30 # 保留 30 天日誌
+    LOG_CLEANUP_DRY_RUN=false
+    # --- SQL settings ---
+    SQLALCHEMY_ECHO=False
+    # --- data locate setting ---
+    WEB_SITE_CONFIG_DIR=/app/data/web_site_configs #不可變更
+    ```
+4.  **啟動服務:**
+    *   在專案根目錄執行以下命令：
+        ```bash
+        docker-compose -f docker-compose.yml up -d --build
+        ```
+    *   此命令僅使用 `docker-compose.yml` (生產配置) 來啟動服務。
+    *   `--build` 會在啟動前重新建置 Docker 映像檔 (建議首次啟動或程式碼/依賴變更時使用)。
+    *   `migrate` 服務會先執行資料庫遷移，成功後 `web` 服務才會啟動。
+
+5.  **訪問:**
+    *   應用程式將在 `http://YOUR_SERVER_IP:8001`。
+    *   **強烈建議**在生產環境中配置反向代理 (如 Nginx) 來處理 HTTPS 加密、域名綁定和端口轉發，而不是直接暴露 `8001` 端口。
 
 **生產環境特性:**
 
-* 使用根目錄的 `Dockerfile` 建置 `web` 服務。
-* 僅安裝 `requirements.txt` 中的依賴 (注意：目前包含開發工具，建議分離)。
-* `FLASK_ENV=production`。
-* 依賴 `.env` 文件設定資料庫連接和 `SECRET_KEY`。
-* 程式碼包含在 Docker 映像檔中，不掛載本地目錄。
-* 使用 Gunicorn (`gunicorn --workers 4 --bind 0.0.0.0:8000 src.web.app:app`) 運行 Web 應用。
-* 資料庫端口**不**映射到主機。
-* Web 服務端口映射到主機 `8001`。
+*   使用根目錄的 `Dockerfile` 建置 `web` 和 `migrate` 服務。
+*   僅安裝 `requirements.txt` 中的依賴。
+*   `FLASK_ENV=production`。
+*   依賴 `.env` 文件設定資料庫連接和 `SECRET_KEY`。
+*   程式碼包含在 Docker 映像檔中，不掛載本地目錄。
+*   `migrate` 服務在 `web` 服務啟動前自動運行資料庫遷移。
+*   `web` 服務使用 Gunicorn (`gunicorn --workers 4 --bind 0.0.0.0:8000 src.web.app:app`) 運行。
+*   資料庫端口 (`db`) **不**映射到主機。
+*   Web 服務端口 (`web`) 映射到主機 `8001` (建議由反向代理處理)。
 
 ## 使用範例
 
@@ -553,41 +556,44 @@
 1.  **伺服器準備:**
     *   準備一台 Linux 伺服器 (建議 Ubuntu 或 CentOS)。
     *   安裝 Docker 和 Docker Compose。
-    *   確保防火牆允許目標端口 (預設 8001 或您配置的反向代理端口)。
+    *   確保防火牆允許目標端口 (例如 80, 443，如果您使用反向代理)。
 
 2.  **取得程式碼:**
     ```bash
     git clone https://github.com/Chengshouyi/AiNewsCollection.git
-    cd AiNewsCollection
+    cd AiNewsCollection # 將 AiNewsCollection 替換為您的實際倉庫目錄名稱
     ```
 
-3. **配置 `.env` 文件 (非常重要):**
+3.  **配置 `.env` 文件 (非常重要):**
     *   複製 `.env.example` 為 `.env`。
     *   編輯 `.env` 文件，填寫**安全且唯一**的生產環境配置，特別是：
         *   `POSTGRES_PASSWORD`: 設定強密碼。
         *   `SECRET_KEY`: 設定複雜且隨機的金鑰。
-        *   根據需求調整 `LOG_LEVEL`, `LOG_OUTPUT_MODE`, `LOG_CLEANUP_KEEP_DAYS` 等日誌設定。
+        *   根據需求調整日誌、資料庫名稱等其他設定。
         *   **切勿將 `.env` 文件提交到版本控制系統!**
 
-4. **啟動服務:**
+4.  **啟動服務:**
     ```bash
-    docker-compose up -d
+    # 確保在專案根目錄
+    docker-compose -f docker-compose.yml up -d --build
     ```
     *   此命令將使用 `docker-compose.yml` (生產配置) 啟動服務。
+    *   `--build` 確保使用最新的程式碼和依賴建置映像檔。
     *   `-d` 表示在後台運行。
+    *   **資料庫遷移會由 `migrate` 服務自動執行**，`web` 服務會在其成功後才啟動。
 
-5. **資料庫遷移:**
-    *   首次部署或資料庫模型有變更時，執行遷移：
+5.  **(可選) 手動執行資料庫遷移 (特殊情況):**
+    *   正常情況下，部署時遷移會自動進行。如果遇到問題或需要在服務運行後手動執行遷移：
         ```bash
-        docker-compose exec web alembic upgrade head
+        docker-compose -f docker-compose.yml exec migrate alembic upgrade head
         ```
 
-6. **(建議) 配置反向代理 (Nginx):**
+6.  **(強烈建議) 配置反向代理 (Nginx):**
     *   使用 Nginx 作為反向代理可以提供 HTTPS 加密、負載均衡 (如果需要擴展) 和更方便的端口管理。
     *   **範例 Nginx 配置 (`/etc/nginx/sites-available/ainews`):**
         ```nginx
         server {
-            listen 80; # 監聽 HTTP
+            listen 80;
             listen [::]:80;
             server_name your_domain.com www.your_domain.com; # 替換為您的域名
 
@@ -596,7 +602,7 @@
                 return 301 https://$host$request_uri;
             }
 
-            # (可選) Certbot ACME challenge
+            # (可選) Certbot ACME challenge 路徑
             location ~ /.well-known/acme-challenge/ {
                 allow all;
                 root /var/www/html; # 根據 Certbot 設定調整
@@ -604,7 +610,7 @@
         }
 
         server {
-            listen 443 ssl http2; # 監聽 HTTPS
+            listen 443 ssl http2;
             listen [::]:443 ssl http2;
             server_name your_domain.com www.your_domain.com; # 替換為您的域名
 
@@ -621,37 +627,44 @@
                 proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                 proxy_set_header X-Forwarded-Proto $scheme;
 
-                # WebSocket 支持 (如果需要)
+                # WebSocket 支持
                 proxy_http_version 1.1;
                 proxy_set_header Upgrade $http_upgrade;
                 proxy_set_header Connection "upgrade";
+                # 增加超時設定 (可選)
+                # proxy_connect_timeout 60s;
+                # proxy_send_timeout 60s;
+                # proxy_read_timeout 60s;
             }
         }
         ```
     *   啟用配置: `sudo ln -s /etc/nginx/sites-available/ainews /etc/nginx/sites-enabled/`
     *   測試配置: `sudo nginx -t`
     *   重載 Nginx: `sudo systemctl reload nginx`
-    *   使用 Certbot 獲取 SSL 憑證: `sudo certbot --nginx -d your_domain.com -d www.your_domain.com`
+    *   使用 Certbot 獲取 SSL 憑證: `sudo apt install certbot python3-certbot-nginx` (Debian/Ubuntu), 然後 `sudo certbot --nginx -d your_domain.com -d www.your_domain.com`
 
-7. **訪問:**
-    *   如果配置了 Nginx，透過 `https://your_domain.com` 訪問。
-    *   如果未配置 Nginx，透過 `http://YOUR_SERVER_IP:8001` 訪問 (不建議在生產環境直接暴露)。
+7.  **訪問:**
+    *   如果配置了 Nginx 和 HTTPS，透過 `https://your_domain.com` 訪問。
+    *   如果未配置 Nginx (不建議)，透過 `http://YOUR_SERVER_IP:8001` 訪問。
 
-8. **維護與更新:**
-    *   **更新程式碼:**
+8.  **維護與更新:**
+    *   **更新程式碼和依賴:**
         ```bash
-        cd AiNewsCollection
+        cd AiNewsCollection # 進入專案目錄
         git pull origin main # 或您的主分支
-        docker-compose down # 停止當前服務
-        docker-compose build # 重建映像檔 (如果 Dockerfile 或依賴有變更)
-        docker-compose up -d # 重新啟動服務
-        docker-compose exec web alembic upgrade head # 如果模型有變更
+        docker-compose -f docker-compose.yml build # 重建映像檔 (如果 Dockerfile 或依賴有變更)
+        # docker pull postgres:15 # 如果需要更新基礎映像檔
+        docker-compose -f docker-compose.yml up -d # 重新啟動服務 (會自動執行遷移)
+        # docker image prune -f # 清理舊的、未使用的映像檔 (可選)
         ```
     *   **查看日誌:**
         ```bash
-        docker-compose logs -f web # 查看 web 服務的即時日誌
-        docker-compose logs -f worker # 查看 worker 服務的即時日誌 (如果有的話)
+        docker-compose -f docker-compose.yml logs -f web # 查看 web 服務的即時日誌
+        # docker-compose logs -f worker # 如果有 worker 服務
+        docker-compose -f docker-compose.yml logs db # 查看 db 服務日誌
+        docker-compose -f docker-compose.yml logs migrate # 查看遷移服務日誌
         ```
+    *   **備份資料庫:** 建議定期備份 PostgreSQL 資料庫 volume (`postgres-data`) 或使用 `pg_dump`。
 
 ## 如何新增爬蟲
 
