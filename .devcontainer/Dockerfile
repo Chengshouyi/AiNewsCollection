@@ -51,3 +51,6 @@ WORKDIR /app
 # 複製 requirements 檔案 (dev container 會掛載整個目錄，但先複製可以利用快取)
 # 注意：這裡假設 requirements*.txt 在專案根目錄，而不是 .devcontainer 裡
 COPY --chown=vscode:vscode requirements.txt requirements-dev.txt ./
+
+# RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
+USER $USERNAME

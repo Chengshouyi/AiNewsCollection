@@ -28,10 +28,12 @@ from src.web.routes.crawler_api import crawler_bp
 from src.web.routes.tasks_api import tasks_bp
 from src.web.routes.views import view_bp
 from src.web.socket_instance import init_app, socketio
+from src.utils.log_utils import LoggerSetup
+
+# 配置日誌系統
+LoggerSetup.configure_logging(level=logging.INFO)
 
 # 配置日誌
-LoggerSetup.configure_logging()
-
 logger = logging.getLogger(__name__)
 logger.info("Logging configured for Flask application.")
 
@@ -153,7 +155,7 @@ def initialize_default_crawler():
 def main():
     """執行應用程式的主要初始化邏輯"""
     try:
-        cleanup_logger = LoggerSetup.setup_logger("log_cleanup_task") # 使用 setup_logger 獲取 logger
+        cleanup_logger = logging.getLogger("log_cleanup_task") # 使用 setup_logger 獲取 logger
 
         try:
             print("根據 .env 配置執行日誌清理...")
@@ -275,7 +277,7 @@ if __name__ == "__main__":
             host="::", # 允許來自所有 IPv4 和 IPv6 地址的連接
             port=5000,
             use_reloader=False, # 避免與背景執行緒衝突
-            allow_unsafe_werkzeug=True, # 在某些情況下 debug 模式需要
+            allow_unsafe_werkzeug=True # 在某些情況下 debug 模式需要
         )
 
     except Exception as e:

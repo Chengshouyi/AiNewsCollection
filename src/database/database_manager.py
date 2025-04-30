@@ -47,7 +47,7 @@ class DatabaseManager:
                     "DATABASE_URL environment variable is not set."
                 )
 
-            logger.info("DatabaseManager initializing with URL: %s", self.database_url)
+            logger.debug("DatabaseManager initializing with URL: %s", self.database_url)
             echo_str = os.environ.get("SQLALCHEMY_ECHO", "False")
             if echo_str == "True":
                 echo = True
