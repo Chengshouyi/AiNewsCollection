@@ -168,18 +168,10 @@ function setupWebSocket() {
         // 標記任務完成，傳入會話ID以便在需要時使用
         markTaskAsFinished(taskId, data.status, sessionId);
 
-        // 可以選擇性地從房間離開
-        // 如果有會話ID，應該包含在房間名稱中
-        if (sessionId) {
-            const roomName = `task_${taskId}_${sessionId}`;
-            socket.emit('leave_room', { 'room': roomName });
-            console.log(`離開房間: ${roomName}`);
-        } else {
-            // 向下兼容：如果沒有會話ID，使用舊的命名方式
-            const roomName = `task_${taskId}`;
-            socket.emit('leave_room', { 'room': roomName });
-            console.log(`離開房間: ${roomName}`);
-        }
+        // 修改：只離開基本房間名稱，因為這是我們實際加入的房間
+        const roomName = `task_${taskId}`;
+        socket.emit('leave_room', { 'room': roomName });
+        console.log(`離開房間: ${roomName}`);
     });
 
     socket.on('links_fetched', function (data) {
@@ -374,11 +366,9 @@ function loadTasks() {
             // 檢查響應結構
             let taskList = [];
             if (response.data) {
-                // 正確的響應結構：{ "success": true, "message": "...", "data": [...] }
                 taskList = response.data;
                 console.log('從response.data獲取任務列表，數量：', taskList.length);
             } else if (Array.isArray(response)) {
-                // 兼容其他可能的響應結構
                 taskList = response;
                 console.log('從response數組獲取任務列表，數量：', taskList.length);
             } else {
@@ -393,6 +383,18 @@ function loadTasks() {
                 // 有任務時隱藏提示框
                 $('#no-tasks-alert').addClass('d-none');
                 renderTasksTable(tasks);
+                
+                // 新增：重新加入所有任務的 rooms
+                if (socket && socket.connected) {
+                    console.log('重新加入所有任務的 rooms...');
+                    tasks.forEach(task => {
+                        const roomName = `task_${task.id}`;
+                        console.log(`加入房間: ${roomName}`);
+                        socket.emit('join_room', { 'room': roomName });
+                    });
+                } else {
+                    console.warn('Socket 未連接，無法加入 rooms');
+                }
             } else {
                 // 無任務時顯示提示框並渲染空表格
                 $('#no-tasks-alert').removeClass('d-none');

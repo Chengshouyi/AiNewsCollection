@@ -3,16 +3,21 @@
 初始化 Flask 應用、SocketIO、註冊藍圖、設定事件處理程序，
 並管理應用程式生命週期，包括初始化服務和排程任務。
 """
+import eventlet
+eventlet.monkey_patch()
+
 # 標準函式庫
 import os
 import sys
 import threading
 import time
 import logging
+import datetime
+
 
 # 第三方函式庫
 from dotenv import load_dotenv
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_socketio import join_room, leave_room
 
 # 本地應用程式 imports
@@ -39,29 +44,31 @@ logger.info("Logging configured for Flask application.")
 
 load_dotenv()
 
-
-app = Flask(__name__)
-app.config["SECRET_KEY"] = os.environ.get(
-    "SECRET_KEY", "a_default_secret_key_for_dev_if_needed"
-)
-
-init_app(app)
-
-app.register_blueprint(crawler_bp)
-app.register_blueprint(tasks_bp)
-app.register_blueprint(article_bp)
-app.register_blueprint(view_bp)
-
+# 新增一個字典來追蹤客戶端的房間
+client_rooms = {}
 
 @socketio.on("connect", namespace="/tasks")
 def handle_tasks_connect():
-    logger.info("Client connected to /tasks namespace")
-
+    try:
+        logger.info("Client connected to /tasks namespace")
+        client_rooms[request.sid] = set()  # 初始化該客戶端的房間集合
+    except Exception as e:
+        logger.error(f"處理客戶端連接時發生錯誤: {e}")
 
 @socketio.on("disconnect", namespace="/tasks")
-def handle_tasks_disconnect():
-    logger.info("Client disconnected from /tasks namespace")
-
+def handle_tasks_disconnect(reason=None):
+    try:
+        sid = request.sid
+        if sid in client_rooms:
+            # 從所有已加入的房間中離開
+            for room in client_rooms[sid]:
+                leave_room(room)
+                logger.info(f"Client left room during disconnect: {room}")
+            # 清理客戶端房間記錄
+            del client_rooms[sid]
+        logger.info(f"Client disconnected from /tasks namespace. Reason: {reason}")
+    except Exception as e:
+        logger.error(f"處理客戶端斷開連接時發生錯誤: {e}")
 
 @socketio.on("join_room", namespace="/tasks")
 def handle_join_room(data):
@@ -69,10 +76,14 @@ def handle_join_room(data):
     room = data.get("room")
     if room:
         join_room(room)
+        # 記錄客戶端加入的房間
+        sid = request.sid
+        if sid not in client_rooms:
+            client_rooms[sid] = set()
+        client_rooms[sid].add(room)
         logger.info("Client joined room: %s", room)
     else:
         logger.warning("Join room request received without room specified.")
-
 
 @socketio.on("leave_room", namespace="/tasks")
 def handle_leave_room(data):
@@ -80,44 +91,21 @@ def handle_leave_room(data):
     room = data.get("room")
     if room:
         leave_room(room)
+        # 從記錄中移除房間
+        sid = request.sid
+        if sid in client_rooms:
+            client_rooms[sid].discard(room)
         logger.info("Client left room: %s", room)
     else:
         logger.warning("Leave room request received without room specified.")
 
 
-@app.route("/debug/routes")
-def list_routes():
-    """列出所有已註冊的 Flask 路由，用於調試"""
-    routes = []
-    for rule in app.url_map.iter_rules():
-        routes.append(
-            {
-                "endpoint": rule.endpoint,
-                "methods": list(rule.methods or set()),
-                "route": str(rule),
-            }
-        )
-    return jsonify(routes)
-
-
-@app.teardown_appcontext
-def shutdown_session(exception=None):
-    """在應用程式上下文銷毀時清理資料庫資源"""
-    db_manager = get_db_manager()
-    if db_manager:
-        try:
-            db_manager.cleanup()
-            logger.info("資料庫管理器資源已清理 (teardown_appcontext)")
-        except Exception as e:
-            logger.error(
-                "清理資料庫管理器時發生錯誤 (teardown_appcontext): %s", e, exc_info=True
-            )
-
-
 def initialize_default_crawler():
     """初始化默認的爬蟲數據，如果不存在則創建"""
+    logger.info("開始初始化默認爬蟲...")
     try:
         crawlers_service = get_crawlers_service()
+        logger.info("已獲取 crawlers_service")
 
         default_crawler = {
             "crawler_name": "BnextCrawler",
@@ -128,6 +116,7 @@ def initialize_default_crawler():
             "config_file_name": "bnext_crawler_config.json",
         }
 
+        logger.info("正在檢查默認爬蟲是否存在...")
         existing_crawler_result = crawlers_service.get_crawler_by_exact_name(
             default_crawler["crawler_name"]
         )
@@ -136,6 +125,7 @@ def initialize_default_crawler():
             not existing_crawler_result["success"]
             or existing_crawler_result["crawler"] is None
         ):
+            logger.info("默認爬蟲不存在，開始創建...")
             result = crawlers_service.create_crawler(default_crawler)
             if result["success"]:
                 logger.info(
@@ -152,77 +142,75 @@ def initialize_default_crawler():
         logger.error("初始化默認爬蟲時發生錯誤: %s", e, exc_info=True)
 
 
-def main():
-    """執行應用程式的主要初始化邏輯"""
+def init_application():
+    """應用程式初始化，適用於所有環境（開發和生產）"""
+    logger.info("開始初始化應用程式...")
     try:
-        cleanup_logger = logging.getLogger("log_cleanup_task") # 使用 setup_logger 獲取 logger
-
+        # 清理日誌
+        cleanup_logger = logging.getLogger("log_cleanup_task")
         try:
-            print("根據 .env 配置執行日誌清理...")
-            # 直接調用，函數內部會讀取 .env
-            deleted_list = LoggerSetup.cleanup_logs(logger=cleanup_logger)
-
-            # 你仍然可以用參數覆蓋 .env 的設置
-            # print("\n強制執行 Dry Run 清理 'specific_module' 5天前的日誌:")
-            # LoggerSetup.cleanup_logs(
-            #     module_name="specific_module",
-            #     keep_days=5,
-            #     dry_run=True, # 覆蓋 .env 中的 LOG_CLEANUP_DRY_RUN
-            #     logger=cleanup_logger
-            # )
-
+            logger.info("執行日誌清理...")
+            LoggerSetup.cleanup_logs(logger=cleanup_logger)
         except Exception as e:
             cleanup_logger.error(f"日誌清理任務失敗: {e}", exc_info=True)
+
+        # 啟動排程器
         try:
             scheduler = get_scheduler_service()
             scheduler_result = scheduler.start_scheduler()
             if scheduler_result.get("success"):
-                logger.info(
-                    "排程器已成功啟動: %s", scheduler_result.get('message')
-                )
+                logger.info("排程器已成功啟動: %s", scheduler_result.get('message'))
             else:
-                logger.error(
-                    "啟動排程器失敗: %s", scheduler_result.get('message')
-                )
+                logger.error("啟動排程器失敗: %s", scheduler_result.get('message'))
         except Exception as e:
             logger.error("啟動排程器時發生未預期錯誤: %s", e, exc_info=True)
-            # 如果需要在排程器啟動失敗時阻止應用程式啟動，可以取消註解下一行
-            # raise e
 
-        initialize_default_crawler()
+        # 啟動背景執行緒來定期重新載入排程
+        scheduler_thread = threading.Thread(target=run_scheduled_tasks, daemon=True)
+        scheduler_thread.start()
+        logger.info("已啟動背景排程重新載入執行緒")
 
-        logger.info("主程序初始化完成")
+        # 修改 Socket.IO 配置
+        if not socketio.server:
+            socketio.init_app(
+                app,
+                async_mode='eventlet',
+                ping_timeout=60,  # 增加 ping 超時時間
+                ping_interval=25,  # 調整 ping 間隔
+                cors_allowed_origins="*",  # 如果需要跨域支持
+                manage_session=False  # 讓 Flask 管理會話
+            )
+            logger.info("Socket.IO 已初始化 (async_mode: eventlet)")
+
+        logger.info("應用程式初始化完成")
 
     except Exception as e:
-        logger.error("初始化失敗: %s", e, exc_info=True)
-        # 在初始化失敗時嘗試清理資源
-        try:
-            scheduler = get_scheduler_service()
-            scheduler.stop_scheduler()
-        except Exception as se:
-            logger.error(
-                "初始化失敗後停止排程器時發生錯誤: %s", se, exc_info=True
-            )
-        try:
-            ServiceContainer.clear_instances()
-        except Exception as ce:
-            logger.error(
-                "初始化失敗後清理服務實例時發生錯誤: %s", ce, exc_info=True
-            )
-
-        db_manager = get_db_manager()
-        if db_manager:
-            try:
-                db_manager.cleanup()
-                logger.info("資料庫管理器資源已清理 (初始化失敗清理)")
-            except Exception as dbe:
-                logger.error(
-                    "初始化失敗後清理資料庫管理器時發生錯誤: %s",
-                    dbe,
-                    exc_info=True,
-                )
-        # 初始化失敗通常意味著無法繼續，所以重新拋出異常
+        logger.error("應用程式初始化失敗: %s", e, exc_info=True)
+        cleanup_resources()
         raise
+
+
+def cleanup_resources():
+    """清理應用程式資源"""
+    try:
+        scheduler = get_scheduler_service()
+        scheduler.stop_scheduler()
+    except Exception as se:
+        logger.error("停止排程器時發生錯誤: %s", se, exc_info=True)
+    
+    try:
+        ServiceContainer.clear_instances()
+    except Exception as ce:
+        logger.error("清理服務實例時發生錯誤: %s", ce, exc_info=True)
+
+    # 只在真正需要時清理資料庫連接
+    db_manager = get_db_manager()
+    if db_manager and hasattr(db_manager, 'cleanup'):
+        try:
+            db_manager.cleanup()
+            logger.info("資料庫管理器資源已清理")
+        except Exception as dbe:
+            logger.error("清理資料庫管理器時發生錯誤: %s", dbe, exc_info=True)
 
 
 def run_scheduled_tasks():
@@ -260,27 +248,115 @@ def run_scheduled_tasks():
             time.sleep(60)
 
 
-if __name__ == "__main__":
-    logger.info("開始執行主程序...")
+def main():
+    """開發環境下的應用程式入口點"""
     try:
-        main()
-
-        # 啟動背景執行緒來定期重新載入排程
-        scheduler_thread = threading.Thread(target=run_scheduled_tasks, daemon=True)
-        scheduler_thread.start()
-        logger.info("已啟動背景排程重新載入執行緒")
-
         # 啟動 Flask 開發伺服器 (由 SocketIO 包裝)
         socketio.run(
             app,
             debug=True,
-            host="::", # 允許來自所有 IPv4 和 IPv6 地址的連接
+            host="::",
             port=5000,
-            use_reloader=False, # 避免與背景執行緒衝突
-            allow_unsafe_werkzeug=True # 在某些情況下 debug 模式需要
+            use_reloader=False,
+            allow_unsafe_werkzeug=True
         )
-
     except Exception as e:
         logger.critical("主程式執行期間發生無法處理的錯誤: %s", e, exc_info=True)
-        # 在嚴重錯誤時，可以考慮執行更徹底的清理或退出
+        cleanup_resources()
         sys.exit(1)
+
+app = Flask(__name__)
+app.config["SECRET_KEY"] = os.environ.get(
+    "SECRET_KEY", "a_default_secret_key_for_dev_if_needed"
+)
+
+init_app(app)
+
+# 初始化爬蟲和應用程式
+initialize_default_crawler()
+init_application()
+
+app.register_blueprint(crawler_bp)
+app.register_blueprint(tasks_bp)
+app.register_blueprint(article_bp)
+app.register_blueprint(view_bp)
+
+
+@app.route("/health")
+def health_check():
+    """健康檢查端點"""
+    scheduler_service = get_scheduler_service()
+    db_manager = get_db_manager()
+    
+    # 檢查數據庫連接
+    db_healthy = False
+    try:
+        db_manager.get_session()  # 嘗試獲取數據庫會話
+        db_healthy = True
+    except Exception as e:
+        logger.error(f"數據庫健康檢查失敗: {e}")
+
+    status = {
+        "status": "healthy",
+        "components": {
+            "socketio": {
+                "running": bool(socketio.server),
+                "connected_clients": len(socketio.server.eio.sockets) if socketio.server else 0
+            },
+            "scheduler": {
+                "running": bool(scheduler_service.is_running()),
+                "next_run": scheduler_service.get_next_run_time() if scheduler_service.is_running() else None
+            },
+            "database": {
+                "connected": db_healthy
+            }
+        },
+        "timestamp": datetime.datetime.now().isoformat()
+    }
+    
+    # 如果任何關鍵組件不健康，更新整體狀態
+    if not all([
+        status["components"]["socketio"]["running"],
+        status["components"]["scheduler"]["running"],
+        status["components"]["database"]["connected"]
+    ]):
+        status["status"] = "unhealthy"
+        return jsonify(status), 503  # 返回 503 Service Unavailable
+    
+    return jsonify(status)
+
+
+@app.route("/debug/routes")
+def list_routes():
+    """列出所有已註冊的 Flask 路由，用於調試"""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        routes.append(
+            {
+                "endpoint": rule.endpoint,
+                "methods": list(rule.methods or set()),
+                "route": str(rule),
+            }
+        )
+    return jsonify(routes)
+
+
+@app.teardown_appcontext
+def shutdown_session(exception=None):
+    """在應用程式上下文銷毀時清理資料庫資源"""
+    if exception:
+        logger.error(f"應用程式上下文銷毀時發生錯誤: {exception}")
+    
+    db_manager = get_db_manager()
+    if db_manager and hasattr(db_manager, 'cleanup_session'):
+        try:
+            # 只清理會話，不釋放引擎
+            db_manager.cleanup_session()
+            logger.debug("資料庫會話已清理")
+        except Exception as e:
+            logger.error(f"清理資料庫會話時發生錯誤: {e}")
+
+
+if __name__ == "__main__":
+    logger.info("開始執行開發伺服器...")
+    main()
