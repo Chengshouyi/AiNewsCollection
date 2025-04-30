@@ -26,7 +26,6 @@ services:
       retries: 5
 
   migrate:
-    # <--- 確保 migrate 服務定義在這裡
     build:
       context: .
       dockerfile: Dockerfile # 使用生產環境的 Dockerfile
@@ -36,8 +35,8 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-ainews_user}:${POSTGRES_PASSWORD:-your_strong_password}@db:5432/${POSTGRES_DB:-ainews}
-    # 使用你選擇的 alembic 執行方式 (直接命令或絕對路徑)
-    command: [ "alembic", "upgrade", "head" ] # 假設生產 Dockerfile 已設定 PATH
+    entrypoint: []  # 覆蓋 Dockerfile 中的 ENTRYPOINT
+    command: alembic upgrade head
     restart: 'no'
     networks:
       - default
@@ -47,7 +46,8 @@ services:
       dockerfile: Dockerfile # 指定 Dockerfile 路徑
     container_name: ainews-web
     restart: unless-stopped
-    command: gunicorn --workers 4 --bind 0.0.0.0:8000 src.web.app:app # 生產環境指令
+    entrypoint: []  # 覆蓋 Dockerfile 中的 ENTRYPOINT
+    command: gunicorn --config gunicorn.conf.py --worker-class eventlet -w 4 'src.web.app:app'
     environment:
       - FLASK_ENV=production # 生產環境模式
       # --- 安全性警告 ---
@@ -67,6 +67,11 @@ services:
       - data-volume:/app/data # 將 data volume 掛載到容器的 /app/data
     networks:
       - default
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
   # 將來擴充微服務時會使用 
   # worker:
   #   build:
