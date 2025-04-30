@@ -177,7 +177,6 @@
 **其他值得注意的設計:**
 
 *   **依賴注入 (Dependency Injection):** 雖然沒有明確使用框架，但透過將 Repository 實例傳遞給 Service 的建構子 (或方法)，實現了基本的依賴注入概念，提高了可測試性 (可以 mock Repository)。(參見 `service_container.py` 的應用方式)
-*   **設定管理 (`src/config`):** 集中管理應用程式的設定，方便根據不同環境 (開發/生產) 調整。
 *   **錯誤處理 (`src/error`):** 定義了自訂的錯誤類別和處理機制，以提供更一致和友好的錯誤回饋。
 *   **介面定義 (`src/interface`):** 定義了如 `ProgressListener` 和 `ProgressReporter` 等抽象介面，實現觀察者模式來處理爬蟲進度回報，確保不同實作遵循一致的合約。`ProgressListener` 為抽象類別，定義了 `on_progress_update` 方法用於接收任務進度更新；`ProgressReporter` 則管理多個監聽者，並提供添加、移除、清除監聽者和通知進度等功能。
 
