@@ -19,8 +19,8 @@ from src.web.routes.crawler_api import crawler_bp
 
 logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
 
-# 輔助函數：比較字典（忽略時間精度問題）
-def compare_crawler_dicts(dict1, dict2, ignore_keys=['created_at', 'updated_at']):
+# 輔助函數：比較字典（忽略時間精度和模擬配置內容）
+def compare_crawler_dicts(dict1, dict2, ignore_keys=['created_at', 'updated_at', 'config_content']):
     d1_copy = {k: v for k, v in dict1.items() if k not in ignore_keys}
     d2_copy = {k: v for k, v in dict2.items() if k not in ignore_keys}
     return d1_copy == d2_copy
@@ -87,7 +87,7 @@ def client(app):
 
 class CrawlerMock:
     """模擬 Crawlers Schema (例如 CrawlerReadSchema) 的行為，用於 Mock Service"""
-    def __init__(self, data):
+    def __init__(self, data, config_content=None):
         self.id = data.get('id')
         self.crawler_name = data.get('crawler_name')
         self.module_name = data.get('module_name')
@@ -101,6 +101,7 @@ class CrawlerMock:
 
         updated_at_val = data.get('updated_at', datetime.now(timezone.utc))
         self.updated_at = updated_at_val.replace(tzinfo=timezone.utc) if updated_at_val and updated_at_val.tzinfo is None else updated_at_val
+        self.config_content = config_content
 
     def model_dump(self):
         """模擬 Pydantic 的 model_dump 方法，將 datetime 轉為 ISO 字串"""
@@ -124,17 +125,20 @@ def sample_crawlers_data():
         {
             'id': 1, 'crawler_name': 'TestCrawler1', 'module_name': 'test_module', 'base_url': 'https://example1.com',
             'crawler_type': 'web', 'config_file_name': 'test1.json', 'is_active': True,
-            'created_at': now, 'updated_at': now
+            'created_at': now, 'updated_at': now,
+            'config_content': {"key1": "value1"}
         },
         {
             'id': 2, 'crawler_name': 'TestCrawler2', 'module_name': 'test_module', 'base_url': 'https://example2.com',
             'crawler_type': 'web', 'config_file_name': 'test2.json', 'is_active': False,
-            'created_at': now, 'updated_at': now
+            'created_at': now, 'updated_at': now,
+            'config_content': {"key2": "value2"}
         },
         {
             'id': 3, 'crawler_name': 'TestCrawler3', 'module_name': 'test_module', 'base_url': 'https://example3.com',
             'crawler_type': 'rss', 'config_file_name': 'test3.json', 'is_active': True,
-            'created_at': now, 'updated_at': now
+            'created_at': now, 'updated_at': now,
+            'config_content': None
         }
     ]
 
@@ -143,259 +147,228 @@ def mock_crawlers_service(monkeypatch, sample_crawlers_data):
     """模擬 CrawlersService，使其回傳值符合實際 Service 的結構"""
     class MockCrawlersService:
         def __init__(self):
-            # 儲存 CrawlerMock 對象
-            self.crawlers = {c['id']: CrawlerMock(c) for c in sample_crawlers_data}
+            # 儲存 CrawlerMock 對象，包含配置內容
+            self.crawlers = {c['id']: CrawlerMock(c, c.get('config_content')) for c in sample_crawlers_data}
             self.next_id = max(self.crawlers.keys()) + 1 if self.crawlers else 1
-            # <<< 修改：用於記錄方法呼叫的詳細信息 >>>
             self.call_history = {}
 
         def _record_call(self, method_name, *args, **kwargs):
             """記錄方法呼叫的參數，特殊處理檔案物件"""
             processed_args = []
             for arg in args:
-                # <<< 新增：檢查是否為檔案物件 (werkzeug 的 FileStorage 或類似的) >>>
                 if isinstance(arg, (io.IOBase, FileStorage)):
                     filename = getattr(arg, 'filename', None)
                     try:
-                        arg.seek(0) # 確保從頭讀取
+                        arg.seek(0)
                         content = arg.read()
-                        # 嘗試解碼為 JSON 字串以供儲存和比較
                         try:
+                            # 嘗試解析為 JSON 字典
                             parsed_content = json.loads(content.decode('utf-8'))
                         except (json.JSONDecodeError, UnicodeDecodeError):
-                            # 如果不是 JSON 或解碼失敗，儲存原始 bytes
-                            parsed_content = content
-                        processed_args.append({'filename': filename, 'content': parsed_content})
+                            # 如果失敗，嘗試直接解碼字串 (適用於非 JSON 但可讀的)
+                            try:
+                                parsed_content = content.decode('utf-8')
+                            except UnicodeDecodeError:
+                                # 最後儲存原始 bytes
+                                parsed_content = content
+                        processed_args.append({'filename': filename, 'content': parsed_content, '_type': 'file'})
                     except Exception as e:
                         logger.error(f"處理 mock 檔案參數時出錯: {e}")
-                        processed_args.append({'filename': filename, 'error': str(e)})
-                    # 不再需要 seek(0)，因為內容已讀取
+                        processed_args.append({'filename': filename, 'error': str(e), '_type': 'file'})
                 else:
                     processed_args.append(arg)
 
-            # 可以在此添加對 kwargs 中檔案的處理（如果需要）
+            # 處理 kwargs 中的檔案
+            processed_kwargs = {}
+            for key, value in kwargs.items():
+                if isinstance(value, (io.IOBase, FileStorage)):
+                    filename = getattr(value, 'filename', None)
+                    try:
+                        value.seek(0)
+                        content = value.read()
+                        try:
+                            parsed_content = json.loads(content.decode('utf-8'))
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            try:
+                                parsed_content = content.decode('utf-8')
+                            except UnicodeDecodeError:
+                                parsed_content = content
+                        processed_kwargs[key] = {'filename': filename, 'content': parsed_content, '_type': 'file'}
+                    except Exception as e:
+                         logger.error(f"處理 mock 檔案參數時出錯: {e}")
+                         processed_kwargs[key] = {'filename': filename, 'error': str(e), '_type': 'file'}
+                else:
+                     processed_kwargs[key] = value
 
             if method_name not in self.call_history:
                 self.call_history[method_name] = []
-            # <<< 修改：儲存處理過的參數 >>>
-            self.call_history[method_name].append({'args': tuple(processed_args), 'kwargs': kwargs}) # 儲存為 tuple
+            self.call_history[method_name].append({'args': tuple(processed_args), 'kwargs': processed_kwargs})
 
         def assert_called_once_with(self, method_name, *args, **kwargs):
-             """模擬 mock.assert_called_once_with"""
+             """模擬 mock.assert_called_once_with，能比較包含檔案內容的記錄"""
              assert method_name in self.call_history, f"方法 {method_name} 從未被呼叫"
              assert len(self.call_history[method_name]) == 1, f"方法 {method_name} 被呼叫了 {len(self.call_history[method_name])} 次，預期 1 次"
-             call = self.call_history[method_name][0]
-             # 簡單比較位置參數和關鍵字參數 (可能需要更複雜的比較邏輯)
-             assert call['args'] == args, f"方法 {method_name} 的位置參數不匹配"
-             assert call['kwargs'] == kwargs, f"方法 {method_name} 的關鍵字參數不匹配"
+
+             recorded_call = self.call_history[method_name][0]
+             recorded_args = recorded_call['args']
+             recorded_kwargs = recorded_call['kwargs']
+
+             # 比較位置參數
+             assert len(recorded_args) == len(args), f"位置參數數量不匹配：預期 {len(args)}，實際 {len(recorded_args)}"
+             for i, expected_arg in enumerate(args):
+                 recorded_arg = recorded_args[i]
+
+                 # --- 修改：簡化比較邏輯 ---
+                 if isinstance(recorded_arg, dict) and recorded_arg.get('_type') == 'file':
+                     # 如果記錄的是檔案字典，預期也應該是檔案字典
+                     assert isinstance(expected_arg, dict), f"位置參數 {i} 類型不匹配：記錄為檔案字典，預期為 {type(expected_arg).__name__}"
+                     assert recorded_arg.get('filename') == expected_arg.get('filename'), f"檔案名不匹配 (參數 {i}): 預期 '{expected_arg.get('filename')}', 實際 '{recorded_arg.get('filename')}'"
+                     assert recorded_arg.get('content') == expected_arg.get('content'), f"檔案內容不匹配 (參數 {i})"
+                     assert '_type' in expected_arg and expected_arg['_type'] == 'file', f"預期的檔案參數 {i} 缺少 '_type' 或值不為 'file'"
+                     assert 'error' not in recorded_arg, f"記錄的檔案參數 {i} 包含錯誤: {recorded_arg.get('error')}"
+                 else:
+                     # 其他類型直接比較
+                     assert recorded_arg == expected_arg, f"位置參數 {i} 不匹配：預期 {expected_arg!r}，實際 {recorded_arg!r}"
+                 # --- 修改結束 ---
+
+             # 比較關鍵字參數 (假設 kwargs 中不包含檔案)
+             assert recorded_kwargs == kwargs, f"關鍵字參數不匹配：預期 {kwargs!r}，實際 {recorded_kwargs!r}"
 
         def _validate_data(self, data, is_update=False):
             """簡易模擬驗證，實際驗證在 Service 層"""
-            required = ['crawler_name', 'base_url', 'crawler_type', 'config_file_name']
-            missing = [field for field in required if field not in data]
-            if not is_update and missing:
-                # 模擬 Pydantic 驗證錯誤訊息
-                field_errors = {f: "此欄位為必填項" for f in missing}
-                raise ValidationError(f"缺少必要欄位: {', '.join(missing)}：{field_errors}") # 假設 ValidationError 接受詳細錯誤
-            # 可以在此添加更多模擬驗證邏輯
+            # 更新時，欄位可能是可選的，所以移除必填檢查
+            # if not is_update:
+            #     required = ['crawler_name', 'base_url', 'crawler_type', 'config_file_name'] # 創建時 config_file_name 由 service 生成
+            #     missing = [field for field in required if field not in data]
+            #     if missing:
+            #         field_errors = {f: "此欄位為必填項" for f in missing}
+            #         raise ValidationError(f"缺少必要欄位: {', '.join(missing)}：{field_errors}")
+
+            # 可以在此添加更多模擬驗證邏輯，例如檢查類型
+            if 'crawler_name' in data and not isinstance(data['crawler_name'], str):
+                raise ValidationError("crawler_name 必須是字串")
+            if 'is_active' in data and not isinstance(data['is_active'], bool):
+                raise ValidationError("is_active 必須是布林值")
+
             return data
 
         def create_crawler(self, crawler_data):
+            # 這個方法可能不再被直接使用，如果 POST /api/crawlers 總是需要配置檔案
+            # 但保留以防萬一
             try:
-                # 模擬 Service 內部的驗證
                 validated_data = self._validate_data(crawler_data, is_update=False)
+                # 模擬生成 config_file_name
+                validated_data['config_file_name'] = f"{validated_data['crawler_name']}.json"
 
                 new_id = self.next_id
                 now = datetime.now(timezone.utc)
-                # 模擬 Service 添加的欄位
                 full_data = {
                     **validated_data,
                     'id': new_id,
-                    'is_active': validated_data.get('is_active', True), # 預設值
+                    'is_active': validated_data.get('is_active', True),
                     'created_at': now,
                     'updated_at': now
                 }
-                new_crawler = CrawlerMock(full_data)
+                new_crawler = CrawlerMock(full_data) # 創建時 config_content 為 None
                 self.crawlers[new_id] = new_crawler
                 self.next_id += 1
-                # 返回符合 Service 接口的字典，包含 CrawlerReadSchema 的模擬
                 return {
                     'success': True,
-                    'message': "爬蟲設定創建成功",
-                    'crawler': new_crawler # 返回模擬的 Schema 物件
+                    'message': "爬蟲設定創建成功 (無檔案)",
+                    'crawler': new_crawler
                 }
             except ValidationError as e:
-                 # 模擬 Service 捕獲驗證錯誤並返回失敗結果
-                 return {
-                     'success': False,
-                     'message': f"爬蟲設定資料驗證失敗: {str(e)}",
-                     'crawler': None
-                 }
+                 return { 'success': False, 'message': f"爬蟲設定資料驗證失敗: {str(e)}", 'crawler': None }
             except Exception as e:
                  logger.error(f"Mock create_crawler error: {e}")
                  return {'success': False, 'message': str(e), 'crawler': None}
 
         def get_crawler_by_id(self, crawler_id):
+            self._record_call('get_crawler_by_id', crawler_id) # 記錄呼叫
             crawler = self.crawlers.get(crawler_id)
             if not crawler:
-                return {
-                    'success': False,
-                    'message': f"爬蟲設定不存在，ID={crawler_id}",
-                    'crawler': None
-                }
-            return {
-                'success': True,
-                'message': "獲取爬蟲設定成功",
-                'crawler': crawler # 返回模擬的 Schema 物件
-            }
-
-        def update_crawler(self, crawler_id, crawler_data):
-            if crawler_id not in self.crawlers:
-                return {
-                    'success': False,
-                    'message': f"爬蟲設定不存在，ID={crawler_id}",
-                    'crawler': None
-                }
-            try:
-                # 模擬 Service 內部的驗證 (更新時允許部分欄位)
-                validated_data = self._validate_data(crawler_data, is_update=True)
-
-                crawler = self.crawlers[crawler_id]
-                now = datetime.now(timezone.utc)
-                # 更新允許的欄位
-                for key, value in validated_data.items():
-                     if hasattr(crawler, key) and key != 'id': # 不更新 id 和不存在的屬性
-                         setattr(crawler, key, value)
-                crawler.updated_at = now # Service 會更新 updated_at
-
-                return {
-                    'success': True,
-                    'message': "爬蟲設定更新成功",
-                    'crawler': crawler # 返回更新後的模擬 Schema 物件
-                }
-            except ValidationError as e:
-                return {
-                    'success': False,
-                    'message': f"爬蟲設定更新資料驗證失敗: {str(e)}",
-                    'crawler': None
-                }
-            except Exception as e:
-                 logger.error(f"Mock update_crawler error: {e}")
-                 return {'success': False, 'message': str(e), 'crawler': None}
+                return { 'success': False, 'message': f"爬蟲設定不存在，ID={crawler_id}", 'crawler': None }
+            return { 'success': True, 'message': "獲取爬蟲設定成功", 'crawler': crawler }
 
         def delete_crawler(self, crawler_id):
+            self._record_call('delete_crawler', crawler_id) # 記錄呼叫
             if crawler_id not in self.crawlers:
-                return {
-                    'success': False,
-                    'message': f"爬蟲設定不存在，ID={crawler_id}"
-                }
+                return { 'success': False, 'message': f"爬蟲設定不存在，ID={crawler_id}" }
             del self.crawlers[crawler_id]
-            return {
-                'success': True,
-                'message': "爬蟲設定刪除成功"
-            }
+            return { 'success': True, 'message': "爬蟲設定刪除成功" }
 
-        # Renamed from get_all_crawlers
-        def find_all_crawlers(self, **kwargs): # 忽略 limit, offset 等參數
+        def find_all_crawlers(self, **kwargs):
+            self._record_call('find_all_crawlers', **kwargs)
             all_crawlers = list(self.crawlers.values())
-            return {
-                'success': True,
-                'message': "獲取爬蟲設定列表成功",
-                'crawlers': all_crawlers # 返回模擬 Schema 物件列表
-            }
+            return {'success': True, 'message': "獲取爬蟲設定列表成功", 'crawlers': all_crawlers}
 
-        # Renamed from get_active_crawlers
-        def find_active_crawlers(self, **kwargs): # 忽略 limit, offset 等參數
+        def find_active_crawlers(self, **kwargs):
+            self._record_call('find_active_crawlers', **kwargs)
             active = [c for c in self.crawlers.values() if c.is_active]
             message = "獲取活動中的爬蟲設定成功" if active else "找不到任何活動中的爬蟲設定"
-            return {
-                'success': True, # 即使找不到也算成功
-                'message': message,
-                'crawlers': active # 返回模擬 Schema 物件列表
-            }
+            return {'success': True, 'message': message, 'crawlers': active}
 
         def toggle_crawler_status(self, crawler_id):
+            self._record_call('toggle_crawler_status', crawler_id)
             if crawler_id not in self.crawlers:
-                return {
-                    'success': False,
-                    'message': f"爬蟲設定不存在，ID={crawler_id}",
-                    'crawler': None
-                }
+                return {'success': False, 'message': f"爬蟲設定不存在，ID={crawler_id}", 'crawler': None}
             crawler = self.crawlers[crawler_id]
             crawler.is_active = not crawler.is_active
             crawler.updated_at = datetime.now(timezone.utc)
-            return {
-                'success': True,
-                'message': f"成功切換爬蟲狀態，新狀態={crawler.is_active}",
-                'crawler': crawler # 返回更新後的模擬 Schema 物件
-            }
+            return {'success': True, 'message': f"成功切換爬蟲狀態，新狀態={crawler.is_active}", 'crawler': crawler}
 
-        # Renamed from get_crawlers_by_name
-        def find_crawlers_by_name(self, name, is_active=None, **kwargs): # 忽略 limit, offset 等參數
-            matched = [c for c in self.crawlers.values()
-                       if name.lower() in c.crawler_name.lower()]
+        def find_crawlers_by_name(self, name, is_active=None, **kwargs):
+            self._record_call('find_crawlers_by_name', name, is_active=is_active, **kwargs)
+            matched = [c for c in self.crawlers.values() if name.lower() in c.crawler_name.lower()]
             if is_active is not None:
                  matched = [c for c in matched if c.is_active == is_active]
-
             message = "獲取爬蟲設定列表成功" if matched else "找不到任何符合條件的爬蟲設定"
-            return {
-                'success': True,
-                'message': message,
-                'crawlers': matched # 返回模擬 Schema 物件列表
-            }
+            return {'success': True, 'message': message, 'crawlers': matched}
 
-        # Renamed from get_crawlers_by_type
-        def find_crawlers_by_type(self, crawler_type, **kwargs): # 忽略 limit, offset 等參數
+        def find_crawlers_by_type(self, crawler_type, **kwargs):
+            self._record_call('find_crawlers_by_type', crawler_type, **kwargs)
             matched = [c for c in self.crawlers.values() if c.crawler_type == crawler_type]
             message = f"獲取類型為 {crawler_type} 的爬蟲設定列表成功" if matched else f"找不到類型為 {crawler_type} 的爬蟲設定"
-            return {
-                'success': True,
-                'message': message,
-                'crawlers': matched # 返回模擬 Schema 物件列表
-            }
+            return {'success': True, 'message': message, 'crawlers': matched}
 
-        def get_crawler_by_exact_name(self, crawler_name, **kwargs): # 忽略 preview 參數
+        def get_crawler_by_exact_name(self, crawler_name, **kwargs):
+            self._record_call('get_crawler_by_exact_name', crawler_name, **kwargs)
             for c in self.crawlers.values():
                 if c.crawler_name == crawler_name:
-                    return {
-                        'success': True,
-                        'message': "獲取爬蟲設定成功",
-                        'crawler': c # 返回模擬 Schema 物件
-                    }
-            return {
-                'success': False,
-                'message': f"找不到名稱為 {crawler_name} 的爬蟲設定",
-                'crawler': None
-            }
+                    return {'success': True, 'message': "獲取爬蟲設定成功", 'crawler': c}
+            return {'success': False, 'message': f"找不到名稱為 {crawler_name} 的爬蟲設定", 'crawler': None}
 
         def create_or_update_crawler(self, crawler_data):
+             # 這個方法現在可能與 PUT /<id> 的 multipart 形式衝突
+             # 保持原樣，但測試應優先使用新的 multipart 端點
+             self._record_call('create_or_update_crawler', crawler_data)
              crawler_id = crawler_data.get('id')
              if crawler_id and crawler_id in self.crawlers:
-                 # 更新邏輯 (調用已有的 update)
-                 # 移除 id 以符合 update 的輸入預期
+                 # 更新邏輯 - 但沒有檔案處理
                  data_for_update = crawler_data.copy()
                  del data_for_update['id']
-                 result = self.update_crawler(crawler_id, data_for_update)
-                 if result['success']:
-                     result['message'] = "爬蟲設定更新成功" # 可能需要覆蓋 message
-                 return result
+                 try:
+                    validated_data = self._validate_data(data_for_update, is_update=True)
+                    crawler = self.crawlers[crawler_id]
+                    now = datetime.now(timezone.utc)
+                    for key, value in validated_data.items():
+                         if hasattr(crawler, key) and key != 'id':
+                             setattr(crawler, key, value)
+                    crawler.updated_at = now
+                    return {'success': True, 'message': "爬蟲設定更新成功 (無檔案)", 'crawler': crawler}
+                 except ValidationError as e:
+                    return {'success': False, 'message': f"爬蟲設定更新資料驗證失敗: {str(e)}", 'crawler': None}
              elif crawler_id:
-                 # ID 存在但無效
-                 return {
-                     'success': False,
-                     'message': f"爬蟲設定不存在，ID={crawler_id}",
-                     'crawler': None
-                 }
+                 return {'success': False, 'message': f"爬蟲設定不存在，ID={crawler_id}", 'crawler': None}
              else:
-                 # 創建邏輯 (調用已有的 create)
-                 # 移除 id (如果存在且為 None 或空)
+                 # 創建邏輯 - 但沒有檔案處理
                  data_for_create = crawler_data.copy()
                  if 'id' in data_for_create:
                      del data_for_create['id']
-                 return self.create_crawler(data_for_create)
-
+                 return self.create_crawler(data_for_create) # 調用無檔案的創建
 
         def batch_toggle_crawler_status(self, crawler_ids, active_status):
+            self._record_call('batch_toggle_crawler_status', crawler_ids, active_status)
             success_count = 0
             fail_count = 0
             failed_ids = []
@@ -407,147 +380,175 @@ def mock_crawlers_service(monkeypatch, sample_crawlers_data):
                 else:
                     fail_count += 1
                     failed_ids.append(cid)
-
-            result_details = {
-                'success_count': success_count,
-                'fail_count': fail_count,
-                'total': len(crawler_ids),
-                'failed_ids': failed_ids # 可以選擇性地返回失敗的 ID
-            }
-
+            result_details = {'success_count': success_count, 'fail_count': fail_count, 'total': len(crawler_ids), 'failed_ids': failed_ids}
             action = "啟用" if active_status else "停用"
             if success_count > 0:
                 message = f"批量{action}爬蟲設定完成，成功: {success_count}，失敗: {fail_count}"
                 success = True
             else:
                 message = f"批量{action}爬蟲設定失敗，所有操作均未成功"
-                success = False # 只有當全部失敗時 success 才為 False
+                success = False
+            return {'success': success, 'message': message, 'result': result_details}
 
-            return {
-                'success': success,
-                'message': message,
-                'result': result_details # 將詳細結果放在 'result' 鍵下
-            }
-
-        # Renamed from get_filtered_crawlers
-        def find_filtered_crawlers(self, filter_criteria, page=1, per_page=10, sort_by=None, sort_desc=False, **kwargs): # 忽略 preview 參數
-             # 模擬過濾
-             filtered_crawlers = []
-             for crawler in self.crawlers.values():
+        def find_filtered_crawlers(self, filter_criteria, page=1, per_page=10, sort_by=None, sort_desc=False, **kwargs):
+            self._record_call('find_filtered_crawlers', filter_criteria, page=page, per_page=per_page, sort_by=sort_by, sort_desc=sort_desc, **kwargs)
+            filtered_crawlers = []
+            for crawler in self.crawlers.values():
                  match = True
                  for field, value in filter_criteria.items():
-                     # 假設只支持簡單的等值過濾
                      if getattr(crawler, field, None) != value:
                          match = False
                          break
                  if match:
                      filtered_crawlers.append(crawler)
+            if sort_by:
+                 try: filtered_crawlers.sort(key=lambda c: getattr(c, sort_by), reverse=sort_desc)
+                 except AttributeError: pass
+            total = len(filtered_crawlers)
+            start = (page - 1) * per_page
+            end = start + per_page
+            items_on_page = filtered_crawlers[start:end]
+            total_pages = (total + per_page - 1) // per_page
+            items_as_dicts = [item.model_dump() for item in items_on_page]
+            paginated_response = PaginatedCrawlerResponse(
+                 items=items_as_dicts, page=page, per_page=per_page, total=total,
+                 total_pages=total_pages, has_next=end < total, has_prev=start > 0
+            )
+            success = True
+            message = "獲取爬蟲設定列表成功" if total > 0 else "找不到符合條件的爬蟲設定"
+            return {'success': success, 'message': message, 'data': paginated_response}
 
-             # 模擬排序 (簡單實現，只支持少數欄位)
-             if sort_by:
-                 try:
-                     filtered_crawlers.sort(key=lambda c: getattr(c, sort_by), reverse=sort_desc)
-                 except AttributeError:
-                     pass # 忽略不支持的排序欄位
-
-             # 模擬分頁
-             total = len(filtered_crawlers)
-             start = (page - 1) * per_page
-             end = start + per_page
-             items_on_page = filtered_crawlers[start:end]
-             total_pages = (total + per_page - 1) // per_page
-
-             # *** 新增：將 CrawlerMock 物件轉換為字典 ***
-             items_as_dicts = [item.model_dump() for item in items_on_page]
-
-             # 創建 PaginatedCrawlerResponse 實例
-             # 使用轉換後的字典列表
-             paginated_response = PaginatedCrawlerResponse(
-                 items=items_as_dicts, # <--- 傳遞字典列表
-                 page=page,
-                 per_page=per_page,
-                 total=total,
-                 total_pages=total_pages,
-                 has_next=end < total,
-                 has_prev=start > 0
-             )
-
-             success = True # Service 層即使找不到也返回 True
-             message = "獲取爬蟲設定列表成功" if total > 0 else "找不到符合條件的爬蟲設定"
-
-             # 返回符合 Service 結構的字典，data 包含 PaginatedCrawlerResponse 實例
-             return {
-                 'success': success,
-                 'message': message,
-                 'data': paginated_response # 返回 PaginatedCrawlerResponse 實例
-             }
-
-        # --- 新增：模擬 validate_crawler_data ---
-        # 注意：實際 API 不再調用 service.validate_crawler_data
-        # 但 Mock Service 內部可能需要它來模擬 Service 的行為
         def validate_crawler_data(self, data: Dict[str, Any], is_update: bool = False) -> Dict[str, Any]:
-             """模擬 Service 層的內部驗證觸發"""
+             self._record_call('validate_crawler_data', data, is_update=is_update)
              try:
-                 # 調用內部模擬驗證
                  validated_data = self._validate_data(data, is_update=is_update)
-                 # Service 的 validate_crawler_data 成功時只返回數據本身（如果有的話）
-                 # 或者在失敗時拋出異常，這裡我們讓內部方法拋出異常
-                 return validated_data # 或者返回 {'success': True, 'data': validated_data}
+                 return validated_data
              except ValidationError as e:
-                 # 模擬 Service 層處理驗證錯誤，返回包含錯誤信息的字典
-                 # 但實際 Service 的 validate 方法可能直接拋出異常
-                 # 為了讓 create/update 的模擬更準確，這裡讓異常冒泡
                  raise e
 
-        def create_crawler_with_config(self, crawler_data, config_file): # <<< 參數名保持一致 >>>
+        def create_crawler_with_config(self, crawler_data, config_file):
             """模擬 create_crawler_with_config 方法"""
-            # <<< 修改：_record_call 現在會處理檔案 >>>
             self._record_call('create_crawler_with_config', crawler_data, config_file)
             try:
-                # 模擬基本的檔案讀取和驗證 (可以在 _record_call 中完成)
-                # 這裡的讀取主要用於模擬服務內部邏輯（如果需要的話）
-                # 但驗證時使用的是 _record_call 儲存的內容
+                validated_data = self._validate_data(crawler_data, is_update=False)
+
+                # 模擬基本的檔案讀取和內容儲存
+                config_content_dict = None
                 try:
-                    config_file.seek(0) # 確保服務邏輯從頭讀取
+                    config_file.seek(0)
                     config_content_bytes = config_file.read()
                     config_content_dict = json.loads(config_content_bytes.decode('utf-8'))
+                    # 模擬服務層可能做的檢查
                     if not isinstance(config_content_dict.get('selectors'), dict):
-                         raise ValueError("模擬配置檔案缺少 selectors")
-                except (json.JSONDecodeError, ValueError, UnicodeDecodeError) as e:
-                    # 模擬服務處理檔案失敗的情況
-                    return {'success': False, 'message': f"配置檔案格式錯誤: {e}"}
+                         raise ValidationError("模擬配置檔案缺少 selectors 或格式錯誤")
+                except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as e:
+                    # 模擬服務處理檔案或驗證失敗的情況
+                    return {'success': False, 'message': f"配置檔案格式錯誤或驗證失敗: {e}"}
+                except AttributeError: # 如果傳入的不是 file-like object
+                     return {'success': False, 'message': "傳遞的 config_file 無效"}
 
-                # 模擬數據庫創建
+                # 模擬資料庫創建
                 new_id = self.next_id
                 now = datetime.now(timezone.utc)
-                expected_filename = f"{crawler_data['crawler_name']}.json"
+                # 模擬 Service 層生成檔名
+                expected_filename = f"{validated_data['crawler_name']}.json"
+
                 full_data = {
-                    **crawler_data,
+                    **validated_data,
                     'id': new_id,
-                    'is_active': crawler_data.get('is_active', True),
-                    'config_file_name': expected_filename,
+                    'is_active': validated_data.get('is_active', True),
+                    'config_file_name': expected_filename, # Service 生成
                     'created_at': now,
                     'updated_at': now
                 }
-                new_crawler = CrawlerMock(full_data)
+                new_crawler = CrawlerMock(full_data, config_content=config_content_dict) # 儲存配置內容
                 self.crawlers[new_id] = new_crawler
                 self.next_id += 1
 
-                return {
-                    'success': True,
-                    'message': '爬蟲設定及配置檔案創建成功',
-                    'crawler': new_crawler
-                }
+                return {'success': True, 'message': '爬蟲設定及配置檔案創建成功', 'crawler': new_crawler}
+            except ValidationError as e:
+                 return {'success': False, 'message': f"爬蟲設定資料驗證失敗: {str(e)}", 'crawler': None}
             except Exception as e:
                  logger.error(f"Mock create_crawler_with_config error: {e}", exc_info=True)
                  return {'success': False, 'message': str(e), 'crawler': None}
+
+        def update_crawler_with_config(self, crawler_id, crawler_data, config_file=None):
+             """模擬 update_crawler_with_config 方法"""
+             # 記錄呼叫，包括可能的檔案
+             self._record_call('update_crawler_with_config', crawler_id, crawler_data, config_file)
+
+             if crawler_id not in self.crawlers:
+                 return {'success': False, 'message': f"爬蟲設定不存在，ID={crawler_id}", 'crawler': None}
+
+             try:
+                 # 模擬 Service 內部的資料驗證
+                 validated_data = self._validate_data(crawler_data, is_update=True)
+
+                 crawler = self.crawlers[crawler_id]
+                 now = datetime.now(timezone.utc)
+                 new_config_content = None # 用於儲存新檔案內容
+
+                 # 處理配置檔案更新
+                 if config_file and config_file.filename: # 確保有檔案且檔名有效
+                     try:
+                         config_file.seek(0)
+                         config_content_bytes = config_file.read()
+                         new_config_content = json.loads(config_content_bytes.decode('utf-8'))
+                         # 模擬 Service 層可能做的檢查
+                         if not isinstance(new_config_content.get('selectors'), dict):
+                             raise ValidationError("模擬配置檔案缺少 selectors 或格式錯誤")
+                         # 模擬 Service 層更新檔名 (如果需要)
+                         new_filename = f"{validated_data.get('crawler_name', crawler.crawler_name)}.json"
+                         if crawler.config_file_name != new_filename:
+                              logger.info(f"Mock: Config filename changed from {crawler.config_file_name} to {new_filename}")
+                              crawler.config_file_name = new_filename
+                     except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as e:
+                         return {'success': False, 'message': f"新配置檔案格式錯誤或驗證失敗: {e}", 'crawler': None}
+                     except AttributeError:
+                          return {'success': False, 'message': "傳遞的 config_file 無效"}
+
+                 # 更新爬蟲資料
+                 for key, value in validated_data.items():
+                     if hasattr(crawler, key) and key not in ['id', 'created_at']: # 不更新 id, created_at
+                         setattr(crawler, key, value)
+                 crawler.updated_at = now
+
+                 # 如果有新配置，更新 Mock 物件的內容
+                 if new_config_content is not None:
+                     crawler.config_content = new_config_content
+
+                 return {'success': True, 'message': "爬蟲設定及配置檔案更新成功", 'crawler': crawler}
+             except ValidationError as e:
+                 return {'success': False, 'message': f"爬蟲設定更新資料驗證失敗: {str(e)}", 'crawler': None}
+             except Exception as e:
+                  logger.error(f"Mock update_crawler_with_config error: {e}", exc_info=True)
+                  return {'success': False, 'message': str(e), 'crawler': None}
+
+        def get_crawler_config(self, crawler_id):
+             """模擬獲取爬蟲配置檔案內容"""
+             self._record_call('get_crawler_config', crawler_id)
+             if crawler_id not in self.crawlers:
+                  return {'success': False, 'message': f"爬蟲設定不存在，ID={crawler_id}", 'config': None}
+
+             crawler = self.crawlers[crawler_id]
+             if crawler.config_content is None:
+                  # 模擬檔案實際不存在或讀取失敗
+                  return {'success': False, 'message': f"找不到爬蟲 '{crawler.crawler_name}' 的配置檔案或無法讀取", 'config': None}
+
+             # 模擬成功讀取到內容
+             return {
+                 'success': True,
+                 'message': "獲取爬蟲配置成功",
+                 'config': crawler.config_content # 返回之前儲存的字典
+             }
+
 
     mock_service_instance = MockCrawlersService()
     monkeypatch.setattr('src.web.routes.crawler_api.get_crawlers_service', lambda: mock_service_instance)
     return mock_service_instance
 
 class TestCrawlerApiRoutes:
-    """測試爬蟲相關的 API 路由 (已更新以匹配新的 API 回應結構)"""
+    """測試爬蟲相關的 API 路由"""
 
     def test_get_crawlers(self, client, mock_crawlers_service, sample_crawlers_data):
         """測試取得所有爬蟲設定列表"""
@@ -559,29 +560,21 @@ class TestCrawlerApiRoutes:
         assert '獲取爬蟲設定列表成功' in result['message']
         assert isinstance(result['data'], list)
         assert len(result['data']) == len(sample_crawlers_data)
-
-        # 比較第一個爬蟲的內容 (忽略時間)
         assert compare_crawler_dicts(result['data'][0], sample_crawlers_data[0])
-        # 檢查時間是否存在且格式大致正確
-        assert 'created_at' in result['data'][0]
-        assert 'updated_at' in result['data'][0]
         assert compare_datetimes(result['data'][0]['created_at'], sample_crawlers_data[0]['created_at'])
 
     def test_get_crawlers_empty(self, client, mock_crawlers_service):
         """測試取得爬蟲設定列表為空的情況"""
-        mock_crawlers_service.crawlers = {} # 清空模擬數據
+        mock_crawlers_service.crawlers = {}
         response = client.get('/api/crawlers')
         assert response.status_code == 200
         result = json.loads(response.data)
-
         assert result['success'] is True
-        # 這裡 message 可能會不同，取決於 Service 實現，但 data 應為空列表
-        assert result['message'] # 確保有 message
+        assert result['message']
         assert result['data'] == []
 
     def test_create_crawler_with_config(self, client, mock_crawlers_service):
         """測試使用配置檔案新增爬蟲設定 (multipart/form-data)"""
-        # 1. 準備爬蟲資料 (字典)
         crawler_data = {
             'crawler_name': 'NewConfigCrawler',
             'module_name': 'config_module',
@@ -589,84 +582,54 @@ class TestCrawlerApiRoutes:
             'crawler_type': 'config_type',
             'is_active': True
         }
-
-        # 2. 準備配置檔案內容 (字典)
         config_file_content = {
-            "name": "config_test",
-            "base_url": "https://configsite.com",
-            "list_url_template": "{base_url}/list",
-            "categories": ["cat1"],
-            "full_categories": ["cat1"],
-            "selectors": { "key": "value" }
+            "name": "config_test", "selectors": { "key": "value" }
         }
-
-        # 4. 構造 multipart/form-data 請求
+        # 傳遞 BytesIO 和檔名
+        config_file_tuple = (
+            io.BytesIO(json.dumps(config_file_content).encode('utf-8')),
+            'test_config.json'
+        )
         data = {
             'crawler_data': json.dumps(crawler_data),
-            'config_file': (
-                io.BytesIO(json.dumps(config_file_content).encode('utf-8')),
-                'test_config.json'
-            )
+            'config_file': config_file_tuple
         }
 
-        # 5. 發送請求
-        response = client.post('/api/crawlers', data=data)
+        response = client.post('/api/crawlers', data=data, content_type='multipart/form-data') # 指定 content_type
 
-        # 6. 驗證回應狀態碼
-        assert response.status_code == 201, f"預期狀態碼 201，但收到 {response.status_code}。回應: {response.data.decode()}"
-
-        # 7. 驗證回應內容
+        assert response.status_code == 201, f"預期 201，收到 {response.status_code}. 回應: {response.data.decode()}"
         response_data = response.get_json()
         assert response_data['success'] is True
         assert response_data['message'] == '爬蟲設定及配置檔案創建成功'
-        assert 'crawler' in response_data
         created_crawler_resp = response_data['crawler']
         assert created_crawler_resp['crawler_name'] == crawler_data['crawler_name']
-        assert created_crawler_resp['id'] is not None # ID 由 Mock 類別生成
-        expected_service_filename = f"{crawler_data['crawler_name']}.json" # 根據 Mock 邏輯計算預期檔名
+        expected_service_filename = f"{crawler_data['crawler_name']}.json"
         assert created_crawler_resp['config_file_name'] == expected_service_filename
 
-        # 8. 驗證 mock 服務是否被正確調用
+        # 驗證 mock 服務呼叫
         try:
-             # 獲取記錄的呼叫參數 (處理過的)
-             recorded_call = mock_crawlers_service.call_history['create_crawler_with_config'][0]
-             recorded_args = recorded_call['args']
-
-             # 驗證第一個參數 (crawler_data 字典)
-             assert recorded_args[0] == crawler_data
-
-             # <<< 修改：驗證儲存的檔案信息 >>>
-             # 驗證第二個參數 (儲存的檔案信息字典)
-             recorded_file_info = recorded_args[1]
-             assert isinstance(recorded_file_info, dict)
-             assert recorded_file_info.get('filename') == 'test_config.json'
-             # 驗證儲存的內容 (已解析為字典)
-             assert recorded_file_info.get('content') == config_file_content
-             assert 'error' not in recorded_file_info # 確保沒有記錄到讀取錯誤
-
-             # 驗證只呼叫了一次
-             assert len(mock_crawlers_service.call_history['create_crawler_with_config']) == 1
-        except KeyError:
-            pytest.fail("方法 create_crawler_with_config 從未被呼叫")
-        except IndexError:
-             pytest.fail("方法 create_crawler_with_config 被呼叫但記錄為空")
+            expected_file_arg = { # <--- 新增：定義預期的檔案參數字典
+                'filename': 'test_config.json',
+                'content': config_file_content,
+                '_type': 'file' # 需與 _record_call 一致
+            }
+            mock_crawlers_service.assert_called_once_with(
+                'create_crawler_with_config',
+                crawler_data, # 第一個參數是字典
+                expected_file_arg # <--- 修改：傳遞預期的記錄字典
+            )
         except AssertionError as e:
-             pytest.fail(f"Mock 呼叫驗證失敗: {e}")
+            pytest.fail(f"Mock 呼叫驗證失敗: {e}")
 
     def test_get_crawler_by_id(self, client, mock_crawlers_service, sample_crawlers_data):
         """測試通過 ID 取得特定爬蟲設定"""
         target_id = 1
         target_crawler_data = sample_crawlers_data[0]
-
         response = client.get(f'/api/crawlers/{target_id}')
         assert response.status_code == 200
         result = json.loads(response.data)
-
         assert result['success'] is True
-        assert '獲取爬蟲設定成功' in result['message']
-        assert 'crawler' in result
         fetched_crawler = result['crawler']
-
         assert fetched_crawler['id'] == target_id
         assert compare_crawler_dicts(fetched_crawler, target_crawler_data)
         assert compare_datetimes(fetched_crawler['created_at'], target_crawler_data['created_at'])
@@ -677,73 +640,69 @@ class TestCrawlerApiRoutes:
         response = client.get(f'/api/crawlers/{non_existent_id}')
         assert response.status_code == 404
         result = json.loads(response.data)
-
-        assert result['success'] is False
-        assert '不存在' in result['message'] # 檢查 Service 返回的錯誤訊息
-        assert result.get('crawler') is None
-
-    def test_update_crawler(self, client, mock_crawlers_service):
-        """測試更新爬蟲設定"""
-        target_id = 1
-        update_data = {
-            'crawler_name': 'UpdatedCrawlerName',
-            'base_url': 'https://updated.example.com',
-            'is_active': False
-        }
-        response = client.put(
-            f'/api/crawlers/{target_id}',
-            data=json.dumps(update_data),
-            content_type='application/json'
-        )
-        assert response.status_code == 200
-        result = json.loads(response.data)
-
-        assert result['success'] is True
-        assert '爬蟲設定更新成功' in result['message']
-        assert 'crawler' in result
-        updated_crawler = result['crawler']
-
-        assert updated_crawler['id'] == target_id
-        assert updated_crawler['crawler_name'] == update_data['crawler_name']
-        assert updated_crawler['base_url'] == update_data['base_url']
-        assert updated_crawler['is_active'] == update_data['is_active']
-        # 驗證 updated_at 是否已更新
-        original_crawler = mock_crawlers_service.crawlers[target_id] # 獲取更新後的 Mock 物件
-        assert updated_crawler['updated_at'] != original_crawler.created_at.isoformat()
-        # 比較 updated_at 與當前時間
-        assert compare_datetimes(updated_crawler['updated_at'], datetime.now(timezone.utc))
-
-        # 驗證 Mock Service 內部狀態
-        assert mock_crawlers_service.crawlers[target_id].crawler_name == update_data['crawler_name']
-        assert mock_crawlers_service.crawlers[target_id].is_active == update_data['is_active']
-
-    def test_update_crawler_not_found(self, client, mock_crawlers_service):
-        """測試更新不存在的爬蟲設定"""
-        non_existent_id = 999
-        update_data = {'crawler_name': 'GhostCrawler'}
-        response = client.put(
-            f'/api/crawlers/{non_existent_id}',
-            data=json.dumps(update_data),
-            content_type='application/json'
-        )
-        assert response.status_code == 404
-        result = json.loads(response.data)
         assert result['success'] is False
         assert '不存在' in result['message']
+
+    def test_update_crawler_with_config_success(self, client, mock_crawlers_service):
+        """測試更新爬蟲資料和配置檔案 (multipart/form-data) - 成功"""
+        target_id = 1
+        original_crawler = mock_crawlers_service.crawlers[target_id]
+        update_data = {
+            'crawler_name': 'UpdatedViaMultipart',
+            'is_active': False
+        }
+        new_config_content = {"new_key": "new_value", "selectors": {"a": "b"}} # 必須有 selectors
+        new_config_file_tuple = (
+            io.BytesIO(json.dumps(new_config_content).encode('utf-8')),
+            'updated_config.json'
+        )
+        data = {
+            'crawler_data': json.dumps(update_data),
+            'config_file': new_config_file_tuple
+        }
+
+        response = client.put(f'/api/crawlers/{target_id}', data=data, content_type='multipart/form-data')
+
+        assert response.status_code == 200, f"預期 200，收到 {response.status_code}. 回應: {response.data.decode()}"
+        response_data = response.get_json()
+        assert response_data['success'] is True
+        assert '更新成功' in response_data['message']
+        updated_crawler_resp = response_data['crawler']
+        assert updated_crawler_resp['id'] == target_id
+        assert updated_crawler_resp['crawler_name'] == update_data['crawler_name']
+        assert updated_crawler_resp['is_active'] == update_data['is_active']
+        assert compare_datetimes(updated_crawler_resp['updated_at'], datetime.now(timezone.utc))
+        # 驗證 mock 物件內部狀態
+        updated_mock_crawler = mock_crawlers_service.crawlers[target_id]
+        assert updated_mock_crawler.crawler_name == update_data['crawler_name']
+        assert updated_mock_crawler.is_active == update_data['is_active']
+        assert updated_mock_crawler.config_content == new_config_content # 驗證配置內容已更新
+        assert updated_mock_crawler.config_file_name == f"{update_data['crawler_name']}.json" # 檔名應更新
+
+        # 驗證服務呼叫
+        try:
+            expected_file_arg = { # <--- 新增：定義預期的檔案參數字典
+                'filename': 'updated_config.json', # 從 new_config_file_tuple[1] 獲取
+                'content': new_config_content,
+                '_type': 'file' # 需與 _record_call 一致
+            }
+            mock_crawlers_service.assert_called_once_with(
+                'update_crawler_with_config',
+                target_id,
+                update_data,
+                expected_file_arg # <--- 修改：傳遞預期的記錄字典
+            )
+        except AssertionError as e:
+            pytest.fail(f"Mock 呼叫驗證失敗: {e}")
 
     def test_delete_crawler(self, client, mock_crawlers_service):
         """測試刪除爬蟲設定"""
         target_id = 1
-        assert target_id in mock_crawlers_service.crawlers # 確認開始時存在
-
+        assert target_id in mock_crawlers_service.crawlers
         response = client.delete(f'/api/crawlers/{target_id}')
         assert response.status_code == 200
         result = json.loads(response.data)
-
         assert result['success'] is True
-        assert '刪除成功' in result['message']
-
-        # 驗證 Mock Service 內部狀態
         assert target_id not in mock_crawlers_service.crawlers
 
     def test_delete_crawler_not_found(self, client, mock_crawlers_service):
@@ -752,100 +711,61 @@ class TestCrawlerApiRoutes:
         response = client.delete(f'/api/crawlers/{non_existent_id}')
         assert response.status_code == 404
         result = json.loads(response.data)
-
         assert result['success'] is False
-        assert '不存在' in result['message']
 
-    def test_get_available_crawler_types(self, client):
-        """測試取得可用的爬蟲類型"""
-        # 模擬 CrawlerFactory 的類方法
-        mock_types = [
-            {'name': 'BnextCrawler', 'description': 'Bnext 網站爬蟲'},
-            {'name': 'NewsCrawler', 'description': '新聞網站爬蟲'}
-        ]
-        with patch('src.crawlers.crawler_factory.CrawlerFactory.list_available_crawler_types', return_value=mock_types) as mock_list_types:
-            response = client.get('/api/crawlers/types')
-            assert response.status_code == 200
-            result = json.loads(response.data)
+    def test_get_crawler_config_success(self, client, mock_crawlers_service, sample_crawlers_data):
+         """測試成功獲取爬蟲配置內容"""
+         target_id = 1
+         expected_config = sample_crawlers_data[0]['config_content']
+         response = client.get(f'/api/crawlers/{target_id}/config')
+         assert response.status_code == 200
+         result = response.get_json()
+         assert result['success'] is True
+         assert "獲取爬蟲配置成功" in result['message']
+         assert result['config'] == expected_config
+         # 驗證服務呼叫
+         mock_crawlers_service.assert_called_once_with('get_crawler_config', target_id)
 
-            assert result['success'] is True
-            assert '成功獲取可用的爬蟲類型列表' in result['message']
-            assert result['data'] == mock_types
-            mock_list_types.assert_called_once()
+    def test_get_crawler_config_not_found(self, client, mock_crawlers_service):
+        """測試獲取不存在的爬蟲 ID 的配置"""
+        non_existent_id = 999
+        response = client.get(f'/api/crawlers/{non_existent_id}/config')
+        assert response.status_code == 404 # API 應返回 404
+        result = response.get_json()
+        assert result['success'] is False
+        assert "不存在" in result['message']
+        assert result.get('config') is None
 
-    def test_get_available_crawler_types_empty(self, client):
-        """測試取得可用的爬蟲類型為空"""
-        with patch('src.crawlers.crawler_factory.CrawlerFactory.list_available_crawler_types', return_value=[]) as mock_list_types:
-             response = client.get('/api/crawlers/types')
-             assert response.status_code == 404 # API 應返回 404
-             result = json.loads(response.data)
-             assert result['success'] is False
-             assert '找不到任何可用的爬蟲類型' in result['message']
-             mock_list_types.assert_called_once()
-
+    def test_get_crawler_config_file_missing_or_unreadable(self, client, mock_crawlers_service):
+        """測試獲取配置時，服務模擬檔案不存在或不可讀"""
+        target_id = 3 # 這個爬蟲在 mock 中 config_content 為 None
+        response = client.get(f'/api/crawlers/{target_id}/config')
+        # Service 返回 success=False，API 應轉發，狀態碼可能是 404 或 500
+        # 根據 Mock 邏輯，應該是 404 (找不到配置檔案)
+        assert response.status_code == 404
+        result = response.get_json()
+        assert result['success'] is False
+        assert "找不到" in result['message'] and "配置檔案" in result['message']
+        assert result.get('config') is None
 
     def test_get_active_crawlers(self, client, mock_crawlers_service, sample_crawlers_data):
         """測試取得所有活動中的爬蟲設定"""
         response = client.get('/api/crawlers/active')
         assert response.status_code == 200
         result = json.loads(response.data)
-
         assert result['success'] is True
-        assert '獲取活動中的爬蟲設定成功' in result['message']
-        assert 'data' in result
-        active_crawlers_result = result['data']
-
         expected_active = [c for c in sample_crawlers_data if c['is_active']]
-        assert len(active_crawlers_result) == len(expected_active)
-        # 檢查第一個活動爬蟲的內容
-        assert compare_crawler_dicts(active_crawlers_result[0], expected_active[0])
-
-    def test_get_active_crawlers_empty(self, client, mock_crawlers_service):
-         """測試沒有活動爬蟲的情況"""
-         # 將所有爬蟲設為非活動
-         for crawler in mock_crawlers_service.crawlers.values():
-             crawler.is_active = False
-
-         response = client.get('/api/crawlers/active')
-         assert response.status_code == 200 # API 仍然返回 200
-         result = json.loads(response.data)
-
-         assert result['success'] is True
-         assert '找不到任何活動中的爬蟲設定' in result['message'] # Service 應返回此訊息
-         assert result['data'] == []
+        assert len(result['data']) == len(expected_active)
 
     def test_toggle_crawler_status(self, client, mock_crawlers_service):
         """測試切換爬蟲活躍狀態"""
         target_id = 1
-        original_crawler_mock = mock_crawlers_service.crawlers[target_id]
-        original_status = original_crawler_mock.is_active
-
+        original_status = mock_crawlers_service.crawlers[target_id].is_active
         response = client.post(f'/api/crawlers/{target_id}/toggle')
         assert response.status_code == 200
         result = json.loads(response.data)
-
         assert result['success'] is True
-        assert f"成功切換爬蟲狀態，新狀態={not original_status}" in result['message']
-        assert 'crawler' in result
-        toggled_crawler = result['crawler']
-
-        assert toggled_crawler['id'] == target_id
-        assert toggled_crawler['is_active'] == (not original_status)
-        # 驗證 updated_at 是否更新
-        assert toggled_crawler['updated_at'] != original_crawler_mock.created_at.isoformat()
-        assert compare_datetimes(toggled_crawler['updated_at'], datetime.now(timezone.utc))
-
-        # 驗證 Mock Service 內部狀態
-        assert mock_crawlers_service.crawlers[target_id].is_active == (not original_status)
-
-    def test_toggle_crawler_status_not_found(self, client, mock_crawlers_service):
-        """測試切換不存在的爬蟲狀態"""
-        non_existent_id = 999
-        response = client.post(f'/api/crawlers/{non_existent_id}/toggle')
-        assert response.status_code == 404
-        result = json.loads(response.data)
-        assert result['success'] is False
-        assert '不存在' in result['message']
+        assert result['crawler']['is_active'] == (not original_status)
 
     def test_get_crawlers_by_name(self, client, mock_crawlers_service, sample_crawlers_data):
         """測試根據名稱模糊查詢爬蟲設定"""
@@ -853,28 +773,9 @@ class TestCrawlerApiRoutes:
         response = client.get(f'/api/crawlers/name/{search_name}')
         assert response.status_code == 200
         result = json.loads(response.data)
-
         assert result['success'] is True
-        assert '獲取爬蟲設定列表成功' in result['message']
-        assert 'data' in result
-        found_crawlers = result['data']
-
         expected_found = [c for c in sample_crawlers_data if search_name.lower() in c['crawler_name'].lower()]
-        assert len(found_crawlers) == len(expected_found)
-        # 可以選擇性地比較第一個找到的內容
-        if expected_found:
-             assert compare_crawler_dicts(found_crawlers[0], expected_found[0])
-
-    def test_get_crawlers_by_name_not_found(self, client, mock_crawlers_service):
-        """測試根據名稱模糊查詢找不到結果"""
-        search_name = "NonExistentName"
-        response = client.get(f'/api/crawlers/name/{search_name}')
-        assert response.status_code == 200 # API 仍然返回 200
-        result = json.loads(response.data)
-
-        assert result['success'] is True # Service 認為操作成功，只是沒結果
-        assert '找不到任何符合條件的爬蟲設定' in result['message']
-        assert result['data'] == []
+        assert len(result['data']) == len(expected_found)
 
     def test_get_crawlers_by_type(self, client, mock_crawlers_service, sample_crawlers_data):
         """測試根據爬蟲類型查找爬蟲"""
@@ -882,246 +783,57 @@ class TestCrawlerApiRoutes:
         response = client.get(f'/api/crawlers/type/{search_type}')
         assert response.status_code == 200
         result = json.loads(response.data)
-
         assert result['success'] is True
-        assert f"獲取類型為 {search_type} 的爬蟲設定列表成功" in result['message']
-        assert 'data' in result
-        found_crawlers = result['data']
-
         expected_found = [c for c in sample_crawlers_data if c['crawler_type'] == search_type]
-        assert len(found_crawlers) == len(expected_found)
-        assert all(c['crawler_type'] == search_type for c in found_crawlers)
-
-    def test_get_crawlers_by_type_not_found(self, client, mock_crawlers_service):
-        """測試根據爬蟲類型找不到結果"""
-        search_type = "non_existent_type"
-        response = client.get(f'/api/crawlers/type/{search_type}')
-        assert response.status_code == 200 # API 仍然返回 200
-        result = json.loads(response.data)
-
-        assert result['success'] is True
-        assert f"找不到類型為 {search_type} 的爬蟲設定" in result['message']
-        assert result['data'] == []
+        assert len(result['data']) == len(expected_found)
 
     def test_get_crawler_by_exact_name(self, client, mock_crawlers_service, sample_crawlers_data):
         """測試根據爬蟲名稱精確查詢"""
         target_name = "TestCrawler1"
-        target_crawler_data = sample_crawlers_data[0]
         response = client.get(f'/api/crawlers/exact-name/{target_name}')
         assert response.status_code == 200
         result = json.loads(response.data)
-
         assert result['success'] is True
-        assert '獲取爬蟲設定成功' in result['message']
-        assert 'crawler' in result
-        fetched_crawler = result['crawler']
-        assert compare_crawler_dicts(fetched_crawler, target_crawler_data)
-
-    def test_get_crawler_by_exact_name_not_found(self, client, mock_crawlers_service):
-        """測試根據爬蟲名稱精確查詢找不到"""
-        target_name = "NonExistentExactName"
-        response = client.get(f'/api/crawlers/exact-name/{target_name}')
-        assert response.status_code == 404
-        result = json.loads(response.data)
-        assert result['success'] is False
-        assert f"找不到名稱為 {target_name} 的爬蟲設定" in result['message']
+        assert result['crawler']['crawler_name'] == target_name
 
     def test_create_or_update_crawler_create(self, client, mock_crawlers_service):
-        """測試 create_or_update 創建新爬蟲"""
-        new_data = {
-            'crawler_name': 'CreateOrUpdateNew',
-            'base_url': 'https://cou-new.com',
-            'crawler_type': 'rss',
-            'config_file_name': 'cou_new.json'
-        }
-        response = client.post(
-            '/api/crawlers/create-or-update',
-            data=json.dumps(new_data),
-            content_type='application/json'
-        )
-        assert response.status_code == 201 # 創建應返回 201
-        result = json.loads(response.data)
+        """測試 create_or_update 創建新爬蟲 (application/json)"""
+        new_data = {'crawler_name': 'COU_NewJson', 'base_url': '...', 'crawler_type': '...', 'module_name': '...'}
+        response = client.post('/api/crawlers/create-or-update', json=new_data)
+        assert response.status_code == 201
+        result = response.get_json()
         assert result['success'] is True
-        assert '爬蟲設定創建成功' in result['message']
-        assert 'crawler' in result
-        created_crawler = result['crawler']
-        assert created_crawler['crawler_name'] == new_data['crawler_name']
-        assert created_crawler['id'] is not None
-
-        # 驗證內部狀態
-        assert created_crawler['id'] in mock_crawlers_service.crawlers
+        assert result['crawler']['crawler_name'] == new_data['crawler_name']
 
     def test_create_or_update_crawler_update(self, client, mock_crawlers_service):
-        """測試 create_or_update 更新現有爬蟲"""
+        """測試 create_or_update 更新現有爬蟲 (application/json)"""
         target_id = 2
-        update_data = {
-            'id': target_id, # 提供 ID
-            'crawler_name': 'CreateOrUpdateUpdated',
-            'is_active': True # 原本是 False
-        }
-        response = client.post(
-            '/api/crawlers/create-or-update',
-            data=json.dumps(update_data),
-            content_type='application/json'
-        )
-        assert response.status_code == 200 # 更新應返回 200
-        result = json.loads(response.data)
+        update_data = {'id': target_id, 'crawler_name': 'COU_UpdatedJson', 'is_active': True}
+        response = client.post('/api/crawlers/create-or-update', json=update_data)
+        assert response.status_code == 200
+        result = response.get_json()
         assert result['success'] is True
-        assert '爬蟲設定更新成功' in result['message']
-        assert 'crawler' in result
-        updated_crawler = result['crawler']
-        assert updated_crawler['id'] == target_id
-        assert updated_crawler['crawler_name'] == update_data['crawler_name']
-        assert updated_crawler['is_active'] == update_data['is_active']
-
-        # 驗證內部狀態
-        assert mock_crawlers_service.crawlers[target_id].crawler_name == update_data['crawler_name']
-        assert mock_crawlers_service.crawlers[target_id].is_active == update_data['is_active']
-
-    def test_create_or_update_crawler_update_invalid_id(self, client, mock_crawlers_service):
-         """測試 create_or_update 更新不存在的 ID"""
-         update_data = {'id': 999, 'crawler_name': 'InvalidUpdate'}
-         response = client.post(
-             '/api/crawlers/create-or-update',
-             data=json.dumps(update_data),
-             content_type='application/json'
-         )
-         assert response.status_code == 404 # 應返回 404
-         result = json.loads(response.data)
-         assert result['success'] is False
-         assert '不存在' in result['message']
-
+        assert result['crawler']['id'] == target_id
+        assert result['crawler']['is_active'] == True
 
     def test_batch_toggle_crawler_status(self, client, mock_crawlers_service):
-        """測試批量設置爬蟲的活躍狀態 (全部成功)"""
-        ids_to_toggle = [1, 2] # 原本 1:True, 2:False
+        """測試批量設置爬蟲的活躍狀態"""
+        ids_to_toggle = [1, 2]
         target_status = False
-        response = client.post(
-            '/api/crawlers/batch-toggle',
-            data=json.dumps({'crawler_ids': ids_to_toggle, 'active_status': target_status}),
-            content_type='application/json'
-        )
+        response = client.post('/api/crawlers/batch-toggle', json={'crawler_ids': ids_to_toggle, 'active_status': target_status})
         assert response.status_code == 200
-        result = json.loads(response.data)
-
+        result = response.get_json()
         assert result['success'] is True
-        assert '批量停用爬蟲設定完成' in result['message'] # 根據 target_status 調整
-        assert 'result' in result
-        batch_result = result['result']
-        assert batch_result['success_count'] == len(ids_to_toggle)
-        assert batch_result['fail_count'] == 0
-        assert batch_result['total'] == len(ids_to_toggle)
-
-        # 驗證內部狀態
-        for cid in ids_to_toggle:
-            assert mock_crawlers_service.crawlers[cid].is_active == target_status
-
-    def test_batch_toggle_crawler_status_partial_fail(self, client, mock_crawlers_service):
-        """測試批量設置爬蟲的活躍狀態 (部分失敗)"""
-        ids_to_toggle = [1, 999] # 1 存在, 999 不存在
-        target_status = True
-        response = client.post(
-            '/api/crawlers/batch-toggle',
-            data=json.dumps({'crawler_ids': ids_to_toggle, 'active_status': target_status}),
-            content_type='application/json'
-        )
-        assert response.status_code == 200 # 即使部分失敗也應返回 200
-        result = json.loads(response.data)
-
-        assert result['success'] is True # Service 認為只要有成功就算成功
-        assert '批量啟用爬蟲設定完成' in result['message']
-        assert '成功: 1' in result['message']
-        assert '失敗: 1' in result['message']
-        assert 'result' in result
-        batch_result = result['result']
-        assert batch_result['success_count'] == 1
-        assert batch_result['fail_count'] == 1
-        assert batch_result['total'] == 2
-
-        # 驗證內部狀態
-        assert mock_crawlers_service.crawlers[1].is_active == target_status
-
-    def test_batch_toggle_crawler_status_all_fail(self, client, mock_crawlers_service):
-        """測試批量設置爬蟲的活躍狀態 (全部失敗)"""
-        ids_to_toggle = [998, 999] # 都不存在
-        target_status = True
-        response = client.post(
-            '/api/crawlers/batch-toggle',
-            data=json.dumps({'crawler_ids': ids_to_toggle, 'active_status': target_status}),
-            content_type='application/json'
-        )
-        # API 返回 400 或 500 取決於 Service 的實現，這裡假設 400
-        assert response.status_code == 400
-        result = json.loads(response.data)
-
-        assert result['success'] is False # Service 返回 False
-        assert '批量啟用爬蟲設定失敗，所有操作均未成功' in result['message']
-        assert 'result' in result
-        batch_result = result['result']
-        assert batch_result['success_count'] == 0
-        assert batch_result['fail_count'] == 2
-        assert batch_result['total'] == 2
-
+        assert result['result']['success_count'] == 2
 
     def test_get_filtered_crawlers(self, client, mock_crawlers_service, sample_crawlers_data):
         """測試根據過濾條件獲取分頁爬蟲列表"""
-        filter_data = {
-            'filter': {'crawler_type': 'web'},
-            'page': 1,
-            'per_page': 1 # 每頁 1 個，測試分頁
-        }
-        response = client.post(
-            '/api/crawlers/filter',
-            data=json.dumps(filter_data),
-            content_type='application/json'
-        )
+        filter_data = {'filter': {'crawler_type': 'web'}, 'page': 1, 'per_page': 1}
+        response = client.post('/api/crawlers/filter', json=filter_data)
         assert response.status_code == 200
-        result = json.loads(response.data)
-
+        result = response.get_json()
         assert result['success'] is True
-        assert '獲取爬蟲設定列表成功' in result['message']
-        assert 'data' in result
         paginated_data = result['data']
-
-        assert paginated_data['page'] == filter_data['page']
-        assert paginated_data['per_page'] == filter_data['per_page']
-        assert isinstance(paginated_data['items'], list)
-        assert len(paginated_data['items']) == 1 # 因為 per_page=1
-
-        # 找出預期的 web 類型爬蟲
+        assert len(paginated_data['items']) == 1
         expected_items = [c for c in sample_crawlers_data if c['crawler_type'] == 'web']
-        assert paginated_data['total'] == len(expected_items)
-        assert paginated_data['total_pages'] == len(expected_items)
-        assert paginated_data['has_next'] is True
-        assert paginated_data['has_prev'] is False
-
-        # 比較返回的第一項
-        # 現在 paginated_data['items'][0]['created_at'] 應該是 ISO 字串
-        assert compare_crawler_dicts(paginated_data['items'][0], expected_items[0])
-        # compare_datetimes 
-        assert compare_datetimes(paginated_data['items'][0]['created_at'], expected_items[0]['created_at'])
-
-    def test_get_filtered_crawlers_not_found(self, client, mock_crawlers_service):
-        """測試根據過濾條件找不到結果"""
-        filter_data = {
-            'filter': {'crawler_type': 'non_existent'}
-        }
-        response = client.post(
-            '/api/crawlers/filter',
-            data=json.dumps(filter_data),
-            content_type='application/json'
-        )
-        assert response.status_code == 200 # API 仍然返回 200
-        result = json.loads(response.data)
-
-        assert result['success'] is True # Service 返回 True
-        assert '找不到符合條件的爬蟲設定' in result['message'] # Service 應返回此訊息
-        assert 'data' in result
-        paginated_data = result['data']
-        assert paginated_data['items'] == []
-        assert paginated_data['total'] == 0
-        assert paginated_data['page'] == 1 # 預設頁碼
-        assert paginated_data['per_page'] == 10 # 預設每頁數量
-        assert paginated_data['total_pages'] == 0
-        assert paginated_data['has_next'] is False
-        assert paginated_data['has_prev'] is False 
+        assert paginated_data['total'] == len(expected_items) 

@@ -520,10 +520,12 @@ def get_crawler_config(crawler_id):
         logger.info("獲取爬蟲配置結果: %s", result)
         
         if not result.get('success'):
-            status_code = 404 if "不存在" in result.get('message', '') else 500
-            logger.error("獲取爬蟲配置失敗: %s", result.get('message'))
+            # 修改：無論失敗原因 (ID不存在或配置找不到)，都返回 404
+            status_code = 404 
+            logger.error("獲取爬蟲配置失敗 (ID: %s): %s", crawler_id, result.get('message')) # Log the specific reason
             return jsonify(result), status_code
 
+        # Success case
         return jsonify(result), 200
     except Exception as e:
         logger.error("獲取爬蟲配置時發生異常: %s", str(e), exc_info=True)
