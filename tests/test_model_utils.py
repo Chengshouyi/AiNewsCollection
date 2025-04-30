@@ -1,5 +1,6 @@
 """測試 src.utils.model_utils 中的驗證函數。"""
 # Standard library imports
+import logging
 from datetime import datetime, timedelta, timezone
 
 # Third-party imports
@@ -12,7 +13,7 @@ from src.utils.enum_utils import (
     ScrapeMode,
     ScrapePhase,
 )
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 from src.utils.model_utils import (
     validate_article_scrape_status,
     validate_boolean,
@@ -31,7 +32,7 @@ from src.utils.model_utils import (
 )
 
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 class TestValidateStr:

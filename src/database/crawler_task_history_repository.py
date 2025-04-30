@@ -2,6 +2,7 @@
 定義 CrawlerTaskHistory 模型的資料庫操作 Repository。
 """
 
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Dict, Any, Type, Union, overload, Literal
 
@@ -14,9 +15,9 @@ from src.models.crawler_task_history_schema import (
     CrawlerTaskHistoryUpdateSchema,
 )
 from src.error.errors import ValidationError, DatabaseOperationError
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 class CrawlerTaskHistoryRepository(BaseRepository["CrawlerTaskHistory"]):

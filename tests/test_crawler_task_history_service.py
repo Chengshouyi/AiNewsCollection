@@ -5,6 +5,7 @@
 """
 
 # Standard library imports
+import logging
 from datetime import datetime, timezone, timedelta
 from unittest.mock import patch, MagicMock
 from contextlib import contextmanager
@@ -27,12 +28,12 @@ from src.models.crawler_task_history_schema import (
 from src.services.crawler_task_history_service import CrawlerTaskHistoryService
 
 # from src.database.database_manager import DatabaseManager # Service 內部使用，測試中不直接引用
-from src.utils.log_utils import LoggerSetup
+
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 # 設置測試資料庫管理器

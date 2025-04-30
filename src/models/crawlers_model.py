@@ -7,13 +7,13 @@ including crawler settings, relationships, and data serialization.
 # Third party imports
 from sqlalchemy import String, Boolean, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-
+import logging
 # Local application imports
 from src.models.base_model import Base
 from src.models.base_entity import BaseEntity
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class Crawlers(Base, BaseEntity):

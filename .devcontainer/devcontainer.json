@@ -33,7 +33,7 @@
                 "python.analysis.typeCheckingMode": "basic",
                 "python.languageServer": "Pylance",
                 "editor.formatOnSave": true,
-                "python.formatting.provider": "black", // 明確指定 Black
+                // "python.formatting.provider": "black", // 明確指定 Black
                 "python.linting.pylintEnabled": true,
                 "python.linting.enabled": true,
                 "python.testing.pytestEnabled": true,
@@ -77,6 +77,6 @@
         // "worker"
     ],
     "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends && pip install --upgrade pip && pip install --user -r requirements.txt -r requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc && sudo mkdir -p /app/logs && sudo chown vscode:vscode /app/logs && sudo mkdir -p /app/data/web_site_configs && sudo chown vscode:vscode /app/data /app/data/web_site_configs && sudo cp src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs/ && sudo chown vscode:vscode /app/data/web_site_configs/bnext_crawler_config.json",
-    "postStartCommand": "export PATH=\"/home/vscode/.local/bin:$PATH\" && alembic upgrade head",
+    "postStartCommand": "export PATH=\"/home/vscode/.local/bin:$PATH\"",
     "remoteUser": "vscode"
 }

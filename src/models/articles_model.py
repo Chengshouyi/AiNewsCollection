@@ -4,6 +4,7 @@
 
 from datetime import datetime, timezone
 from typing import Optional
+import logging
 
 from sqlalchemy import (
     UniqueConstraint,
@@ -20,9 +21,9 @@ from src.models.base_model import Base
 from src.models.base_entity import BaseEntity
 from src.utils.type_utils import AwareDateTime
 from src.utils.enum_utils import ArticleScrapeStatus
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class Articles(Base, BaseEntity):

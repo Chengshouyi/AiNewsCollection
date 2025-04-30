@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from typing import Optional
+import logging
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Text
 from sqlalchemy import Enum as SQLAlchemyEnum
@@ -10,10 +11,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from src.models.base_model import Base
 from src.models.base_entity import BaseEntity
 from src.utils.enum_utils import TaskStatus
-from src.utils.log_utils import LoggerSetup
+
 from src.utils.type_utils import AwareDateTime
 
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class CrawlerTaskHistory(Base, BaseEntity):

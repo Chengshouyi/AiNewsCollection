@@ -1,13 +1,14 @@
 """測試 src.utils.repository_utils 中的字典更新函數。"""
 
 # Standard library
+import logging
 from unittest.mock import MagicMock, patch
 
 # Third-party libraries
 import pytest
 
 # Local application imports
-from src.utils.log_utils import LoggerSetup
+
 from src.utils.repository_utils import (
     _apply_deep_changes_inplace,
     deep_update_dict_field,
@@ -15,7 +16,7 @@ from src.utils.repository_utils import (
 )
 
 # Setup logger
-logger = LoggerSetup.setup_logger(__name__) # pylint: disable=invalid-name
+logger = logging.getLogger(__name__)  # 使用統一的 logger # pylint: disable=invalid-name
 
 # --- Tests for deep_update_dict_field (returns new dict) ---
 

@@ -1,6 +1,7 @@
 """測試排程服務 (SchedulerService) 的單元測試"""
 
 # 標準函式庫
+import logging
 from datetime import datetime, timedelta, timezone
 from unittest.mock import ANY, MagicMock, patch
 
@@ -21,13 +22,13 @@ from src.models.crawlers_model import Crawlers
 from src.services.scheduler_service import SchedulerService
 from src.services.task_executor_service import TaskExecutorService
 from src.utils.enum_utils import TaskStatus
-from src.utils.log_utils import LoggerSetup
+
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
 # 設定統一 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 # --- Fixtures ---

@@ -10,10 +10,10 @@ from typing import Dict, Final
 import requests
 
 # 本地應用程式導入
-from src.utils.log_utils import LoggerSetup
+
 
 # 設定統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # 移除舊的 logging.basicConfig
 # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')

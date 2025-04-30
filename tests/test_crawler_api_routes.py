@@ -4,6 +4,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Any
 from unittest.mock import patch, MagicMock
 import io
+import logging
 
 import pytest
 from flask import Flask, jsonify
@@ -11,13 +12,13 @@ from werkzeug.datastructures import FileStorage # <-- Import FileStorage for typ
 
 from src.error.errors import ValidationError
 from src.models.crawlers_schema import PaginatedCrawlerResponse, CrawlerReadSchema
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 from src.web.routes.crawler_api import crawler_bp
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 # 輔助函數：比較字典（忽略時間精度和模擬配置內容）
 def compare_crawler_dicts(dict1, dict2, ignore_keys=['created_at', 'updated_at', 'config_content']):

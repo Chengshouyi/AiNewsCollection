@@ -4,9 +4,9 @@ from datetime import datetime, timezone
 import logging
 import pytz
 
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 def enforce_utc_datetime_transform(value: datetime) -> datetime:
     """將 datetime 轉換為 UTC 時區

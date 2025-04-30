@@ -5,6 +5,7 @@
 
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+import logging
 
 import pytest
 from sqlalchemy import String
@@ -13,9 +14,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.error.errors import ValidationError
 from src.models.base_model import Base
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class ModelForTest(Base):

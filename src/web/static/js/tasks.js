@@ -127,9 +127,8 @@ function setupWebSocket() {
 
     // 連接到 Socket.IO 伺服器和 /tasks 命名空間
     // 使用 location.protocol, document.domain, location.port 動態構建 URL
-    const socketUrl = `${location.protocol}//${document.domain}:${location.port}/tasks`;
-    console.log(`嘗試連接到 WebSocket: ${socketUrl}`);
-    socket = io.connect(socketUrl);
+    console.log(`嘗試連接到WebSocket: /tasks`);
+    socket = io('/tasks');
 
     socket.on('connect', () => {
         console.log('Socket.IO Connected to /tasks');
@@ -575,6 +574,8 @@ function showTaskModal(taskId) {
         $('#ai-only').prop('checked', task.task_args?.ai_only || false);
         $('#task-remark').val(task.notes || '');
 
+        // 添加日誌
+        console.log('Setting task type:', taskType, 'is_auto:', task.is_auto);
         updateScheduleFields(taskType, task.cron_expression);
 
         console.log("任務參數 (task_args):", JSON.parse(JSON.stringify(task.task_args)));
@@ -785,6 +786,7 @@ function saveTask() {
     // 設置 cron_expression
     if (taskData.is_auto) {
         taskData.cron_expression = $('#cron-expression').val().trim();
+        console.log('Saving auto task with cron:', taskData.cron_expression);
     } else {
         taskData.cron_expression = null;
     }
@@ -793,7 +795,7 @@ function saveTask() {
     taskData.scrape_phase = 'init';
     taskData.is_active = true;
 
-    console.log('準備保存的任務數據:', taskData);
+    console.log('Saving task data:', taskData);  // 添加日誌
 
     // 表單驗證
     let errorMessages = [];

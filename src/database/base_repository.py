@@ -37,11 +37,11 @@ from src.error.errors import (
 )
 from src.models.base_model import Base
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 
 # --- Setup ---
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 T = TypeVar("T", bound=Base)
 
 

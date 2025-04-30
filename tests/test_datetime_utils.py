@@ -1,11 +1,12 @@
 """測試日期時間工具函數 (datetime_utils) 的功能。"""
 
+import logging
 from datetime import datetime, timezone, timedelta
 
 from src.utils.datetime_utils import enforce_utc_datetime_transform
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 def test_enforce_utc_naive_datetime():
     """

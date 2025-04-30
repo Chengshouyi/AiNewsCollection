@@ -17,11 +17,11 @@ from sqlalchemy.orm import load_only, noload
 from src.error.errors import DatabaseOperationError, ValidationError
 from src.models.crawlers_model import Crawlers
 from src.models.crawlers_schema import CrawlersCreateSchema, CrawlersUpdateSchema
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 from .base_repository import BaseRepository, SchemaType
 
 
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 # logger.setLevel(logging.DEBUG)  # <-- 臨時添加這行
 
 
