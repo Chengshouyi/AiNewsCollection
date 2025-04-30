@@ -1,5 +1,5 @@
 """提供與爬蟲任務歷史記錄相關的業務邏輯服務。"""
-
+import logging
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any, Type, Tuple, cast, Union
 
@@ -14,11 +14,11 @@ from src.models.crawler_task_history_model import CrawlerTaskHistory
 from src.models.crawler_task_history_schema import CrawlerTaskHistoryReadSchema
 
 from src.services.base_service import BaseService
-from src.utils.log_utils import LoggerSetup  # Use unified logger
+  # Use unified logger
 
 
 # Setup logger using the unified setup
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # Define return type aliases
 RepoHistoryListResult = Union[List["CrawlerTaskHistory"], List[Dict[str, Any]]]

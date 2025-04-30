@@ -1,6 +1,7 @@
 """測試 src.database.database_manager 模組的功能。"""
 
 import os
+import logging
 from datetime import datetime, timezone
 from unittest.mock import patch, MagicMock
 
@@ -20,13 +21,13 @@ from src.database.database_manager import (
 from src.models.articles_model import Articles
 from src.models.base_model import Base
 from src.models.crawlers_model import Crawlers
-from src.utils.log_utils import LoggerSetup
+
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
 # 設定 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 @fixture

@@ -4,15 +4,16 @@ import pytest
 from datetime import datetime, timezone, timedelta
 from typing import Optional#, Dialect # Dialect 不應從 typing 匯入
 import pytz # 確保安裝了 pytz: pip install pytz
+import logging
 
 from sqlalchemy.engine import Dialect # Dialect 從這裡匯入
 
 # 本地應用程式導入
 from src.utils.type_utils import AwareDateTime
-from src.utils.log_utils import LoggerSetup
+
 
 # 設定統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 # 使用 fixture 提供 AwareDateTime 實例和 dialect

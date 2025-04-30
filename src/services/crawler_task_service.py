@@ -35,14 +35,14 @@ from src.services.base_service import BaseService
 from src.services.service_container import get_article_service, get_scheduler_service
 from src.utils.enum_utils import ScrapeMode, ScrapePhase, TaskStatus
 from src.utils.model_utils import validate_task_args
-from src.utils.log_utils import LoggerSetup
+
 
 
 if TYPE_CHECKING:
     from src.crawlers.base_crawler import BaseCrawler
 
 # 設定 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class CrawlerTaskService(BaseService[CrawlerTasks]):

@@ -5,6 +5,7 @@
 """
 
 # Standard library imports
+import logging
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, Type, List, Tuple, Union, Literal, cast
 
@@ -32,12 +33,12 @@ from src.database.database_manager import (
 from src.services.base_service import BaseService
 from src.error.errors import DatabaseOperationError, ValidationError
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 # 測試用的 Pydantic Schema 類

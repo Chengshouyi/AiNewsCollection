@@ -1,13 +1,14 @@
 """提供文章分析相關功能，特別是判斷文章是否與 AI 相關以及統計分析。"""
 
 from typing import Dict, Any
+import logging
 
 import pandas as pd
 
 from src.crawlers.configs.ai_filter_config import AI_KEYWORDS, AI_CATEGORIES
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 class ArticleAnalyzer:

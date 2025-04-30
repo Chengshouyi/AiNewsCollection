@@ -1,10 +1,10 @@
 """測試 src.utils.transform_utils 中的轉換函式。"""
 import enum
-
+import logging
 import pytest
 
 from src.error.errors import ValidationError
-from src.utils.log_utils import LoggerSetup
+
 from src.utils.transform_utils import (
     convert_hashable_dict_to_str_dict,
     convert_to_dict,
@@ -13,7 +13,7 @@ from src.utils.transform_utils import (
 )
 
 # 設定 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # --- 測試用的輔助類別 ---
 class SampleEnum(enum.Enum):

@@ -1,12 +1,13 @@
 """提供資料轉換相關的工具函式，例如型別轉換、物件轉字典等。"""
 import enum
+import logging
 from typing import Any, Dict, Hashable, Optional, Type, TypeVar
 
 from src.error.errors import ValidationError
-from src.utils.log_utils import LoggerSetup
+
 
 # 設定 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 def is_str_dict(data: Dict[Hashable, Any]) -> bool:
     """檢查字典的所有鍵是否都是字符串類型"""

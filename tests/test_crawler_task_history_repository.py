@@ -9,6 +9,7 @@
 """
 
 # Standard library imports
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any  # Added Dict, Any for type hinting
 
@@ -23,12 +24,12 @@ from src.models.crawler_tasks_model import CrawlerTasks
 from src.models.crawlers_model import Crawlers
 from src.database.crawler_task_history_repository import CrawlerTaskHistoryRepository
 from src.error.errors import DatabaseOperationError, ValidationError
-from src.utils.log_utils import LoggerSetup
+
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 @pytest.fixture(scope="function")

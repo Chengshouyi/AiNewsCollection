@@ -1,6 +1,7 @@
 """定義文章相關的 API 路由。"""
 # 標準函式庫
 from typing import Optional, List, Dict, Any, Union, cast
+import logging
 
 # 第三方函式庫
 from flask import Blueprint, jsonify, request
@@ -11,10 +12,10 @@ from src.models.articles_schema import ArticleReadSchema, PaginatedArticleRespon
 from src.services.article_service import ArticleService
 from src.services.service_container import get_article_service
 from src.utils.api_utils import parse_and_validate_common_query_params
-from src.utils.log_utils import LoggerSetup # 使用統一的 logger
+ # 使用統一的 logger
 
 
-logger = LoggerSetup.setup_logger(__name__) # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger # 使用統一的 logger
 
 # 創建藍圖
 article_bp = Blueprint('article_api', __name__, url_prefix='/api/articles')

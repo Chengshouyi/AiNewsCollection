@@ -1,14 +1,14 @@
 """提供爬蟲工廠，用於初始化和管理不同類型的爬蟲實例。"""
 
 from typing import Dict, Optional, Any
-
+import logging
 from src.services.article_service import ArticleService
 from src.services.crawlers_service import CrawlersService
 
 # from src.database.database_manager import DatabaseManager # 移除未使用的 import
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 class CrawlerFactory:

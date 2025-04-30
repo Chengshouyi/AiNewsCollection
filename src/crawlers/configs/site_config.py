@@ -9,10 +9,10 @@ import logging # 移除舊的 logger 設定
 from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.error.errors import ValidationError
 from src.utils.model_utils import validate_str, validate_url, validate_list
-from src.utils.log_utils import LoggerSetup
+
 
 # 設定統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 

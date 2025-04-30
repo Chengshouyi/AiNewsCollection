@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, List, Union, Optional, Sequence
 from unittest.mock import patch, MagicMock
-
+import logging
 # 第三方函式庫
 import pytest
 from flask import Flask, jsonify
@@ -14,13 +14,13 @@ from sqlalchemy.exc import OperationalError # 移至此處
 # 本地應用程式
 from src.web.routes.article_api import article_bp
 from src.models.articles_schema import ArticleReadSchema, PaginatedArticleResponse # 雖然被 Mock，但保留以防未來類型提示需要
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
 # 設定 Logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # --- 輔助模型 (用於 Mock Service) ---
 

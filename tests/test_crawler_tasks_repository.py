@@ -2,6 +2,7 @@
 
 # Standard Library Imports
 import json
+import logging
 import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterator, List
@@ -24,13 +25,13 @@ from src.models.crawler_tasks_model import (
     TaskStatus,
 )
 from src.models.crawlers_model import Crawlers
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 from src.utils.transform_utils import convert_to_dict
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 # 使用 db_manager_for_test 創建 initialized_db_manager fixture

@@ -1,16 +1,16 @@
 """測試 ArticleAnalyzer 類別的功能。"""
-
+import logging
 import pandas as pd
 import pytest
 
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.configs.ai_filter_config import AI_KEYWORDS
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 class TestArticleAnalyzer:

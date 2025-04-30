@@ -8,6 +8,7 @@ CrawlerTasksUpdateSchema classes, ensuring proper data validation and schema beh
 # pylint: disable=redefined-outer-name
 
 # Standard library imports
+import logging
 from datetime import datetime, timezone
 
 # Third party imports
@@ -23,9 +24,9 @@ from src.utils.enum_utils import TaskStatus
 from src.utils.transform_utils import str_to_enum
 from src.error.errors import ValidationError
 from src.models.base_schema import BaseUpdateSchema
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class TestCrawlerTasksCreateSchema:

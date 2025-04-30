@@ -11,12 +11,12 @@ import pandas as pd
 from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.crawlers.article_analyzer import ArticleAnalyzer
 from src.crawlers.bnext_utils import BnextUtils
-from src.utils.log_utils import LoggerSetup
+
 from src.utils.enum_utils import ArticleScrapeStatus
 # from src.utils.enum_utils import ScrapePhase # ScrapePhase seems unused
 
 # 使用統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class BnextScraper:

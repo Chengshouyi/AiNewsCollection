@@ -26,10 +26,10 @@ from src.models.articles_schema import ArticleReadSchema, PaginatedArticleRespon
 from src.models.crawler_tasks_model import TASK_ARGS_DEFAULT, CrawlerTasks
 from src.services.article_service import ArticleService
 from src.utils.enum_utils import ScrapeMode, ArticleScrapeStatus, ScrapePhase
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 # 使用統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # 建立測試用的爬蟲配置
 TEST_CONFIG = {
@@ -64,7 +64,7 @@ class MockCrawlerForTest(BaseCrawler):
         self.fetch_articles_called = False
         self.update_config_called = False
         # 替換舊的 logger 初始化
-        self.logger = LoggerSetup.setup_logger(f"{__name__}.{self.__class__.__name__}") 
+        self.logger = logging.getLogger(f"{__name__}.{self.__class__.__name__}") 
         super().__init__(config_file_name, article_service)
         
     def _fetch_article_links(self, task_id: int) -> Optional[pd.DataFrame]:

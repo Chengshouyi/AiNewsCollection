@@ -6,11 +6,12 @@ defining a common interface for all entities that require validation functionali
 
 # Standard library imports
 from typing import Protocol, List, runtime_checkable
+import logging
 
 # Local application imports
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 @runtime_checkable

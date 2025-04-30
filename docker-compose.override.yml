@@ -30,6 +30,20 @@ services:
       # 如果你需要用 debugpy 等工具進行遠程除錯，可以再增加端口映射
       # - "5678:5678"
       # restart: 'no' # 開發時可能不需要自動重啟
+  migrate:
+    # <--- 新增 migrate 服務的開發覆蓋
+    build:
+      context: .
+      # 使用與開發 web 服務相同的 Dockerfile
+      dockerfile: .devcontainer/Dockerfile
+    volumes:
+      # <--- 關鍵：確保 migrate 服務也能看到最新的程式碼
+      - .:/app
+      # command 通常不需要覆蓋，會繼承基礎文件的 ["alembic", "upgrade", "head"]
+      # environment 通常不需要覆蓋，會繼承基礎文件的 DATABASE_URL
+      # depends_on db 會從基礎文件繼承
+      # restart: 'no' 會從基礎文件繼承
+
 
       # 將來擴充微服務時會使用 
       # worker:
