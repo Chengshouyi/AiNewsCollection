@@ -35,19 +35,6 @@ os.makedirs(CONFIG_DIR, exist_ok=True)
 def get_system_process_timezone():
     return timezone.utc
 
-
-# def create_database_manager() -> DatabaseManager:
-#     """
-#     創建並初始化資料庫管理器(從環境變數讀取 URL)
-
-#     Returns:
-#         初始化的 DatabaseManager 實例
-#     """
-#     db_manager =
-#     # 這裡不應該執行 create_tables，讓 Alembic 或應用初始化處理
-#     # db_manager.create_tables(Base)
-#     return db_manager
-
 # 提供單例模式
 _db_manager = None
 

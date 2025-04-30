@@ -783,32 +783,53 @@ class TestCrawlersService:
 
         # --- 測試按啟用狀態過濾 ---
         filter_data_active = {"is_active": True}
-        result_active = crawlers_service.find_filtered_crawlers(filter_data_active)
-        assert result_active["success"] is True
-        paginated_data_active = result_active["data"]
-        assert isinstance(paginated_data_active, PaginatedCrawlerResponse)
-        assert paginated_data_active.total == expected_active_count
-        assert len(paginated_data_active.items) == expected_active_count
+        # 測試非預覽模式
+        result_active_full = crawlers_service.find_filtered_crawlers(filter_data_active, is_preview=False)
+        assert result_active_full["success"] is True
+        paginated_data_active_full = result_active_full["data"]
+        assert isinstance(paginated_data_active_full, PaginatedCrawlerResponse)
+        assert paginated_data_active_full.total == expected_active_count
+        assert len(paginated_data_active_full.items) == expected_active_count
         assert all(
-            isinstance(item, CrawlerReadSchema) for item in paginated_data_active.items
+            isinstance(item, CrawlerReadSchema) for item in paginated_data_active_full.items
         )
-        assert all(item.is_active for item in paginated_data_active.items)
+        # 非預覽模式下，使用屬性訪問
+        assert all(item.is_active for item in paginated_data_active_full.items)
+
+        # 測試預覽模式
+        preview_fields_active = ["id", "is_active"]
+        result_active_preview = crawlers_service.find_filtered_crawlers(
+            filter_data_active, is_preview=True, preview_fields=preview_fields_active
+        )
+        assert result_active_preview["success"] is True
+        paginated_data_active_preview = result_active_preview["data"]
+        assert isinstance(paginated_data_active_preview, PaginatedCrawlerResponse)
+        assert paginated_data_active_preview.total == expected_active_count
+        assert len(paginated_data_active_preview.items) == expected_active_count
+        assert all(isinstance(item, dict) for item in paginated_data_active_preview.items)
+        # 預覽模式下，使用字典鍵訪問
+        assert all(item['is_active'] for item in paginated_data_active_preview.items) # 使用字典鍵訪問
+        assert all(set(item.keys()) == set(preview_fields_active) for item in paginated_data_active_preview.items)
+
 
         # --- 測試複合條件過濾 ---
         filter_data_compound = {"is_active": True, "crawler_type": "bnext"}
-        result_compound = crawlers_service.find_filtered_crawlers(filter_data_compound)
+        result_compound = crawlers_service.find_filtered_crawlers(filter_data_compound, is_preview=False) # 明確指定 is_preview=False
         assert result_compound["success"] is True
         paginated_data_compound = result_compound["data"]
         assert isinstance(paginated_data_compound, PaginatedCrawlerResponse)
         assert paginated_data_compound.total == expected_active_bnext_count
         assert len(paginated_data_compound.items) == expected_active_bnext_count
+        assert isinstance(paginated_data_compound.items[0], CrawlerReadSchema) # 驗證類型
+        # 非預覽模式下，使用屬性訪問
         assert paginated_data_compound.items[0].crawler_type == "bnext"
         assert paginated_data_compound.items[0].is_active is True
+
 
         # --- 測試排序和分頁 ---
         filter_data_none = {}
         result_sort = crawlers_service.find_filtered_crawlers(
-            filter_data_none, page=1, per_page=2, sort_by="crawler_name", sort_desc=True
+            filter_data_none, page=1, per_page=2, sort_by="crawler_name", sort_desc=True, is_preview=False # 明確指定 is_preview=False
         )
         assert result_sort["success"] is True
         paginated_data_sort = result_sort["data"]
@@ -821,8 +842,10 @@ class TestCrawlersService:
         expected_first_page_names = sorted(
             [c["crawler_name"] for c in sample_crawlers], reverse=True
         )[:2]
+        # 非預覽模式下 item 是 Schema，使用屬性訪問
         actual_names = [item.crawler_name for item in paginated_data_sort.items]
         assert actual_names == expected_first_page_names
+
 
         # --- 測試預覽模式 ---
         preview_fields = ["id", "is_active"]
@@ -830,7 +853,7 @@ class TestCrawlersService:
         result_preview = crawlers_service.find_filtered_crawlers(
             filter_criteria=filter_technews,
             is_preview=True,
-            preview_fields=preview_fields,
+            preview_fields=preview_fields
         )
         assert result_preview["success"] is True
         assert result_preview["data"] is not None
@@ -846,7 +869,38 @@ class TestCrawlersService:
             (c for c in sample_crawlers if c["crawler_type"] == "technews"), None
         )
         assert original_technews is not None
-        assert item["is_active"] == original_technews["is_active"]  # Should be False
+        # 預覽模式下，使用字典鍵訪問
+        assert item['id'] == original_technews['id']
+        assert item['is_active'] == original_technews['is_active']  # Should be False
+
+
+        # --- 測試預覽模式 + 排序和分頁 ---
+        preview_fields_sort = ["id", "crawler_name"]
+        filter_all_preview_sort = {}
+        result_preview_sort = crawlers_service.find_filtered_crawlers(
+            filter_criteria=filter_all_preview_sort,
+            page=1,
+            per_page=2,
+            sort_by="crawler_name",
+            sort_desc=True,
+            is_preview=True,
+            preview_fields=preview_fields_sort
+        )
+        assert result_preview_sort["success"] is True
+        paginated_preview_sort = result_preview_sort["data"]
+        assert isinstance(paginated_preview_sort, PaginatedCrawlerResponse)
+        assert paginated_preview_sort.total == expected_total
+        assert len(paginated_preview_sort.items) == 2
+        assert paginated_preview_sort.has_next is True
+        expected_preview_first_page_names = sorted(
+            [c["crawler_name"] for c in sample_crawlers], reverse=True
+        )[:2]
+        # 預覽模式下，使用字典鍵訪問
+        actual_preview_names = [item['crawler_name'] for item in paginated_preview_sort.items] # 使用字典鍵訪問
+        assert actual_preview_names == expected_preview_first_page_names
+        assert all(isinstance(item, dict) for item in paginated_preview_sort.items)
+        assert all(set(item.keys()) == set(preview_fields_sort) for item in paginated_preview_sort.items) # 驗證鍵名
+
 
         # --- 測試不匹配的條件 ---
         filter_data_nomatch = {"crawler_type": "不存在類型"}
@@ -1106,8 +1160,8 @@ class TestCrawlersServiceConfigFile:
         }
 
         # 5. 測試更新配置
-        result = crawlers_service.update_crawler_config(
-            crawler_id, mock_file, crawler_data
+        result = crawlers_service.update_crawler_with_config(
+            crawler_id=crawler_id, crawler_data=crawler_data, config_file=mock_file
         )
 
         # 6. 驗證服務層返回結果
@@ -1160,8 +1214,8 @@ class TestCrawlersServiceConfigFile:
         }
 
         # 測試更新無效配置
-        result = crawlers_service.update_crawler_config(
-            crawler_id, mock_file, crawler_data
+        result = crawlers_service.update_crawler_with_config(
+             crawler_id=crawler_id, crawler_data=crawler_data, config_file=mock_file
         )
         assert result["success"] is False
         assert "配置檔案不是有效的 JSON 格式" in result["message"]
@@ -1207,8 +1261,8 @@ class TestCrawlersServiceConfigFile:
         }
 
         # 測試更新格式不正確的配置
-        result = crawlers_service.update_crawler_config(
-            crawler_id, mock_file, crawler_data
+        result = crawlers_service.update_crawler_with_config(
+             crawler_id=crawler_id, crawler_data=crawler_data, config_file=mock_file
         )
         assert result["success"] is False
         assert "配置檔案格式或內容不正確" in result["message"] # 根據服務返回的錯誤訊息調整
@@ -1258,8 +1312,8 @@ class TestCrawlersServiceConfigFile:
         logger.info(f"預期生成的安全檔名: {expected_safe_filename}")
 
         # 6. 執行更新操作
-        result = crawlers_service.update_crawler_config(
-            crawler_id, mock_file, crawler_data_for_update
+        result = crawlers_service.update_crawler_with_config(
+             crawler_id=crawler_id, crawler_data=crawler_data_for_update, config_file=mock_file
         )
 
         # 7. 驗證服務層返回結果
