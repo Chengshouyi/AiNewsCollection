@@ -3,6 +3,7 @@
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
+import logging
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -10,9 +11,9 @@ import pytest
 from src.models.base_model import Base
 from src.models.crawler_tasks_model import CrawlerTasks, TASK_ARGS_DEFAULT
 from src.utils.enum_utils import ScrapePhase, ScrapeMode, TaskStatus
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 @pytest.fixture(scope="function")

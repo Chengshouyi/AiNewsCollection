@@ -4,6 +4,7 @@
 """
 
 # 標準函式庫導入
+import logging
 from datetime import datetime
 from typing import Optional, Dict, Any, List, Type, cast, Union, Tuple
 
@@ -21,9 +22,9 @@ from src.error.errors import (
 from src.models.articles_model import Base, Articles, ArticleScrapeStatus
 from src.models.articles_schema import ArticleReadSchema, PaginatedArticleResponse
 from src.services.base_service import BaseService
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 # 定義返回結果的類型別名
 ArticleResultType = Union[List[ArticleReadSchema], List[Dict[str, Any]]]

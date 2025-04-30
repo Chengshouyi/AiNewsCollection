@@ -5,9 +5,9 @@ from typing import Dict, Any, Optional, List, Tuple
 
 from werkzeug.datastructures import MultiDict
 
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # 定義標準的查詢參數鍵
 STANDARD_KEYS = {

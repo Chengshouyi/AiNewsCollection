@@ -3,6 +3,7 @@
 import os
 import re
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List, Tuple, Type, cast, Union, Sequence
 
@@ -21,10 +22,10 @@ from src.database.crawlers_repository import CrawlersRepository
 from src.database.base_repository import BaseRepository, SchemaType
 from src.services.base_service import BaseService
 from src.error.errors import InvalidOperationError
-from src.utils.log_utils import LoggerSetup
 
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class CrawlersService(BaseService[Crawlers]):

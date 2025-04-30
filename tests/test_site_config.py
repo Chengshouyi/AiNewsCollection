@@ -1,6 +1,7 @@
 """測試 src.crawlers.configs.site_config 中的 SiteConfig 類別功能。"""
 
 # 標準函式庫導入
+import logging
 from unittest.mock import patch # patch 雖然未使用，但保留以備將來擴展
 
 # 第三方函式庫導入
@@ -10,10 +11,10 @@ import pytest
 from src.crawlers.configs.base_config import DEFAULT_HEADERS # 雖然未直接測試，但 SiteConfig 會使用
 from src.crawlers.configs.site_config import SiteConfig
 from src.error.errors import ValidationError
-from src.utils.log_utils import LoggerSetup
+
 
 # 設定統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class TestSiteConfig:

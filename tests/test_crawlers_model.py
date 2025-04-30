@@ -8,6 +8,7 @@ including creation, timestamps, relationships, and data serialization.
 # pylint: disable=redefined-outer-name
 
 # Standard library imports
+import logging
 from datetime import datetime, timezone
 
 # Third party imports
@@ -15,9 +16,9 @@ import pytest
 
 # Local application imports
 from src.models.crawlers_model import Crawlers
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 @pytest.fixture(scope="function")

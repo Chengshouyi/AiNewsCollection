@@ -22,7 +22,7 @@ from src.services.service_container import (
     get_crawlers_service,
     get_scheduler_service,
 )
-from src.utils.log_utils import LoggerSetup
+
 from src.web.routes.article_api import article_bp
 from src.web.routes.crawler_api import crawler_bp
 from src.web.routes.tasks_api import tasks_bp

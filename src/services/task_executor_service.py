@@ -7,6 +7,7 @@
 """
 
 # 標準函式庫 imports
+import logging
 import threading
 from concurrent.futures import Future, ThreadPoolExecutor
 from datetime import datetime, timezone
@@ -31,10 +32,10 @@ from src.models.crawlers_model import Crawlers
 from src.services.base_service import BaseService
 from src.services.service_container import get_article_service, get_crawlers_service
 from src.utils.enum_utils import TaskStatus
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 from src.web.socket_instance import generate_session_id, socketio
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 class TaskExecutorService(BaseService[CrawlerTasks], ProgressListener):

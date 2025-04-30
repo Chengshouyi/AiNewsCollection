@@ -4,6 +4,7 @@
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, Type
 from unittest.mock import patch
+import logging
 
 # Third party imports
 import pytest
@@ -21,13 +22,13 @@ from src.error.errors import (
     InvalidOperationError,
 )
 from src.models.base_model import Base
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
 # 使用統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 # --- Test Schemas ---

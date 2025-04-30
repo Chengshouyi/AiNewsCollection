@@ -2,6 +2,7 @@
 
 # 標準函式庫導入
 import time
+import logging
 from unittest.mock import patch
 # import random # random 只在 patch 中使用，不需要直接導入
 
@@ -15,10 +16,10 @@ from src.crawlers.configs.base_config import (
     DEFAULT_RETRY_DELAY, DEFAULT_MIN_DELAY, DEFAULT_MAX_DELAY,
     DEFAULT_REQUEST_CONFIG, get_default_session, random_sleep
 )
-from src.utils.log_utils import LoggerSetup
+
 
 # 設定統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 def test_default_headers():

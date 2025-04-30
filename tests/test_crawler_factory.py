@@ -1,5 +1,5 @@
 """測試 CrawlerFactory 的功能。"""
-
+import logging
 from unittest.mock import MagicMock
 
 import pytest
@@ -7,12 +7,12 @@ import pytest
 from src.crawlers.crawler_factory import CrawlerFactory
 from src.models.crawlers_model import Crawlers
 from src.services.crawlers_service import CrawlersService
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 class TestCrawlerFactory:

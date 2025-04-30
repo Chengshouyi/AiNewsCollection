@@ -6,10 +6,11 @@ from src.error.errors import ValidationError
 from croniter import croniter
 from src.utils.transform_utils import str_to_enum
 import re
+import logging
 
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 def validate_int(field_name: str, required: bool = False):

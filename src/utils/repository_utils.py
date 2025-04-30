@@ -1,16 +1,17 @@
 """提供用於處理 SQLAlchemy 實體中字典欄位的輔助函數。"""
 
 # Standard library
+import logging
 from typing import Dict, Any, Optional
 
 # Third-party libraries
 from sqlalchemy.orm.attributes import flag_modified
 
 # Local application imports
-from src.utils.log_utils import LoggerSetup
+
 
 # Setup logger
-logger = LoggerSetup.setup_logger(__name__) # pylint: disable=invalid-name
+logger = logging.getLogger(__name__)  # 使用統一的 logger # pylint: disable=invalid-name
 
 def deep_update_dict_field(current_value: Optional[Dict[str, Any]], 
                            new_value: Dict[str, Any], 
