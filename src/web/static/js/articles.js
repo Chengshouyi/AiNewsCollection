@@ -286,8 +286,8 @@ function loadArticleDetails(articleId) {
                     $('#ai-analysis-container').removeClass('d-none');
                 }
 
-                // 加載相關文章
-                loadRelatedArticles(articleId);
+                // 註解掉相關文章的加載
+                // loadRelatedArticles(articleId);
             } else {
                 displayAlert('danger', '加載文章詳情失敗: ' + response.message);
             }
@@ -299,35 +299,35 @@ function loadArticleDetails(articleId) {
     });
 }
 
-// 加載相關文章
-function loadRelatedArticles(articleId) {
-    $.ajax({
-        url: `/api/articles/${articleId}/related`,
-        method: 'GET',
-        success: function (response) {
-            if (response.success && response.data.length > 0) {
-                const relatedArticles = response.data;
-                let html = '<ul class="list-group">';
+// 加載相關文章(尚未實作)
+// function loadRelatedArticles(articleId) {
+//     $.ajax({
+//         url: `/api/articles/${articleId}/related`,
+//         method: 'GET',
+//         success: function (response) {
+//             if (response.success && response.data.length > 0) {
+//                 const relatedArticles = response.data;
+//                 let html = '<ul class="list-group">';
 
-                relatedArticles.forEach(article => {
-                    html += `
-                        <li class="list-group-item">
-                            <a href="/articles/${article.id}">${escapeHtml(article.title)}</a>
-                            <small class="d-block text-muted">${article.published_at ? new Date(article.published_at).toLocaleString() : '-'}</small>
-                        </li>
-                    `;
-                });
+//                 relatedArticles.forEach(article => {
+//                     html += `
+//                         <li class="list-group-item">
+//                             <a href="/articles/${article.id}">${escapeHtml(article.title)}</a>
+//                             <small class="d-block text-muted">${article.published_at ? new Date(article.published_at).toLocaleString() : '-'}</small>
+//                         </li>
+//                     `;
+//                 });
 
-                html += '</ul>';
-                $('#related-articles').html(html);
-            }
-        },
-        error: function (xhr, status, error) {
-            console.error('加載相關文章失敗:', error);
-            // 失敗時不顯示錯誤提示，保持原狀
-        }
-    });
-}
+//                 html += '</ul>';
+//                 $('#related-articles').html(html);
+//             }
+//         },
+//         error: function (xhr, status, error) {
+//             console.error('加載相關文章失敗:', error);
+//             // 失敗時不顯示錯誤提示，保持原狀
+//         }
+//     });
+// }
 
 // 顯示提示訊息
 function displayAlert(type, message) {
