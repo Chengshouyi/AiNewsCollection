@@ -127,9 +127,8 @@ function setupWebSocket() {
 
     // 連接到 Socket.IO 伺服器和 /tasks 命名空間
     // 使用 location.protocol, document.domain, location.port 動態構建 URL
-    const socketUrl = `${location.protocol}//${document.domain}:${location.port}/tasks`;
-    console.log(`嘗試連接到 WebSocket: ${socketUrl}`);
-    socket = io.connect(socketUrl);
+    console.log(`嘗試連接到WebSocket: /tasks`);
+    socket = io('/tasks');
 
     socket.on('connect', () => {
         console.log('Socket.IO Connected to /tasks');
