@@ -68,7 +68,8 @@
     // 轉發端口
     "forwardPorts": [
         8001, // Gunicorn/Flask (主機端口) -> 8000 (容器端口)
-        5432 // PostgreSQL (主機端口) -> 5432 (容器端口)
+        5432, // PostgreSQL (主機端口) -> 5432 (容器端口)
+        5000 // 新增：Flask (主機端口) -> 5000 (容器端口)
     ],
     // 指定需要隨 Dev Container 一起啟動的其他服務
     "runServices": [
