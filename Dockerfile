@@ -1,8 +1,8 @@
 FROM python:3.9-slim
 
 # 系統環境設定 (保持不變)
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV SHELL=/bin/bash
 ENV LANG=C.UTF-8
@@ -44,6 +44,8 @@ USER $USERNAME
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# 將 appuser 的 local bin 加入 PATH
+ENV PATH="/home/appuser/.local/bin:${PATH}"
 # 切換回 root 以複製程式碼並設定正確的擁有者
 # (或者保持 appuser 並確保所有複製的檔案擁有者正確)
 # USER root

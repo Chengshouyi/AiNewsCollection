@@ -9,9 +9,9 @@ set -e # 如果任何命令失敗，腳本將退出
 # done
 # echo "PostgreSQL started"
 
-# 執行 Alembic 遷移
-echo "Running database migrations..."
-alembic upgrade head
+# 執行 Alembic 遷移-->移到migrate container
+# echo "Running database migrations..."
+# alembic upgrade head
 
 # 執行傳遞給此腳本的命令 (即 docker-compose.yml 中的 CMD 或 command)
 echo "Starting application server..."

@@ -24,7 +24,23 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile # 使用包含 ENV PATH 修改的 Dockerfile
+    container_name: ainews-migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-ainews_user}:${POSTGRES_PASSWORD:-your_strong_password}@db:5432/${POSTGRES_DB:-ainews}
+    # --- 修改這裡 ---
+    # 因為 Dockerfile 中設定了 PATH，可以直接用命令名稱
+    command: [ "alembic", "upgrade", "head" ]
+    # --- 修改結束 ---
+    restart: 'no'
+    networks:
+      - default
   web:
     build:
       context: .
