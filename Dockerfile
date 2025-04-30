@@ -56,11 +56,19 @@ COPY --chown=${USERNAME}:${USERNAME} . /app
 # copy 預設爬蟲config檔案
 COPY --chown=${USERNAME}:${USERNAME} src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs
 
+# 複製並設定 entrypoint 腳本
+COPY --chown=${USERNAME}:${USERNAME} entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# 設定 Entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
+
 # 設定最終用戶 (保持不變)
 USER $USERNAME
 
 # 設定預設指令 (web 服務會在 docker-compose.yml 中覆蓋此指令)
-CMD ["python", "src/web/app.py"]
+# 這個 CMD 會被 entrypoint.sh 的 exec "$@" 執行
+CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:8000", "src.web.app:app"]
 
-# ENTRYPOINT 或 CMD 指令
+# ENTRYPOINT 或 CMD 指令 (舊的 CMD 移到上面)
 # CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:8000", "src.web.app:app"]
