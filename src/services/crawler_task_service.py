@@ -87,7 +87,9 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
         """
 
         try:
+            logger.debug(f"Validating task data: {data}")  # 添加日誌
             if data.get("is_auto") is True:
+                logger.debug(f"Auto task detected, cron_expression: {data.get('cron_expression')}")  # 添加日誌
                 if data.get("cron_expression") is None:
                     return {
                         "success": False,
@@ -147,7 +149,6 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
 
         try:
             with self._transaction() as session:
-
                 # 獲取儲存庫
                 tasks_repo = cast(
                     CrawlerTasksRepository, self._get_repository("CrawlerTask", session)
@@ -164,9 +165,7 @@ class CrawlerTaskService(BaseService[CrawlerTasks]):
 
                 if task:
                     session.flush()  # Ensure the task is flushed to DB to get the ID
-                    session.refresh(
-                        task
-                    )  # Refresh the task object with the generated ID
+                    session.refresh(task)  # Refresh the task object with the generated ID
 
                     task_schema = CrawlerTaskReadSchema.model_validate(task)
 

@@ -644,8 +644,8 @@ def create_task():
     try:
         task_service = get_crawler_task_service()
         
-        # 根據任務類型設置is_auto
-        is_auto = data.get('is_auto') == 'auto'
+        # 修正：直接使用布爾值
+        is_auto = data.get('is_auto', False)  # 直接獲取布爾值
         
         # 從task_args中獲取scrape_mode，如果沒有則使用默認值FULL_SCRAPE
         scrape_mode = data.get('task_args', {}).get('scrape_mode', ScrapeMode.FULL_SCRAPE.value)
@@ -654,10 +654,10 @@ def create_task():
         if 'task_args' not in data:
             data['task_args'] = {}
             
-        
         # 設置初始scrape_phase - 使用值而不是枚舉對象
-        data['scrape_phase'] = ScrapePhase.INIT.value # 確保使用.value獲取字符串值
+        data['scrape_phase'] = ScrapePhase.INIT.value
         data['is_active'] = True
+        data['is_auto'] = is_auto  # 確保設置正確的布爾值
         
         # 驗證任務資料
         validated_result = _setup_validate_task_data(
@@ -681,19 +681,6 @@ def create_task():
         # 從結果中獲取創建的任務對象 (Pydantic Schema)
         task = create_task_result.get('task')
         task_data = _prepare_task_for_response(task)
-        
-        # 如果是自動任務，添加到排程器
-        if is_auto and task:
-            scheduler = get_scheduler_service()
-            scheduler_result = scheduler.add_or_update_task_to_scheduler(task)
-            if not scheduler_result.get('success'):
-                logger.error("任務 %s 已創建但添加到排程器失敗: %s", task.id, scheduler_result.get('message'))
-                response_message = f"{create_task_result.get('message', '任務創建成功')}, 但添加到排程器失敗: {scheduler_result.get('message')}"
-                return jsonify({
-                    "success": True,
-                    "message": response_message,
-                    "task": task_data
-                }), 201
         
         # 創建成功
         return jsonify({
