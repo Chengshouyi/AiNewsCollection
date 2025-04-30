@@ -47,7 +47,7 @@ services:
     container_name: ainews-web
     restart: unless-stopped
     entrypoint: []  # 覆蓋 Dockerfile 中的 ENTRYPOINT
-    command: gunicorn --config gunicorn.conf.py --worker-class eventlet -w 4 'src.web.app:app'
+    command: gunicorn --worker-class=eventlet --workers=1 --bind=0.0.0.0:8000 src.web.app:app
     environment:
       - FLASK_ENV=production # 生產環境模式
       # --- 安全性警告 ---
