@@ -1,6 +1,7 @@
 """測試 src.error.handle_api_error 中的 API 錯誤處理函數。"""
 
 # 第三方函式庫導入
+import logging
 import pytest
 from flask import Flask
 import requests
@@ -12,10 +13,10 @@ from src.error.errors import (
     ValidationError, NotFoundError, DatabaseError,
     DataOperationError, InvalidOperationError # InvalidOperationError 未使用，但保留
 )
-from src.utils.log_utils import LoggerSetup
+
 
 # 設定統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 @pytest.fixture

@@ -2,6 +2,7 @@
 
 # 標準函式庫
 from typing import Optional, List, Dict, Any
+import logging
 
 # 第三方函式庫
 import pandas as pd
@@ -11,10 +12,10 @@ from src.crawlers.base_crawler import BaseCrawler
 from src.crawlers.bnext_content_extractor import BnextContentExtractor
 from src.crawlers.bnext_scraper import BnextScraper
 from src.models.articles_model import ArticleScrapeStatus # 確保導入 ArticleScrapeStatus
-from src.utils.log_utils import LoggerSetup
+
 
 # 使用統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 class BnextCrawler(BaseCrawler):
     def __init__(self, config_file_name: Optional[str] = None, article_service=None, scraper=None, extractor=None):

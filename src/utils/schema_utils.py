@@ -1,10 +1,14 @@
 """提供資料架構驗證相關的工具函式。"""
+
+import logging
 from typing import Dict, Any, List, Optional
+
+
 from src.error.errors import ValidationError
-from src.utils.log_utils import LoggerSetup
+
 
 # 設定 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 def validate_update_schema(immutable_fields: list, update_fields: list, data: dict):
     """驗證更新操作，檢查是否包含不可變欄位及至少一個可更新欄位。"""

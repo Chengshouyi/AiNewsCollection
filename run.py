@@ -8,7 +8,7 @@
 import os
 import sys
 import time
-
+import logging
 # 第三方函式庫
 from dotenv import load_dotenv
 
@@ -19,9 +19,9 @@ from src.services.service_container import (
     get_crawlers_service,
     get_scheduler_service,
 )
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 load_dotenv()
 

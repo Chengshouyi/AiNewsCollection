@@ -7,10 +7,10 @@ import importlib.util
 import sys
 import traceback
 from datetime import datetime
+import logging
 
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # 確保 src 目錄在 Python 路徑中
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))

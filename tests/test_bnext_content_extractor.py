@@ -2,6 +2,7 @@
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import Mock, patch  # 保留 patch 因為它在測試中有用到
+import logging
 
 import pandas as pd
 from bs4 import BeautifulSoup
@@ -9,9 +10,9 @@ from bs4 import BeautifulSoup
 
 from src.crawlers.bnext_content_extractor import BnextContentExtractor
 from src.crawlers.configs.site_config import SiteConfig
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 @pytest.fixture

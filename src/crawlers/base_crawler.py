@@ -6,7 +6,7 @@ import json
 import os
 import time
 from typing import Dict, Optional, Any, List, Tuple, Callable
-
+import logging
 # Third-party library imports
 import pandas as pd
 
@@ -17,12 +17,12 @@ from src.error.errors import ValidationError
 from src.interface.progress_reporter import ProgressListener, ProgressReporter
 from src.services.article_service import ArticleService
 from src.utils.enum_utils import ArticleScrapeStatus, ScrapeMode, ScrapePhase
-from src.utils.log_utils import LoggerSetup
+
 from src.utils.model_utils import validate_task_args
 from src.utils.transform_utils import convert_hashable_dict_to_str_dict
 
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 class BaseCrawler(ABC):
     # 任務權重配置，用於動態計算進度百分比

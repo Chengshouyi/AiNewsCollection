@@ -12,9 +12,9 @@ from src.crawlers.bnext_utils import BnextUtils
 from src.crawlers.configs.base_config import DEFAULT_HEADERS
 from src.utils import datetime_utils
 from src.utils.enum_utils import ArticleScrapeStatus
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 class BnextContentExtractor:

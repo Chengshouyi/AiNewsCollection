@@ -1,11 +1,12 @@
 import shutil
 import os
 import pytest
+import logging
 from src.database.database_manager import DatabaseManager  # 導入 DatabaseManager
 from src.models.base_model import Base
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 def pytest_configure(config):

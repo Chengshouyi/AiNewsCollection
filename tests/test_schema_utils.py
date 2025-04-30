@@ -1,12 +1,13 @@
 """測試 src.utils.schema_utils 中的驗證函式。"""
 import pytest
+import logging
 
 from src.error.errors import ValidationError
-from src.utils.log_utils import LoggerSetup # 使用統一的 logger
+ # 使用統一的 logger
 from src.utils.schema_utils import validate_required_fields_schema, validate_update_schema
 
 # 設定 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 def test_update_success_valid_field():
     """成功：提供允許更新的欄位"""

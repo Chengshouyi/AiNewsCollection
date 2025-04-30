@@ -15,10 +15,10 @@ from src.services.service_container import (
     get_scheduler_service, get_task_executor_service,
     get_crawler_task_service, get_article_service
 )
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
 # 使用統一的 logger
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 tasks_bp = Blueprint('tasks_api', __name__, url_prefix='/api/tasks')

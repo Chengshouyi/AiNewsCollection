@@ -14,9 +14,9 @@ from src.database.database_manager import DatabaseManager
 from src.error.errors import DatabaseOperationError, ValidationError
 from src.error.service_errors import ServiceInitializationError
 from src.models.base_model import Base
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 T = TypeVar("T", bound=Base)
 

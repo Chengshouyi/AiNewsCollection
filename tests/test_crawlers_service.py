@@ -14,6 +14,7 @@
 from datetime import datetime, timezone, timedelta
 import json
 import os
+import logging
 from typing import List, Dict, Any
 
 # Third party imports
@@ -30,13 +31,13 @@ from src.services.crawlers_service import CrawlersService
 from src.error.errors import ValidationError, DatabaseOperationError
 from src.database.database_manager import DatabaseManager
 from src.models.crawlers_schema import CrawlerReadSchema, PaginatedCrawlerResponse
-from src.utils.log_utils import LoggerSetup
+
 
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 # 固定測試時間
 MOCK_TIME = datetime(2023, 1, 1, 12, 0, 0, tzinfo=timezone.utc)

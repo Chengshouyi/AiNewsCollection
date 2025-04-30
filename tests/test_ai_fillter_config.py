@@ -1,10 +1,10 @@
 """測試 AI 過濾器配置 (ai_filter_config) 的相關功能。"""
-
+import logging
 # test_ai_config.py
 from src.crawlers.configs.ai_filter_config import AI_KEYWORDS, AI_CATEGORIES, HIGH_PRIORITY_KEYWORDS, register_additional_keywords, register_additional_categories
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 def test_ai_keywords_is_set():
     """測試 AI_KEYWORDS 是否為 set 類型"""

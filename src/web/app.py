@@ -8,6 +8,7 @@ import os
 import sys
 import threading
 import time
+import logging
 
 # 第三方函式庫
 from dotenv import load_dotenv
@@ -21,15 +22,18 @@ from src.services.service_container import (
     get_crawlers_service,
     get_scheduler_service,
 )
-from src.utils.log_utils import LoggerSetup
+
 from src.web.routes.article_api import article_bp
 from src.web.routes.crawler_api import crawler_bp
 from src.web.routes.tasks_api import tasks_bp
 from src.web.routes.views import view_bp
 from src.web.socket_instance import init_app, socketio
 
-logger = LoggerSetup.setup_logger(__name__)
+# 配置日誌
+LoggerSetup.configure_logging()
 
+logger = logging.getLogger(__name__)
+logger.info("Logging configured for Flask application.")
 
 load_dotenv()
 

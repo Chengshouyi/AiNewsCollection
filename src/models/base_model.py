@@ -11,9 +11,9 @@ from sqlalchemy import Integer, DateTime, func
 
 from src.utils.datetime_utils import enforce_utc_datetime_transform
 from src.utils.type_utils import AwareDateTime
-from src.utils.log_utils import LoggerSetup  # 使用統一的 logger
+  # 使用統一的 logger
 
-logger = LoggerSetup.setup_logger(__name__)  # 使用統一的 logger
+logger = logging.getLogger(__name__)  # 使用統一的 logger  # 使用統一的 logger
 
 
 class Base(DeclarativeBase):

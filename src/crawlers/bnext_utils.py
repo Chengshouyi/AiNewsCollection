@@ -13,13 +13,14 @@ import time
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 from urllib.parse import urljoin
+import logging
 
 import pandas as pd
 from bs4 import BeautifulSoup
 
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 class BnextUtils:
     """數位時代爬蟲的工具類"""

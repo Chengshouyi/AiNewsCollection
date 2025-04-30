@@ -7,6 +7,7 @@ providing data validation, serialization, and schema definitions for the crawler
 # Standard library imports
 from datetime import datetime
 from typing import Annotated, Optional, List, Dict, Any, Union
+import logging
 
 # Third party imports
 from pydantic import (
@@ -25,9 +26,9 @@ from src.utils.schema_utils import (
     validate_update_schema,
     validate_required_fields_schema,
 )
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # 通用字段定義
 CrawlerName = Annotated[

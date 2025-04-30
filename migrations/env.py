@@ -3,6 +3,7 @@ import sys
 import os
 from logging.config import fileConfig
 from pathlib import Path
+import logging
 
 # Third-party imports
 from sqlalchemy import engine_from_config
@@ -23,6 +24,10 @@ config = context.config  # type: ignore
 # This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# 配置日誌
+log = logging.getLogger(__name__) # env.py 本身也可以使用 logger
+log.info("Logging configured for Alembic.")
 
 # add your model's MetaData object here
 # for 'autogenerate' support

@@ -1,8 +1,8 @@
 FROM python:3.9-slim
 
 # 系統環境設定 (保持不變)
-ENV PYTHONDONTWRITEBYTECODE 1
-ENV PYTHONUNBUFFERED 1
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 ENV DEBIAN_FRONTEND=noninteractive
 ENV SHELL=/bin/bash
 ENV LANG=C.UTF-8
@@ -44,6 +44,8 @@ USER $USERNAME
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# 將 appuser 的 local bin 加入 PATH
+ENV PATH="/home/${USERNAME}/.local/bin:${PATH}"
 # 切換回 root 以複製程式碼並設定正確的擁有者
 # (或者保持 appuser 並確保所有複製的檔案擁有者正確)
 # USER root
@@ -56,11 +58,19 @@ COPY --chown=${USERNAME}:${USERNAME} . /app
 # copy 預設爬蟲config檔案
 COPY --chown=${USERNAME}:${USERNAME} src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs
 
+# 複製並設定 entrypoint 腳本
+COPY --chown=${USERNAME}:${USERNAME} entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# 設定 Entrypoint
+ENTRYPOINT ["/entrypoint.sh"]
+
 # 設定最終用戶 (保持不變)
 USER $USERNAME
 
 # 設定預設指令 (web 服務會在 docker-compose.yml 中覆蓋此指令)
-CMD ["python", "src/web/app.py"]
+# 這個 CMD 會被 entrypoint.sh 的 exec "$@" 執行
+CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:8000", "src.web.app:app"]
 
-# ENTRYPOINT 或 CMD 指令
+# ENTRYPOINT 或 CMD 指令 (舊的 CMD 移到上面)
 # CMD ["gunicorn", "--workers", "4", "--bind", "0.0.0.0:8000", "src.web.app:app"]

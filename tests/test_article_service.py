@@ -13,6 +13,7 @@
 # Standard library imports
 from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Any, Optional
+import logging
 
 # Third party imports
 import pytest
@@ -26,12 +27,12 @@ from src.database.database_manager import (
     DatabaseManager,
 )  # Keep for typing if needed, check usage later
 from src.models.crawler_tasks_model import CrawlerTasks, ScrapeMode
-from src.utils.log_utils import LoggerSetup
+
 
 # flake8: noqa: F811
 # pylint: disable=redefined-outer-name
 
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 @pytest.fixture(scope="function")

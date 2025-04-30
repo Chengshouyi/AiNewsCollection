@@ -2,12 +2,12 @@
 
 # 標準函式庫導入
 from typing import Set
-
+import logging
 # 本地應用程式導入
-from src.utils.log_utils import LoggerSetup
+
 
 # 設定統一的 logger (雖然此設定檔目前未使用 logger，但依指示加入)
-logger = LoggerSetup.setup_logger(__name__)
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # AI相關關鍵字集合，用於篩選文章
 AI_KEYWORDS: Set[str] = {

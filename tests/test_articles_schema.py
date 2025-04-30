@@ -5,6 +5,7 @@
 
 # Standard library imports
 from datetime import datetime, timezone
+import logging
 
 # Third party imports
 import pytest
@@ -14,9 +15,9 @@ from src.models.base_model import Base
 from src.models.articles_schema import ArticleCreateSchema, ArticleUpdateSchema
 from src.models.articles_model import ArticleScrapeStatus
 from src.error.errors import ValidationError
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 
 @pytest.fixture(scope="function")

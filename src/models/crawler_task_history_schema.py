@@ -3,6 +3,8 @@
 from typing import Annotated, Optional, Any, List, Union, Dict
 from pydantic import BaseModel, BeforeValidator, model_validator, ConfigDict
 from datetime import datetime
+import logging
+
 from src.utils.model_utils import (
     validate_str,
     validate_datetime,
@@ -16,9 +18,9 @@ from src.utils.schema_utils import (
 )
 from src.models.base_schema import BaseCreateSchema, BaseUpdateSchema
 from src.utils.enum_utils import TaskStatus
-from src.utils.log_utils import LoggerSetup
 
-logger = LoggerSetup.setup_logger(__name__)
+
+logger = logging.getLogger(__name__)  # 使用統一的 logger
 
 # 通用字段定義
 TaskId = Annotated[
