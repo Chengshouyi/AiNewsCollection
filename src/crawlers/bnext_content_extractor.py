@@ -122,6 +122,10 @@ class BnextContentExtractor:
             logger.debug("成功獲取網頁內容: %s", article_url)
 
             soup = BnextUtils.get_soup_from_html(response.text)
+            if soup is None:
+                logger.error("無法解析網頁內容: %s", article_url)
+                return None
+
             if self.site_config is None or not hasattr(self.site_config, 'selectors') or 'get_article_contents' not in self.site_config.selectors:
                 logger.error("網站配置或選擇器未正確設定")
                 raise ValueError("網站配置或選擇器未正確設定")

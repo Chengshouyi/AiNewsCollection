@@ -351,6 +351,8 @@ class BaseCrawler(ABC):
                     logger.error("批量保存文章到資料庫失敗: %s", result['message'])
                     return
                 
+                # 設定get_links_by_task_id為True，這個任務下次就不會再去網站抓取文章列表
+                self.global_params['get_links_by_task_id'] = True
                 logger.info("批量保存文章到資料庫成功: %s", result['message'])
                 
         except Exception as e:
@@ -553,6 +555,7 @@ class BaseCrawler(ABC):
                 message: 任務執行結果訊息
                 articles_count: 文章數量
                 scrape_phase: 任務狀態
+                get_links_by_task_id: 是否從資料庫根據任務ID獲取要抓取內容的文章，這個參數會在任務完成後，文章有儲存成功設定為True
         """
         if self.site_config is None:
             logger.error("site_config 未初始化")
@@ -586,13 +589,18 @@ class BaseCrawler(ABC):
             if self._check_if_cancelled(task_id):
                 return self._handle_task_cancellation(task_id)
             # 根據抓取模式執行不同的流程
+            execute_result = {}
             if scrape_mode == ScrapeMode.CONTENT_ONLY.value:
-                return self._execute_content_only_task(task_id, max_retries, retry_delay)
+                execute_result = self._execute_content_only_task(task_id, max_retries, retry_delay)
             elif scrape_mode == ScrapeMode.LINKS_ONLY.value:
-                return self._execute_links_only_task(task_id, max_retries, retry_delay)
+                execute_result = self._execute_links_only_task(task_id, max_retries, retry_delay)
             else:  # ScrapeMode.FULL_SCRAPE
-                return self._execute_full_scrape_task(task_id, max_retries, retry_delay)
-            
+                execute_result = self._execute_full_scrape_task(task_id, max_retries, retry_delay)
+            # 設定get_links_by_task_id為True，這個任務下次就不會再去網站抓取文章列表
+            if execute_result.get('success', False):
+                execute_result['get_links_by_task_id'] = True
+
+            return execute_result
         except Exception as e:
             # 檢查是否是因為任務取消而引發的異常
             if task_id and "任務 {} 已取消".format(task_id) in str(e):
@@ -604,7 +612,8 @@ class BaseCrawler(ABC):
                 'success': False,
                 'message': f'任務失敗: {str(e)}',
                 'articles_count': 0,
-                'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
+                'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase'),
+                'get_links_by_task_id': self.global_params.get('get_links_by_task_id', False)
             }
 
     def _execute_content_only_task(self, task_id: int, max_retries: int, retry_delay: float):
@@ -906,7 +915,7 @@ class BaseCrawler(ABC):
                 
                 # 使用重試機制
                 fetched_articles_df = self.retry_operation(
-                    lambda: self._fetch_article_links_by_filter(),
+                    lambda: self._fetch_article_links_by_filter(task_id=task_id, is_scraped=False),
                     max_retries=max_retries,
                     retry_delay=retry_delay,
                     task_id=task_id  # 傳入任務ID以支持取消
