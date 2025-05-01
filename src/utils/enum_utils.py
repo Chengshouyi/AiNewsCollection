@@ -1,5 +1,6 @@
 import enum
 import json
+
 class EnumEncoder(json.JSONEncoder):
     def default(self, obj):
         if isinstance(obj, enum.Enum):

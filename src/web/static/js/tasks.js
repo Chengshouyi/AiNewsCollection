@@ -383,7 +383,7 @@ function loadTasks() {
                 // 有任務時隱藏提示框
                 $('#no-tasks-alert').addClass('d-none');
                 renderTasksTable(tasks);
-                
+
                 // 新增：重新加入所有任務的 rooms
                 if (socket && socket.connected) {
                     console.log('重新加入所有任務的 rooms...');
@@ -504,6 +504,16 @@ function renderTasksTable(tasks) {
         const nextRunTime = task.next_run_time ? new Date(task.next_run_time).toLocaleString() : '-';
         const scheduleDisplay = cronExpression || (taskType === 'manual' ? '手動執行' : '-');
 
+        // 新增爬取模式的顯示邏輯
+        const getScrapeModeName = (mode) => {
+            const modeMap = {
+                'full_scrape': '完整爬取',
+                'links_only': '僅爬取連結',
+                'content_only': '僅爬取內容'
+            };
+            return modeMap[mode] || mode;
+        };
+
         const row = `
             <tr class="task-row" data-task-id="${task.id}" data-crawler-id="${task.crawler_id}">
                 <td>${task.id}</td>
@@ -511,6 +521,7 @@ function renderTasksTable(tasks) {
                 <td>${escapeHtml(crawlerName)}</td>
                 <td>${taskType === 'auto' ? '自動' : '手動'}</td>
                 <td>${escapeHtml(scheduleDisplay)}</td>
+                <td>${escapeHtml(getScrapeModeName(task.task_args?.scrape_mode || 'full_scrape'))}</td>
                 <td><span class="task-status-badge ${statusBadgeClass}">${taskStatus}</span></td>
                 <td>
                     <div class="progress" style="height: 20px;">
