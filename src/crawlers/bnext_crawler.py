@@ -52,7 +52,7 @@ class BnextCrawler(BaseCrawler):
 
     def _fetch_article_links(self, task_id: int) -> Optional[pd.DataFrame]:
         """
-        抓取文章列表
+        抓取文章列表，抓取成功設定get_links_by_task_id為True
         
         Args:
             args (dict): 包含以下參數：

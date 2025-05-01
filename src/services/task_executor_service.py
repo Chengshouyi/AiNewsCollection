@@ -466,11 +466,12 @@ class TaskExecutorService(BaseService[CrawlerTasks], ProgressListener):
 
                 task_args = local_task_args
 
-                if kwargs:
-                    if task_args is None: task_args = {}
-                    task_args.update(kwargs)
-                elif task_args is None:
-                    task_args = {}
+                # 目前task_args是從資料庫獲取的，所以不需要再更新task_args，若需要變更要直接變更task_args
+                # if kwargs:
+                #     if task_args is None: task_args = {}
+                #     task_args.update(kwargs)
+                # elif task_args is None:
+                #     task_args = {}
 
                 result = crawler_instance.execute_task(task_id, task_args)
 
@@ -500,6 +501,7 @@ class TaskExecutorService(BaseService[CrawlerTasks], ProgressListener):
                     "last_run_at": datetime.now(timezone.utc),
                     "last_run_success": result.get("success", False),
                     "last_run_message": message,
+                    "task_args": {**task_args, "get_links_by_task_id": result.get("get_links_by_task_id", False)}
                 }
                 validated_task_data = tasks_repo.validate_data(
                     task_data, SchemaType.UPDATE
