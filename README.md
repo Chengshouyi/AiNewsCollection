@@ -4,7 +4,7 @@
 [![程式碼風格: black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](https://github.com/psf/black)
 [![授權條款: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
-一個功能全面的新聞爬蟲與知識管理平台，整合 RAG 技術支援在地化中文問答。
+一個功能全面的新聞爬蟲與知識管理平台，預計整合 RAG 技術支援在地化中文問答。
 
 ## 目錄
 
