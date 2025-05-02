@@ -21,6 +21,7 @@
   * [爬蟲管理](#爬蟲管理-範例)
   * [任務管理](#任務管理-範例)
   * [文章查詢](#文章查詢-範例)
+* [測試案例](#測試案例)
 * [佈署指南](#佈署指南)
 * [貢獻](#貢獻)
 * [維護者](#維護者)
@@ -340,7 +341,7 @@
 5.  **啟動服務:**
     *   在專案根目錄執行以下命令：
         ```bash
-        docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d
+        docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d  --build --no-cache
         ```
     *   此命令會根據 `docker-compose.yml` 和 `docker-compose.override.yml` 啟動開發環境所需的所有服務（資料庫 `db`、遷移服務 `migrate`、Web 服務 `web`）。
     *   `migrate` 服務會在 `db` 服務準備就緒後自動執行資料庫遷移 (`alembic upgrade head`)。
@@ -419,7 +420,7 @@
 4.  **啟動服務:**
     *   在專案根目錄執行以下命令：
         ```bash
-        docker-compose -f docker-compose.yml up -d --build
+        docker-compose -f docker-compose.yml up -d  --build --no-cache
         ```
     *   此命令僅使用 `docker-compose.yml` (生產配置) 來啟動服務。
     *   `--build` 會在啟動前重新建置 Docker 映像檔 (建議首次啟動或程式碼/依賴變更時使用)。
@@ -443,7 +444,126 @@
 
 ## 使用範例
 
+以下是系統主要功能的循序圖，展示了前後端互動的流程：
+
+### 1. 載入任務列表
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant TasksJS as tasks.js
+    participant TasksAPI as tasks_api.py
+    participant TaskService as CrawlerTaskService
+    participant DB as Database
+
+    Client->>TasksJS: 頁面載入
+    TasksJS->>TasksAPI: GET /api/tasks
+    TasksAPI->>TaskService: find_all_tasks()
+    TaskService->>DB: 查詢所有任務
+    DB-->>TaskService: 返回任務數據
+    TaskService-->>TasksAPI: 返回任務列表
+    TasksAPI-->>TasksJS: 返回JSON響應
+    TasksJS->>Client: 渲染任務表格
+```
+
+### 2. 新增任務
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant TasksJS as tasks.js
+    participant TasksAPI as tasks_api.py
+    participant TaskService as CrawlerTaskService
+    participant DB as Database
+
+    Client->>TasksJS: 點擊新增任務
+    TasksJS->>TasksJS: 顯示任務模態框
+    Client->>TasksJS: 填寫任務資料
+    TasksJS->>TasksAPI: POST /api/tasks
+    TasksAPI->>TaskService: validate_task_data()
+    TaskService-->>TasksAPI: 驗證結果
+    TasksAPI->>TaskService: create_task()
+    TaskService->>DB: 儲存任務資料
+    DB-->>TaskService: 儲存成功
+    TaskService-->>TasksAPI: 返回新任務
+    TasksAPI-->>TasksJS: 返回成功響應
+    TasksJS->>Client: 更新任務列表
+```
+
+### 3. 執行任務
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant TasksJS as tasks.js
+    participant TasksAPI as tasks_api.py
+    participant TaskExecutor as TaskExecutorService
+    participant WebSocket as WebSocket服務
+    participant Crawler as 爬蟲服務
+
+    Client->>TasksJS: 點擊執行按鈕
+    TasksJS->>TasksAPI: POST /api/tasks/{id}/run
+    TasksAPI->>TaskExecutor: execute_task()
+    TaskExecutor->>Crawler: 執行爬蟲任務
+    TaskExecutor-->>TasksAPI: 返回執行結果
+    TasksAPI-->>TasksJS: 返回成功響應
+    TasksJS->>WebSocket: 加入任務房間
+    Crawler->>WebSocket: 發送進度更新
+    WebSocket->>TasksJS: 接收進度更新
+    TasksJS->>Client: 更新UI進度
+```
+
+### 4. 取消任務
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant TasksJS as tasks.js
+    participant TasksAPI as tasks_api.py
+    participant TaskExecutor as TaskExecutorService
+    participant WebSocket as WebSocket服務
+    participant Crawler as 爬蟲服務
+
+    Client->>TasksJS: 點擊取消按鈕
+    TasksJS->>TasksAPI: POST /api/tasks/{id}/cancel
+    TasksAPI->>TaskExecutor: cancel_task()
+    TaskExecutor->>Crawler: 發送取消信號
+    Crawler-->>TaskExecutor: 確認取消
+    TaskExecutor-->>TasksAPI: 返回取消結果
+    TasksAPI-->>TasksJS: 返回成功響應
+    TasksJS->>WebSocket: 接收狀態更新
+    WebSocket->>TasksJS: 發送最終狀態
+    TasksJS->>Client: 更新UI狀態
+```
+
+### 5. 手動爬取連結
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant TasksJS as tasks.js
+    participant TasksAPI as tasks_api.py
+    participant TaskService as CrawlerTaskService
+    participant TaskExecutor as TaskExecutorService
+    participant WebSocket as WebSocket服務
+    participant Crawler as 爬蟲服務
+
+    Client->>TasksJS: 點擊手動爬取
+    TasksJS->>TasksAPI: POST /api/tasks/manual/collect-links
+    TasksAPI->>TaskService: create_task()
+    TaskService-->>TasksAPI: 返回新任務
+    TasksAPI->>TaskExecutor: collect_links_only()
+    TaskExecutor->>Crawler: 執行連結爬取
+    Crawler->>WebSocket: 發送進度更新
+    WebSocket->>TasksJS: 接收進度更新
+    TasksJS->>Client: 更新UI進度
+    Crawler-->>TaskExecutor: 返回爬取結果
+    TaskExecutor-->>TasksAPI: 返回執行結果
+    TasksAPI-->>TasksJS: 返回成功響應
+```
+
+以下是各功能的具體使用範例：
+
 您可以透過 Web UI 或直接呼叫 API 來使用系統。以下是一些基於測試案例的 API 使用範例 (使用 `curl`，假設服務運行在 `localhost:8001`)，完整的測試案例涵蓋了更多功能，您可以在 `tests/` 目錄下找到它們 (測試資料庫使用 SQLite memory DB)：
+
+## 測試案例
+
+本系統包含完整的測試套件，涵蓋了所有核心功能。測試使用 SQLite memory DB 作為測試資料庫。以下是測試檔案的完整列表：
 
 <details>
 <summary>點擊展開測試檔案列表 (`tests/`)</summary>
@@ -575,7 +695,7 @@
 4.  **啟動服務:**
     ```bash
     # 確保在專案根目錄
-    docker-compose -f docker-compose.yml up -d --build
+    docker-compose -f docker-compose.yml up -d --build --no-cache
     ```
     *   此命令將使用 `docker-compose.yml` (生產配置) 啟動服務。
     *   `--build` 確保使用最新的程式碼和依賴建置映像檔。
