@@ -446,7 +446,117 @@
 
 以下是系統主要功能的循序圖，展示了前後端互動的流程：
 
-### 1. 載入任務列表
+### 文章管理流程
+
+#### 1. 載入文章列表
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant ArticlesJS as articles.js
+    participant ArticlesAPI as articles_api.py
+    participant ArticleService as ArticleService
+    participant DB as Database
+
+    Client->>ArticlesJS: 頁面載入
+    ArticlesJS->>ArticlesAPI: GET /api/articles?page=N&per_page=20
+    ArticlesAPI->>ArticleService: find_articles()
+    ArticleService->>DB: 查詢文章列表
+    DB-->>ArticleService: 返回文章數據
+    ArticleService-->>ArticlesAPI: 返回分頁文章列表
+    ArticlesAPI-->>ArticlesJS: 返回JSON響應
+    ArticlesJS->>Client: 渲染文章表格
+    ArticlesJS->>Client: 渲染分頁控制
+```
+
+#### 2. 搜尋文章
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant ArticlesJS as articles.js
+    participant ArticlesAPI as articles_api.py
+    participant ArticleService as ArticleService
+    participant DB as Database
+
+    Client->>ArticlesJS: 輸入搜尋關鍵字
+    Client->>ArticlesJS: 點擊搜尋按鈕
+    ArticlesJS->>ArticlesAPI: GET /api/articles/search?q=關鍵字
+    ArticlesAPI->>ArticleService: search_articles()
+    ArticleService->>DB: 執行全文搜尋
+    DB-->>ArticleService: 返回符合的文章
+    ArticleService-->>ArticlesAPI: 返回搜尋結果
+    ArticlesAPI-->>ArticlesJS: 返回JSON響應
+    ArticlesJS->>Client: 更新文章表格
+    ArticlesJS->>Client: 清除分頁控制
+```
+
+#### 3. 查看文章詳情
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant ArticlesJS as articles.js
+    participant ArticlesAPI as articles_api.py
+    participant ArticleService as ArticleService
+    participant DB as Database
+
+    Client->>ArticlesJS: 點擊查看按鈕
+    ArticlesJS->>ArticlesAPI: GET /api/articles/{id}
+    ArticlesAPI->>ArticleService: get_article()
+    ArticleService->>DB: 查詢文章詳情
+    DB-->>ArticleService: 返回文章數據
+    ArticleService-->>ArticlesAPI: 返回文章詳情
+    ArticlesAPI-->>ArticlesJS: 返回JSON響應
+    ArticlesJS->>Client: 顯示文章模態框
+    ArticlesJS->>Client: 渲染文章內容
+```
+
+### 爬蟲管理流程
+
+#### 1. 載入爬蟲列表
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant CrawlersJS as crawlers.js
+    participant CrawlersAPI as crawlers_api.py
+    participant CrawlerService as CrawlerService
+    participant DB as Database
+
+    Client->>CrawlersJS: 頁面載入
+    CrawlersJS->>CrawlersAPI: GET /api/crawlers
+    CrawlersAPI->>CrawlerService: find_all_crawlers()
+    CrawlerService->>DB: 查詢爬蟲列表
+    DB-->>CrawlerService: 返回爬蟲數據
+    CrawlerService-->>CrawlersAPI: 返回爬蟲列表
+    CrawlersAPI-->>CrawlersJS: 返回JSON響應
+    CrawlersJS->>Client: 渲染爬蟲表格
+```
+
+#### 2. 測試爬蟲
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant CrawlersJS as crawlers.js
+    participant TasksAPI as tasks_api.py
+    participant WebSocket as WebSocket服務
+    participant TaskService as TaskService
+    participant Crawler as 爬蟲服務
+
+    Client->>CrawlersJS: 點擊測試按鈕
+    CrawlersJS->>TasksAPI: POST /api/tasks/manual/test
+    TasksAPI->>TaskService: create_test_task()
+    TaskService->>Crawler: 執行測試爬取
+    CrawlersJS->>WebSocket: 加入任務房間
+    Crawler->>WebSocket: 發送進度更新
+    WebSocket->>CrawlersJS: 接收進度更新
+    CrawlersJS->>Client: 更新進度條
+    Crawler-->>TaskService: 返回測試結果
+    TaskService-->>TasksAPI: 返回執行結果
+    TasksAPI-->>CrawlersJS: 返回成功響應
+    CrawlersJS->>Client: 顯示測試結果
+```
+
+### 任務管理流程
+
+#### 1. 載入任務列表
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -465,7 +575,7 @@ sequenceDiagram
     TasksJS->>Client: 渲染任務表格
 ```
 
-### 2. 新增任務
+#### 2. 新增任務
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -488,7 +598,7 @@ sequenceDiagram
     TasksJS->>Client: 更新任務列表
 ```
 
-### 3. 執行任務
+#### 3. 執行任務
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -510,7 +620,7 @@ sequenceDiagram
     TasksJS->>Client: 更新UI進度
 ```
 
-### 4. 取消任務
+#### 4. 取消任務
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -532,7 +642,7 @@ sequenceDiagram
     TasksJS->>Client: 更新UI狀態
 ```
 
-### 5. 手動爬取連結
+#### 5. 手動爬取連結
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -557,11 +667,11 @@ sequenceDiagram
     TasksAPI-->>TasksJS: 返回成功響應
 ```
 
-以下是各功能的具體使用範例：
+### API 使用範例
 
-您可以透過 Web UI 或直接呼叫 API 來使用系統。以下是一些基於測試案例的 API 使用範例 (使用 `curl`，假設服務運行在 `localhost:8001`)，完整的測試案例涵蓋了更多功能，您可以在 `tests/` 目錄下找到它們 (測試資料庫使用 SQLite memory DB)：
+您可以透過 Web UI 或直接呼叫 API 來使用系統。以下是一些基於測試案例的 API 使用範例 (使用 `curl`，假設服務運行在 `localhost:8001`)：
 
-### 爬蟲管理 (範例)
+#### 爬蟲管理 API
 
 1.  **取得所有爬蟲設定:**
     ```bash
@@ -585,7 +695,7 @@ sequenceDiagram
     curl -X DELETE http://localhost:8001/api/crawlers/YOUR_CRAWLER_ID
     ```
 
-### 任務管理 (範例)
+#### 任務管理 API
 
 1.  **創建排程任務:**
     ```bash
@@ -613,7 +723,7 @@ sequenceDiagram
     curl -X POST http://localhost:8001/api/tasks/YOUR_TASK_ID/cancel
     ```
 
-### 文章查詢 (範例)
+#### 文章查詢 API
 
 1.  **獲取文章列表 (分頁/排序):**
     ```bash
