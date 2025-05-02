@@ -3,6 +3,8 @@
 初始化 Flask 應用、SocketIO、註冊藍圖、設定事件處理程序，
 並管理應用程式生命週期，包括初始化服務和排程任務。
 """
+
+# 必須在所有 imports 之前
 import eventlet
 eventlet.monkey_patch()
 
@@ -18,7 +20,7 @@ import datetime
 # 第三方函式庫
 from dotenv import load_dotenv
 from flask import Flask, jsonify, request
-from flask_socketio import join_room, leave_room
+from flask_socketio import join_room, leave_room, SocketIO
 
 # 本地應用程式 imports
 from src.config import get_db_manager
@@ -27,7 +29,6 @@ from src.services.service_container import (
     get_crawlers_service,
     get_scheduler_service,
 )
-
 from src.web.routes.article_api import article_bp
 from src.web.routes.crawler_api import crawler_bp
 from src.web.routes.tasks_api import tasks_bp
@@ -51,24 +52,24 @@ client_rooms = {}
 def handle_tasks_connect():
     try:
         logger.info("Client connected to /tasks namespace")
-        client_rooms[request.sid] = set()  # 初始化該客戶端的房間集合
+        client_rooms[request.sid] = set()  # type: ignore # 初始化該客戶端的房間集合
     except Exception as e:
-        logger.error(f"處理客戶端連接時發生錯誤: {e}")
+        logger.error("處理客戶端連接時發生錯誤: %s", e)
 
 @socketio.on("disconnect", namespace="/tasks")
 def handle_tasks_disconnect(reason=None):
     try:
-        sid = request.sid
+        sid = request.sid # type: ignore
         if sid in client_rooms:
             # 從所有已加入的房間中離開
             for room in client_rooms[sid]:
                 leave_room(room)
-                logger.info(f"Client left room during disconnect: {room}")
+                logger.info("Client left room during disconnect: %s", room)
             # 清理客戶端房間記錄
             del client_rooms[sid]
-        logger.info(f"Client disconnected from /tasks namespace. Reason: {reason}")
+        logger.info("Client disconnected from /tasks namespace. Reason: %s", reason)
     except Exception as e:
-        logger.error(f"處理客戶端斷開連接時發生錯誤: {e}")
+        logger.error("處理客戶端斷開連接時發生錯誤: %s", e)
 
 @socketio.on("join_room", namespace="/tasks")
 def handle_join_room(data):
@@ -77,7 +78,7 @@ def handle_join_room(data):
     if room:
         join_room(room)
         # 記錄客戶端加入的房間
-        sid = request.sid
+        sid = request.sid # type: ignore
         if sid not in client_rooms:
             client_rooms[sid] = set()
         client_rooms[sid].add(room)
@@ -92,7 +93,7 @@ def handle_leave_room(data):
     if room:
         leave_room(room)
         # 從記錄中移除房間
-        sid = request.sid
+        sid = request.sid # type: ignore
         if sid in client_rooms:
             client_rooms[sid].discard(room)
         logger.info("Client left room: %s", room)
@@ -141,6 +142,40 @@ def initialize_default_crawler():
     except Exception as e:
         logger.error("初始化默認爬蟲時發生錯誤: %s", e, exc_info=True)
 
+def reload_scheduled_tasks():
+    """定期重新載入排程任務的背景執行緒"""
+    try:
+        raw_interval = os.getenv("SCHEDULE_RELOAD_INTERVAL_SEC", "1800")
+        interval_sec = int(raw_interval)
+        if interval_sec <= 0:
+            interval_sec = 1800
+            logger.warning(
+                "SCHEDULE_RELOAD_INTERVAL_SEC 必須為正整數，使用預設值: %s 秒",
+                interval_sec,
+            )
+        logger.info("排程任務重新載入間隔設定為: %s 秒", interval_sec)
+    except ValueError:
+        interval_sec = 1800
+        logger.warning(
+            "環境變數 SCHEDULE_RELOAD_INTERVAL_SEC 值 '%s' 無效，使用預設值: %s 秒",
+            raw_interval,
+            interval_sec,
+        )
+
+    interval_min = interval_sec / 60
+    while True:
+        try:
+            logger.info("開始重新載入排程任務...")
+            get_scheduler_service().reload_scheduler()
+            logger.info("排程任務重新載入完成。")
+            logger.info("下一次重新載入將在 %.1f 分鐘後進行。", interval_min)
+            time.sleep(interval_sec)
+        except Exception as e:
+            logger.error("排程任務重新載入/執行錯誤: %s", e, exc_info=True)
+            # 考慮是否在每次失敗後都停止排程器，目前選擇記錄錯誤並在短暫延遲後重試
+            logger.info("發生錯誤，將在 60 秒後重試...")
+            time.sleep(60)
+
 
 def init_application():
     """應用程式初始化，適用於所有環境（開發和生產）"""
@@ -152,7 +187,7 @@ def init_application():
             logger.info("執行日誌清理...")
             LoggerSetup.cleanup_logs(logger=cleanup_logger)
         except Exception as e:
-            cleanup_logger.error(f"日誌清理任務失敗: {e}", exc_info=True)
+            cleanup_logger.error("日誌清理任務失敗: %s", e, exc_info=True)
 
         # 啟動排程器
         try:
@@ -166,12 +201,12 @@ def init_application():
             logger.error("啟動排程器時發生未預期錯誤: %s", e, exc_info=True)
 
         # 啟動背景執行緒來定期重新載入排程
-        scheduler_thread = threading.Thread(target=run_scheduled_tasks, daemon=True)
+        scheduler_thread = threading.Thread(target=reload_scheduled_tasks, daemon=True)
         scheduler_thread.start()
         logger.info("已啟動背景排程重新載入執行緒")
 
         # 修改 Socket.IO 配置
-        if not socketio.server:
+        if not socketio.server: # type: ignore
             socketio.init_app(
                 app,
                 async_mode='eventlet',
@@ -213,39 +248,6 @@ def cleanup_resources():
             logger.error("清理資料庫管理器時發生錯誤: %s", dbe, exc_info=True)
 
 
-def run_scheduled_tasks():
-    """定期重新載入排程任務的背景執行緒"""
-    try:
-        raw_interval = os.getenv("SCHEDULE_RELOAD_INTERVAL_SEC", "1800")
-        interval_sec = int(raw_interval)
-        if interval_sec <= 0:
-            interval_sec = 1800
-            logger.warning(
-                "SCHEDULE_RELOAD_INTERVAL_SEC 必須為正整數，使用預設值: %s 秒",
-                interval_sec,
-            )
-        logger.info("排程任務重新載入間隔設定為: %s 秒", interval_sec)
-    except ValueError:
-        interval_sec = 1800
-        logger.warning(
-            "環境變數 SCHEDULE_RELOAD_INTERVAL_SEC 值 '%s' 無效，使用預設值: %s 秒",
-            raw_interval,
-            interval_sec,
-        )
-
-    interval_min = interval_sec / 60
-    while True:
-        try:
-            logger.info("開始重新載入排程任務...")
-            get_scheduler_service().reload_scheduler()
-            logger.info("排程任務重新載入完成。")
-            logger.info("下一次重新載入將在 %.1f 分鐘後進行。", interval_min)
-            time.sleep(interval_sec)
-        except Exception as e:
-            logger.error("排程任務重新載入/執行錯誤: %s", e, exc_info=True)
-            # 考慮是否在每次失敗後都停止排程器，目前選擇記錄錯誤並在短暫延遲後重試
-            logger.info("發生錯誤，將在 60 秒後重試...")
-            time.sleep(60)
 
 
 def main():
@@ -294,14 +296,14 @@ def health_check():
         db_manager.get_session()  # 嘗試獲取數據庫會話
         db_healthy = True
     except Exception as e:
-        logger.error(f"數據庫健康檢查失敗: {e}")
+        logger.error("數據庫健康檢查失敗: %s", e)
 
     status = {
         "status": "healthy",
         "components": {
             "socketio": {
-                "running": bool(socketio.server),
-                "connected_clients": len(socketio.server.eio.sockets) if socketio.server else 0
+                "running": bool(socketio.server), # type: ignore
+                "connected_clients": len(socketio.server.eio.sockets) if socketio.server else 0 # type: ignore
             },
             "scheduler": {
                 "running": bool(scheduler_service.is_running()),
@@ -345,16 +347,16 @@ def list_routes():
 def shutdown_session(exception=None):
     """在應用程式上下文銷毀時清理資料庫資源"""
     if exception:
-        logger.error(f"應用程式上下文銷毀時發生錯誤: {exception}")
+        logger.error("應用程式上下文銷毀時發生錯誤: %s", exception)
     
     db_manager = get_db_manager()
     if db_manager and hasattr(db_manager, 'cleanup_session'):
         try:
             # 只清理會話，不釋放引擎
-            db_manager.cleanup_session()
+            db_manager.cleanup()
             logger.debug("資料庫會話已清理")
         except Exception as e:
-            logger.error(f"清理資料庫會話時發生錯誤: {e}")
+            logger.error("清理資料庫會話時發生錯誤: %s", e)
 
 
 if __name__ == "__main__":
