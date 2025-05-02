@@ -849,6 +849,7 @@ class TestCrawlerTasksRepository:
             assert created_task_ids["手動任務"] not in found_ids
             assert created_task_ids["非活動任務"] not in found_ids
             assert len(due_tasks) == 2
+            
 
     def test_get_failed_tasks(
         self,
