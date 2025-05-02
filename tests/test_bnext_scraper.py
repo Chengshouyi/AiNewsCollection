@@ -56,7 +56,7 @@ def mock_config():
     config.valid_domains = ["https://www.bnext.com.tw"]
     config.url_patterns = ["/categories/", "/articles/"]
     config.url_file_extensions = [".html", ""]
-    config.date_format = "%Y-%m-%d"
+
     
     return config
 

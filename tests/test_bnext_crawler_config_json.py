@@ -24,7 +24,6 @@ def test_config_structure():
     assert "valid_domains" in config
     assert "url_patterns" in config
     assert "url_file_extensions" in config
-    assert "date_format" in config
     assert "selectors" in config
 
 def test_config_values():
@@ -44,7 +43,6 @@ def test_config_values():
     assert "/articles/" in config["url_patterns"]
     assert isinstance(config["url_file_extensions"], list)
     assert ".html" in config["url_file_extensions"]
-    assert config["date_format"] == "%Y-%m-%d"
     assert isinstance(config["selectors"], dict)
     assert "get_article_links" in config["selectors"]
     assert "get_article_contents" in config["selectors"]

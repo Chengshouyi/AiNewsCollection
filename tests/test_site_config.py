@@ -39,7 +39,6 @@ class TestSiteConfig:
         assert config.headers == DEFAULT_HEADERS # 驗證是否使用了 base_config 的預設值
         assert config.list_url_template == "{base_url}/categories/{category}"
         assert config.url_file_extensions == ['.html', '.htm']
-        assert config.date_format == '%Y/%m/%d %H:%M'
 
     def test_custom_initialization(self):
         """測試使用自定義值創建 SiteConfig 實例"""
