@@ -446,6 +446,8 @@
 
 以下是系統主要功能的循序圖，展示了前後端互動的流程：
 
+<details>
+<summary>點擊展開主要功能循序圖列表</summary>
 ### 文章管理流程
 
 #### 1. 載入文章列表
@@ -666,10 +668,14 @@ sequenceDiagram
     TaskExecutor-->>TasksAPI: 返回執行結果
     TasksAPI-->>TasksJS: 返回成功響應
 ```
+</details>
 
 ### API 使用範例
 
 您可以透過 Web UI 或直接呼叫 API 來使用系統。以下是一些基於測試案例的 API 使用範例 (使用 `curl`，假設服務運行在 `localhost:8001`)：
+
+<details>
+<summary>點擊展開API使用範例列表</summary>
 
 #### 爬蟲管理 API
 
@@ -734,6 +740,7 @@ sequenceDiagram
     ```bash
     curl -X GET "http://localhost:8001/api/articles/search?q=AI%20應用"
     ```
+</details>
 
 ## 測試案例
 
