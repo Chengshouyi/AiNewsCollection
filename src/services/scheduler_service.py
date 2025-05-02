@@ -80,7 +80,9 @@ class SchedulerService(BaseService[CrawlerTasks]):
     ) -> Dict[str, Tuple[Type[BaseRepository], Type[CrawlerTasks]]]:
         """提供儲存庫映射"""
         return {"CrawlerTask": (CrawlerTasksRepository, CrawlerTasks)}
+    
 
+        
     def start_scheduler(self) -> Dict[str, Any]:
         """啟動 cron 調度器，並根據資料庫中各任務的 cron 表達式安排執行
 
@@ -650,6 +652,22 @@ class SchedulerService(BaseService[CrawlerTasks]):
             error_msg = f"獲取持久化任務信息失敗: {str(e)}"
             logger.error(error_msg, exc_info=True)
             return {"success": False, "message": error_msg}
+        
+    def is_running(self) -> bool:
+        """回傳調度器是否正在運行"""
+        return self.scheduler_status.get("running", False)  
+    
+    def get_next_run_time(self):
+        """取得下一個排程任務的執行時間（UTC ISO 格式），若無則回傳 None"""
+        jobs = self.cron_scheduler.get_jobs()
+        if not jobs:
+            return None
+        # 取所有任務中最近的 next_run_time
+        next_times = [job.next_run_time for job in jobs if job.next_run_time]
+        if not next_times:
+            return None
+        next_time = min(next_times)
+        return next_time.isoformat()
 
     def __del__(self):
         """析構方法，確保調度器被停止"""

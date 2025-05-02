@@ -356,10 +356,11 @@
     # --- Log Settings ---
     LOG_LEVEL=DEBUG
     LOG_OUTPUT_MODE=console
-    # LOG_CLEANUP_LOG_DIR=logs
-    # LOG_CLEANUP_MODULE_NAME=""
-    # LOG_CLEANUP_KEEP_DAYS=""
-    # LOG_CLEANUP_DRY_RUN=false
+    LOG_OUTPUT_MODE=both            # 只輸出到控制台  file:只輸出到文件 both:同時輸出到控制台和文件 (預設)
+    LOG_CLEANUP_LOG_DIR=logs        # 可選：指定不同的日誌目錄 相對於/app
+    LOG_CLEANUP_MODULE_NAME=""      # 可選：只清理 'main_app' 模組的日誌，或""清理全部
+    LOG_CLEANUP_KEEP_DAYS=3        # 可選：保留最近 n 天的日誌，或""刪除全部
+    LOG_CLEANUP_DRY_RUN=false       # 可選：啟用 Dry Run (建議測試時使用) true/false
     # --- SQL settings ---
     SQLALCHEMY_ECHO=False
     # --- data locate setting ---
@@ -381,10 +382,11 @@
         # 進入 web 容器
         docker-compose -f docker-compose.yml -f docker-compose.override.yml exec web bash
 
-        # 在容器內啟動 Flask (範例，會自動監聽程式碼變更)
-        flask run --host=0.0.0.0 --port=8000 --debug
+        # 在容器內啟動 Flask (範例，會自動監聽程式碼變更)  
+        python src/web/app.py --debug
         ```
     *   或者，如果您使用 VS Code Dev Containers，通常會有預設的啟動任務。
+    *   **請注意**：不要執行flask run --host=0.0.0.0 --port=8000 --debug，因為本系統使用：eventlet.monkey_patch()
 
 7.  **(可選) 手動執行資料庫遷移:**
     *   雖然 `migrate` 服務會在 `docker-compose up` 時自動運行遷移，但如果您在開發過程中需要再次手動執行遷移，可以使用：
@@ -435,11 +437,11 @@
     # SCHEDULE_RELOAD_INTERVAL_SEC=1800
     # --- Log Settings ---
     LOG_LEVEL=INFO # 生產建議 INFO 或 WARNING
-    LOG_OUTPUT_MODE=both # 或 file
-    LOG_CLEANUP_LOG_DIR=logs
-    # LOG_CLEANUP_MODULE_NAME=""
-    LOG_CLEANUP_KEEP_DAYS=30 # 保留 30 天日誌
-    LOG_CLEANUP_DRY_RUN=false
+    LOG_OUTPUT_MODE=both            # 只輸出到控制台  file:只輸出到文件 both:同時輸出到控制台和文件 (預設)
+    LOG_CLEANUP_LOG_DIR=logs        # 可選：指定不同的日誌目錄 相對於/app
+    LOG_CLEANUP_MODULE_NAME=""      # 可選：只清理 'main_app' 模組的日誌，或""清理全部
+    LOG_CLEANUP_KEEP_DAYS=30        # 可選：保留最近 n 天的日誌，或""刪除全部
+    LOG_CLEANUP_DRY_RUN=false       # 可選：啟用 Dry Run (建議測試時使用) true/false
     # --- SQL settings ---
     SQLALCHEMY_ECHO=False
     # --- data locate setting ---

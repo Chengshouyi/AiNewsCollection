@@ -20,6 +20,7 @@ services:
       - app-logs:/app/logs # <<<--- 掛載 named volume 到容器內的 logs 目錄
     environment:
       - FLASK_ENV=development # 設定為開發模式
+      - FLASK_APP=src.web.app:app
       - PYTHONPATH=/app
       # 例如，如果需要更詳細的 SQL 日誌:
       # - SQLALCHEMY_ECHO=True
@@ -37,8 +38,6 @@ services:
       - .:/app
     user: vscode
     command: bash -c "pip install --user -r requirements.txt && export PATH=\"/home/vscode/.local/bin:$PATH\" && alembic upgrade head"
-
-
       # 將來擴充微服務時會使用 
       # worker:
       #   # build: # 通常在 override 中註解掉 build，改用 volumes 掛載
