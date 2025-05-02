@@ -561,50 +561,6 @@ sequenceDiagram
 
 您可以透過 Web UI 或直接呼叫 API 來使用系統。以下是一些基於測試案例的 API 使用範例 (使用 `curl`，假設服務運行在 `localhost:8001`)，完整的測試案例涵蓋了更多功能，您可以在 `tests/` 目錄下找到它們 (測試資料庫使用 SQLite memory DB)：
 
-## 測試案例
-
-本系統包含完整的測試套件，涵蓋了所有核心功能。測試使用 SQLite memory DB 作為測試資料庫。以下是測試檔案的完整列表：
-
-<details>
-<summary>點擊展開測試檔案列表 (`tests/`)</summary>
-
-*   `test_ai_fillter_config.py` - 測試 AI 過濾器配置 (ai_filter_config) 的相關功能。
-*   `test_api_utils.py` - 測試 API 請求參數解析工具 (api_utils) 的功能。
-*   `test_article_analyzer.py` - 測試 ArticleAnalyzer 類別的功能。
-*   `test_article_api_routes.py` - 測試 Article API 相關路由的功能。
-*   `test_article_service.py` - 測試 ArticleService 的功能，包括 CRUD、批量操作、搜索、統計、狀態更新和錯誤處理。
-*   `test_articles_model.py` - 針對 Articles 相關模型進行單元測試，驗證其資料結構與資料庫互動行為。
-*   `test_articles_repository.py` - 測試 ArticlesRepository 的功能，包括 CRUD、搜索、過濾、分頁、批次操作和統計。
-*   `test_articles_schema.py` - 測試 ArticleCreateSchema 與 ArticleUpdateSchema 的資料驗證功能。
-*   `test_base_config.py` - 測試 src.crawlers.configs.base_config 中的預設設定和輔助函數。
-*   `test_base_crawler.py` - 測試 BaseCrawler 類及其相關功能的單元測試。
-*   `test_base_model.py` - 測試 Base 模型的功能。
-*   `test_base_repository.py` - 測試 BaseRepository 的功能。
-*   `test_base_schema.py` - 測試 BaseCreateSchema 與 BaseUpdateSchema 的功能與資料庫互動。
-*   `test_base_service.py` - 測試 BaseService 及其相關元件的功能，包括 CRUD、事務管理、錯誤處理和儲存庫互動。
-*   `test_bnext_content_extractor.py` - 測試 BnextContentExtractor 的功能。
-*   `test_bnext_crawler.py` - 測試 BnextCrawler 類及其相關功能的單元測試。
-*   `test_bnext_crawler_config_json.py` - 測試 bnext_crawler_config.json 設定檔的載入、結構和值的正確性。
-*   `test_bnext_scraper.py` - 測試 BnextScraper 類別的功能。
-*   `test_bnext_utils.py` - 數位時代 (Bnext) 網站爬蟲工具模組的單元測試。
-*   `test_crawler_api_routes.py` - 測試爬蟲 API 路由 (/api/crawlers) 的功能。
-*   `test_crawler_factory.py` - 測試 CrawlerFactory 的功能。
-*   `test_crawler_task_history_model.py` - 測試 CrawlerTaskHistory 模型的功能，包括創建、欄位驗證、時間轉換等。
-*   `test_crawler_task_history_repository.py` - 測試 CrawlerTaskHistoryRepository 的功能，包括 CRUD、查找、過濾、統計、狀態更新和錯誤處理。
-*   `test_crawler_task_history_schema.py` - 測試 CrawlerTaskHistoryCreateSchema 和 CrawlerTaskHistoryUpdateSchema 的功能，包括欄位驗證和資料轉換。
-*   `test_crawler_task_history_service.py` - 測試 CrawlerTaskHistoryService 的功能，涵蓋 CRUD 操作、查詢功能以及錯誤處理等。
-*   `test_crawler_task_service.py` - 測試 CrawlerTaskService 的功能，包括 CRUD、任務狀態管理、排程、歷史記錄查詢、重試機制和錯誤處理。
-*   `test_crawler_tasks_model.py` - 測試 CrawlerTasks 模型的功能，包括任務創建、欄位驗證、狀態轉換和資料序列化等功能。
-*   `test_crawler_tasks_repository.py` - 測試 CrawlerTasksRepository 的功能。
-*   `test_crawlers_schema.py` - 測試 Crawlers schema 驗證功能。
-*   `test_crawlers_service.py` - 測試 CrawlersService (爬蟲管理服務) 的 CRUD、批量操作、搜尋、狀態切換、統計、配置處理和錯誤處理。
-*   `test_database_manager.py` - 測試 src.database.database_manager 模組的功能，包括初始化、健康檢查、事務管理和表創建。
-*   `test_datetime_utils.py` - 測試日期時間工具函數 (datetime_utils) 的功能。
-*   `test_handle_api_error.py` - 測試 src.error.handle_api_error 中的 API 錯誤處理函數。
-*   `test_model_utils.py` - 測試 src.utils.model_utils 中的驗證函數。
-*   `test_repository_utils.py` - 測試 src.utils.repository_utils 中的字典更新函數。
-</details>
-
 ### 爬蟲管理 (範例)
 
 1.  **取得所有爬蟲設定:**
@@ -669,7 +625,52 @@ sequenceDiagram
     curl -X GET "http://localhost:8001/api/articles/search?q=AI%20應用"
     ```
 
-### 佈署指南
+## 測試案例
+
+本系統包含完整的測試套件，涵蓋了所有核心功能。測試使用 SQLite memory DB 作為測試資料庫。以下是測試檔案的完整列表：
+
+<details>
+<summary>點擊展開測試檔案列表 (`tests/`)</summary>
+
+*   `test_ai_fillter_config.py` - 測試 AI 過濾器配置 (ai_filter_config) 的相關功能。
+*   `test_api_utils.py` - 測試 API 請求參數解析工具 (api_utils) 的功能。
+*   `test_article_analyzer.py` - 測試 ArticleAnalyzer 類別的功能。
+*   `test_article_api_routes.py` - 測試 Article API 相關路由的功能。
+*   `test_article_service.py` - 測試 ArticleService 的功能，包括 CRUD、批量操作、搜索、統計、狀態更新和錯誤處理。
+*   `test_articles_model.py` - 針對 Articles 相關模型進行單元測試，驗證其資料結構與資料庫互動行為。
+*   `test_articles_repository.py` - 測試 ArticlesRepository 的功能，包括 CRUD、搜索、過濾、分頁、批次操作和統計。
+*   `test_articles_schema.py` - 測試 ArticleCreateSchema 與 ArticleUpdateSchema 的資料驗證功能。
+*   `test_base_config.py` - 測試 src.crawlers.configs.base_config 中的預設設定和輔助函數。
+*   `test_base_crawler.py` - 測試 BaseCrawler 類及其相關功能的單元測試。
+*   `test_base_model.py` - 測試 Base 模型的功能。
+*   `test_base_repository.py` - 測試 BaseRepository 的功能。
+*   `test_base_schema.py` - 測試 BaseCreateSchema 與 BaseUpdateSchema 的功能與資料庫互動。
+*   `test_base_service.py` - 測試 BaseService 及其相關元件的功能，包括 CRUD、事務管理、錯誤處理和儲存庫互動。
+*   `test_bnext_content_extractor.py` - 測試 BnextContentExtractor 的功能。
+*   `test_bnext_crawler.py` - 測試 BnextCrawler 類及其相關功能的單元測試。
+*   `test_bnext_crawler_config_json.py` - 測試 bnext_crawler_config.json 設定檔的載入、結構和值的正確性。
+*   `test_bnext_scraper.py` - 測試 BnextScraper 類別的功能。
+*   `test_bnext_utils.py` - 數位時代 (Bnext) 網站爬蟲工具模組的單元測試。
+*   `test_crawler_api_routes.py` - 測試爬蟲 API 路由 (/api/crawlers) 的功能。
+*   `test_crawler_factory.py` - 測試 CrawlerFactory 的功能。
+*   `test_crawler_task_history_model.py` - 測試 CrawlerTaskHistory 模型的功能，包括創建、欄位驗證、時間轉換等。
+*   `test_crawler_task_history_repository.py` - 測試 CrawlerTaskHistoryRepository 的功能，包括 CRUD、查找、過濾、統計、狀態更新和錯誤處理。
+*   `test_crawler_task_history_schema.py` - 測試 CrawlerTaskHistoryCreateSchema 和 CrawlerTaskHistoryUpdateSchema 的功能，包括欄位驗證和資料轉換。
+*   `test_crawler_task_history_service.py` - 測試 CrawlerTaskHistoryService 的功能，涵蓋 CRUD 操作、查詢功能以及錯誤處理等。
+*   `test_crawler_task_service.py` - 測試 CrawlerTaskService 的功能，包括 CRUD、任務狀態管理、排程、歷史記錄查詢、重試機制和錯誤處理。
+*   `test_crawler_tasks_model.py` - 測試 CrawlerTasks 模型的功能，包括任務創建、欄位驗證、狀態轉換和資料序列化等功能。
+*   `test_crawler_tasks_repository.py` - 測試 CrawlerTasksRepository 的功能。
+*   `test_crawlers_schema.py` - 測試 Crawlers schema 驗證功能。
+*   `test_crawlers_service.py` - 測試 CrawlersService (爬蟲管理服務) 的 CRUD、批量操作、搜尋、狀態切換、統計、配置處理和錯誤處理。
+*   `test_database_manager.py` - 測試 src.database.database_manager 模組的功能，包括初始化、健康檢查、事務管理和表創建。
+*   `test_datetime_utils.py` - 測試日期時間工具函數 (datetime_utils) 的功能。
+*   `test_handle_api_error.py` - 測試 src.error.handle_api_error 中的 API 錯誤處理函數。
+*   `test_model_utils.py` - 測試 src.utils.model_utils 中的驗證函數。
+*   `test_repository_utils.py` - 測試 src.utils.repository_utils 中的字典更新函數。
+</details>
+
+
+## 佈署指南
 
 本節提供基本的生產環境部署建議。
 
@@ -786,7 +787,7 @@ sequenceDiagram
         ```
     *   **備份資料庫:** 建議定期備份 PostgreSQL 資料庫 volume (`postgres-data`) 或使用 `pg_dump`。
 
-## 如何新增爬蟲
+### 如何新增爬蟲
 
 若要擴展系統以支援新的新聞網站，請遵循以下步驟：
 
