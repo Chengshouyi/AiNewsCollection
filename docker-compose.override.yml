@@ -1,8 +1,6 @@
 # docker-compose.override.yml
 # Development specific overrides
 
-version: '3.8'
-
 services:
   db:
     # 開發環境通常不需要覆蓋 db，但可以修改 port 映射或密碼 (如果需要)

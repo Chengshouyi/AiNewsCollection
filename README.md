@@ -4,7 +4,7 @@
 [![程式碼風格: black](https://img.shields.io/badge/code%20style-black-000000.svg?style=flat-square)](https://github.com/psf/black)
 [![授權條款: MIT](https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square)](https://opensource.org/licenses/MIT)
 
-一個功能全面的新聞爬蟲與知識管理平台，整合 RAG 技術支援在地化中文問答。
+一個功能全面的新聞爬蟲與知識管理平台，預計整合 RAG 技術支援在地化中文問答。
 
 ## 目錄
 
@@ -21,6 +21,7 @@
   * [爬蟲管理](#爬蟲管理-範例)
   * [任務管理](#任務管理-範例)
   * [文章查詢](#文章查詢-範例)
+* [測試案例](#測試案例)
 * [佈署指南](#佈署指南)
 * [貢獻](#貢獻)
 * [維護者](#維護者)
@@ -66,10 +67,10 @@
    * ✅ 文章列表展示欄位：ID, 標題 (Title), 來源 (Source), 發布時間 (Published At), 是否 AI 相關 (is\_ai\_related), 最後爬取時間 (Last Scrape Attempt), 爬取狀態 (Scrape Status)。
    * ✅ 提供文章詳細頁面跳轉或快速查看模態框。
 4. **資料轉換 (規劃中)**
-   * ❌ 將爬取資料轉為領域資料庫，支援 RAG 應用 (尚待實作)。
-   * ❌ 提供轉換任務查看功能 (尚待實作)。
+   *  將爬取資料轉為領域資料庫，支援 RAG 應用 (尚待實作)。
+   *  提供轉換任務查看功能 (尚待實作)。
 5. **問答對話 (規劃中)**
-   * ❌ 整合 RAG 技術與在地模型，根據領域資料庫回答中文問題 (尚待實作)。
+   *  整合 RAG 技術與在地模型，根據領域資料庫回答中文問題 (尚待實作)。
 6. **基礎功能**
    * ✅ 使用 Flask 網頁介面。
    * ✅ 透過 API 與後端互動。
@@ -142,45 +143,73 @@
 
 ### 設計考量
 
-本系統採用了常見的分層架構模式，特別是在資料處理方面，以提高模組化、可測試性和可維護性。關鍵的分層如下：
+本系統採用了分層架構模式，特別是在資料處理方面，以提高模組化、可測試性和可維護性。系統的架構主要基於 MVC (Model-View-Controller) 模式，並進行了擴展以適應複雜的業務需求。以下是系統架構的詳細說明：
 
-1.  **`src/models` (資料模型層):**
-    *   **職責:** 定義應用程式的資料結構。
-    *   **內容:** 包含兩種類型的模型：
-        *   **SQLAlchemy 模型 (繼承自 `database.base_model.Base`):** 用於定義資料庫表格的結構、欄位和關聯性。這些模型由 SQLAlchemy ORM 用於與資料庫互動。
-        *   **Pydantic 模型 (繼承自 `pydantic.BaseModel` 或 `base_schema.BaseSchema`):** 主要用於 API 的請求/回應資料驗證、序列化/反序列化，以及在不同服務層之間傳遞結構化資料。它們確保了資料在系統內部流動時的格式一致性和有效性。
-    *   **範例:** `ArticlesModel` (SQLAlchemy), `ArticleCreateSchema` (Pydantic)。
+#### MVC 架構對應
 
-2.  **`src/database` (資料存取層 - Repository 模式):**
-    *   **職責:** 封裝所有與資料庫直接互動的邏輯 (CRUD - Create, Read, Update, Delete)。
-    *   **內容:** 包含 Repository 類別，每個類別通常對應一個 SQLAlchemy 模型。Repository 方法接收或返回 Pydantic 模型或 SQLAlchemy 模型實例，內部則使用 SQLAlchemy Session 執行資料庫操作。
-    *   **目的:** 將資料庫查詢邏輯與業務邏輯分離，使得更換資料庫或修改查詢方式時，對上層服務的影響最小化。它提供了一個清晰的介面來存取特定類型的資料。
-    *   **範例:** `ArticlesRepository` 提供了新增、查詢、更新、刪除 `ArticlesModel` 的方法。
+1. **Model (模型層)**
+   * 對應於 `src/models` 目錄
+   * 包含資料結構定義和業務規則
+   * 使用 SQLAlchemy 和 Pydantic 模型來實現
+   * 負責資料的驗證、轉換和持久化
 
-3.  **`src/crawlers` (爬蟲層):**
-    *   **職責:** 提供爬取各種新聞網站的爬蟲實作及其基礎架構。
-    *   **內容:** 以多層次結構組織：
-        *   **基礎架構類別 (`BaseCrawler`):** 定義了爬蟲操作的抽象流程和通用方法，包括任務進度管理、重試機制、錯誤處理等。提供模板方法模式，讓子類實作特定的爬取邏輯。
-        *   **工廠類別 (`CrawlerFactory`):** 負責根據資料庫中的爬蟲設定，動態載入和初始化爬蟲實例。實現了控制反轉，使系統能夠在不修改核心程式碼的情況下擴展支援新的爬蟲類型。
-        *   **特定網站爬蟲 (如 `BnextCrawler`):** 繼承自 `BaseCrawler`，實作特定網站的爬取邏輯。通常會劃分為列表爬取器和內容擷取器兩個組件，以分離關注點。
-        *   **分析工具 (`ArticleAnalyzer`):** 提供文本分析功能，如關鍵字提取、AI 相關性判斷等。
-        *   **配置管理 (`configs/`):** 使用 JSON 檔案存儲各網站的爬蟲配置，包括選擇器、URL 模板等。
-    *   **目的:** 透過抽象基類和工廠模式，提供一個可擴展的架構，使添加新網站爬蟲變得簡單。同時，進度報告和錯誤處理等橫切關注點被統一處理。
-    *   **範例:** `BnextCrawler` 組合了 `BnextScraper`（列表爬取）和 `BnextContentExtractor`（內容擷取）兩個組件，實現了對明日科技網站的爬取。
+2. **View (視圖層)**
+   * 對應於 `src/web/templates` 目錄
+   * 使用 Jinja2 模板引擎
+   * 負責資料的展示和用戶界面
+   * 包含靜態資源 (`src/web/static`)
 
-4.  **`src/services` (服務層/業務邏輯層):**
-    *   **職責:** 實現應用程式的核心業務邏輯和工作流程。
-    *   **內容:** 包含 Service 類別。服務層會協調不同的操作，例如：接收來自 API 層的請求 (通常是 Pydantic 模型)，調用一個或多個 Repository 方法來存取或修改資料，執行業務規則計算或轉換，最後可能返回結果 (通常也是 Pydantic 模型) 給 API 層。
-    *   **目的:** 保持業務邏輯的集中和獨立性。使得 API 層 (Web 路由) 更輕量，只負責處理 HTTP 請求和回應，而將複雜的邏輯委派給服務層。
-    *   **範例:** `ArticleService` 可能包含一個 `create_article` 方法，該方法會接收 Pydantic 的 `ArticleCreateSchema`，調用 `ArticlesRepository.add()` 來儲存文章，並可能執行一些額外的驗證或處理。
+3. **Controller (控制器層)**
+   * 對應於 `src/web/routes` 目錄
+   * 處理 HTTP 請求和回應
+   * 協調 Model 和 View 之間的互動
+   * 實現業務邏輯的流程控制
+
+#### 擴展的分層架構
+
+在 MVC 基礎上，系統進一步細分了以下層級：
+
+1. **`src/models` (資料模型層):**
+   * **職責:** 定義應用程式的資料結構。
+   * **MVC 對應:** 屬於 Model 層，負責資料結構定義
+   * **內容:** 包含兩種類型的模型：
+     * **SQLAlchemy 模型 (繼承自 `database.base_model.Base`):** 用於定義資料庫表格的結構、欄位和關聯性。這些模型由 SQLAlchemy ORM 用於與資料庫互動。
+     * **Pydantic 模型 (繼承自 `pydantic.BaseModel` 或 `base_schema.BaseSchema`):** 主要用於 API 的請求/回應資料驗證、序列化/反序列化，以及在不同服務層之間傳遞結構化資料。它們確保了資料在系統內部流動時的格式一致性和有效性。
+   * **範例:** `ArticlesModel` (SQLAlchemy), `ArticleCreateSchema` (Pydantic)。
+
+2. **`src/database` (資料存取層 - Repository 模式):**
+   * **職責:** 封裝所有與資料庫直接互動的邏輯 (CRUD - Create, Read, Update, Delete)。
+   * **MVC 對應:** 屬於 Model 層的擴展，負責資料持久化
+   * **內容:** 包含 Repository 類別，每個類別通常對應一個 SQLAlchemy 模型。Repository 方法接收或返回 Pydantic 模型或 SQLAlchemy 模型實例，內部則使用 SQLAlchemy Session 執行資料庫操作。
+   * **目的:** 將資料庫查詢邏輯與業務邏輯分離，使得更換資料庫或修改查詢方式時，對上層服務的影響最小化。它提供了一個清晰的介面來存取特定類型的資料。
+   * **範例:** `ArticlesRepository` 提供了新增、查詢、更新、刪除 `ArticlesModel` 的方法。
+
+3. **`src/crawlers` (爬蟲層):**
+   * **職責:** 提供爬取各種新聞網站的爬蟲實作及其基礎架構。
+   * **MVC 對應:** 屬於 Model 層的擴展，負責外部資料獲取
+   * **內容:** 以多層次結構組織：
+     * **基礎架構類別 (`BaseCrawler`):** 定義了爬蟲操作的抽象流程和通用方法，包括任務進度管理、重試機制、錯誤處理等。提供模板方法模式，讓子類實作特定的爬取邏輯。
+     * **工廠類別 (`CrawlerFactory`):** 負責根據資料庫中的爬蟲設定，動態載入和初始化爬蟲實例。實現了控制反轉，使系統能夠在不修改核心程式碼的情況下擴展支援新的爬蟲類型。
+     * **特定網站爬蟲 (如 `BnextCrawler`):** 繼承自 `BaseCrawler`，實作特定網站的爬取邏輯。通常會劃分為列表爬取器和內容擷取器兩個組件，以分離關注點。
+     * **分析工具 (`ArticleAnalyzer`):** 提供文本分析功能，如關鍵字提取、AI 相關性判斷等。
+     * **配置管理 (`configs/`):** 使用 JSON 檔案存儲各網站的爬蟲配置，包括選擇器、URL 模板等。
+   * **目的:** 透過抽象基類和工廠模式，提供一個可擴展的架構，使添加新網站爬蟲變得簡單。同時，進度報告和錯誤處理等橫切關注點被統一處理。
+   * **範例:** `BnextCrawler` 組合了 `BnextScraper`（列表爬取）和 `BnextContentExtractor`（內容擷取）兩個組件，實現了對明日科技網站的爬取。
+
+4. **`src/services` (服務層/業務邏輯層):**
+   * **職責:** 實現應用程式的核心業務邏輯和工作流程。
+   * **MVC 對應:** 屬於 Controller 層的擴展，負責複雜業務邏輯處理
+   * **內容:** 包含 Service 類別。服務層會協調不同的操作，例如：接收來自 API 層的請求 (通常是 Pydantic 模型)，調用一個或多個 Repository 方法來存取或修改資料，執行業務規則計算或轉換，最後可能返回結果 (通常也是 Pydantic 模型) 給 API 層。
+   * **目的:** 保持業務邏輯的集中和獨立性。使得 API 層 (Web 路由) 更輕量，只負責處理 HTTP 請求和回應，而將複雜的邏輯委派給服務層。
+   * **範例:** `ArticleService` 可能包含一個 `create_article` 方法，該方法會接收 Pydantic 的 `ArticleCreateSchema`，調用 `ArticlesRepository.add()` 來儲存文章，並可能執行一些額外的驗證或處理。
 
 **其他值得注意的設計:**
 
-*   **依賴注入 (Dependency Injection):** 雖然沒有明確使用框架，但透過將 Repository 實例傳遞給 Service 的建構子 (或方法)，實現了基本的依賴注入概念，提高了可測試性 (可以 mock Repository)。(參見 `service_container.py` 的應用方式)
-*   **錯誤處理 (`src/error`):** 定義了自訂的錯誤類別和處理機制，以提供更一致和友好的錯誤回饋。
-*   **介面定義 (`src/interface`):** 定義了如 `ProgressListener` 和 `ProgressReporter` 等抽象介面，實現觀察者模式來處理爬蟲進度回報，確保不同實作遵循一致的合約。`ProgressListener` 為抽象類別，定義了 `on_progress_update` 方法用於接收任務進度更新；`ProgressReporter` 則管理多個監聽者，並提供添加、移除、清除監聽者和通知進度等功能。
+* **依賴注入 (Dependency Injection):** 雖然沒有明確使用框架，但透過將 Repository 實例傳遞給 Service 的建構子 (或方法)，實現了基本的依賴注入概念，提高了可測試性 (可以 mock Repository)。(參見 `service_container.py` 的應用方式)
+* **錯誤處理 (`src/error`):** 定義了自訂的錯誤類別和處理機制，以提供更一致和友好的錯誤回饋。
+* **介面定義 (`src/interface`):** 定義了如 `ProgressListener` 和 `ProgressReporter` 等抽象介面，實現觀察者模式來處理爬蟲進度回報，確保不同實作遵循一致的合約。`ProgressListener` 為抽象類別，定義了 `on_progress_update` 方法用於接收任務進度更新；`ProgressReporter` 則管理多個監聽者，並提供添加、移除、清除監聽者和通知進度等功能。
 
-這種分層設計使得系統各部分的職責更加清晰，降低了耦合度，有利於團隊協作和長期維護。
+這種分層設計使得系統各部分的職責更加清晰，降低了耦合度，有利於團隊協作和長期維護。通過在 MVC 架構基礎上的擴展，系統能夠更好地處理複雜的業務邏輯和資料處理需求。
 
 ## 技術堆疊
 
@@ -340,7 +369,7 @@
 5.  **啟動服務:**
     *   在專案根目錄執行以下命令：
         ```bash
-        docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d
+        docker-compose -f docker-compose.yml -f docker-compose.override.yml up -d  --build --no-cache
         ```
     *   此命令會根據 `docker-compose.yml` 和 `docker-compose.override.yml` 啟動開發環境所需的所有服務（資料庫 `db`、遷移服務 `migrate`、Web 服務 `web`）。
     *   `migrate` 服務會在 `db` 服務準備就緒後自動執行資料庫遷移 (`alembic upgrade head`)。
@@ -419,7 +448,7 @@
 4.  **啟動服務:**
     *   在專案根目錄執行以下命令：
         ```bash
-        docker-compose -f docker-compose.yml up -d --build
+        docker-compose -f docker-compose.yml up -d  --build --no-cache
         ```
     *   此命令僅使用 `docker-compose.yml` (生產配置) 來啟動服務。
     *   `--build` 會在啟動前重新建置 Docker 映像檔 (建議首次啟動或程式碼/依賴變更時使用)。
@@ -443,7 +472,308 @@
 
 ## 使用範例
 
-您可以透過 Web UI 或直接呼叫 API 來使用系統。以下是一些基於測試案例的 API 使用範例 (使用 `curl`，假設服務運行在 `localhost:8001`)，完整的測試案例涵蓋了更多功能，您可以在 `tests/` 目錄下找到它們 (測試資料庫使用 SQLite memory DB)：
+### 主要功能循序圖
+
+以下是系統主要功能的循序圖，展示了前後端互動的流程：
+
+
+#### 文章管理流程
+
+##### 1. 載入文章列表
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant ArticlesJS as articles.js
+    participant ArticlesAPI as articles_api.py
+    participant ArticleService as ArticleService
+    participant DB as Database
+
+    Client->>ArticlesJS: 頁面載入
+    ArticlesJS->>ArticlesAPI: GET /api/articles?page=N&per_page=20
+    ArticlesAPI->>ArticleService: find_articles()
+    ArticleService->>DB: 查詢文章列表
+    DB-->>ArticleService: 返回文章數據
+    ArticleService-->>ArticlesAPI: 返回分頁文章列表
+    ArticlesAPI-->>ArticlesJS: 返回JSON響應
+    ArticlesJS->>Client: 渲染文章表格
+    ArticlesJS->>Client: 渲染分頁控制
+```
+
+##### 2. 搜尋文章
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant ArticlesJS as articles.js
+    participant ArticlesAPI as articles_api.py
+    participant ArticleService as ArticleService
+    participant DB as Database
+
+    Client->>ArticlesJS: 輸入搜尋關鍵字
+    Client->>ArticlesJS: 點擊搜尋按鈕
+    ArticlesJS->>ArticlesAPI: GET /api/articles/search?q=關鍵字
+    ArticlesAPI->>ArticleService: search_articles()
+    ArticleService->>DB: 執行全文搜尋
+    DB-->>ArticleService: 返回符合的文章
+    ArticleService-->>ArticlesAPI: 返回搜尋結果
+    ArticlesAPI-->>ArticlesJS: 返回JSON響應
+    ArticlesJS->>Client: 更新文章表格
+    ArticlesJS->>Client: 清除分頁控制
+```
+
+##### 3. 查看文章詳情
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant ArticlesJS as articles.js
+    participant ArticlesAPI as articles_api.py
+    participant ArticleService as ArticleService
+    participant DB as Database
+
+    Client->>ArticlesJS: 點擊查看按鈕
+    ArticlesJS->>ArticlesAPI: GET /api/articles/{id}
+    ArticlesAPI->>ArticleService: get_article()
+    ArticleService->>DB: 查詢文章詳情
+    DB-->>ArticleService: 返回文章數據
+    ArticleService-->>ArticlesAPI: 返回文章詳情
+    ArticlesAPI-->>ArticlesJS: 返回JSON響應
+    ArticlesJS->>Client: 顯示文章模態框
+    ArticlesJS->>Client: 渲染文章內容
+```
+
+#### 爬蟲管理流程
+
+##### 1. 載入爬蟲列表
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant CrawlersJS as crawlers.js
+    participant CrawlersAPI as crawlers_api.py
+    participant CrawlerService as CrawlerService
+    participant DB as Database
+
+    Client->>CrawlersJS: 頁面載入
+    CrawlersJS->>CrawlersAPI: GET /api/crawlers
+    CrawlersAPI->>CrawlerService: find_all_crawlers()
+    CrawlerService->>DB: 查詢爬蟲列表
+    DB-->>CrawlerService: 返回爬蟲數據
+    CrawlerService-->>CrawlersAPI: 返回爬蟲列表
+    CrawlersAPI-->>CrawlersJS: 返回JSON響應
+    CrawlersJS->>Client: 渲染爬蟲表格
+```
+
+##### 2. 測試爬蟲
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant CrawlersJS as crawlers.js
+    participant TasksAPI as tasks_api.py
+    participant WebSocket as WebSocket服務
+    participant TaskService as TaskService
+    participant Crawler as 爬蟲服務
+
+    Client->>CrawlersJS: 點擊測試按鈕
+    CrawlersJS->>TasksAPI: POST /api/tasks/manual/test
+    TasksAPI->>TaskService: create_test_task()
+    TaskService->>Crawler: 執行測試爬取
+    CrawlersJS->>WebSocket: 加入任務房間
+    Crawler->>WebSocket: 發送進度更新
+    WebSocket->>CrawlersJS: 接收進度更新
+    CrawlersJS->>Client: 更新進度條
+    Crawler-->>TaskService: 返回測試結果
+    TaskService-->>TasksAPI: 返回執行結果
+    TasksAPI-->>CrawlersJS: 返回成功響應
+    CrawlersJS->>Client: 顯示測試結果
+```
+
+#### 任務管理流程
+
+##### 1. 載入任務列表
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant TasksJS as tasks.js
+    participant TasksAPI as tasks_api.py
+    participant TaskService as CrawlerTaskService
+    participant DB as Database
+
+    Client->>TasksJS: 頁面載入
+    TasksJS->>TasksAPI: GET /api/tasks
+    TasksAPI->>TaskService: find_all_tasks()
+    TaskService->>DB: 查詢所有任務
+    DB-->>TaskService: 返回任務數據
+    TaskService-->>TasksAPI: 返回任務列表
+    TasksAPI-->>TasksJS: 返回JSON響應
+    TasksJS->>Client: 渲染任務表格
+```
+
+##### 2. 新增任務
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant TasksJS as tasks.js
+    participant TasksAPI as tasks_api.py
+    participant TaskService as CrawlerTaskService
+    participant DB as Database
+
+    Client->>TasksJS: 點擊新增任務
+    TasksJS->>TasksJS: 顯示任務模態框
+    Client->>TasksJS: 填寫任務資料
+    TasksJS->>TasksAPI: POST /api/tasks
+    TasksAPI->>TaskService: validate_task_data()
+    TaskService-->>TasksAPI: 驗證結果
+    TasksAPI->>TaskService: create_task()
+    TaskService->>DB: 儲存任務資料
+    DB-->>TaskService: 儲存成功
+    TaskService-->>TasksAPI: 返回新任務
+    TasksAPI-->>TasksJS: 返回成功響應
+    TasksJS->>Client: 更新任務列表
+```
+
+##### 3. 執行任務
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant TasksJS as tasks.js
+    participant TasksAPI as tasks_api.py
+    participant TaskExecutor as TaskExecutorService
+    participant WebSocket as WebSocket服務
+    participant Crawler as 爬蟲服務
+
+    Client->>TasksJS: 點擊執行按鈕
+    TasksJS->>TasksAPI: POST /api/tasks/{id}/run
+    TasksAPI->>TaskExecutor: execute_task()
+    TaskExecutor->>Crawler: 執行爬蟲任務
+    TaskExecutor-->>TasksAPI: 返回執行結果
+    TasksAPI-->>TasksJS: 返回成功響應
+    TasksJS->>WebSocket: 加入任務房間
+    Crawler->>WebSocket: 發送進度更新
+    WebSocket->>TasksJS: 接收進度更新
+    TasksJS->>Client: 更新UI進度
+```
+
+##### 4. 取消任務
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant TasksJS as tasks.js
+    participant TasksAPI as tasks_api.py
+    participant TaskExecutor as TaskExecutorService
+    participant WebSocket as WebSocket服務
+    participant Crawler as 爬蟲服務
+
+    Client->>TasksJS: 點擊取消按鈕
+    TasksJS->>TasksAPI: POST /api/tasks/{id}/cancel
+    TasksAPI->>TaskExecutor: cancel_task()
+    TaskExecutor->>Crawler: 發送取消信號
+    Crawler-->>TaskExecutor: 確認取消
+    TaskExecutor-->>TasksAPI: 返回取消結果
+    TasksAPI-->>TasksJS: 返回成功響應
+    TasksJS->>WebSocket: 接收狀態更新
+    WebSocket->>TasksJS: 發送最終狀態
+    TasksJS->>Client: 更新UI狀態
+```
+
+##### 5. 手動爬取連結
+```mermaid
+sequenceDiagram
+    participant Client as 前端頁面
+    participant TasksJS as tasks.js
+    participant TasksAPI as tasks_api.py
+    participant TaskService as CrawlerTaskService
+    participant TaskExecutor as TaskExecutorService
+    participant WebSocket as WebSocket服務
+    participant Crawler as 爬蟲服務
+
+    Client->>TasksJS: 點擊手動爬取
+    TasksJS->>TasksAPI: POST /api/tasks/manual/collect-links
+    TasksAPI->>TaskService: create_task()
+    TaskService-->>TasksAPI: 返回新任務
+    TasksAPI->>TaskExecutor: collect_links_only()
+    TaskExecutor->>Crawler: 執行連結爬取
+    Crawler->>WebSocket: 發送進度更新
+    WebSocket->>TasksJS: 接收進度更新
+    TasksJS->>Client: 更新UI進度
+    Crawler-->>TaskExecutor: 返回爬取結果
+    TaskExecutor-->>TasksAPI: 返回執行結果
+    TasksAPI-->>TasksJS: 返回成功響應
+```
+
+
+### API 使用範例
+
+您可以透過 Web UI 或直接呼叫 API 來使用系統。以下是一些基於測試案例的 API 使用範例 (使用 `curl`，假設服務運行在 `localhost:8001`)：
+
+<details>
+<summary>點擊展開API使用範例列表</summary>
+
+#### 爬蟲管理 API
+
+1.  **取得所有爬蟲設定:**
+    ```bash
+    curl -X GET http://localhost:8001/api/crawlers/
+    ```
+
+2.  **新增爬蟲設定 (以 Bnext 為例):**
+    ```bash
+    # 假設 test_bnext_config.json 存在於測試目錄
+    curl -X POST -F "crawler_data={'crawler_name': 'Bnext_Test', 'module_name': 'bnext_crawler', 'base_url': 'https://www.bnext.com.tw', 'crawler_type': 'web', 'is_active': true}" -F "config_file=@tests/fixtures/test_bnext_config.json" http://localhost:8001/api/crawlers/
+    ```
+    *(注意: 上述 `crawler_data` 內的引號可能需要根據您的 shell 環境調整)*
+
+3.  **更新爬蟲設定:**
+    ```bash
+    curl -X PUT -H "Content-Type: application/json" -d '{"crawler_name": "Bnext_Updated", "is_active": false}' http://localhost:8001/api/crawlers/YOUR_CRAWLER_ID
+    ```
+
+4.  **刪除爬蟲設定:**
+    ```bash
+    curl -X DELETE http://localhost:8001/api/crawlers/YOUR_CRAWLER_ID
+    ```
+
+#### 任務管理 API
+
+1.  **創建排程任務:**
+    ```bash
+    curl -X POST -H "Content-Type: application/json" -d '{"task_name": "Daily Bnext AI News", "crawler_id": YOUR_BNEXT_CRAWLER_ID, "cron_expression": "0 1 * * *", "task_args": {"ai_only": true}}' http://localhost:8001/api/tasks/scheduled
+    ```
+
+2.  **啟動手動連結收集任務:**
+    ```bash
+    curl -X POST -H "Content-Type: application/json" -d '{"crawler_id": YOUR_BNEXT_CRAWLER_ID, "task_args": {"num_articles": 5}}' http://localhost:8001/api/tasks/manual/collect-links
+    ```
+
+3.  **獲取手動任務狀態:**
+    ```bash
+    curl -X GET http://localhost:8001/api/tasks/manual/YOUR_MANUAL_TASK_ID/status
+    ```
+
+4.  **為已完成連結收集的任務啟動內容抓取:**
+    ```bash
+    # 假設從 /links 端點獲取了 target_article_ids
+    curl -X POST -H "Content-Type: application/json" -d '{"target_article_ids": [1, 2, 3]}' http://localhost:8001/api/tasks/manual/YOUR_LINK_COLLECTION_TASK_ID/fetch-content
+    ```
+
+5.  **取消正在運行的任務:**
+    ```bash
+    curl -X POST http://localhost:8001/api/tasks/YOUR_TASK_ID/cancel
+    ```
+
+#### 文章查詢 API
+
+1.  **獲取文章列表 (分頁/排序):**
+    ```bash
+    curl -X GET "http://localhost:8001/api/articles/?page=2&per_page=20&sort_by=published_at&sort_desc=true"
+    ```
+
+2.  **根據關鍵字搜尋文章:**
+    ```bash
+    curl -X GET "http://localhost:8001/api/articles/search?q=AI%20應用"
+    ```
+</details>
+
+## 測試案例
+
+本系統包含完整的測試套件，涵蓋了所有核心功能。測試使用 SQLite memory DB 作為測試資料庫。以下是測試檔案的完整列表：
 
 <details>
 <summary>點擊展開測試檔案列表 (`tests/`)</summary>
@@ -485,71 +815,8 @@
 *   `test_repository_utils.py` - 測試 src.utils.repository_utils 中的字典更新函數。
 </details>
 
-### 爬蟲管理 (範例)
 
-1.  **取得所有爬蟲設定:**
-    ```bash
-    curl -X GET http://localhost:8001/api/crawlers/
-    ```
-
-2.  **新增爬蟲設定 (以 Bnext 為例):**
-    ```bash
-    # 假設 test_bnext_config.json 存在於測試目錄
-    curl -X POST -F "crawler_data={'crawler_name': 'Bnext_Test', 'module_name': 'bnext_crawler', 'base_url': 'https://www.bnext.com.tw', 'crawler_type': 'web', 'is_active': true}" -F "config_file=@tests/fixtures/test_bnext_config.json" http://localhost:8001/api/crawlers/
-    ```
-    *(注意: 上述 `crawler_data` 內的引號可能需要根據您的 shell 環境調整)*
-
-3.  **更新爬蟲設定:**
-    ```bash
-    curl -X PUT -H "Content-Type: application/json" -d '{"crawler_name": "Bnext_Updated", "is_active": false}' http://localhost:8001/api/crawlers/YOUR_CRAWLER_ID
-    ```
-
-4.  **刪除爬蟲設定:**
-    ```bash
-    curl -X DELETE http://localhost:8001/api/crawlers/YOUR_CRAWLER_ID
-    ```
-
-### 任務管理 (範例)
-
-1.  **創建排程任務:**
-    ```bash
-    curl -X POST -H "Content-Type: application/json" -d '{"task_name": "Daily Bnext AI News", "crawler_id": YOUR_BNEXT_CRAWLER_ID, "cron_expression": "0 1 * * *", "task_args": {"ai_only": true}}' http://localhost:8001/api/tasks/scheduled
-    ```
-
-2.  **啟動手動連結收集任務:**
-    ```bash
-    curl -X POST -H "Content-Type: application/json" -d '{"crawler_id": YOUR_BNEXT_CRAWLER_ID, "task_args": {"num_articles": 5}}' http://localhost:8001/api/tasks/manual/collect-links
-    ```
-
-3.  **獲取手動任務狀態:**
-    ```bash
-    curl -X GET http://localhost:8001/api/tasks/manual/YOUR_MANUAL_TASK_ID/status
-    ```
-
-4.  **為已完成連結收集的任務啟動內容抓取:**
-    ```bash
-    # 假設從 /links 端點獲取了 target_article_ids
-    curl -X POST -H "Content-Type: application/json" -d '{"target_article_ids": [1, 2, 3]}' http://localhost:8001/api/tasks/manual/YOUR_LINK_COLLECTION_TASK_ID/fetch-content
-    ```
-
-5.  **取消正在運行的任務:**
-    ```bash
-    curl -X POST http://localhost:8001/api/tasks/YOUR_TASK_ID/cancel
-    ```
-
-### 文章查詢 (範例)
-
-1.  **獲取文章列表 (分頁/排序):**
-    ```bash
-    curl -X GET "http://localhost:8001/api/articles/?page=2&per_page=20&sort_by=published_at&sort_desc=true"
-    ```
-
-2.  **根據關鍵字搜尋文章:**
-    ```bash
-    curl -X GET "http://localhost:8001/api/articles/search?q=AI%20應用"
-    ```
-
-### 佈署指南
+## 佈署指南
 
 本節提供基本的生產環境部署建議。
 
@@ -575,7 +842,7 @@
 4.  **啟動服務:**
     ```bash
     # 確保在專案根目錄
-    docker-compose -f docker-compose.yml up -d --build
+    docker-compose -f docker-compose.yml up -d --build --no-cache
     ```
     *   此命令將使用 `docker-compose.yml` (生產配置) 啟動服務。
     *   `--build` 確保使用最新的程式碼和依賴建置映像檔。
@@ -666,7 +933,7 @@
         ```
     *   **備份資料庫:** 建議定期備份 PostgreSQL 資料庫 volume (`postgres-data`) 或使用 `pg_dump`。
 
-## 如何新增爬蟲
+### 如何新增爬蟲
 
 若要擴展系統以支援新的新聞網站，請遵循以下步驟：
 

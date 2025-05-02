@@ -1,8 +1,6 @@
 # docker-compose.yml
 # Base configuration, suitable for production-like environments
 
-version: '3.8'
-
 services:
   db:
     image: postgres:15 # 使用明確的版本號
