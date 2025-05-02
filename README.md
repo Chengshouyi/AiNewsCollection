@@ -143,45 +143,73 @@
 
 ### 設計考量
 
-本系統採用了常見的分層架構模式，特別是在資料處理方面，以提高模組化、可測試性和可維護性。關鍵的分層如下：
+本系統採用了分層架構模式，特別是在資料處理方面，以提高模組化、可測試性和可維護性。系統的架構主要基於 MVC (Model-View-Controller) 模式，並進行了擴展以適應複雜的業務需求。以下是系統架構的詳細說明：
 
-1.  **`src/models` (資料模型層):**
-    *   **職責:** 定義應用程式的資料結構。
-    *   **內容:** 包含兩種類型的模型：
-        *   **SQLAlchemy 模型 (繼承自 `database.base_model.Base`):** 用於定義資料庫表格的結構、欄位和關聯性。這些模型由 SQLAlchemy ORM 用於與資料庫互動。
-        *   **Pydantic 模型 (繼承自 `pydantic.BaseModel` 或 `base_schema.BaseSchema`):** 主要用於 API 的請求/回應資料驗證、序列化/反序列化，以及在不同服務層之間傳遞結構化資料。它們確保了資料在系統內部流動時的格式一致性和有效性。
-    *   **範例:** `ArticlesModel` (SQLAlchemy), `ArticleCreateSchema` (Pydantic)。
+#### MVC 架構對應
 
-2.  **`src/database` (資料存取層 - Repository 模式):**
-    *   **職責:** 封裝所有與資料庫直接互動的邏輯 (CRUD - Create, Read, Update, Delete)。
-    *   **內容:** 包含 Repository 類別，每個類別通常對應一個 SQLAlchemy 模型。Repository 方法接收或返回 Pydantic 模型或 SQLAlchemy 模型實例，內部則使用 SQLAlchemy Session 執行資料庫操作。
-    *   **目的:** 將資料庫查詢邏輯與業務邏輯分離，使得更換資料庫或修改查詢方式時，對上層服務的影響最小化。它提供了一個清晰的介面來存取特定類型的資料。
-    *   **範例:** `ArticlesRepository` 提供了新增、查詢、更新、刪除 `ArticlesModel` 的方法。
+1. **Model (模型層)**
+   * 對應於 `src/models` 目錄
+   * 包含資料結構定義和業務規則
+   * 使用 SQLAlchemy 和 Pydantic 模型來實現
+   * 負責資料的驗證、轉換和持久化
 
-3.  **`src/crawlers` (爬蟲層):**
-    *   **職責:** 提供爬取各種新聞網站的爬蟲實作及其基礎架構。
-    *   **內容:** 以多層次結構組織：
-        *   **基礎架構類別 (`BaseCrawler`):** 定義了爬蟲操作的抽象流程和通用方法，包括任務進度管理、重試機制、錯誤處理等。提供模板方法模式，讓子類實作特定的爬取邏輯。
-        *   **工廠類別 (`CrawlerFactory`):** 負責根據資料庫中的爬蟲設定，動態載入和初始化爬蟲實例。實現了控制反轉，使系統能夠在不修改核心程式碼的情況下擴展支援新的爬蟲類型。
-        *   **特定網站爬蟲 (如 `BnextCrawler`):** 繼承自 `BaseCrawler`，實作特定網站的爬取邏輯。通常會劃分為列表爬取器和內容擷取器兩個組件，以分離關注點。
-        *   **分析工具 (`ArticleAnalyzer`):** 提供文本分析功能，如關鍵字提取、AI 相關性判斷等。
-        *   **配置管理 (`configs/`):** 使用 JSON 檔案存儲各網站的爬蟲配置，包括選擇器、URL 模板等。
-    *   **目的:** 透過抽象基類和工廠模式，提供一個可擴展的架構，使添加新網站爬蟲變得簡單。同時，進度報告和錯誤處理等橫切關注點被統一處理。
-    *   **範例:** `BnextCrawler` 組合了 `BnextScraper`（列表爬取）和 `BnextContentExtractor`（內容擷取）兩個組件，實現了對明日科技網站的爬取。
+2. **View (視圖層)**
+   * 對應於 `src/web/templates` 目錄
+   * 使用 Jinja2 模板引擎
+   * 負責資料的展示和用戶界面
+   * 包含靜態資源 (`src/web/static`)
 
-4.  **`src/services` (服務層/業務邏輯層):**
-    *   **職責:** 實現應用程式的核心業務邏輯和工作流程。
-    *   **內容:** 包含 Service 類別。服務層會協調不同的操作，例如：接收來自 API 層的請求 (通常是 Pydantic 模型)，調用一個或多個 Repository 方法來存取或修改資料，執行業務規則計算或轉換，最後可能返回結果 (通常也是 Pydantic 模型) 給 API 層。
-    *   **目的:** 保持業務邏輯的集中和獨立性。使得 API 層 (Web 路由) 更輕量，只負責處理 HTTP 請求和回應，而將複雜的邏輯委派給服務層。
-    *   **範例:** `ArticleService` 可能包含一個 `create_article` 方法，該方法會接收 Pydantic 的 `ArticleCreateSchema`，調用 `ArticlesRepository.add()` 來儲存文章，並可能執行一些額外的驗證或處理。
+3. **Controller (控制器層)**
+   * 對應於 `src/web/routes` 目錄
+   * 處理 HTTP 請求和回應
+   * 協調 Model 和 View 之間的互動
+   * 實現業務邏輯的流程控制
+
+#### 擴展的分層架構
+
+在 MVC 基礎上，系統進一步細分了以下層級：
+
+1. **`src/models` (資料模型層):**
+   * **職責:** 定義應用程式的資料結構。
+   * **MVC 對應:** 屬於 Model 層，負責資料結構定義
+   * **內容:** 包含兩種類型的模型：
+     * **SQLAlchemy 模型 (繼承自 `database.base_model.Base`):** 用於定義資料庫表格的結構、欄位和關聯性。這些模型由 SQLAlchemy ORM 用於與資料庫互動。
+     * **Pydantic 模型 (繼承自 `pydantic.BaseModel` 或 `base_schema.BaseSchema`):** 主要用於 API 的請求/回應資料驗證、序列化/反序列化，以及在不同服務層之間傳遞結構化資料。它們確保了資料在系統內部流動時的格式一致性和有效性。
+   * **範例:** `ArticlesModel` (SQLAlchemy), `ArticleCreateSchema` (Pydantic)。
+
+2. **`src/database` (資料存取層 - Repository 模式):**
+   * **職責:** 封裝所有與資料庫直接互動的邏輯 (CRUD - Create, Read, Update, Delete)。
+   * **MVC 對應:** 屬於 Model 層的擴展，負責資料持久化
+   * **內容:** 包含 Repository 類別，每個類別通常對應一個 SQLAlchemy 模型。Repository 方法接收或返回 Pydantic 模型或 SQLAlchemy 模型實例，內部則使用 SQLAlchemy Session 執行資料庫操作。
+   * **目的:** 將資料庫查詢邏輯與業務邏輯分離，使得更換資料庫或修改查詢方式時，對上層服務的影響最小化。它提供了一個清晰的介面來存取特定類型的資料。
+   * **範例:** `ArticlesRepository` 提供了新增、查詢、更新、刪除 `ArticlesModel` 的方法。
+
+3. **`src/crawlers` (爬蟲層):**
+   * **職責:** 提供爬取各種新聞網站的爬蟲實作及其基礎架構。
+   * **MVC 對應:** 屬於 Model 層的擴展，負責外部資料獲取
+   * **內容:** 以多層次結構組織：
+     * **基礎架構類別 (`BaseCrawler`):** 定義了爬蟲操作的抽象流程和通用方法，包括任務進度管理、重試機制、錯誤處理等。提供模板方法模式，讓子類實作特定的爬取邏輯。
+     * **工廠類別 (`CrawlerFactory`):** 負責根據資料庫中的爬蟲設定，動態載入和初始化爬蟲實例。實現了控制反轉，使系統能夠在不修改核心程式碼的情況下擴展支援新的爬蟲類型。
+     * **特定網站爬蟲 (如 `BnextCrawler`):** 繼承自 `BaseCrawler`，實作特定網站的爬取邏輯。通常會劃分為列表爬取器和內容擷取器兩個組件，以分離關注點。
+     * **分析工具 (`ArticleAnalyzer`):** 提供文本分析功能，如關鍵字提取、AI 相關性判斷等。
+     * **配置管理 (`configs/`):** 使用 JSON 檔案存儲各網站的爬蟲配置，包括選擇器、URL 模板等。
+   * **目的:** 透過抽象基類和工廠模式，提供一個可擴展的架構，使添加新網站爬蟲變得簡單。同時，進度報告和錯誤處理等橫切關注點被統一處理。
+   * **範例:** `BnextCrawler` 組合了 `BnextScraper`（列表爬取）和 `BnextContentExtractor`（內容擷取）兩個組件，實現了對明日科技網站的爬取。
+
+4. **`src/services` (服務層/業務邏輯層):**
+   * **職責:** 實現應用程式的核心業務邏輯和工作流程。
+   * **MVC 對應:** 屬於 Controller 層的擴展，負責複雜業務邏輯處理
+   * **內容:** 包含 Service 類別。服務層會協調不同的操作，例如：接收來自 API 層的請求 (通常是 Pydantic 模型)，調用一個或多個 Repository 方法來存取或修改資料，執行業務規則計算或轉換，最後可能返回結果 (通常也是 Pydantic 模型) 給 API 層。
+   * **目的:** 保持業務邏輯的集中和獨立性。使得 API 層 (Web 路由) 更輕量，只負責處理 HTTP 請求和回應，而將複雜的邏輯委派給服務層。
+   * **範例:** `ArticleService` 可能包含一個 `create_article` 方法，該方法會接收 Pydantic 的 `ArticleCreateSchema`，調用 `ArticlesRepository.add()` 來儲存文章，並可能執行一些額外的驗證或處理。
 
 **其他值得注意的設計:**
 
-*   **依賴注入 (Dependency Injection):** 雖然沒有明確使用框架，但透過將 Repository 實例傳遞給 Service 的建構子 (或方法)，實現了基本的依賴注入概念，提高了可測試性 (可以 mock Repository)。(參見 `service_container.py` 的應用方式)
-*   **錯誤處理 (`src/error`):** 定義了自訂的錯誤類別和處理機制，以提供更一致和友好的錯誤回饋。
-*   **介面定義 (`src/interface`):** 定義了如 `ProgressListener` 和 `ProgressReporter` 等抽象介面，實現觀察者模式來處理爬蟲進度回報，確保不同實作遵循一致的合約。`ProgressListener` 為抽象類別，定義了 `on_progress_update` 方法用於接收任務進度更新；`ProgressReporter` 則管理多個監聽者，並提供添加、移除、清除監聽者和通知進度等功能。
+* **依賴注入 (Dependency Injection):** 雖然沒有明確使用框架，但透過將 Repository 實例傳遞給 Service 的建構子 (或方法)，實現了基本的依賴注入概念，提高了可測試性 (可以 mock Repository)。(參見 `service_container.py` 的應用方式)
+* **錯誤處理 (`src/error`):** 定義了自訂的錯誤類別和處理機制，以提供更一致和友好的錯誤回饋。
+* **介面定義 (`src/interface`):** 定義了如 `ProgressListener` 和 `ProgressReporter` 等抽象介面，實現觀察者模式來處理爬蟲進度回報，確保不同實作遵循一致的合約。`ProgressListener` 為抽象類別，定義了 `on_progress_update` 方法用於接收任務進度更新；`ProgressReporter` 則管理多個監聽者，並提供添加、移除、清除監聽者和通知進度等功能。
 
-這種分層設計使得系統各部分的職責更加清晰，降低了耦合度，有利於團隊協作和長期維護。
+這種分層設計使得系統各部分的職責更加清晰，降低了耦合度，有利於團隊協作和長期維護。通過在 MVC 架構基礎上的擴展，系統能夠更好地處理複雜的業務邏輯和資料處理需求。
 
 ## 技術堆疊
 
