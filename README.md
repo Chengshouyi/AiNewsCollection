@@ -448,8 +448,6 @@
 
 以下是系統主要功能的循序圖，展示了前後端互動的流程：
 
-<details>
-<summary>點擊展開主要功能循序圖列表</summary>
 
 #### 文章管理流程
 
@@ -672,7 +670,6 @@ sequenceDiagram
     TasksAPI-->>TasksJS: 返回成功響應
 ```
 
-</details>
 
 ### API 使用範例
 
