@@ -29,7 +29,6 @@ class SiteConfig:
     valid_domains: List[str] = field(default_factory=list)
     url_patterns: List[str] = field(default_factory=list)
     url_file_extensions: List[str] = field(default_factory=lambda: ['.html', '.htm'])
-    date_format: str = '%Y/%m/%d %H:%M'
 
     def validate_url(self, url: str) -> bool:
         """根據配置驗證提供的 URL 是否有效。"""
