@@ -450,9 +450,10 @@
 
 <details>
 <summary>點擊展開主要功能循序圖列表</summary>
-### 文章管理流程
 
-#### 1. 載入文章列表
+#### 文章管理流程
+
+##### 1. 載入文章列表
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -472,7 +473,7 @@ sequenceDiagram
     ArticlesJS->>Client: 渲染分頁控制
 ```
 
-#### 2. 搜尋文章
+##### 2. 搜尋文章
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -493,7 +494,7 @@ sequenceDiagram
     ArticlesJS->>Client: 清除分頁控制
 ```
 
-#### 3. 查看文章詳情
+##### 3. 查看文章詳情
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -513,9 +514,9 @@ sequenceDiagram
     ArticlesJS->>Client: 渲染文章內容
 ```
 
-### 爬蟲管理流程
+#### 爬蟲管理流程
 
-#### 1. 載入爬蟲列表
+##### 1. 載入爬蟲列表
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -534,7 +535,7 @@ sequenceDiagram
     CrawlersJS->>Client: 渲染爬蟲表格
 ```
 
-#### 2. 測試爬蟲
+##### 2. 測試爬蟲
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -558,9 +559,9 @@ sequenceDiagram
     CrawlersJS->>Client: 顯示測試結果
 ```
 
-### 任務管理流程
+#### 任務管理流程
 
-#### 1. 載入任務列表
+##### 1. 載入任務列表
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -579,7 +580,7 @@ sequenceDiagram
     TasksJS->>Client: 渲染任務表格
 ```
 
-#### 2. 新增任務
+##### 2. 新增任務
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -602,7 +603,7 @@ sequenceDiagram
     TasksJS->>Client: 更新任務列表
 ```
 
-#### 3. 執行任務
+##### 3. 執行任務
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -624,7 +625,7 @@ sequenceDiagram
     TasksJS->>Client: 更新UI進度
 ```
 
-#### 4. 取消任務
+##### 4. 取消任務
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -646,7 +647,7 @@ sequenceDiagram
     TasksJS->>Client: 更新UI狀態
 ```
 
-#### 5. 手動爬取連結
+##### 5. 手動爬取連結
 ```mermaid
 sequenceDiagram
     participant Client as 前端頁面
@@ -670,6 +671,7 @@ sequenceDiagram
     TaskExecutor-->>TasksAPI: 返回執行結果
     TasksAPI-->>TasksJS: 返回成功響應
 ```
+
 </details>
 
 ### API 使用範例
