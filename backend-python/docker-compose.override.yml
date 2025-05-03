@@ -1,0 +1,54 @@
+# docker-compose.override.yml
+# Development specific overrides
+
+services:
+  db:
+    # 開發環境通常不需要覆蓋 db，但可以修改 port 映射或密碼 (如果需要)
+    ports:
+      - "5432:5432" # 確保開發時能從本機連接
+
+  backend-python:
+    build:
+      context: .
+      dockerfile: backend-python/.devcontainer/Dockerfile
+    command: sleep infinity
+    # flask run --host=0.0.0.0 --port=8000 --debug # 使用 Flask 開發伺服器並啟用除錯模式
+    volumes:
+      - .:/app
+        # 將專案根目錄掛載到容器的 /workspace 目錄 (假設 Dockerfile 中的 WORKDIR 是 /workspace)
+        # 這樣修改本地程式碼會直接反映到容器內，Flask debug 模式會自動重載
+      - app-logs:/app/logs # <<<--- 掛載 named volume 到容器內的 logs 目錄
+    environment:
+      - FLASK_ENV=development # 設定為開發模式
+      - FLASK_APP=src.web.app:app
+      - PYTHONPATH=/app/backend-python
+      # 例如，如果需要更詳細的 SQL 日誌:
+      # - SQLALCHEMY_ECHO=True
+    ports:
+      - "8001:8000" # 保留 port 映射，方便從瀏覽器訪問
+      # 如果你需要用 debugpy 等工具進行遠程除錯，可以再增加端口映射
+      # - "5678:5678"
+      # restart: 'no' # 開發時可能不需要自動重啟
+  migrate:
+    build:
+      context: .
+      dockerfile: backend-python/.devcontainer/Dockerfile
+    volumes:
+      # <--- 關鍵：確保 migrate 服務也能看到最新的程式碼
+      - .:/app
+    user: vscode
+    working_dir: /app/backend-python
+    command: bash -c "pip install --user -r requirements.txt && export PATH=\"/home/vscode/.local/bin:$PATH\" && alembic upgrade head"
+      # 將來擴充微服務時會使用 
+      # worker:
+      #   # build: # 通常在 override 中註解掉 build，改用 volumes 掛載
+      #   command: python run.py
+      #     # 開發時 worker 可能也需要看到程式碼變更，或者需要特定的 debug 參數
+      #     # 如果 run.py 支持，可以考慮加上類似 --debug 的參數
+      #   volumes:
+      #     - .:/app # 同樣掛載程式碼
+      #     - app-logs:/app/logs # <<<--- 掛載 named volume 到容器內的 logs 目錄
+      #   environment:
+      #     - FLASK_ENV=development # 也將 worker 的環境設為 development (如果它需要區分環境)
+      #     - PYTHONPATH=/app
+      #     # restart: 'no' # 開發時可能不需要自動重啟

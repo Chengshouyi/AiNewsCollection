@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}查看文章 - AI 新聞收集器{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col">
+        <nav aria-label="導航">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="{{ url_for('views.articles_page') }}">文章列表</a></li>
+                <li class="breadcrumb-item active">文章詳情</li>
+            </ol>
+        </nav>
+    </div>
+</div>
+
+<div class="article-container" data-article-id="{{ article_id }}">
+    <div class="article-header mb-4">
+        <h1 id="article-title" class="mb-3">載入中...</h1>
+        <div class="article-meta d-flex flex-wrap justify-content-between align-items-center mb-3">
+            <div>
+                <span class="badge rounded-pill bg-primary me-2">ID: <span id="article-id">{{ article_id
+                        }}</span></span>
+                <span class="badge rounded-pill bg-info me-2">來源: <span id="article-source">-</span></span>
+                <span class="badge rounded-pill bg-secondary me-2">發布日期: <span id="article-publish-date">-</span></span>
+                <span id="ai-related-badge" class="badge rounded-pill bg-success me-2 d-none">AI相關</span>
+            </div>
+            <div>
+                <a id="article-original-link" href="#" target="_blank" class="btn btn-sm btn-outline-primary">
+                    <i class="bi bi-box-arrow-up-right"></i> 原始網頁
+                </a>
+                <button id="toggle-ai-analysis-btn" class="btn btn-sm btn-outline-secondary">
+                    <i class="bi bi-robot"></i> AI 分析
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="content-container">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">文章內容</h5>
+                        <div id="article-content" class="article-content mt-3">
+                            <div class="text-center">
+                                <div class="spinner-border" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                <p>載入文章內容中...</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-lg-4">
+                <div id="ai-analysis-container" class="card mb-4 d-none">
+                    <div class="card-body">
+                        <h5 class="card-title">AI 分析</h5>
+                        <div id="ai-analysis-content" class="mt-3">
+                            <p>暫無 AI 分析結果</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title">相關文章</h5>
+                        <div id="related-articles" class="mt-3">
+                            <p>暫無相關文章</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/articles.js') }}"></script>
+<script>
+    $(document).ready(function () {
+        // 從HTML數據屬性獲取文章ID
+        var articleId = $('.article-container').data('article-id');
+
+        // 加載文章詳情
+        loadArticleDetails(articleId);
+
+        // 切換AI分析面板顯示
+        $('#toggle-ai-analysis-btn').click(function () {
+            $('#ai-analysis-container').toggleClass('d-none');
+        });
+    });
+</script>
+{% endblock %}

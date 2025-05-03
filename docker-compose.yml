@@ -33,18 +33,18 @@ services:
         condition: service_healthy
     environment:
       - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-ainews_user}:${POSTGRES_PASSWORD:-your_strong_password}@db:5432/${POSTGRES_DB:-ainews}
-    entrypoint: []  # 覆蓋 Dockerfile 中的 ENTRYPOINT
+    entrypoint: [] # 覆蓋 Dockerfile 中的 ENTRYPOINT
     command: alembic upgrade head
     restart: 'no'
     networks:
       - default
-  web:
+  backend-python:
     build:
       context: .
       dockerfile: Dockerfile # 指定 Dockerfile 路徑
-    container_name: ainews-web
+    container_name: ainews-backend-python
     restart: unless-stopped
-    entrypoint: []  # 覆蓋 Dockerfile 中的 ENTRYPOINT
+    entrypoint: [] # 覆蓋 Dockerfile 中的 ENTRYPOINT
     command: gunicorn --worker-class=eventlet --workers=1 --bind=0.0.0.0:8000 src.web.app:app
     environment:
       - FLASK_ENV=production # 生產環境模式
@@ -66,7 +66,7 @@ services:
     networks:
       - default
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
       interval: 30s
       timeout: 10s
       retries: 3
