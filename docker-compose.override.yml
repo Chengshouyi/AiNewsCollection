@@ -39,4 +39,19 @@ services:
     # user: vscode
     # working_dir: /app/backend-python
     command: bash -c "pip install --user -r requirements.txt && export PATH=\"/home/vscode/.local/bin:$PATH\" && alembic upgrade head"
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: .devcontainer/Dockerfile
+    # 開發模式下保持容器運行
+    command: sh -c "npm run dev -- --host 0.0.0.0"
+    volumes:
+      - ./frontend:/app
+      # # 掛載 node_modules，避免本機 node_modules 覆蓋容器內的
+      # - /app/node_modules
+    ports:
+      - "5251:5173"
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true # 解決某些開發環境的檔案監控問題
  

@@ -190,3 +190,5 @@ file::memory:
 filememory
 
 *.csv
+
+node_modules/

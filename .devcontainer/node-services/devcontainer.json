@@ -1,5 +1,5 @@
 {
-    "name": "AI News NodeJs Dev (Compose)",
+    "name": "Node Services Dev (Compose)",
     // 指向你的基礎 docker-compose.yml 和 override 檔案
     "dockerComposeFile": [
         "../../docker-compose.yml", // 相對路徑指向專案根目錄

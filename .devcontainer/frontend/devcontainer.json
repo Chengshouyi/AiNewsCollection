@@ -1,0 +1,42 @@
+{
+    "name": "Frontend (Vue Dev)",
+    // 指向你的基礎 docker-compose.yml 和 override 檔案
+    "dockerComposeFile": [
+        "../../docker-compose.yml", // 相對路徑指向專案根目錄
+        "../../docker-compose.override.yml" // 明確包含 override 文件
+    ],
+    // 指定 Docker Compose 文件中哪個服務作為 Dev Container 的主要環境
+    "service": "frontend",
+    // 指定 VS Code 在容器內開啟哪個資料夾作為工作區
+    // 這應與 docker-compose.override.yml 中 volumes 的目標路徑一致
+    "workspaceFolder": "/app",
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "esbenp.prettier-vscode",
+                "dbaeumer.vscode-eslint",
+                "octref.vetur",
+                "Vue.volar",
+                // "Vue.vscode-typescript-vue-plugin", v2之後已經不需要
+                "ms-vsliveshare.vsliveshare",
+                "ms-azuretools.vscode-docker"
+            ]
+        }
+    },
+    // --- Container Lifecycle ---
+    // 轉發端口
+    "forwardPorts": [
+        5251 // Vite 預設 port
+    ],
+    "runServices": [
+        "db",
+        "backend-python"
+    ],
+    // 開發時的啟動指令
+    "postCreateCommand": "npm install",
+    "remoteUser": "vscode",
+    "updateRemoteUserUID": true,
+    "containerEnv": {
+        "NODE_ENV": "development"
+    }
+}
