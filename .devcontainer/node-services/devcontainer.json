@@ -1,15 +1,15 @@
 {
-    "name": "AI News Python Dev (Compose)",
+    "name": "AI News NodeJs Dev (Compose)",
     // 指向你的基礎 docker-compose.yml 和 override 檔案
     "dockerComposeFile": [
-        ".../docker-compose.yml", // 相對路徑指向專案根目錄
-        "./backend-python/docker-compose.override.yml" // 明確包含 override 文件
+        "../../docker-compose.yml", // 相對路徑指向專案根目錄
+        "../../docker-compose.override.yml" // 明確包含 override 文件
     ],
     // 指定 Docker Compose 文件中哪個服務作為 Dev Container 的主要環境
-    "service": "backend-python", // 我們開發主要在 web 服務中進行
+    "service": "node-services",
     // 指定 VS Code 在容器內開啟哪個資料夾作為工作區
     // 這應與 docker-compose.override.yml 中 volumes 的目標路徑一致
-    "workspaceFolder": "/app/backend-python",
+    "workspaceFolder": "/app",
     "updateRemoteUserUID": false, // <<< 新增：停用 UID/GID 同步
     "customizations": {
         "vscode": {
@@ -76,7 +76,7 @@
         "db"
         // "worker"
     ],
-    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends && pip install --upgrade pip && pip install --user -r /app/requirements.txt -r /app/requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc && sudo mkdir -p /app/logs && sudo chown vscode:vscode /app/logs && sudo mkdir -p /app/data/web_site_configs && sudo chown vscode:vscode /app/data /app/data/web_site_configs && sudo cp /app/src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs/ && sudo chown vscode:vscode /app/data/web_site_configs/bnext_crawler_config.json",
+    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends && pip install --upgrade pip && pip install --user -r requirements.txt -r requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc && sudo mkdir -p /app/logs && sudo chown vscode:vscode /app/logs && sudo mkdir -p /app/data/web_site_configs && sudo chown vscode:vscode /app/data /app/data/web_site_configs && sudo cp src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs/ && sudo chown vscode:vscode /app/data/web_site_configs/bnext_crawler_config.json",
     "postStartCommand": "export PATH=\"/home/vscode/.local/bin:$PATH\"",
     "remoteUser": "vscode"
 }

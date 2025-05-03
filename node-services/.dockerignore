@@ -1,0 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Docker
+.dockerignore
+Dockerfile*
+docker-compose*
+
+# IDE/Editor specific
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# Dev Container
+.devcontainer/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Local data/logs (if any)
+data/
+logs/
+*.db
+*.log
+
+# OS specific
+.DS_Store
+Thumbs.db

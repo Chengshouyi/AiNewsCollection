@@ -25,9 +25,11 @@ services:
 
   migrate:
     build:
-      context: .
+      context: ./backend-python
       dockerfile: Dockerfile # 使用生產環境的 Dockerfile
     container_name: ainews-migrate
+    volumes:
+      - ./backend-python:/app
     depends_on:
       db:
         condition: service_healthy
@@ -38,9 +40,10 @@ services:
     restart: 'no'
     networks:
       - default
+
   backend-python:
     build:
-      context: .
+      context: ./backend-python
       dockerfile: Dockerfile # 指定 Dockerfile 路徑
     container_name: ainews-backend-python
     restart: unless-stopped
@@ -63,6 +66,7 @@ services:
     volumes:
       - app-logs:/app/logs # 將日誌 volume 掛載到容器的 /app/logs
       - data-volume:/app/data # 將 data volume 掛載到容器的 /app/data
+      - ./backend-python:/app
     networks:
       - default
     healthcheck:
@@ -70,24 +74,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-  # 將來擴充微服務時會使用 
-  # worker:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile # 指定 Dockerfile 路徑
-  #   container_name: ainews-worker
-  #   restart: unless-stopped
-  #   command: python run.py # 生產環境指令
-  #   environment:
-  #     # --- 安全性警告 ---
-  #     - DATABASE_URL=postgresql+psycopg2://${POSTGRES_USER:-ainews_user}:${POSTGRES_PASSWORD:-your_strong_password}@db:5432/${POSTGRES_DB:-ainews}
-  #     - SCHEDULE_RELOAD_INTERVAL_HR=${SCHEDULE_RELOAD_INTERVAL_HR:-4} # 可從 .env 文件讀取，預設為 4
-  #   depends_on:
-  #     db:
-  #       condition: service_healthy # 依賴 db 的健康檢查 (如果定義了 healthcheck)
-  #       # condition: service_started # 或者只等待 db 啟動 (如果沒有 healthcheck)
-  #   networks:
-  #     - default
+ 
 
 volumes:
   postgres-data:

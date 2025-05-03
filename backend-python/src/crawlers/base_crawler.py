@@ -771,7 +771,7 @@ class BaseCrawler(ABC):
             logger.warning("沒有獲取到任何文章連結")
             self._update_scrape_phase(task_id, 100, '沒有獲取到任何文章連結', ScrapePhase.COMPLETED)
             return {
-                'success': False,
+                'success': True,
                 'message': '沒有獲取到任何文章連結',
                 'articles_count': 0,
                 'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
@@ -821,7 +821,7 @@ class BaseCrawler(ABC):
             logger.warning("沒有獲取到任何文章連結")
             self._update_scrape_phase(task_id, 100, '沒有獲取到任何文章連結', ScrapePhase.COMPLETED)
             return {
-                'success': False,
+                'success': True,
                 'message': '沒有獲取到任何文章連結',
                 'articles_count': 0,
                 'scrape_phase': self.get_scrape_phase(task_id).get('scrape_phase')
