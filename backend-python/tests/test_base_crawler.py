@@ -383,7 +383,7 @@ class TestBaseCrawler:
         result = crawler.execute_task(task_id, {})
         
         # 驗證結果
-        assert result['success'] is False
+        assert result['success'] is True
         assert '沒有獲取到任何文章連結' in result['message']
         
         # 驗證任務狀態

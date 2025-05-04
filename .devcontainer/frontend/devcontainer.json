@@ -10,6 +10,10 @@
     // 指定 VS Code 在容器內開啟哪個資料夾作為工作區
     // 這應與 docker-compose.override.yml 中 volumes 的目標路徑一致
     "workspaceFolder": "/app",
+    // 掛載 backend-python 資料夾，移轉程式碼後移除
+    "mounts": [
+        "source=${localWorkspaceFolder}/backend-python,target=/app/backend-python,type=bind,consistency=cached"
+    ],
     "customizations": {
         "vscode": {
             "extensions": [
@@ -33,9 +37,9 @@
         "backend-python"
     ],
     // 開發時的啟動指令
-    "postCreateCommand": "npm install",
+    // "postCreateCommand": "npm install",
     "remoteUser": "vscode",
-    "updateRemoteUserUID": true,
+    "updateRemoteUserUID": false,
     "containerEnv": {
         "NODE_ENV": "development"
     }

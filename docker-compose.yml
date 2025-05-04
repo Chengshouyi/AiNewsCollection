@@ -88,6 +88,23 @@ services:
     environment:
       - NODE_ENV=production
 
+  node-services:
+    build:
+      context: ./node-services
+      dockerfile: Dockerfile # <--- 請確保 node-services/Dockerfile 存在且為生產用
+    container_name: ainews-node-services
+    command: sh -c "npm run build && npm run start"
+    volumes:
+      - ./node-services:/app
+    ports:
+      - "3000:3000"   # API Gateway
+      - "4000:4000"   # WebSocket
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+    networks:
+      - default
+
 volumes:
   postgres-data:
     driver: local # 定義 PostgreSQL 資料的 volume

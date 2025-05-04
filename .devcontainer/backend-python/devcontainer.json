@@ -75,7 +75,7 @@
     "runServices": [
         "db"
     ],
-    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends && pip install --upgrade pip && pip install --user -r /app/requirements.txt -r /app/requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc && sudo mkdir -p /app/logs && sudo chown vscode:vscode /app/logs && sudo mkdir -p /app/data/web_site_configs && sudo chown vscode:vscode /app/data /app/data/web_site_configs && sudo cp /app/src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs/ && sudo chown vscode:vscode /app/data/web_site_configs/bnext_crawler_config.json",
+    // "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends && pip install --upgrade pip && pip install --user -r /app/requirements.txt -r /app/requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc && sudo mkdir -p /app/logs && sudo chown vscode:vscode /app/logs && sudo mkdir -p /app/data/web_site_configs && sudo chown vscode:vscode /app/data /app/data/web_site_configs && sudo cp /app/src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs/ && sudo chown vscode:vscode /app/data/web_site_configs/bnext_crawler_config.json",
     "postStartCommand": "export PATH=\"/home/vscode/.local/bin:$PATH\"",
     "remoteUser": "vscode"
 }

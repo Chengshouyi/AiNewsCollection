@@ -1,5 +1,5 @@
 {
-    "name": "Node Services Dev (Compose)",
+    "name": "Node Services Dev (Monorepo)",
     // 指向你的基礎 docker-compose.yml 和 override 檔案
     "dockerComposeFile": [
         "../../docker-compose.yml", // 相對路徑指向專案根目錄
@@ -10,73 +10,36 @@
     // 指定 VS Code 在容器內開啟哪個資料夾作為工作區
     // 這應與 docker-compose.override.yml 中 volumes 的目標路徑一致
     "workspaceFolder": "/app",
-    "updateRemoteUserUID": false, // <<< 新增：停用 UID/GID 同步
+    // 掛載 backend-python 資料夾，移轉程式碼後移除
+    "mounts": [
+        "source=${localWorkspaceFolder}/backend-python,target=/app/backend-python,type=bind,consistency=cached"
+    ],
+    "updateRemoteUserUID": false, 
     "customizations": {
         "vscode": {
             "extensions": [
-                "ms-python.python",
-                "ms-python.pylance",
-                //"ms-python.vscode-pylance",
-                "ms-python.isort",
-                "ms-vscode-remote.remote-containers",
-                "ms-azuretools.vscode-docker",
-                "njpwerner.autodocstring",
-                "ms-python.debugpy",
-                // "ms-python.black-formatter", // 會造成重構時的錯誤
-                "ms-python.pylint", // 添加 Pylint 擴充
-                "mtxr.sqltools", // SQLTools 核心
-                "mtxr.sqltools-driver-pg" // <<< 修改：使用 PostgreSQL Driver
-                // "mtxr.sqltools-driver-sqlite" // <<< 移除 SQLite Driver
-            ],
-            "settings": {
-                "python.defaultInterpreterPath": "/usr/local/bin/python",
-                "python.analysis.typeCheckingMode": "basic",
-                "python.languageServer": "Pylance",
-                "editor.formatOnSave": true,
-                // "python.formatting.provider": "black", // 明確指定 Black
-                "python.linting.pylintEnabled": true,
-                "python.linting.enabled": true,
-                "python.testing.pytestEnabled": true,
-                "python.testing.pytestArgs": [
-                    "tests"
-                ],
-                "sqltools.connections": [
-                    {
-                        "name": "Docker DB (Dev)", // 連線名稱
-                        "driver": "PostgreSQL",
-                        "previewLimit": 50,
-                        "server": "db", // Docker Compose 中的服務名稱
-                        "port": 5432,
-                        "database": "${containerEnv:POSTGRES_DB}", // 從環境變數讀取
-                        "username": "${containerEnv:POSTGRES_USER}" // 從環境變數讀取
-                        // 密碼建議不在這裡硬編碼，SQLTools 會提示輸入或考慮其他安全方式
-                    }
-                ],
-                "sqltools.useNodeRuntime": true, // 保持 Node Runtime for SQLTools
-                "sqltools.formatLanguage": [
-                    "sql",
-                    "postgres"
-                ], // 可以更新語言
-                "sqltools.autoOpenSessionFiles": true,
-                "python.linting.pylintArgs": [
-                    "--rcfile=.pylintrc" // 或者您的設定檔的實際路徑
-                ]
-            }
+                "dbaeumer.vscode-eslint",
+                "esbenp.prettier-vscode",
+                "ms-vscode.vscode-typescript-next",
+                "ms-azuretools.vscode-docker"
+            ]
         }
     },
     // --- Container Lifecycle ---
     // 轉發端口
     "forwardPorts": [
-        8001, // Gunicorn/Flask (主機端口) -> 8000 (容器端口)
-        5432, // PostgreSQL (主機端口) -> 5432 (容器端口)
-        5000 // 新增：Flask (主機端口) -> 5000 (容器端口)
+        3000,   // API Gateway
+        4000    // WebSocket
     ],
     // 指定需要隨 Dev Container 一起啟動的其他服務
     "runServices": [
-        "db"
-        // "worker"
+        "db",
+        "backend-python"
     ],
-    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends && pip install --upgrade pip && pip install --user -r requirements.txt -r requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc && sudo mkdir -p /app/logs && sudo chown vscode:vscode /app/logs && sudo mkdir -p /app/data/web_site_configs && sudo chown vscode:vscode /app/data /app/data/web_site_configs && sudo cp src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs/ && sudo chown vscode:vscode /app/data/web_site_configs/bnext_crawler_config.json",
+    // "postCreateCommand": "pnpm install",
     "postStartCommand": "export PATH=\"/home/vscode/.local/bin:$PATH\"",
-    "remoteUser": "vscode"
+    "remoteUser": "vscode",
+    "containerEnv": {
+        "NODE_ENV": "development"
+    }
 }

@@ -1,0 +1,16 @@
+{
+  "name": "node-services",
+  "private": true,
+  "workspaces": [
+    "api-gateway",
+    "websocket-server"
+  ],
+  "scripts": {
+    "dev": "concurrently \"pnpm --filter api-gateway dev\" \"pnpm --filter websocket-server dev\"",
+    "build": "pnpm --filter api-gateway build && pnpm --filter websocket-server build",
+    "start": "concurrently \"pnpm --filter api-gateway start\" \"pnpm --filter websocket-server start\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -48,9 +48,20 @@ USER $USERNAME
 
 WORKDIR /app
 
-# 複製 requirements 檔案 (dev container 會掛載整個目錄，但先複製可以利用快取)
-# 注意：這裡假設 requirements*.txt 在專案根目錄，而不是 .devcontainer 裡
+# 複製 requirements 檔案
 COPY --chown=vscode:vscode requirements.txt requirements-dev.txt ./
 
-# RUN pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt
+# 安裝 Python 套件
+RUN pip install --upgrade pip \
+    && pip install --user -r requirements.txt -r requirements-dev.txt --no-warn-script-location
+
+# 建立必要資料夾並設定權限
+RUN mkdir -p /app/logs \
+    && chown vscode:vscode /app/logs \
+    && mkdir -p /app/data/web_site_configs \
+    && chown vscode:vscode /app/data /app/data/web_site_configs
+
+# 複製 config 檔案（請確認來源路徑正確，這裡假設 config 檔案在 src/crawlers/configs 下）
+COPY --chown=vscode:vscode src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs/
+
 USER $USERNAME

@@ -54,4 +54,16 @@ services:
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true # 解決某些開發環境的檔案監控問題
- 
+  node-services:
+    build:
+      context: ./node-services
+      dockerfile: .devcontainer/Dockerfile
+    command: sleep infinity
+    volumes:
+      - ./node-services:/app
+    ports:
+      - "3000:3000"
+      - "4000:4000"
+    environment:
+      - NODE_ENV=development
+      - CHOKIDAR_USEPOLLING=true # 解決某些開發環境的檔案監控問題
