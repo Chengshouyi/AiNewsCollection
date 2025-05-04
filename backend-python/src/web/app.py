@@ -29,12 +29,10 @@ from src.services.service_container import (
     get_crawlers_service,
     get_scheduler_service,
 )
-from src.web.routes.article_api import article_bp
-from src.web.routes.crawler_api import crawler_bp
-from src.web.routes.tasks_api import tasks_bp
-from src.web.routes.views import view_bp
+from src.web.routes import all_blueprints  # 導入自動載入的藍圖
 from src.web.socket_instance import init_app, socketio
 from src.utils.log_utils import LoggerSetup
+from src.web.spec import spec, init_spec  # 導入集中管理的 spec
 
 # 配置日誌系統
 LoggerSetup.configure_logging(level=logging.INFO)
@@ -272,16 +270,44 @@ app.config["SECRET_KEY"] = os.environ.get(
     "SECRET_KEY", "a_default_secret_key_for_dev_if_needed"
 )
 
+# 初始化 socket 
 init_app(app)
+
+# 初始化 OpenAPI spec
+init_spec(app)
 
 # 初始化爬蟲和應用程式
 initialize_default_crawler()
 init_application()
 
-app.register_blueprint(crawler_bp)
-app.register_blueprint(tasks_bp)
-app.register_blueprint(article_bp)
-app.register_blueprint(view_bp)
+# 自動註冊所有藍圖
+for blueprint in all_blueprints:
+    app.register_blueprint(blueprint)
+    spec.register(blueprint)  # 將藍圖註冊到 spec
+
+# 新的路徑，顯示所有已註冊的 API
+@app.route("/api")
+def api_index():
+    """API 索引頁面"""
+    routes = []
+    for rule in app.url_map.iter_rules():
+        if not rule.rule.startswith('/static') and not rule.rule.startswith('/debug'):
+            methods = rule.methods or set()  # 當 rule.methods 為 None 時使用空集合
+            routes.append({
+                "endpoint": rule.endpoint,
+                "methods": sorted(list(methods - {'HEAD', 'OPTIONS'})),
+                "route": rule.rule
+            })
+    
+    # 將路由按路徑排序
+    sorted_routes = sorted(routes, key=lambda x: x['route'])
+    
+    return jsonify({
+        "api_version": "1.0.0",
+        "documentation_url": "/docs",
+        "openapi_url": "/openapi.json",
+        "routes": sorted_routes
+    })
 
 
 @app.route("/health")

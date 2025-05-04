@@ -5,12 +5,22 @@ import logging
 
 from flask import Blueprint, jsonify, request
 from werkzeug.datastructures import FileStorage
+from flask_pydantic_spec import Response, Request  # 新增
 
 from src.crawlers.crawler_factory import CrawlerFactory
 from src.error.handle_api_error import handle_api_error
-from src.models.crawlers_schema import CrawlerReadSchema, PaginatedCrawlerResponse
+from src.models.crawlers_schema import (
+    CrawlerReadSchema, 
+    PaginatedCrawlerResponse,
+    CrawlersCreateSchema,
+    CrawlersUpdateSchema,
+    BatchToggleStatusSchema,
+    CrawlerFormDataSchema,
+    CrawlerFilterRequestSchema
+)
 from src.services.crawlers_service import CrawlersService
 from src.services.service_container import get_crawlers_service
+from src.web.spec import spec  # 新增
 
 
 logger = logging.getLogger(__name__)  # 使用統一的 logger
@@ -20,6 +30,13 @@ crawler_bp = Blueprint('crawlerapi', __name__, url_prefix='/api/crawlers')
 
 
 @crawler_bp.route('', methods=['GET'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": List[CrawlerReadSchema]},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def get_crawlers():
     """取得所有爬蟲設定列表"""
     try:
@@ -42,6 +59,15 @@ def get_crawlers():
         return handle_api_error(e)
 
 @crawler_bp.route('', methods=['POST'])
+@spec.validate(
+    body=Request(CrawlerFormDataSchema),
+    resp=Response(
+        HTTP_201={"success": bool, "message": str, "crawler": CrawlerReadSchema},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def create_crawler_with_config_route():
     """新增一個爬蟲設定及其配置檔案 (使用 multipart/form-data)"""
     # --- 修改：檢查 multipart/form-data ---
@@ -101,6 +127,13 @@ def create_crawler_with_config_route():
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>', methods=['GET'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "crawler": CrawlerReadSchema},
+        HTTP_404={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def get_crawler(crawler_id):
     """取得特定爬蟲設定"""
     try:
@@ -123,6 +156,16 @@ def get_crawler(crawler_id):
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>', methods=['PUT'])
+@spec.validate(
+    body=Request(CrawlerFormDataSchema),
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "crawler": CrawlerReadSchema},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def update_crawler_with_config_route(crawler_id):
     """
     更新特定爬蟲設定及其配置檔案 (使用 multipart/form-data)。
@@ -194,6 +237,13 @@ def update_crawler_with_config_route(crawler_id):
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>', methods=['DELETE'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str},
+        HTTP_404={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def delete_crawler(crawler_id):
     """刪除特定爬蟲設定"""
     try:
@@ -209,6 +259,14 @@ def delete_crawler(crawler_id):
         return handle_api_error(e)
 
 @crawler_bp.route('/types', methods=['GET'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": List[dict]},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def get_available_crawler_types():
     """取得可用的爬蟲名稱列表"""
     try:
@@ -223,6 +281,13 @@ def get_available_crawler_types():
         return handle_api_error(e)
 
 @crawler_bp.route('/active', methods=['GET'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": List[CrawlerReadSchema]},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def get_active_crawlers():
     """取得所有活動中的爬蟲設定"""
     try:
@@ -250,6 +315,14 @@ def get_active_crawlers():
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>/toggle', methods=['POST'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "crawler": CrawlerReadSchema},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def toggle_crawler_status(crawler_id):
     """切換爬蟲活躍狀態"""
     try:
@@ -272,6 +345,13 @@ def toggle_crawler_status(crawler_id):
         return handle_api_error(e)
 
 @crawler_bp.route('/name/<string:name>', methods=['GET'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": List[CrawlerReadSchema]},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def get_crawlers_by_name(name):
     """根據名稱模糊查詢爬蟲設定"""
     try:
@@ -302,6 +382,13 @@ def get_crawlers_by_name(name):
         return handle_api_error(e)
 
 @crawler_bp.route('/type/<string:crawler_type>', methods=['GET'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": List[CrawlerReadSchema]},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def get_crawlers_by_type(crawler_type):
     """根據爬蟲類型查找爬蟲"""
     try:
@@ -327,6 +414,13 @@ def get_crawlers_by_type(crawler_type):
         return handle_api_error(e)
 
 @crawler_bp.route('/target/<string:target_pattern>', methods=['GET'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": List[CrawlerReadSchema]},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def get_crawlers_by_target(target_pattern):
     """根據爬取目標模糊查詢爬蟲"""
     try:
@@ -352,6 +446,13 @@ def get_crawlers_by_target(target_pattern):
         return handle_api_error(e)
 
 @crawler_bp.route('/statistics', methods=['GET'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": dict},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def get_crawler_statistics():
     """獲取爬蟲統計信息"""
     try:
@@ -366,6 +467,13 @@ def get_crawler_statistics():
         return handle_api_error(e)
 
 @crawler_bp.route('/exact-name/<string:crawler_name>', methods=['GET'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "crawler": CrawlerReadSchema},
+        HTTP_404={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def get_crawler_by_exact_name(crawler_name):
     """根據爬蟲名稱精確查詢"""
     try:
@@ -388,6 +496,17 @@ def get_crawler_by_exact_name(crawler_name):
         return handle_api_error(e)
 
 @crawler_bp.route('/create-or-update', methods=['POST'])
+@spec.validate(  
+    body=Request(CrawlersCreateSchema),
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "crawler": CrawlerReadSchema},
+        HTTP_201={"success": bool, "message": str, "crawler": CrawlerReadSchema},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def create_or_update_crawler():
     """創建或更新爬蟲設定"""
     if not request.is_json:
@@ -426,6 +545,14 @@ def create_or_update_crawler():
         return handle_api_error(e)
 
 @crawler_bp.route('/batch-toggle', methods=['POST'])
+@spec.validate(
+    body=Request(BatchToggleStatusSchema),
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "result": dict},
+        HTTP_400={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def batch_toggle_crawler_status():
     """批量設置爬蟲的活躍狀態"""
     if not request.is_json:
@@ -462,6 +589,15 @@ def batch_toggle_crawler_status():
         return handle_api_error(e)
 
 @crawler_bp.route('/filter', methods=['POST'])
+@spec.validate(
+    body=Request(CrawlerFilterRequestSchema),
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": PaginatedCrawlerResponse},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def get_filtered_crawlers():
     """根據過濾條件獲取分頁爬蟲列表"""
     if not request.is_json:
@@ -511,6 +647,13 @@ def get_filtered_crawlers():
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>/config', methods=['GET'])
+@spec.validate(  # 新增
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": dict},
+        HTTP_404={"success": bool, "message": str}
+    ),
+    tags=['爬蟲管理']
+)
 def get_crawler_config(crawler_id):
     """獲取爬蟲的配置檔案內容"""
     try:

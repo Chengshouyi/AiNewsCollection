@@ -1,10 +1,13 @@
 """定義文章相關的 API 路由。"""
+
 # 標準函式庫
 from typing import Optional, List, Dict, Any, Union, cast
 import logging
 
 # 第三方函式庫
 from flask import Blueprint, jsonify, request
+from flask_pydantic_spec import Response, Request
+from pydantic import create_model
 
 # 本地應用程式
 from src.error.handle_api_error import handle_api_error
@@ -12,15 +15,26 @@ from src.models.articles_schema import ArticleReadSchema, PaginatedArticleRespon
 from src.services.article_service import ArticleService
 from src.services.service_container import get_article_service
 from src.utils.api_utils import parse_and_validate_common_query_params
- # 使用統一的 logger
+from src.web.spec import spec
 
-
-logger = logging.getLogger(__name__)  # 使用統一的 logger # 使用統一的 logger
+logger = logging.getLogger(__name__)
 
 # 創建藍圖
 article_bp = Blueprint('article_api', __name__, url_prefix='/api/articles')
 
+# 創建一個動態的 Pydantic 模型作為響應結構
+ResponseModel = create_model(
+    'ResponseModel',
+    success=(bool, ...),
+    message=(str, ...),
+    data=(PaginatedArticleResponse, ...)
+)
+
 @article_bp.route('', methods=['GET'])
+@spec.validate(
+    resp=Response(HTTP_200=ResponseModel),
+    tags=['文章管理']
+)
 def get_articles():
     """取得文章列表 (支援分頁/篩選/排序)。"""
     try:
@@ -63,6 +77,13 @@ def get_articles():
         return handle_api_error(e)
 
 @article_bp.route('/<int:article_id>', methods=['GET'])
+@spec.validate(
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": ArticleReadSchema},
+        HTTP_404={"success": bool, "message": str}
+    ),
+    tags=['文章管理']
+)
 def get_article(article_id):
     """取得單篇文章詳情。"""
     try:
@@ -88,6 +109,13 @@ def get_article(article_id):
         return handle_api_error(e)
 
 @article_bp.route('/search', methods=['GET'])
+@spec.validate(
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": List[ArticleReadSchema]},
+        HTTP_400={"success": bool, "message": str}
+    ),
+    tags=['文章管理']
+)
 def search_articles():
     """專用搜尋端點 (根據關鍵字搜尋標題/內容/摘要)。"""
     try:

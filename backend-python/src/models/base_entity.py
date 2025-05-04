@@ -1,7 +1,6 @@
-"""Base entity module for defining entity validation protocols.
+"""基礎實體模組，用於定義實體驗證協議。
 
-This module provides the base protocol and implementation for entity validation,
-defining a common interface for all entities that require validation functionality.
+此模組提供基礎協議和實現，用於定義所有需要驗證功能的實體的通用接口。
 """
 
 # Standard library imports

@@ -1,7 +1,7 @@
-"""Crawler tasks schema module for data validation and serialization.
+"""爬蟲任務模型 Schema 模組，用於資料驗證與序列化。
 
-This module defines the Pydantic models for crawler task creation, update, and reading,
-providing data validation, serialization, and schema definitions for the crawler task system.
+此模組定義了爬蟲任務的創建、更新與讀取所需的 Pydantic 模型，
+提供爬蟲任務系統的資料驗證、序列化與 Schema 定義。
 """
 
 # Standard library imports
@@ -180,7 +180,15 @@ class CrawlerTasksUpdateSchema(BaseUpdateSchema):
 
 
 # --- 新增用於讀取/響應的 Schema ---
-
+class ArticlePreviewSchema(BaseModel):
+    id: Optional[int] = None
+    title: Optional[str] = None
+    link: str
+    source: Optional[str] = None
+    pub_date: Optional[datetime] = None
+    is_scraped: bool = False
+    
+    model_config = ConfigDict(from_attributes=True)
 
 class CrawlerTaskReadSchema(BaseModel):
     """用於 API 響應的爬蟲任務數據模型"""
@@ -219,4 +227,30 @@ class PaginatedCrawlerTaskResponse(BaseModel):
     has_prev: bool
 
     # Pydantic V2 配置: 如果輸入數據是對象而非字典，這也可能有用
+    model_config = ConfigDict(from_attributes=True)
+
+
+class FetchContentRequestSchema(BaseModel):
+    task_name: Optional[str] = None
+    notes: Optional[str] = None
+    task_args: Optional[Dict[str, Any]] = None
+
+    model_config = ConfigDict(extra='allow')  # 允許額外欄位
+
+
+class TestCrawlerRequestSchema(BaseModel):
+    crawler_name: str
+    crawler_id: Optional[int] = None
+    task_args: Optional[Dict[str, Any]] = {}
+
+
+class TaskHistorySchema(BaseModel):
+    id: int
+    task_id: int
+    scrape_phase: str
+    task_status: str
+    message: Optional[str] = None
+    details: Optional[Dict[str, Any]] = None
+    created_at: datetime
+
     model_config = ConfigDict(from_attributes=True)

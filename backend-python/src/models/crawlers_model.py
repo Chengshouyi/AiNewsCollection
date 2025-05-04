@@ -1,7 +1,7 @@
-"""Crawlers model module for managing crawler configurations.
+"""爬蟲設定模型模組，用於管理爬蟲設定。
 
-This module defines the Crawlers model which handles crawler configurations and instances,
-including crawler settings, relationships, and data serialization.
+此模組定義了 Crawlers 模型，用於處理爬蟲設定及實例化，
+包括爬蟲設定、關係及資料序列化。
 """
 
 # Third party imports

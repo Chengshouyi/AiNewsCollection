@@ -1,9 +1,11 @@
 """定義與爬蟲任務相關的 Flask API 端點。"""
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from enum import Enum
 
 from flask import Blueprint, jsonify, request
+from flask_pydantic_spec import Response, Request
+from src.web.spec import spec  # 你已在 crawler_api.py 用這個
 
 # 本地應用程式導入
 from src.error.handle_api_error import handle_api_error
@@ -15,6 +17,10 @@ from src.services.service_container import (
     get_scheduler_service, get_task_executor_service,
     get_crawler_task_service, get_article_service
 )
+from src.models.crawler_tasks_schema import (
+    CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema, CrawlerTaskReadSchema,
+    ArticlePreviewSchema, FetchContentRequestSchema, TestCrawlerRequestSchema, TaskHistorySchema
+)
   # 使用統一的 logger
 
 # 使用統一的 logger
@@ -25,6 +31,13 @@ tasks_bp = Blueprint('tasks_api', __name__, url_prefix='/api/tasks')
 
 # 排程任務相關端點
 @tasks_bp.route('/scheduled', methods=['GET'])
+@spec.validate(
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": List[CrawlerTaskReadSchema]},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲任務']
+)
 def get_scheduled_tasks():
     try:
         service = get_crawler_task_service()
@@ -44,6 +57,15 @@ def get_scheduled_tasks():
         return handle_api_error(e)
     
 @tasks_bp.route('/scheduled', methods=['POST'])
+@spec.validate(
+    body=Request(CrawlerTasksCreateSchema),
+    resp=Response(
+        HTTP_201={"success": bool, "message": str, "task": CrawlerTaskReadSchema},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲任務']
+)
 def create_scheduled_task():
     if not request.is_json:
          return jsonify(success=False, message='請求必須是 application/json'), 415 # Unsupported Media Type
@@ -98,6 +120,16 @@ def create_scheduled_task():
         return handle_api_error(e)
 
 @tasks_bp.route('/scheduled/<int:task_id>', methods=['PUT'])
+@spec.validate(
+    body=Request(CrawlerTasksUpdateSchema),
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "task": CrawlerTaskReadSchema},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲任務']
+)
 def update_scheduled_task(task_id):
     if not request.is_json:
          return jsonify(success=False, message='請求必須是 application/json'), 415
@@ -138,8 +170,9 @@ def update_scheduled_task(task_id):
         # 更新任務
         update_result = service.update_task(task_id, validated_result['data'])
         if not update_result.get('success'):
-            status_code = 404 if "不存在" in update_result.get('message', '') else 500
-            return jsonify(update_result), status_code
+             # 如果更新失敗，返回錯誤
+             status_code = 404 if "不存在" in update_result.get('message', '') else 500
+             return jsonify(update_result), status_code
             
         # 從結果中獲取更新的任務對象 (Pydantic Schema)
         updated_task = update_result.get('task')
@@ -168,6 +201,14 @@ def update_scheduled_task(task_id):
         return handle_api_error(e)
 
 @tasks_bp.route('/scheduled/<int:task_id>', methods=['DELETE'])
+@spec.validate(
+    resp=Response(
+        HTTP_200={"success": bool, "message": str},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['爬蟲任務']
+)
 def delete_scheduled_task(task_id):
     try:
         service = get_crawler_task_service()
@@ -200,6 +241,15 @@ def delete_scheduled_task(task_id):
 
 # 手動任務相關端點
 @tasks_bp.route('/manual/start', methods=['POST'])
+@spec.validate(
+    body=Request(CrawlerTasksCreateSchema),
+    resp=Response(
+        HTTP_202={"success": bool, "message": str, "task_id": int, "task_status": str},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['手動任務']
+)
 def fetch_full_article_manual_task():
     """抓取完整文章的手動任務端點 (創建新任務並立即執行)"""
     if not request.is_json:
@@ -246,6 +296,14 @@ def fetch_full_article_manual_task():
         return handle_api_error(e)
 
 @tasks_bp.route('/manual/<int:task_id>/status', methods=['GET'])
+@spec.validate(
+    resp=Response(
+        HTTP_200={"success": bool, "task_status": str, "scrape_phase": str, "progress": int, "message": str, "task": Optional[CrawlerTaskReadSchema]},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['手動任務']
+)
 def get_task_status(task_id):
     try:
         task_executor = get_task_executor_service()
@@ -263,6 +321,15 @@ def get_task_status(task_id):
 
 # 修改：移除 task_id，因為這是創建一個新任務
 @tasks_bp.route('/manual/collect-links', methods=['POST'])
+@spec.validate(
+    body=Request(CrawlerTasksCreateSchema),
+    resp=Response(
+        HTTP_202={"success": bool, "message": str, "task_id": int, "task_status": str},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['手動任務']
+)
 def fetch_links_manual_task():
     """抓取連結的手動任務端點 (創建新任務並立即執行)"""
     if not request.is_json:
@@ -307,6 +374,14 @@ def fetch_links_manual_task():
         return handle_api_error(e)
 
 @tasks_bp.route('/manual/<int:task_id>/links', methods=['GET'])
+@spec.validate(
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "articles": List[ArticlePreviewSchema]},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['手動任務']
+)
 def get_unscraped_links(task_id):
     """獲取指定任務關聯的、未抓取的文章連結 (預覽)"""
     try:
@@ -320,6 +395,16 @@ def get_unscraped_links(task_id):
         return handle_api_error(e)
 
 @tasks_bp.route('/manual/<int:task_id>/fetch-content', methods=['POST'])
+@spec.validate(
+    body=Request(FetchContentRequestSchema),
+    resp=Response(
+        HTTP_202={"success": bool, "message": str, "task_id": int, "task_status": str},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['手動任務']
+)
 def fetch_content_manual_task(task_id):
     """針對現有任務，觸發僅抓取內容的操作 (同步執行)"""
     if not request.is_json:
@@ -412,6 +497,14 @@ def fetch_content_manual_task(task_id):
         return handle_api_error(e)
 
 @tasks_bp.route('/manual/<int:task_id>/results', methods=['GET'])
+@spec.validate(
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "articles": List[ArticlePreviewSchema]},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['手動任務']
+)
 def get_scraped_task_results(task_id):
     """獲取指定任務關聯的、已抓取的文章結果 (預覽)"""
     try:
@@ -425,6 +518,15 @@ def get_scraped_task_results(task_id):
         return handle_api_error(e)
 
 @tasks_bp.route('/manual/test', methods=['POST'])
+@spec.validate(
+    body=Request(TestCrawlerRequestSchema),
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "result": Dict[str, Any]},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['手動任務']
+)
 def test_crawler():
     """測試爬蟲任務 (不會創建或執行實際任務)"""
     if not request.is_json:
@@ -517,6 +619,14 @@ def test_crawler():
 
 # 通用任務端點
 @tasks_bp.route('/<int:task_id>/cancel', methods=['POST'])
+@spec.validate(
+    resp=Response(
+        HTTP_202={"success": bool, "message": str},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['任務管理']
+)
 def cancel_task(task_id):
     try:
         task_executor = get_task_executor_service()
@@ -528,6 +638,14 @@ def cancel_task(task_id):
         return handle_api_error(e)
 
 @tasks_bp.route('/<int:task_id>/history', methods=['GET'])
+@spec.validate(
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "history": List[TaskHistorySchema], "total_count": int},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['任務管理']
+)
 def get_task_history(task_id):
     try:
         # 從 CrawlerTaskService 獲取歷史記錄
@@ -555,6 +673,14 @@ def get_task_history(task_id):
         return handle_api_error(e)
 
 @tasks_bp.route('/<int:task_id>/run', methods=['POST'])
+@spec.validate(
+    resp=Response(
+        HTTP_202={"success": bool, "message": str, "task_id": int, "session_id": Optional[str], "room": str},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['任務管理']
+)
 def run_task(task_id):
     """手動執行特定任務的API端點。允許客戶端請求立即執行任務。"""
     try:
@@ -634,6 +760,15 @@ def _setup_validate_task_data(task_data: Dict[str, Any], service: CrawlerTaskSer
 
 # 通用任務端點
 @tasks_bp.route('', methods=['POST'])
+@spec.validate(
+    body=Request(CrawlerTasksCreateSchema),
+    resp=Response(
+        HTTP_201={"success": bool, "message": str, "task": CrawlerTaskReadSchema},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['任務管理']
+)
 def create_task():
     """創建一個新任務（通用任務創建端點）"""
     if not request.is_json:
@@ -694,6 +829,16 @@ def create_task():
 
 # 通用任務更新端點
 @tasks_bp.route('/<int:task_id>', methods=['PUT'])
+@spec.validate(
+    body=Request(CrawlerTasksUpdateSchema),
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "task": CrawlerTaskReadSchema},
+        HTTP_400={"success": bool, "message": str},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['任務管理']
+)
 def update_task(task_id):
     """更新特定任務"""
     if not request.is_json:
@@ -729,6 +874,13 @@ def update_task(task_id):
         return handle_api_error(e)
 
 @tasks_bp.route('', methods=['GET'])
+@spec.validate(
+    resp=Response(
+        HTTP_200={"success": bool, "message": str, "data": List[CrawlerTaskReadSchema]},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['任務管理']
+)
 def get_all_tasks():
     """獲取所有任務列表"""
     try:
@@ -751,6 +903,14 @@ def get_all_tasks():
         return handle_api_error(e)
 
 @tasks_bp.route('/<int:task_id>', methods=['DELETE'])
+@spec.validate(
+    resp=Response(
+        HTTP_200={"success": bool, "message": str},
+        HTTP_404={"success": bool, "message": str},
+        HTTP_500={"success": bool, "message": str}
+    ),
+    tags=['任務管理']
+)
 def delete_task(task_id):
     """刪除特定任務"""
     try:

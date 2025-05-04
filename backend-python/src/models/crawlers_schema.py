@@ -1,13 +1,14 @@
-"""Crawlers schema module for data validation and serialization.
+"""爬蟲模型 Schema 模組，用於資料驗證與序列化。
 
-This module defines the Pydantic models for crawler creation, update, and reading,
-providing data validation, serialization, and schema definitions for the crawler system.
+此模組定義了爬蟲的創建、更新與讀取所需的 Pydantic 模型，
+提供爬蟲系統的資料驗證、序列化與 Schema 定義。
 """
 
 # Standard library imports
 from datetime import datetime
 from typing import Annotated, Optional, List, Dict, Any, Union
 import logging
+from werkzeug.datastructures import FileStorage
 
 # Third party imports
 from pydantic import (
@@ -115,7 +116,22 @@ class CrawlersUpdateSchema(BaseUpdateSchema):
 
 
 # --- 新增用於讀取/響應的 Schema ---
+class BatchToggleStatusSchema(BaseModel):
+    crawler_ids: List[int]
+    active_status: bool
 
+class CrawlerFormDataSchema(BaseModel):
+    crawler_data: str
+    config_file: Optional[FileStorage] = None
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+class CrawlerFilterRequestSchema(BaseModel):
+    filter: Dict[str, Any]
+    page: Optional[int] = 1
+    per_page: Optional[int] = 10
+    sort_by: Optional[str] = None
+    sort_desc: Optional[bool] = False
 
 class CrawlerReadSchema(BaseModel):
     """用於 API 響應的爬蟲數據模型"""
@@ -158,3 +174,5 @@ class PaginatedCrawlerResponse(BaseModel):
         if value < 0:
             raise ValueError("分頁相關數值必須為非負整數")
         return value
+
+
