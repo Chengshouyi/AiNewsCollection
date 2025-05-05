@@ -7,7 +7,6 @@ import logging
 # 第三方函式庫
 from flask import Blueprint, jsonify, request
 from flask_pydantic_spec import Response, Request
-from pydantic import create_model
 
 # 本地應用程式
 from src.error.handle_api_error import handle_api_error
@@ -16,23 +15,24 @@ from src.services.article_service import ArticleService
 from src.services.service_container import get_article_service
 from src.utils.api_utils import parse_and_validate_common_query_params
 from src.web.spec import spec
+from src.web.routes.article_response_schema import GetArticlesSuccessResponseSchema, GetArticleSuccessResponseSchema, SearchArticlesSuccessResponseSchema
+from src.web.routes.base_response_schema import BaseResponseSchema
 
 logger = logging.getLogger(__name__)
 
 # 創建藍圖
 article_bp = Blueprint('article_api', __name__, url_prefix='/api/articles')
 
-# 創建一個動態的 Pydantic 模型作為響應結構
-ResponseModel = create_model(
-    'ResponseModel',
-    success=(bool, ...),
-    message=(str, ...),
-    data=(PaginatedArticleResponse, ...)
-)
 
 @article_bp.route('', methods=['GET'])
 @spec.validate(
-    resp=Response(HTTP_200=ResponseModel),
+    resp=Response(HTTP_200=GetArticlesSuccessResponseSchema, 
+                  HTTP_400=BaseResponseSchema,
+                  HTTP_404=BaseResponseSchema,
+                  HTTP_500=BaseResponseSchema,
+                  HTTP_502=BaseResponseSchema,
+                  HTTP_503=BaseResponseSchema,
+                  HTTP_504=BaseResponseSchema),
     tags=['文章管理']
 )
 def get_articles():
@@ -79,8 +79,13 @@ def get_articles():
 @article_bp.route('/<int:article_id>', methods=['GET'])
 @spec.validate(
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": ArticleReadSchema},
-        HTTP_404={"success": bool, "message": str}
+        HTTP_200=GetArticleSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['文章管理']
 )
@@ -92,27 +97,42 @@ def get_article(article_id):
 
         if not result.get('success'):
             status_code = 404 if "不存在" in result.get('message', '') else 500
-            return jsonify(result), status_code
+            return jsonify({"success": False, "message": result.get('message')}), status_code
 
         article_schema: Optional[ArticleReadSchema] = result.get('article')
+        # === DEBUGGING: 檢查返回的 article 類型 ===
+        # logger.debug(f"get_article_by_id returned type: {type(article_schema)}")
+
         if article_schema is None:
             logger.warning("get_article_by_id 成功但未返回 article 物件 (ID: %s)", article_id)
             return jsonify({"success": False, "message": "成功獲取但找不到文章資料"}), 404
 
+        # 確保調用 model_dump 將 Pydantic 物件 (真實或 Mock) 轉換為字典
+        logger.debug(f"Article schema type before model_dump: {type(article_schema)}")
         response_data = article_schema.model_dump(mode='json')
+        logger.debug(f"Data after model_dump: {response_data}") # 檢查轉換後的字典
+        logger.debug(f"Data type after model_dump: {type(response_data)}")
+
         return jsonify({
             "success": True,
             "message": result.get('message'),
             "data": response_data
         }), 200
+
     except Exception as e:
+        logger.error(f"Exception in get_article: {e}", exc_info=True) # 記錄詳細的 traceback
         return handle_api_error(e)
 
 @article_bp.route('/search', methods=['GET'])
 @spec.validate(
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": List[ArticleReadSchema]},
-        HTTP_400={"success": bool, "message": str}
+        HTTP_200=SearchArticlesSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_501=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['文章管理']
 )
@@ -140,9 +160,9 @@ def search_articles():
         if not result.get('success'):
             if "未實現" in result.get('message', ''):
                  logger.error("搜尋文章失敗: %s", result.get('message'))
-                 return jsonify(result), 501 # Not Implemented
+                 return jsonify({"success": False, "message": result.get('message')}), 501 # Not Implemented
             status_code = 500
-            return jsonify(result), status_code
+            return jsonify({"success": False, "message": result.get('message')}), status_code
 
         articles_result: Optional[List[Union[ArticleReadSchema, Dict[str, Any]]]] = result.get('articles')
 
@@ -150,12 +170,31 @@ def search_articles():
             logger.error("find_articles_by_keywords 成功但未返回 articles")
             return jsonify({"success": False, "message": "無法獲取搜尋結果資料"}), 500
 
+        # 根據 is_preview 分離處理邏輯
         response_data = []
-        if articles_result:
-            if isinstance(articles_result[0], ArticleReadSchema):
-                 response_data = [cast(ArticleReadSchema, a).model_dump(mode='json') for a in articles_result]
+        if validated_params.get('is_preview'):
+            # 預覽模式：假定 articles_result 是字典列表
+            if articles_result and isinstance(articles_result[0], dict):
+                response_data = articles_result
             else:
-                 response_data = articles_result
+                # 如果不是預期的字典列表 (可能是空列表或類型錯誤)，記錄並保持空列表
+                if articles_result: # 僅在列表非空時記錄錯誤
+                    logger.warning(f"Preview mode expected list[dict] but got {type(articles_result[0])}")
+                response_data = []
+        else:
+            # 非預覽模式：假定 articles_result 是 Pydantic 模型列表
+            if articles_result and hasattr(articles_result[0], 'model_dump'):
+                response_data = [
+                    a.model_dump(mode='json')  # type: ignore[attr-defined]
+                    for a in articles_result
+                    # 再次檢查確保 a 也有 model_dump 方法
+                    if hasattr(a, 'model_dump') and callable(getattr(a, 'model_dump'))
+                ]
+            else:
+                # 如果不是預期的模型列表 (可能是空列表或類型錯誤)，記錄並保持空列表
+                if articles_result: # 僅在列表非空時記錄錯誤
+                    logger.warning(f"Non-preview mode expected list with model_dump but got {type(articles_result[0])}")
+                response_data = []
 
         return jsonify({
             "success": True,

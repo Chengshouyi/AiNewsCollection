@@ -21,7 +21,20 @@ from src.models.crawler_tasks_schema import (
     CrawlerTasksCreateSchema, CrawlerTasksUpdateSchema, CrawlerTaskReadSchema,
     ArticlePreviewSchema, FetchContentRequestSchema, TestCrawlerRequestSchema, TaskHistorySchema
 )
-  # 使用統一的 logger
+# 引入新的回應 schema
+from src.web.routes.base_response_schema import BaseResponseSchema
+# 再次嘗試使用基於 src 的絕對導入
+from src.web.routes.task_response_schema import (
+    GetScheduledTasksSuccessResponseSchema, CreateScheduledTaskSuccessResponseSchema,
+    UpdateScheduledTaskSuccessResponseSchema, DeleteScheduledTaskSuccessResponseSchema,
+    StartManualTaskSuccessResponseSchema, GetTaskStatusSuccessResponseSchema,
+    CollectLinksManualTaskSuccessResponseSchema, GetUnscrapedLinksSuccessResponseSchema,
+    FetchContentManualTaskSuccessResponseSchema, GetScrapedResultsSuccessResponseSchema,
+    TestCrawlerSuccessResponseSchema, CancelTaskSuccessResponseSchema,
+    GetTaskHistorySuccessResponseSchema, RunTaskSuccessResponseSchema,
+    CreateTaskSuccessResponseSchema, UpdateTaskSuccessResponseSchema,
+    GetAllTasksSuccessResponseSchema, DeleteTaskSuccessResponseSchema
+)
 
 # 使用統一的 logger
 logger = logging.getLogger(__name__)  # 使用統一的 logger
@@ -33,8 +46,13 @@ tasks_bp = Blueprint('tasks_api', __name__, url_prefix='/api/tasks')
 @tasks_bp.route('/scheduled', methods=['GET'])
 @spec.validate(
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": List[CrawlerTaskReadSchema]},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetScheduledTasksSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['爬蟲任務']
 )
@@ -50,9 +68,13 @@ def get_scheduled_tasks():
         
         # 從 result['data']['items'] 獲取任務列表 (Pydantic Schema)
         tasks_list_schemas = result.get('data', {}).get('items', [])
-        # 將返回的 Pydantic Schema 列表轉換為字典列表
-        tasks_list = [task.model_dump() for task in tasks_list_schemas]
-        return jsonify(tasks_list), 200
+        # 將返回的 Pydantic Schema 列表轉換為字典列表 (不需要了，直接用 schema)
+        # tasks_list = [task.model_dump() for task in tasks_list_schemas]
+        return jsonify({
+            "success": True,
+            "message": result.get('message', '獲取排程任務成功'),
+            "data": [task.model_dump() for task in tasks_list_schemas] # 直接返回模型 dump 後的列表
+        }), 200
     except Exception as e:
         return handle_api_error(e)
     
@@ -60,9 +82,13 @@ def get_scheduled_tasks():
 @spec.validate(
     body=Request(CrawlerTasksCreateSchema),
     resp=Response(
-        HTTP_201={"success": bool, "message": str, "task": CrawlerTaskReadSchema},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_201=CreateScheduledTaskSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['爬蟲任務']
 )
@@ -107,14 +133,14 @@ def create_scheduled_task():
                 return jsonify({
                     "success": True,
                     "message": response_message,
-                    "task": task_data
+                    "data": task_data # 使用 'data' key
                 }), 201
         
         # 創建成功
         return jsonify({
             "success": True,
             "message": create_task_result.get('message', '任務創建成功'),
-            "task": task_data
+            "data": task_data # 使用 'data' key
         }), 201
     except Exception as e:
         return handle_api_error(e)
@@ -123,10 +149,13 @@ def create_scheduled_task():
 @spec.validate(
     body=Request(CrawlerTasksUpdateSchema),
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "task": CrawlerTaskReadSchema},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=UpdateScheduledTaskSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['爬蟲任務']
 )
@@ -188,14 +217,14 @@ def update_scheduled_task(task_id):
                 return jsonify({
                     "success": True,
                     "message": response_message,
-                    "task": task_data
+                    "data": task_data # 使用 'data' key
                 }), 200
         
         # 更新成功
         return jsonify({
             "success": True,
             "message": update_result.get('message', '任務更新成功'),
-            "task": task_data
+            "data": task_data # 使用 'data' key
         }), 200
     except Exception as e:
         return handle_api_error(e)
@@ -203,9 +232,13 @@ def update_scheduled_task(task_id):
 @tasks_bp.route('/scheduled/<int:task_id>', methods=['DELETE'])
 @spec.validate(
     resp=Response(
-        HTTP_200={"success": bool, "message": str},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=DeleteScheduledTaskSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['爬蟲任務']
 )
@@ -244,9 +277,13 @@ def delete_scheduled_task(task_id):
 @spec.validate(
     body=Request(CrawlerTasksCreateSchema),
     resp=Response(
-        HTTP_202={"success": bool, "message": str, "task_id": int, "task_status": str},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_202=StartManualTaskSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['手動任務']
 )
@@ -290,17 +327,31 @@ def fetch_full_article_manual_task():
         executor_result = task_executor.fetch_full_article(task_id, is_async=False)
 
         # executor_result 結構: {'success': bool, 'message': str, 'task_status': str, ...可能還有爬蟲返回的其他數據}
-        status_code = 202 if executor_result.get('success') else 500
-        return jsonify(executor_result), status_code
+        if executor_result.get('success'):
+            response_data = {
+                "success": True,
+                "message": executor_result.get('message', '手動任務已啟動'),
+                "data": {
+                    "task_id": task_id,
+                    "task_status": executor_result.get('task_status', 'UNKNOWN')
+                }
+            }
+            return jsonify(response_data), 202
+        else:
+            return jsonify({"success": False, "message": executor_result.get('message', '任務執行失敗')}), 500
     except Exception as e:
         return handle_api_error(e)
 
 @tasks_bp.route('/manual/<int:task_id>/status', methods=['GET'])
 @spec.validate(
     resp=Response(
-        HTTP_200={"success": bool, "task_status": str, "scrape_phase": str, "progress": int, "message": str, "task": Optional[CrawlerTaskReadSchema]},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetTaskStatusSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['手動任務']
 )
@@ -309,13 +360,22 @@ def get_task_status(task_id):
         task_executor = get_task_executor_service()
         executor_result = task_executor.get_task_status(task_id)
         # get_task_status 返回: {'success': bool, 'task_status': str, 'scrape_phase': str, 'progress': int, 'message': str, 'task': Optional[Schema]}
-        status_code = 200 if executor_result.get('success') else 404
-        
-        # 如果成功且包含 task schema，將其轉換為 dict
-        if executor_result.get('success') and executor_result.get('task'):
-             executor_result['task'] = executor_result['task'].model_dump()
+        if executor_result.get('success'):
+            task_obj = executor_result.get('task')
+            response_data = {
+                "success": True,
+                "message": executor_result.get('message', '成功獲取狀態'),
+                "data": {
+                    "task_status": executor_result.get('task_status', 'UNKNOWN'),
+                    "scrape_phase": executor_result.get('scrape_phase', 'UNKNOWN'),
+                    "progress": executor_result.get('progress', 0),
+                    "task": task_obj.model_dump() if task_obj else None
+                }
+            }
+            return jsonify(response_data), 200
+        else:
+            return jsonify({"success": False, "message": executor_result.get('message', '找不到任務或獲取狀態失敗')}), 404
 
-        return jsonify(executor_result), status_code
     except Exception as e:
         return handle_api_error(e)
 
@@ -324,9 +384,13 @@ def get_task_status(task_id):
 @spec.validate(
     body=Request(CrawlerTasksCreateSchema),
     resp=Response(
-        HTTP_202={"success": bool, "message": str, "task_id": int, "task_status": str},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_202=CollectLinksManualTaskSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['手動任務']
 )
@@ -368,17 +432,31 @@ def fetch_links_manual_task():
         # collect_links_only 內部會調用 execute_task
         executor_result = task_executor.collect_links_only(task_id, is_async=False)
         
-        status_code = 202 if executor_result.get('success') else 500
-        return jsonify(executor_result), status_code
+        if executor_result.get('success'):
+            response_data = {
+                "success": True,
+                "message": executor_result.get('message', '手動連結抓取任務已啟動'),
+                "data": {
+                    "task_id": task_id,
+                    "task_status": executor_result.get('task_status', 'UNKNOWN')
+                }
+            }
+            return jsonify(response_data), 202
+        else:
+            return jsonify({"success": False, "message": executor_result.get('message', '任務執行失敗')}), 500
     except Exception as e:
         return handle_api_error(e)
 
 @tasks_bp.route('/manual/<int:task_id>/links', methods=['GET'])
 @spec.validate(
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "articles": List[ArticlePreviewSchema]},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetUnscrapedLinksSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['手動任務']
 )
@@ -389,8 +467,17 @@ def get_unscraped_links(task_id):
         # is_preview=True 返回包含預覽欄位的字典列表
         result = article_service.find_unscraped_articles(task_id=task_id, is_preview=True)
         
-        status_code = 200 if result.get('success') else 404
-        return jsonify(result), status_code
+        if result.get('success'):
+             # articles 是 ArticlePreviewSchema 的列表
+             articles_data = result.get('articles', []) # 這裡直接是預期的列表
+             return jsonify({
+                  "success": True,
+                  "message": result.get('message', '成功獲取未抓取連結'),
+                  "data": articles_data
+             }), 200
+        else:
+             status_code = 404 if "未找到" in result.get('message', '') else 500
+             return jsonify({"success": False, "message": result.get('message', '獲取連結失敗')}), status_code
     except Exception as e:
         return handle_api_error(e)
 
@@ -398,10 +485,13 @@ def get_unscraped_links(task_id):
 @spec.validate(
     body=Request(FetchContentRequestSchema),
     resp=Response(
-        HTTP_202={"success": bool, "message": str, "task_id": int, "task_status": str},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_202=FetchContentManualTaskSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['手動任務']
 )
@@ -490,8 +580,19 @@ def fetch_content_manual_task(task_id):
         # fetch_content_only 內部調用 execute_task
         executor_result = task_executor.fetch_content_only(task_id, is_async=False)
 
-        status_code = 202 if executor_result.get('success') else 500
-        return jsonify(executor_result), status_code
+        if executor_result.get('success'):
+            response_data = {
+                "success": True,
+                "message": executor_result.get('message', '手動內容抓取任務已啟動'),
+                "data": {
+                    "task_id": task_id,
+                    "task_status": executor_result.get('task_status', 'UNKNOWN')
+                }
+            }
+            return jsonify(response_data), 202
+        else:
+            status_code = 404 if "找不到" in executor_result.get('message', '') else 500
+            return jsonify({"success": False, "message": executor_result.get('message', '任務執行失敗')}), status_code
 
     except Exception as e:
         return handle_api_error(e)
@@ -499,9 +600,13 @@ def fetch_content_manual_task(task_id):
 @tasks_bp.route('/manual/<int:task_id>/results', methods=['GET'])
 @spec.validate(
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "articles": List[ArticlePreviewSchema]},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetScrapedResultsSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['手動任務']
 )
@@ -512,8 +617,16 @@ def get_scraped_task_results(task_id):
         # is_preview=True 返回包含預覽欄位的字典列表
         result = article_service.find_scraped_articles(task_id=task_id, is_preview=True)
         
-        status_code = 200 if result.get('success') else 404
-        return jsonify(result), status_code
+        if result.get('success'):
+             articles_data = result.get('articles', []) # 這裡直接是預期的列表
+             return jsonify({
+                  "success": True,
+                  "message": result.get('message', '成功獲取已抓取結果'),
+                  "data": articles_data
+             }), 200
+        else:
+             status_code = 404 if "未找到" in result.get('message', '') else 500
+             return jsonify({"success": False, "message": result.get('message', '獲取結果失敗')}), status_code
     except Exception as e:
         return handle_api_error(e)
 
@@ -521,9 +634,13 @@ def get_scraped_task_results(task_id):
 @spec.validate(
     body=Request(TestCrawlerRequestSchema),
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "result": Dict[str, Any]},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=TestCrawlerSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['手動任務']
 )
@@ -602,14 +719,30 @@ def test_crawler():
         response_data = {
             'success': executor_result.get('success', False),
             'message': str(executor_result.get('message', '')),
-            'result': {
-                k: str(v) if isinstance(v, Enum) else v  # 將所有枚舉值轉換為字串
-                for k, v in (executor_result.get('result', {}) or {}).items()
-            }
+            # 'result' 鍵現在放到 'data' 下面
+            # 'result': {
+            #     k: str(v) if isinstance(v, Enum) else v  # 將所有枚舉值轉換為字串
+            #     for k, v in (executor_result.get('result', {}) or {}).items()
+            # }
         }
-        
-        status_code = 200 if response_data['success'] else 500
-        return jsonify(response_data), status_code
+        test_result_data = {
+             k: str(v) if isinstance(v, Enum) else v
+             for k, v in (executor_result.get('result', {}) or {}).items()
+        }
+
+        if response_data['success']:
+            return jsonify({
+                "success": True,
+                "message": response_data['message'],
+                "data": test_result_data # 將 result 字典放在 data 下
+            }), 200
+        else:
+            # 如果測試失敗，仍然可以用 BaseResponseSchema，但可以包含 data (空字典) 或省略
+            return jsonify({
+                "success": False,
+                "message": response_data['message'],
+                # "data": {} # 或者省略 data
+            }), 500
     except Exception as e:
         logger.error("測試爬蟲時發生錯誤: %s", str(e), exc_info=True)
         return jsonify({
@@ -621,9 +754,13 @@ def test_crawler():
 @tasks_bp.route('/<int:task_id>/cancel', methods=['POST'])
 @spec.validate(
     resp=Response(
-        HTTP_202={"success": bool, "message": str},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_202=CancelTaskSuccessResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['任務管理']
 )
@@ -640,9 +777,13 @@ def cancel_task(task_id):
 @tasks_bp.route('/<int:task_id>/history', methods=['GET'])
 @spec.validate(
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "history": List[TaskHistorySchema], "total_count": int},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetTaskHistorySuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['任務管理']
 )
@@ -660,13 +801,14 @@ def get_task_history(task_id):
         # 將 history schema 列表轉換為 dict 列表 (從 'history' 鍵獲取)
         histories_list = [h.model_dump() for h in result.get('history', [])]
         
-        # 構造最終的 JSON 響應
+        # 構造最終的 JSON 響應以匹配 Schema
         response_data = {
             'success': True,
             'message': result.get('message', '獲取任務歷史成功'),
-            'history': histories_list,
-            # total_count 不再由 find_task_history 直接返回，但可以從列表長度計算
-            'total_count': len(histories_list)
+            'data': { # 將 history 和 total_count 放入 data
+                'history': histories_list,
+                'total_count': len(histories_list)
+            }
         }
         return jsonify(response_data), 200
     except Exception as e:
@@ -675,9 +817,13 @@ def get_task_history(task_id):
 @tasks_bp.route('/<int:task_id>/run', methods=['POST'])
 @spec.validate(
     resp=Response(
-        HTTP_202={"success": bool, "message": str, "task_id": int, "session_id": Optional[str], "room": str},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_202=RunTaskSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['任務管理']
 )
@@ -697,13 +843,15 @@ def run_task(task_id):
         if hasattr(service, 'task_session_ids') and task_id in service.task_session_ids:
             session_id = service.task_session_ids[task_id]
             
-        # 增強結果響應，包含會話ID
+        # 增強結果響應以匹配 Schema
         enhanced_result = {
             'success': True,
             'message': result['message'],
-            'task_id': task_id,
-            'session_id': session_id,  # 返回會話ID給前端
-            'room': f"task_{task_id}_{session_id}" if session_id else f"task_{task_id}"
+            'data': { # 將 task_id, session_id, room 放入 data
+                'task_id': task_id,
+                'session_id': session_id,  # 返回會話ID給前端
+                'room': f"task_{task_id}_{session_id}" if session_id else f"task_{task_id}"
+            }
         }
         
         return jsonify(enhanced_result), 202  # Accepted
@@ -763,9 +911,13 @@ def _setup_validate_task_data(task_data: Dict[str, Any], service: CrawlerTaskSer
 @spec.validate(
     body=Request(CrawlerTasksCreateSchema),
     resp=Response(
-        HTTP_201={"success": bool, "message": str, "task": CrawlerTaskReadSchema},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_201=CreateTaskSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['任務管理']
 )
@@ -821,7 +973,7 @@ def create_task():
         return jsonify({
             "success": True,
             "message": create_task_result.get('message', '任務創建成功'),
-            "task": task_data
+            "data": task_data # 使用 'data' key
         }), 201
     except Exception as e:
         logger.exception("創建任務時出錯: %s", str(e))
@@ -832,10 +984,13 @@ def create_task():
 @spec.validate(
     body=Request(CrawlerTasksUpdateSchema),
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "task": CrawlerTaskReadSchema},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=UpdateTaskSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['任務管理']
 )
@@ -863,7 +1018,7 @@ def update_task(task_id):
         return jsonify({
             "success": True,
             "message": update_result.get('message', '任務更新成功'),
-            "task": final_task_data
+            "data": final_task_data # 使用 'data' key
         }), 200
     except ValidationError as ve: # 捕獲特定的驗證錯誤
          error_message = f"更新任務 {task_id} 時資料驗證失敗: {ve}"
@@ -876,8 +1031,13 @@ def update_task(task_id):
 @tasks_bp.route('', methods=['GET'])
 @spec.validate(
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": List[CrawlerTaskReadSchema]},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetAllTasksSuccessResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['任務管理']
 )
@@ -905,9 +1065,13 @@ def get_all_tasks():
 @tasks_bp.route('/<int:task_id>', methods=['DELETE'])
 @spec.validate(
     resp=Response(
-        HTTP_200={"success": bool, "message": str},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=DeleteTaskSuccessResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_400=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema
     ),
     tags=['任務管理']
 )

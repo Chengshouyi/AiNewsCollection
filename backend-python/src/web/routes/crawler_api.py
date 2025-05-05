@@ -20,7 +20,19 @@ from src.models.crawlers_schema import (
 )
 from src.services.crawlers_service import CrawlersService
 from src.services.service_container import get_crawlers_service
-from src.web.spec import spec  # 新增
+from src.web.spec import spec  
+from src.web.routes.base_response_schema import BaseResponseSchema
+from src.web.routes.crawler_response_schema import (
+    CrawlerActionSuccessResponseSchema,
+    GetCrawlersSuccessResponseSchema,
+    DeleteCrawlerSuccessResponseSchema,
+    GetCrawlerTypesSuccessResponseSchema,
+    GetCrawlerStatsSuccessResponseSchema,
+    BatchToggleStatusSuccessResponseSchema,
+    GetFilteredCrawlersSuccessResponseSchema,
+    GetCrawlerConfigSuccessResponseSchema,
+    BatchToggleStatusResultSchema # Import if needed directly
+)
 
 
 logger = logging.getLogger(__name__)  # 使用統一的 logger
@@ -30,10 +42,15 @@ crawler_bp = Blueprint('crawlerapi', __name__, url_prefix='/api/crawlers')
 
 
 @crawler_bp.route('', methods=['GET'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": List[CrawlerReadSchema]},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetCrawlersSuccessResponseSchema, 
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,
     ),
     tags=['爬蟲管理']
 )
@@ -53,18 +70,25 @@ def get_crawlers():
 
         # 將 Schema 列表轉換為字典列表
         crawlers_list = [c.model_dump() for c in crawlers_schemas]
-        # 返回標準結構
+        # 返回標準結構 (數據放入 data 鍵)
         return jsonify({"success": True, "message": result.get('message'), "data": crawlers_list}), 200
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('', methods=['POST'])
 @spec.validate(
-    body=Request(CrawlerFormDataSchema),
-    resp=Response(
-        HTTP_201={"success": bool, "message": str, "crawler": CrawlerReadSchema},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+    # 注意：由於是 multipart/form-data，Request Body 的自動驗證較複雜
+    # flask-pydantic-spec 可能無法直接驗證 multipart/form-data
+    # 但我們仍然可以定義 Schema 用於文檔和潛在的手動驗證
+    # body=Request(CrawlerFormDataSchema), 
+    resp=Response( # 更新 Response
+        HTTP_201=CrawlerActionSuccessResponseSchema, # 成功創建
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                # Server Error
     ),
     tags=['爬蟲管理']
 )
@@ -118,19 +142,28 @@ def create_crawler_with_config_route():
             # 這種情況理論上不應該發生，如果發生了是內部錯誤
             return jsonify({"success": False, "message": "創建爬蟲後未能獲取結果"}), 500
 
-        # 將 Schema 轉為字典並返回
-        result['crawler'] = crawler_schema.model_dump()
-        return jsonify(result), 201 # 201 Created
+        # 將 Schema 轉為字典並放入 data 鍵
+        response_data = crawler_schema.model_dump()
+        return jsonify({
+            "success": True, 
+            "message": result.get('message'), 
+            "data": response_data
+        }), 201 # 201 Created
 
     except Exception as e:
         # 捕獲服務層或其他地方可能拋出的未預期異常
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>', methods=['GET'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "crawler": CrawlerReadSchema},
-        HTTP_404={"success": bool, "message": str}
+        HTTP_200=CrawlerActionSuccessResponseSchema, # 成功獲取
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                 # Not Found
     ),
     tags=['爬蟲管理']
 )
@@ -149,20 +182,27 @@ def get_crawler(crawler_id):
              logger.warning("get_crawler_by_id 成功但未返回 crawler 物件 (ID: %s)", crawler_id)
              return jsonify({"success": False, "message": "成功獲取但找不到爬蟲資料"}), 404
 
-        # 將 Schema 轉為字典並返回
-        result['crawler'] = crawler_schema.model_dump()
-        return jsonify(result), 200
+        # 將 Schema 轉為字典並放入 data 鍵
+        response_data = crawler_schema.model_dump()
+        return jsonify({
+            "success": True, 
+            "message": result.get('message'), 
+            "data": response_data
+        }), 200
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>', methods=['PUT'])
 @spec.validate(
-    body=Request(CrawlerFormDataSchema),
-    resp=Response(
-        HTTP_200={"success": bool, "message": str, "crawler": CrawlerReadSchema},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+    # body=Request(CrawlerFormDataSchema), # 同 POST，multipart 驗證問題
+    resp=Response( # 更新 Response
+        HTTP_200=CrawlerActionSuccessResponseSchema, # 成功更新
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                
     ),
     tags=['爬蟲管理']
 )
@@ -226,10 +266,14 @@ def update_crawler_with_config_route(crawler_id):
             logger.error("更新爬蟲成功但 Service 未返回爬蟲物件 (ID: %s)", crawler_id)
             return jsonify({"success": False, "message": "更新爬蟲後未能獲取結果"}), 500
 
-        # 將 Schema 轉為字典並返回
-        result['crawler'] = updated_crawler_schema.model_dump()
+        # 將 Schema 轉為字典並放入 data 鍵
+        response_data = updated_crawler_schema.model_dump()
         logger.info("爬蟲（含配置）更新成功，ID=%s", crawler_id)
-        return jsonify(result), 200 # 200 OK
+        return jsonify({
+            "success": True, 
+            "message": result.get('message'), 
+            "data": response_data
+        }), 200 # 200 OK
 
     except Exception as e:
         # 捕獲服務層或其他地方可能拋出的未預期異常
@@ -237,10 +281,14 @@ def update_crawler_with_config_route(crawler_id):
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>', methods=['DELETE'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str},
-        HTTP_404={"success": bool, "message": str}
+        HTTP_200=DeleteCrawlerSuccessResponseSchema, 
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -254,16 +302,20 @@ def delete_crawler(crawler_id):
             # Service 返回 False 通常是因為找不到
             return jsonify(result), 404
 
+        # 返回成功訊息即可，符合 DeleteCrawlerSuccessResponseSchema
         return jsonify(result), 200
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('/types', methods=['GET'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": List[dict]},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetCrawlerTypesSuccessResponseSchema, 
+        HTTP_404=BaseResponseSchema,                  
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -281,10 +333,14 @@ def get_available_crawler_types():
         return handle_api_error(e)
 
 @crawler_bp.route('/active', methods=['GET'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": List[CrawlerReadSchema]},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetCrawlersSuccessResponseSchema, 
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -315,11 +371,15 @@ def get_active_crawlers():
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>/toggle', methods=['POST'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "crawler": CrawlerReadSchema},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=CrawlerActionSuccessResponseSchema, # 成功切換狀態
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -338,17 +398,26 @@ def toggle_crawler_status(crawler_id):
             logger.error("切換狀態成功但 Service 未返回爬蟲物件 (ID: %s)", crawler_id)
             return jsonify({"success": False, "message": "切換狀態後未能獲取更新後的爬蟲資料"}), 500
 
-        # 將 Schema 轉為字典並返回
-        result['crawler'] = crawler_schema.model_dump()
-        return jsonify(result), 200
+        # 將 Schema 轉為字典並放入 data 鍵
+        response_data = crawler_schema.model_dump()
+        return jsonify({
+            "success": True,
+            "message": result.get('message'),
+            "data": response_data
+        }), 200
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('/name/<string:name>', methods=['GET'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": List[CrawlerReadSchema]},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetCrawlersSuccessResponseSchema, # 成功按名稱獲取
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -373,19 +442,25 @@ def get_crawlers_by_name(name):
         crawlers_list = [c.model_dump() for c in crawlers_schemas]
 
         status_code = 200
+        # 返回標準結構 (數據放入 data 鍵)
         return jsonify({
             "success": True,
             "message": result.get('message'),
-            "data": crawlers_list
+            "data": crawlers_list # 已是 list of dicts
         }), status_code
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('/type/<string:crawler_type>', methods=['GET'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": List[CrawlerReadSchema]},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetCrawlersSuccessResponseSchema, # 成功按類型獲取
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -405,19 +480,25 @@ def get_crawlers_by_type(crawler_type):
         crawlers_list = [c.model_dump() for c in crawlers_schemas]
 
         status_code = 200
+        # 返回標準結構 (數據放入 data 鍵)
         return jsonify({
             "success": True,
             "message": result.get('message'),
-            "data": crawlers_list
+            "data": crawlers_list # 已是 list of dicts
         }), status_code
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('/target/<string:target_pattern>', methods=['GET'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": List[CrawlerReadSchema]},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetCrawlersSuccessResponseSchema, # 成功按目標獲取
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -437,19 +518,25 @@ def get_crawlers_by_target(target_pattern):
         crawlers_list = [c.model_dump() for c in crawlers_schemas]
 
         status_code = 200
+        # 返回標準結構 (數據放入 data 鍵)
         return jsonify({
             "success": True,
             "message": result.get('message'),
-            "data": crawlers_list
+            "data": crawlers_list # 已是 list of dicts
         }), status_code
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('/statistics', methods=['GET'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": dict},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetCrawlerStatsSuccessResponseSchema, # 成功獲取統計
+        HTTP_400=BaseResponseSchema,
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -462,15 +549,30 @@ def get_crawler_statistics():
         if not result.get('success'):
             return jsonify(result), 500
 
-        return jsonify(result), 200
+        # 提取 'data' 部分並返回標準結構
+        stats_data = result.get('data')
+        if stats_data is None:
+             logger.error("獲取統計成功但 Service 未返回 data")
+             return jsonify({"success": False, "message": "無法獲取統計資料"}), 500
+             
+        return jsonify({
+            "success": True,
+            "message": result.get('message'),
+            "data": stats_data
+        }), 200
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('/exact-name/<string:crawler_name>', methods=['GET'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "crawler": CrawlerReadSchema},
-        HTTP_404={"success": bool, "message": str}
+        HTTP_200=CrawlerActionSuccessResponseSchema, # 成功精確獲取
+        HTTP_404=BaseResponseSchema,                 # Not Found
+        HTTP_400=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -489,21 +591,28 @@ def get_crawler_by_exact_name(crawler_name):
             logger.warning("get_crawler_by_exact_name 成功但未返回 crawler 物件 (Name: %s)", crawler_name)
             return jsonify({"success": False, "message": "成功獲取但找不到爬蟲資料"}), 404
 
-        # 將 Schema 轉為字典並返回
-        result['crawler'] = crawler_schema.model_dump()
-        return jsonify(result), 200
+        # 將 Schema 轉為字典並放入 data 鍵
+        response_data = crawler_schema.model_dump()
+        return jsonify({
+            "success": True,
+            "message": result.get('message'),
+            "data": response_data
+        }), 200
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('/create-or-update', methods=['POST'])
-@spec.validate(  
-    body=Request(CrawlersCreateSchema),
+@spec.validate(
+    # body=Request(CrawlersCreateSchema), # 這裡的 Request Schema 可能需要更精確，允許 id
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "crawler": CrawlerReadSchema},
-        HTTP_201={"success": bool, "message": str, "crawler": CrawlerReadSchema},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_404={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=CrawlerActionSuccessResponseSchema, # 成功更新
+        HTTP_201=CrawlerActionSuccessResponseSchema, # 成功創建
+        HTTP_400=BaseResponseSchema,                # Bad Request
+        HTTP_404=BaseResponseSchema,                # Not Found (用於更新時)
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -536,20 +645,28 @@ def create_or_update_crawler():
             logger.error("%s爬蟲成功但 Service 未返回爬蟲物件", op_type)
             return jsonify({"success": False, "message": f"{op_type}爬蟲後未能獲取結果"}), 500
 
-        # 將 Schema 轉為字典
-        result['crawler'] = crawler_schema.model_dump()
-        # 根據操作返回不同狀態碼
+        # 將 Schema 轉為字典並放入 data 鍵
+        response_data = crawler_schema.model_dump()
         status_code = 200 if is_update_operation else 201
-        return jsonify(result), status_code
+        return jsonify({
+            "success": True,
+            "message": result.get('message'),
+            "data": response_data
+        }), status_code
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('/batch-toggle', methods=['POST'])
 @spec.validate(
-    body=Request(BatchToggleStatusSchema),
+    # body=Request(BatchToggleStatusSchema), # Request Body Schema
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "result": dict},
-        HTTP_400={"success": bool, "message": str}
+        HTTP_200=BatchToggleStatusSuccessResponseSchema, # 成功 (即使部分失敗)
+        HTTP_400=BaseResponseSchema,                     
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -563,38 +680,64 @@ def batch_toggle_crawler_status():
         service: CrawlersService = get_crawlers_service()
         data = request.get_json()
 
-        if not data or 'crawler_ids' not in data or 'active_status' not in data:
-            return jsonify({"success": False, "message": "請求體缺少必要參數 'crawler_ids' 或 'active_status'"}), 400
+        # if not data or 'crawler_ids' not in data or 'active_status' not in data:
+        #     return jsonify({"success": False, "message": "請求體缺少必要參數 'crawler_ids' 或 'active_status'"}), 400
 
+        # 使用 Pydantic 模型進行驗證（如果 Service 層沒有做的話）
         try:
-            # 基本類型驗證
-            crawler_ids = data['crawler_ids']
-            active_status = data['active_status']
-            if not isinstance(crawler_ids, list) or not all(isinstance(item, int) for item in crawler_ids):
-                 raise ValueError("crawler_ids 必須是整數列表")
-            if not isinstance(active_status, bool):
-                 raise ValueError("active_status 必須是布林值")
-        except (ValueError, KeyError) as ve:
-             return jsonify({"success": False, "message": f"參數格式錯誤: {ve}"}), 400
+            # 嘗試將請求數據解析為 BatchToggleStatusSchema
+            # 這一步會自動驗證類型和是否存在必要的字段
+            request_schema = BatchToggleStatusSchema(**data) 
+            crawler_ids = request_schema.crawler_ids
+            active_status = request_schema.active_status
+        # except (ValidationError, TypeError) as ve: # Pydantic v2 用 ValidationError
+        except Exception as ve: # 捕獲更廣泛的錯誤以防萬一
+             logger.error("批量切換狀態請求參數驗證失敗: %s", ve)
+             # 根據 Pydantic v2，錯誤消息可能在 ve.errors() 中
+             error_msg = str(ve) # 簡化處理
+             return jsonify({"success": False, "message": f"參數格式錯誤: {error_msg}"}), 400
+
 
         result = service.batch_toggle_crawler_status(crawler_ids, active_status)
 
-        # Service success=False 通常表示所有操作都失敗或內部錯誤
-        if not result.get('success') and result.get('result', {}).get('success_count', 0) == 0:
-            return jsonify(result), 400
+        # Service 返回的結果在 'result' 鍵下
+        operation_result_data = result.get('result') 
 
-        # 即使部分失敗，只要有成功，整體操作算成功 (200)
-        return jsonify(result), 200
+        # 如果 Service 成功（可能部分成功），或者即使 Service 標記為 False 但有成功記錄
+        if result.get('success') or (operation_result_data and operation_result_data.get('success_count', 0) > 0):
+            if operation_result_data is None:
+                # 如果數據丟失，這是一個服務端錯誤
+                logger.error("批量切換狀態操作成功但 Service 未返回 result 數據")
+                return jsonify({"success": False, "message": "操作完成但無法獲取結果詳情"}), 500
+            
+            # 將 'result' 的內容放入 'data' 以符合 Schema
+            # 確保 operation_result_data 符合 BatchToggleStatusResultSchema 結構
+            # (如果 Service 返回的就是字典，這裡不需要轉換)
+            return jsonify({
+                "success": True, # 標記為整體成功
+                "message": result.get('message'),
+                "data": operation_result_data # 將 result 字典放入 data
+            }), 200
+        else:
+            # Service 標記失敗且沒有任何成功操作，視為客戶端錯誤或內部錯誤
+            # Service 應該返回更具體的錯誤消息
+            status_code = 400 # 假設是參數問題或全部 ID 無效
+            return jsonify(result), status_code # 返回原始錯誤訊息
+
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('/filter', methods=['POST'])
 @spec.validate(
-    body=Request(CrawlerFilterRequestSchema),
+    body=Request(CrawlerFilterRequestSchema), # Request Body Schema
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": PaginatedCrawlerResponse},
-        HTTP_400={"success": bool, "message": str},
-        HTTP_500={"success": bool, "message": str}
+        HTTP_200=GetFilteredCrawlersSuccessResponseSchema, 
+        HTTP_400=BaseResponseSchema,                       
+        HTTP_404=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -624,12 +767,19 @@ def get_filtered_crawlers():
         sort_by = data.get('sort_by')
         sort_desc = data.get('sort_desc', False)
 
+        # 使用 Pydantic 模型驗證過濾條件 (如果需要更嚴格的驗證)
+        # try:
+        #     filter_schema = CrawlerFilterRequestSchema(filter=filter_dict, page=page, per_page=per_page, sort_by=sort_by, sort_desc=sort_desc)
+        # except ValidationError as ve:
+        #     return jsonify({"success": False, "message": f"過濾參數格式錯誤: {ve}"}), 400
+
+
         result = service.find_filtered_crawlers(
-            filter_criteria=filter_dict,
-            page=page,
-            per_page=per_page,
-            sort_by=sort_by,
-            sort_desc=sort_desc
+            filter_criteria=filter_dict, # filter_schema.filter
+            page=page,                   # filter_schema.page
+            per_page=per_page,           # filter_schema.per_page
+            sort_by=sort_by,             # filter_schema.sort_by
+            sort_desc=sort_desc          # filter_schema.sort_desc
         )
 
         if not result.get('success'):
@@ -640,17 +790,26 @@ def get_filtered_crawlers():
         if paginated_data is None:
              return jsonify({"success": False, "message": "無法獲取分頁爬蟲資料"}), 500
 
-        result['data'] = paginated_data.model_dump(mode='json')
-
-        return jsonify(result), 200
+        # 將 PaginatedCrawlerResponse 實例轉換為字典並放入 data 鍵
+        response_data = paginated_data.model_dump(mode='json')
+        return jsonify({
+            "success": True,
+            "message": result.get('message'),
+            "data": response_data
+        }), 200
     except Exception as e:
         return handle_api_error(e)
 
 @crawler_bp.route('/<int:crawler_id>/config', methods=['GET'])
-@spec.validate(  # 新增
+@spec.validate(  # 更新 Response
     resp=Response(
-        HTTP_200={"success": bool, "message": str, "data": dict},
-        HTTP_404={"success": bool, "message": str}
+        HTTP_200=GetCrawlerConfigSuccessResponseSchema, # 成功獲取配置
+        HTTP_404=BaseResponseSchema,                    
+        HTTP_400=BaseResponseSchema,
+        HTTP_500=BaseResponseSchema,
+        HTTP_502=BaseResponseSchema,
+        HTTP_503=BaseResponseSchema,
+        HTTP_504=BaseResponseSchema,                  
     ),
     tags=['爬蟲管理']
 )
@@ -669,8 +828,17 @@ def get_crawler_config(crawler_id):
             logger.error("獲取爬蟲配置失敗 (ID: %s): %s", crawler_id, result.get('message')) # Log the specific reason
             return jsonify(result), status_code
 
-        # Success case
-        return jsonify(result), 200
+        # 提取 'data' 部分並返回標準結構
+        config_data = result.get('data')
+        if config_data is None:
+             logger.error("獲取配置成功但 Service 未返回 data (ID: %s)", crawler_id)
+             return jsonify({"success": False, "message": "無法獲取配置資料內容"}), 500 # 認為是服務端問題
+
+        return jsonify({
+            "success": True,
+            "message": result.get('message'),
+            "data": config_data # config_data 應該是 dict
+        }), 200
     except Exception as e:
         logger.error("獲取爬蟲配置時發生異常: %s", str(e), exc_info=True)
         return handle_api_error(e)
