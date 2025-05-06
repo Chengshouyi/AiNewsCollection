@@ -581,10 +581,9 @@ function showCrawlerModal(crawlerId) {
             method: 'GET',
             success: function (response) {
                 if (response.success) {
-                    const configContentStr = JSON.stringify(response.config, null, 2);
+                    const configContentStr = JSON.stringify(response.data, null, 2);
                     $('#current-config-file').text(crawler.config_file_name);
                     $('#config-content').val(configContentStr);
-                    // 將原始值存儲在 data 屬性中，用於後續比較
                     $('#config-content').data('original-value', configContentStr);
                     $('#config-edit-section').show();
                 } else {
@@ -998,6 +997,7 @@ function testCrawler(crawlerId, crawlerName) {
         }),
         success: function (response) {
             console.log('測試請求響應:', response);
+            const progressContainer = $('#test-progress-container'); // 確保 progressContainer 可用
             if (response.success) {
                 // 保存測試任務ID (如果有)
                 if (response.task_id) {
@@ -1053,50 +1053,87 @@ function testCrawler(crawlerId, crawlerName) {
                     });
                 }
 
-                // 直接從 response.result 中獲取連結數量 (如果有)
+                // --- 修改：從 response.data 獲取數據 ---
                 let linksCount = 0;
-                if (response.result) {
-                    // 檢查多種可能的屬性名稱
-                    linksCount = response.result.links_count ||
-                        (response.result.links ? response.result.links.length : 0) ||
-                        response.result.articles_count || 0;
+                if (response.data) { // <--- 改為檢查 response.data
+                    // 檢查 response.data 中的連結數量
+                    linksCount = response.data.links_count ||
+                        (response.data.links ? response.data.links.length : 0) ||
+                        response.data.articles_count || 0;
 
-                    // 如果有連結數量信息，直接更新進度到100%
-                    if (linksCount > 0 || response.result.scrape_phase === 'completed') {
+                    // 檢查測試是否已直接在 response 中完成 (基於 response.data)
+                    // 注意：後端 test_crawler 設計為同步返回結果，因此這裡直接處理完成狀態是合理的
+                    // 增加檢查 scrape_phase 是否存在
+                    const isCompleted = linksCount > 0 || (response.data.scrape_phase && response.data.scrape_phase === 'completed');
+
+                    if (isCompleted) {
                         console.log(`從API回應獲取到連結數量: ${linksCount}`);
                         $('#test-debug-info').append(`<br>從API回應獲取到連結數量: ${linksCount}`);
 
-                        // 更新進度到100%
+                        // 更新進度條到100%
                         updateTestProgress({
-                            crawler_id: crawlerId,
+                            crawler_id: crawlerId, // 使用 crawlerId
+                            task_id: response.task_id, // 也傳遞 task_id (如果有的話)
                             progress: 100,
                             message: response.message || '測試已完成',
                             links_count: linksCount,
                             force_update: true
                         });
 
-                        // 不需要再等待進度更新，直接標記為完成
+                        // 直接標記為完成狀態
+                        finishTestProgress({
+                            status: 'COMPLETED',
+                            crawler_id: crawlerId,
+                            task_id: response.task_id,
+                            message: response.message || '測試已完成',
+                            links_count: linksCount,
+                            result: response.data, // 傳遞實際的結果數據
+                            force_update: true
+                        });
+
+                        // 因為測試已在此處完成，可以返回，避免後續不必要的 checkTestResult
                         return;
                     }
                 }
+                // --- 修改結束 ---
 
-                // 如果是手動測試模式的實現，可能需要輪詢獲取結果
-                if ((!response.task_id && response.redirect_url) || !linksCount) {
+                // 如果API沒有直接返回完成狀態，並且沒有task_id（這種情況理論上不應發生，因為後端會返回結果）
+                // 保留這個檢查以防萬一，但同步測試的主要完成邏輯在上面處理 response.data
+                if (!response.task_id && !isCompleted) {
                     setTimeout(function () {
                         checkTestResult(crawlerId);
                     }, 2000);
                 }
             } else {
+                // 請求本身失敗 (success: false)
                 $('#test-progress-message').text(`測試請求失敗: ${response.message}`);
                 $('#test-progress-bar').css('width', '100%').text('100%');
                 progressContainer.removeClass('alert-info').addClass('alert-danger');
+                // 調用 finishTestProgress 來顯示失敗狀態
+                finishTestProgress({
+                    status: 'FAILED',
+                    crawler_id: crawlerId,
+                    message: `測試請求失敗: ${response.message}`,
+                    error: response.message, // 添加錯誤訊息
+                    force_update: true
+                });
             }
         },
         error: function (xhr, status, error) {
             console.error('測試請求失敗:', error);
-            $('#test-progress-message').text(`測試請求失敗: ${xhr.responseJSON?.message || error}`);
+            const progressContainer = $('#test-progress-container'); // 確保 progressContainer 可用
+            const errorMsg = xhr.responseJSON?.message || error;
+            $('#test-progress-message').text(`測試請求失敗: ${errorMsg}`);
             $('#test-progress-bar').css('width', '100%').text('100%');
             progressContainer.removeClass('alert-info').addClass('alert-danger');
+            // 調用 finishTestProgress 來顯示失敗狀態
+            finishTestProgress({
+                status: 'FAILED',
+                crawler_id: crawlerId,
+                message: `測試請求失敗: ${errorMsg}`,
+                error: errorMsg,
+                force_update: true
+            });
         }
     });
 }

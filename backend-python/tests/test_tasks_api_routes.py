@@ -65,7 +65,9 @@ class CrawlerTaskMock:
         self.scrape_phase = data.get('scrape_phase', ScrapePhase.INIT)
         self.max_retries = data.get('max_retries', 3)
         self.retry_count = data.get('retry_count', 0)
-        self.scrape_mode = data.get('scrape_mode', ScrapeMode.FULL_SCRAPE)
+        print(f"DEBUG: data['scrape_mode_internal'] = {data.get('scrape_mode_internal')}") # 添加調試輸出
+        self.scrape_mode_internal = data.get('scrape_mode_internal', ScrapeMode.FULL_SCRAPE)
+        print(f"DEBUG: self.scrape_mode_internal after get = {self.scrape_mode_internal}") # 添加調試輸出
         self.created_at = data.get('created_at', datetime.now(timezone.utc))
         self.updated_at = data.get('updated_at', datetime.now(timezone.utc))
 
@@ -74,62 +76,70 @@ class CrawlerTaskMock:
             self.task_status = TaskStatus(self.task_status)
         if isinstance(self.scrape_phase, str):
             self.scrape_phase = ScrapePhase(self.scrape_phase)
-        if isinstance(self.scrape_mode, str):
-            self.scrape_mode = ScrapeMode(self.scrape_mode)
 
+        print(f"DEBUG: self.scrape_mode_internal before type check = {self.scrape_mode_internal}") # 添加調試輸出
+        if isinstance(self.scrape_mode_internal, str):
+            self.scrape_mode_internal = ScrapeMode(self.scrape_mode_internal)
+        print(f"DEBUG: self.scrape_mode_internal after type check = {self.scrape_mode_internal}") # 添加調試輸出
 
     def model_dump(self):
-        """模擬 Pydantic 的 model_dump"""
-        return {
+        """模擬 Pydantic 的 model_dump，使其更接近 CrawlerTaskReadSchema"""
+        dumped_data = {
             'id': self.id,
             'task_name': self.task_name,
             'crawler_id': self.crawler_id,
             'is_auto': self.is_auto,
             'is_active': self.is_active,
-            'ai_only': self.ai_only,
+            'is_scheduled': self.is_scheduled,
             'task_args': self.task_args,
             'notes': self.notes,
             'last_run_at': self.last_run_at.isoformat() if isinstance(self.last_run_at, datetime) else self.last_run_at,
             'last_run_success': self.last_run_success,
             'last_run_message': self.last_run_message,
             'cron_expression': self.cron_expression,
-            'is_scheduled': self.is_scheduled,
-            'task_status': self.task_status.value if hasattr(self.task_status, 'value') else self.task_status,
             'scrape_phase': self.scrape_phase.value if hasattr(self.scrape_phase, 'value') else self.scrape_phase,
-            'max_retries': self.max_retries,
+            'task_status': self.task_status.value if hasattr(self.task_status, 'value') else self.task_status,
             'retry_count': self.retry_count,
-            'scrape_mode': self.scrape_mode.value if hasattr(self.scrape_mode, 'value') else self.scrape_mode,
             'created_at': self.created_at.isoformat() if isinstance(self.created_at, datetime) else self.created_at,
             'updated_at': self.updated_at.isoformat() if isinstance(self.updated_at, datetime) else self.updated_at,
         }
+        # Ensure task_args always exists, even if empty, as per CrawlerTaskReadSchema
+        if 'task_args' not in dumped_data or dumped_data['task_args'] is None:
+            dumped_data['task_args'] = {}
+        return dumped_data
 
 class CrawlerTaskHistoryMock:
-    """模擬 CrawlerTaskHistory ORM 對象"""
+    """模擬 CrawlerTaskHistory ORM 對象，對齊 TaskHistorySchema"""
     def __init__(self, data):
         self.id = data.get('id')
         self.task_id = data.get('task_id')
-        self.start_time = data.get('start_time', datetime.now(timezone.utc))
-        self.end_time = data.get('end_time')
-        self.success = data.get('success', None)
+        self.scrape_phase = data.get('scrape_phase', ScrapePhase.UNKNOWN.value)
+        self.task_status = data.get('task_status', TaskStatus.UNKNOWN.value)
         self.message = data.get('message')
-        self.articles_count = data.get('articles_count', 0)
-        self.task_status = data.get('task_status', TaskStatus.INIT)
+        self.details = data.get('details')
+        self.created_at = data.get('created_at', datetime.now(timezone.utc))
 
-        # 確保枚舉類型正確
         if isinstance(self.task_status, str):
              self.task_status = TaskStatus(self.task_status)
+        elif isinstance(self.task_status, enum.Enum):
+             self.task_status = self.task_status.value # Store as string value if coming as enum
+
+        if isinstance(self.scrape_phase, ScrapePhase): # Comes from sample_history_data as value
+            self.scrape_phase = self.scrape_phase.value
+        elif not isinstance(self.scrape_phase, str):
+            self.scrape_phase = str(self.scrape_phase)
+
 
     def model_dump(self):
-        """模擬 Pydantic 的 model_dump"""
+        """模擬 Pydantic 的 model_dump，符合 TaskHistorySchema"""
         return {
             'id': self.id,
             'task_id': self.task_id,
-            'start_time': self.start_time.isoformat() if isinstance(self.start_time, datetime) else self.start_time,
-            'end_time': self.end_time.isoformat() if isinstance(self.end_time, datetime) else self.end_time,
-            'success': self.success,
+            'scrape_phase': self.scrape_phase,
+            'task_status': self.task_status if isinstance(self.task_status, str) else self.task_status.value,
             'message': self.message,
-            'articles_count': self.articles_count,
-            'task_status': self.task_status.value if hasattr(self.task_status, 'value') else self.task_status,
+            'details': self.details,
+            'created_at': self.created_at.isoformat() if isinstance(self.created_at, datetime) else self.created_at,
         }
 
 @pytest.fixture
@@ -141,19 +151,19 @@ def sample_tasks_data():
             'id': 1, 'task_name': '每日新聞爬取', 'crawler_id': 1, 'is_auto': True, 'is_active': True,
             'task_args': {'max_items': 100, 'scrape_mode': ScrapeMode.FULL_SCRAPE.value},
             'cron_expression': '0 0 * * *', 'is_scheduled': True, 'task_status': TaskStatus.INIT,
-            'scrape_phase': ScrapePhase.INIT, 'scrape_mode': ScrapeMode.FULL_SCRAPE, 'created_at': now, 'updated_at': now
+            'scrape_phase': ScrapePhase.INIT, 'scrape_mode_internal': ScrapeMode.FULL_SCRAPE, 'created_at': now, 'updated_at': now
         },
         {
             'id': 2, 'task_name': '週間財經新聞', 'crawler_id': 1, 'is_auto': True, 'is_active': True,
             'task_args': {'max_items': 50, 'scrape_mode': ScrapeMode.FULL_SCRAPE.value},
             'cron_expression': '0 0 * * 1-5', 'is_scheduled': True, 'task_status': TaskStatus.INIT,
-            'scrape_phase': ScrapePhase.INIT, 'scrape_mode': ScrapeMode.FULL_SCRAPE, 'created_at': now, 'updated_at': now
+            'scrape_phase': ScrapePhase.INIT, 'scrape_mode_internal': ScrapeMode.FULL_SCRAPE, 'created_at': now, 'updated_at': now
         },
         {
             'id': 3, 'task_name': '手動採集任務', 'crawler_id': 1, 'is_auto': False, 'is_active': True,
             'task_args': {'max_pages': 5, 'scrape_mode': ScrapeMode.FULL_SCRAPE.value},
             'is_scheduled': False, 'task_status': TaskStatus.INIT,
-            'scrape_phase': ScrapePhase.INIT, 'scrape_mode': ScrapeMode.FULL_SCRAPE, 'created_at': now, 'updated_at': now
+            'scrape_phase': ScrapePhase.INIT, 'scrape_mode_internal': ScrapeMode.FULL_SCRAPE, 'created_at': now, 'updated_at': now
         }
     ]
 
@@ -161,11 +171,16 @@ def sample_tasks_data():
 def sample_history_data():
      """創建測試用的歷史記錄數據"""
      now = datetime.now(timezone.utc)
-     start = now - timedelta(minutes=5)
      return [
-         {'id': 101, 'task_id': 1, 'start_time': start, 'end_time': now, 'success': True, 'message': '執行成功', 'articles_count': 10, 'task_status': TaskStatus.COMPLETED},
-         {'id': 102, 'task_id': 1, 'start_time': start - timedelta(days=1), 'end_time': now - timedelta(days=1), 'success': False, 'message': '執行失敗', 'articles_count': 0, 'task_status': TaskStatus.FAILED},
-         {'id': 103, 'task_id': 3, 'start_time': start, 'end_time': None, 'success': None, 'message': '任務執行中', 'articles_count': 0, 'task_status': TaskStatus.RUNNING},
+         {'id': 101, 'task_id': 1, 'created_at': now - timedelta(minutes=5),
+          'scrape_phase': ScrapePhase.COMPLETED.value, 'task_status': TaskStatus.COMPLETED.value,
+          'message': '執行成功', 'details': {'articles_count': 10, 'status_detail': 'All done'}},
+         {'id': 102, 'task_id': 1, 'created_at': now - timedelta(days=1),
+          'scrape_phase': ScrapePhase.FAILED.value, 'task_status': TaskStatus.FAILED.value,
+          'message': '執行失敗', 'details': {'error_code': 'E500', 'reason': 'Upstream service unavailable'}},
+         {'id': 103, 'task_id': 3, 'created_at': now - timedelta(minutes=2),
+          'scrape_phase': ScrapePhase.CONTENT_SCRAPING.value, 'task_status': TaskStatus.RUNNING.value,
+          'message': '任務執行中', 'details': {'progress': 50, 'current_step': 'Fetching page 3'}},
      ]
 
 @pytest.fixture
@@ -175,13 +190,13 @@ def mock_task_service(monkeypatch, sample_tasks_data, sample_history_data):
         def __init__(self):
             self.tasks = {task['id']: CrawlerTaskMock(task) for task in sample_tasks_data}
             self.task_history = {}
-            for history in sample_history_data:
-                task_id = history['task_id']
+            for history_item_data in sample_history_data:
+                task_id = history_item_data['task_id']
                 if task_id not in self.task_history:
                     self.task_history[task_id] = []
-                self.task_history[task_id].append(CrawlerTaskHistoryMock(history))
+                self.task_history[task_id].append(CrawlerTaskHistoryMock(history_item_data))
             self.next_id = max(self.tasks.keys() or [0]) + 1
-            all_history_ids = [h.id for histories in self.task_history.values() for h in histories if h.id is not None]
+            all_history_ids = [h.id for histories_list in self.task_history.values() for h in histories_list if h.id is not None]
             self.next_history_id = max(all_history_ids or [100]) + 1
 
 
@@ -246,11 +261,13 @@ def mock_task_service(monkeypatch, sample_tasks_data, sample_history_data):
 
             validated_data = validated_result['data']
 
+            # Ensure scrape_mode is correctly passed for CrawlerTaskMock
             scrape_mode_value = validated_data.get('task_args', {}).get('scrape_mode', ScrapeMode.FULL_SCRAPE.value)
             try:
                 scrape_mode_enum = ScrapeMode(scrape_mode_value)
             except ValueError:
                 scrape_mode_enum = ScrapeMode.FULL_SCRAPE
+
 
             task_id = self.next_id
             task_data_full = {
@@ -259,16 +276,16 @@ def mock_task_service(monkeypatch, sample_tasks_data, sample_history_data):
                 'crawler_id': validated_data['crawler_id'],
                 'is_auto': validated_data.get('is_auto', False),
                 'is_active': validated_data.get('is_active', True),
-                'ai_only': validated_data.get('ai_only', False),
+                'ai_only': validated_data.get('ai_only', False), # Internal to mock
                 'task_args': validated_data.get('task_args', {}),
                 'notes': validated_data.get('notes'),
                 'cron_expression': validated_data.get('cron_expression'),
-                'is_scheduled': False,
+                'is_scheduled': validated_data.get('is_scheduled', False), # is_scheduled is part of schema
                 'task_status': TaskStatus.INIT,
                 'scrape_phase': ScrapePhase.INIT,
-                'max_retries': validated_data.get('task_args', {}).get('max_retries', TASK_ARGS_DEFAULT.get('max_retries', 3)),
+                'max_retries': validated_data.get('task_args', {}).get('max_retries', TASK_ARGS_DEFAULT.get('max_retries', 3)), # Internal
                 'retry_count': 0,
-                'scrape_mode': scrape_mode_enum,
+                'scrape_mode_internal': scrape_mode_enum, # For CrawlerTaskMock's internal field
                 'created_at': datetime.now(timezone.utc),
                 'updated_at': datetime.now(timezone.utc)
             }
@@ -289,14 +306,20 @@ def mock_task_service(monkeypatch, sample_tasks_data, sample_history_data):
             if task_id not in self.tasks:
                 return {'success': False, 'message': '任務不存在', 'task': None}
             task = self.tasks[task_id]
-            validated_data = self.validate_task_data(data, is_update=True)
-            if not validated_data['success']:
-                 return validated_data
+            
+            # Use the service's validation, which should align with CrawlerTasksUpdateSchema
+            # The route calls service.update_task(task_id, data) where data is request.get_json()
+            # The service itself should handle validation internally or use a helper.
+            # For the mock, we'll directly apply validated fields if the mock validate_task_data is robust.
+            validated_result = self.validate_task_data(data, is_update=True)
+            if not validated_result['success']:
+                 return validated_result
 
-            update_data = validated_data['data']
+            update_data = validated_result['data']
+
 
             for key, value in update_data.items():
-                if key == 'scrape_mode':
+                if key == 'scrape_mode_internal': # if you want to update the internal mock field
                     setattr(task, key, ScrapeMode(value) if isinstance(value, str) else value)
                 elif key == 'task_status':
                     setattr(task, key, TaskStatus(value) if isinstance(value, str) else value)
@@ -309,7 +332,7 @@ def mock_task_service(monkeypatch, sample_tasks_data, sample_history_data):
                         task.task_args = current_args
                     else:
                          logger.warning(f"task_args for task {task_id} is not a dict: {value}")
-                         task.task_args = value
+                         task.task_args = value # Or handle error
                 elif hasattr(task, key):
                     setattr(task, key, value)
 
@@ -373,17 +396,18 @@ def mock_task_service(monkeypatch, sample_tasks_data, sample_history_data):
         def find_task_history(self, task_id, limit=None, offset=None, sort_desc=True, is_preview=False):
             task = self.tasks.get(task_id)
             if not task:
-                 # return {'success': False, 'message': '任務不存在', 'history': []} # 保持原樣或修改以匹配API
-                 return {'success': False, 'message': '任務不存在', 'history': []} # 修正 key 名稱
+                 return {'success': False, 'message': '任務不存在', 'history': []}
 
             histories = self.task_history.get(task_id, [])
-            histories_with_dt = [h for h in histories if isinstance(h.start_time, datetime)]
-            histories_with_dt.sort(key=lambda h: h.start_time, reverse=sort_desc)
+            # Ensure created_at is datetime for sorting
+            histories_with_dt = [h for h in histories if isinstance(h.created_at, datetime)]
+            histories_with_dt.sort(key=lambda h: h.created_at, reverse=sort_desc) # Sort by created_at
+            
             start = offset if offset is not None else 0
             end = (start + limit) if limit is not None else None
             histories_to_return = histories_with_dt[start:end]
-
-            # 修正 key 名稱
+            
+            # The API route will call model_dump on these CrawlerTaskHistoryMock instances
             return {'success': True, 'history': histories_to_return, 'message': '任務歷史獲取成功'}
 
     mock_service = MockTaskService()
@@ -422,7 +446,18 @@ def mock_article_service(monkeypatch, sample_articles_data):
                  msg = '未找到未抓取的文章' if task_id in sample_articles_data else '找不到任務相關文章'
                  return {'success': False, 'message': msg, 'articles': []}
             if is_preview:
-                 preview_articles = [{k: v for k, v in a.items() if k in {'title', 'link', 'summary', 'source', 'published_at'}} for a in unscraped]
+                 preview_articles = []
+                 for a in unscraped:
+                     preview_item = {
+                         'id': a.get('id'), # ArticlePreviewSchema 有 id
+                         'title': a.get('title'),
+                         'link': a.get('link'),
+                         'source': a.get('source'),
+                         'pub_date': a.get('published_at'), # 將 published_at 映射到 pub_date
+                         'is_scraped': a.get('is_scraped', False), # 包含 is_scraped
+                         # summary 不再預設包含，因為 ArticlePreviewSchema 沒有它
+                     }
+                     preview_articles.append(preview_item)
                  return {'success': True, 'articles': preview_articles}
             return {'success': True, 'articles': unscraped}
 
@@ -435,7 +470,18 @@ def mock_article_service(monkeypatch, sample_articles_data):
                  msg = '未找到已抓取的文章' if task_id in sample_articles_data else '找不到任務相關文章'
                  return {'success': False, 'message': msg, 'articles': []}
             if is_preview:
-                 preview_articles = [{k: v for k, v in a.items() if k in {'title', 'link', 'summary', 'source'}} for a in scraped]
+                 preview_articles = []
+                 for a in scraped:
+                     preview_item = {
+                         'id': a.get('id'), # ArticlePreviewSchema 有 id
+                         'title': a.get('title'),
+                         'link': a.get('link'),
+                         'source': a.get('source'),
+                         'pub_date': a.get('published_at'), # 將 published_at 映射到 pub_date
+                         'is_scraped': a.get('is_scraped', True), # 包含 is_scraped
+                         # summary 不再預設包含，因為 ArticlePreviewSchema 沒有它
+                     }
+                     preview_articles.append(preview_item)
                  return {'success': True, 'articles': preview_articles}
             return {'success': True, 'articles': scraped}
 
@@ -464,17 +510,22 @@ def mock_task_executor_service(monkeypatch, mock_task_service):
                  task.last_run_at = datetime.now(timezone.utc)
                  task.last_run_success = True
                  task.last_run_message = "模擬執行成功"
-                 if 'scrape_mode' in kwargs:
-                     task.scrape_mode = ScrapeMode(kwargs['scrape_mode'])
+                 if 'scrape_mode' in kwargs: # This would be from task_args effectively
+                     task.scrape_mode_internal = ScrapeMode(kwargs['scrape_mode'])
+                 
                  op_type = kwargs.get('operation_type')
+                 current_scrape_phase = ScrapePhase.COMPLETED # Default
                  if op_type == 'fetch_full_article':
-                     task.scrape_phase = ScrapePhase.COMPLETED
+                     current_scrape_phase = ScrapePhase.COMPLETED
                  elif op_type == 'collect_links_only':
-                     task.scrape_phase = ScrapePhase.LINK_COLLECTION
+                     current_scrape_phase = ScrapePhase.LINK_COLLECTION
                  elif op_type == 'fetch_content_only':
-                     task.scrape_phase = ScrapePhase.CONTENT_SCRAPING
+                     current_scrape_phase = ScrapePhase.CONTENT_SCRAPING
+                 task.scrape_phase = current_scrape_phase
 
-                 return {'success': True, 'message': f'任務 {task_id} 模擬執行成功', 'task_status': TaskStatus.COMPLETED.value, 'scrape_phase': task.scrape_phase.value}
+                 return {'success': True, 'message': f'任務 {task_id} 模擬執行成功', 
+                         'task_status': TaskStatus.COMPLETED.value, 
+                         'scrape_phase': current_scrape_phase.value} # Executor result includes scrape_phase
              else:
                  return {'success': False, 'message': f'任務 {task_id} 不存在', 'task_status': TaskStatus.FAILED.value}
 
@@ -492,13 +543,14 @@ def mock_task_executor_service(monkeypatch, mock_task_service):
                     'task_status': TaskStatus.UNKNOWN.value, 'scrape_phase': ScrapePhase.UNKNOWN.value,
                     'progress': 0, 'task': None
                 }
+            # task object here is CrawlerTaskMock. API route will dump it.
             return {
                 'success': True,
                 'task_status': task.task_status.value,
                 'scrape_phase': task.scrape_phase.value,
                 'progress': 100 if task.task_status in [TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED] else 50,
                 'message': task.last_run_message or f'任務 {task_id} 狀態',
-                'task': task
+                'task': task # This is CrawlerTaskMock object
             }
 
         def collect_links_only(self, task_id, is_async=True, **kwargs):
@@ -547,49 +599,80 @@ class TestTasksApiRoutes:
 
     def test_get_scheduled_tasks(self, client, mock_task_service):
         """測試獲取排程任務列表"""
-        def mock_find_tasks_advanced(**filters):
-            tasks = [mock_task_service.tasks[1], mock_task_service.tasks[2]]
+        # This override is specific to this test to ensure the service returns CrawlerTaskMock objects
+        # which the API route then calls model_dump() on.
+        original_find_advanced = mock_task_service.find_tasks_advanced
+        def mock_find_tasks_advanced_override(**filters):
+            # Filter tasks from the mock_task_service.tasks based on expected filters
+            # For this test, it's is_scheduled=True, is_active=True, is_auto=True
+            tasks_from_fixture = [
+                t for t in mock_task_service.tasks.values() 
+                if t.is_scheduled and t.is_active and t.is_auto
+            ]
             return {
                 'success': True,
-                'data': {
-                    'items': tasks,
-                    'page': 1, 'per_page': len(tasks), 'total': len(tasks), 'total_pages': 1,
+                'data': { 
+                    'items': tasks_from_fixture, 
+                    'page': 1, 'per_page': len(tasks_from_fixture), 'total': len(tasks_from_fixture), 'total_pages': 1,
                     'has_next': False, 'has_prev': False
                 },
                 'message': '模擬搜尋成功'
             }
-        mock_task_service.find_tasks_advanced = mock_find_tasks_advanced
+        mock_task_service.find_tasks_advanced = mock_find_tasks_advanced_override
 
         response = client.get('/api/tasks/scheduled')
+        mock_task_service.find_tasks_advanced = original_find_advanced # Restore
+
         assert response.status_code == 200
         data = json.loads(response.data)
-        assert isinstance(data, list)
-        assert len(data) == 2
-        assert all(isinstance(task, dict) for task in data)
-        assert all(task['is_scheduled'] is True and task['is_active'] is True and task['is_auto'] is True for task in data)
-        assert any(task['task_name'] == '每日新聞爬取' for task in data)
+        
+        assert data['success'] is True
+        assert 'message' in data
+        assert 'data' in data
+        assert isinstance(data['data'], list)
+        task_list_from_response = data['data']
+        # Based on sample_tasks_data, tasks 1 and 2 are scheduled, active, and auto
+        assert len(task_list_from_response) == 2 
+        assert all(isinstance(task, dict) for task in task_list_from_response)
+        assert all(task['is_scheduled'] is True and task['is_active'] is True and task['is_auto'] is True for task in task_list_from_response)
+        assert any(task['task_name'] == '每日新聞爬取' for task in task_list_from_response)
+        assert all('scrape_mode' not in task for task in task_list_from_response) # Check extra field not present
 
     def test_create_scheduled_task(self, client, mock_task_service, mock_scheduler_service):
         """測試創建排程任務"""
+        current_task_args = TASK_ARGS_DEFAULT.copy()
+        current_task_args.update({
+            'max_items': 100,
+            'scrape_mode': 'full_scrape'
+            # max_retries and retry_delay (and others) will be from TASK_ARGS_DEFAULT
+        })
         task_data = {
             'task_name': '新排程任務',
             'crawler_id': 1,
+            'is_auto': True,
             'cron_expression': '0 0 * * *',
-            'task_args': {'max_items': 100, 'scrape_mode': 'full_scrape'}
+            'task_args': current_task_args,
+            'scrape_phase': ScrapePhase.INIT.value
         }
         response = client.post('/api/tasks/scheduled', json=task_data)
         assert response.status_code == 201
         data = json.loads(response.data)
         assert data['success'] is True
         assert '任務創建成功' in data['message']
-        assert 'task' in data
-        new_task_id = data['task']['id']
-        assert new_task_id == 4
-        assert data['task']['task_name'] == '新排程任務'
-        assert data['task']['is_auto'] is True
-        assert data['task']['is_scheduled'] is False
-        assert data['task']['cron_expression'] == '0 0 * * *'
-        assert data['task']['task_args']['scrape_mode'] == 'full_scrape'
+        assert 'data' in data # Changed from 'task'
+        new_task_id = data['data']['id']
+        assert new_task_id == 4 # Assuming next_id starts after sample_tasks_data
+        assert data['data']['task_name'] == '新排程任務'
+        assert data['data']['is_auto'] is True 
+        # The API sets is_scheduled based on scheduler interaction, not directly from this create.
+        # The create_scheduled_task API route in tasks_api.py doesn't set is_scheduled=True on the task object itself before returning.
+        # It calls scheduler.add_or_update_task_to_scheduler(task)
+        # The returned task schema (CrawlerTaskReadSchema) has is_scheduled.
+        # The mock_task_service.create_task sets 'is_scheduled': False by default. This should be fine.
+        # The actual state of being scheduled is managed by the scheduler, task.is_scheduled reflects DB state.
+        assert data['data']['is_scheduled'] is False # Default from mock create
+        assert data['data']['cron_expression'] == '0 0 * * *'
+        assert data['data']['task_args']['scrape_mode'] == 'full_scrape'
         mock_scheduler_service.add_or_update_task_to_scheduler.assert_called_once()
         call_args = mock_scheduler_service.add_or_update_task_to_scheduler.call_args[0][0]
         assert isinstance(call_args, CrawlerTaskMock)
@@ -598,39 +681,73 @@ class TestTasksApiRoutes:
     def test_create_scheduled_task_scheduler_fail(self, client, mock_task_service, mock_scheduler_service):
         """測試創建任務成功但排程失敗"""
         mock_scheduler_service.add_or_update_task_to_scheduler.return_value = {'success': False, 'message': '排程器錯誤'}
+        current_task_args = TASK_ARGS_DEFAULT.copy()
+        current_task_args.update({
+            'scrape_mode': 'full_scrape'
+            # max_retries and retry_delay (and others) will be from TASK_ARGS_DEFAULT
+        })
         task_data = {
-            'task_name': '排程失敗任務', 'crawler_id': 1, 'cron_expression': '0 1 * * *',
-            'task_args': {'scrape_mode': 'full_scrape'}
+            'task_name': '排程失敗任務', 'crawler_id': 1, 'is_auto': True, 'cron_expression': '0 1 * * *',
+            'task_args': current_task_args,
+            'scrape_phase': ScrapePhase.INIT.value
         }
         response = client.post('/api/tasks/scheduled', json=task_data)
-        assert response.status_code == 201
+        assert response.status_code == 201 # Still 201 as task is created
         data = json.loads(response.data)
-        assert data['success'] is True
+        assert data['success'] is True # Overall success of task creation might be true
         assert '任務創建成功' in data['message']
         assert '添加到排程器失敗: 排程器錯誤' in data['message']
-        assert data['task']['id'] == 4
+        assert 'data' in data # Changed from 'task'
+        assert data['data']['id'] == 4
 
     def test_update_scheduled_task(self, client, mock_task_service, mock_scheduler_service):
         """測試更新排程任務"""
+        # Ensure task 1 exists and is_auto for this test path in API
+        task_to_update = mock_task_service.tasks[1]
+        task_to_update.is_auto = True
+        task_to_update.is_scheduled = True # Simulate it was scheduled
+
+        # --- Construct the final task_args payload for the PUT request ---
+        # 1. Start with TASK_ARGS_DEFAULT to ensure all potentially required fields have a base value.
+        final_task_args_payload = TASK_ARGS_DEFAULT.copy()
+
+        # 2. Merge the task's current arguments (if any) onto the defaults.
+        #    This preserves existing non-default values.
+        if task_to_update.task_args:
+            final_task_args_payload.update(task_to_update.task_args)
+
+        # 3. Apply the specific change for this test case.
+        final_task_args_payload['max_items'] = 200
+        # --- End constructing task_args ---
+
         update_data = {
             'task_name': '更新後的任務',
             'cron_expression': '0 12 * * *',
-            'task_args': {'max_items': 200}
+            'task_args': final_task_args_payload # Use the fully constructed dictionary
+            # is_auto will be True from _setup_validate_task_data in API
         }
         response = client.put('/api/tasks/scheduled/1', json=update_data)
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data['success'] is True
         assert '任務更新成功' in data['message']
-        assert data['task']['id'] == 1
-        assert data['task']['task_name'] == '更新後的任務'
-        assert data['task']['cron_expression'] == '0 12 * * *'
-        assert data['task']['task_args']['max_items'] == 200
+        assert 'data' in data # Changed from 'task'
+        assert data['data']['id'] == 1
+        assert data['data']['task_name'] == '更新後的任務'
+        assert data['data']['cron_expression'] == '0 12 * * *'
+        # Check the updated value and potentially another required value that should persist
+        assert data['data']['task_args']['max_items'] == 200
+        assert 'scrape_mode' in data['data']['task_args'] # Check a required field persists
+        assert 'max_retries' in data['data']['task_args']
+        assert 'retry_delay' in data['data']['task_args']
+        assert 'timeout' in data['data']['task_args']
+        assert data['data']['is_auto'] is True # Should be set by API logic for scheduled task update
         mock_scheduler_service.add_or_update_task_to_scheduler.assert_called_once()
         call_args = mock_scheduler_service.add_or_update_task_to_scheduler.call_args[0][0]
         assert isinstance(call_args, CrawlerTaskMock)
         assert call_args.id == 1
         assert call_args.task_name == '更新後的任務'
+        assert call_args.is_auto is True
 
     def test_update_scheduled_task_not_found(self, client, mock_task_service):
         """測試更新不存在的任務"""
@@ -663,22 +780,36 @@ class TestTasksApiRoutes:
 
     def test_fetch_full_article_manual_task(self, client, mock_task_service, mock_task_executor_service):
         """測試開始手動 full_scrape 任務"""
+        current_task_args = TASK_ARGS_DEFAULT.copy()
+        current_task_args.update({
+            'max_items': 50,
+            'scrape_mode': ScrapeMode.FULL_SCRAPE.value
+        })
         task_data = {
             'task_name': '新手動全爬任務',
             'crawler_id': 1,
-            'task_args': {'max_items': 50}
+            'task_args': current_task_args,
+            'scrape_phase': ScrapePhase.INIT.value
         }
         response = client.post('/api/tasks/manual/start', json=task_data)
         assert response.status_code == 202
         data = json.loads(response.data)
         assert data['success'] is True
-        assert '任務 4 模擬執行成功' in data['message']
-        assert data['task_status'] == TaskStatus.COMPLETED.value
-        assert data['scrape_phase'] == ScrapePhase.COMPLETED.value
-        assert 4 in mock_task_service.tasks
-        created_task = mock_task_service.tasks[4]
+        # The message comes from executor_result.get('message', default_msg)
+        # mock_task_executor_service.fetch_full_article returns message like '任務 {task_id} 模擬執行成功'
+        assert f'任務 {mock_task_service.next_id -1 } 模擬執行成功' in data['message'] # mock_task_service.next_id-1 is the new task_id (4)
+        
+        assert 'data' in data
+        assert data['data']['task_id'] == (mock_task_service.next_id -1)
+        assert data['data']['task_status'] == TaskStatus.COMPLETED.value # From executor via API
+
+        assert (mock_task_service.next_id -1) in mock_task_service.tasks
+        created_task = mock_task_service.tasks[(mock_task_service.next_id -1)]
         assert created_task.is_auto is False
-        assert created_task.scrape_mode == ScrapeMode.FULL_SCRAPE
+        # The scrape_mode of the task object is set by _setup_validate_task_data and create_task
+        # For this route, scrape_mode=ScrapeMode.FULL_SCRAPE.value is passed to _setup_validate_task_data
+        assert created_task.task_args.get('scrape_mode') == ScrapeMode.FULL_SCRAPE.value
+        assert created_task.scrape_mode_internal == ScrapeMode.FULL_SCRAPE # Check internal mock field if necessary
 
     def test_get_task_status(self, client, mock_task_service, mock_task_executor_service):
         """測試獲取任務狀態"""
@@ -690,14 +821,16 @@ class TestTasksApiRoutes:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data['success'] is True
-        assert data['task_status'] == TaskStatus.RUNNING.value
-        assert data['scrape_phase'] == ScrapePhase.LINK_COLLECTION.value
-        assert data['progress'] == 50
-        assert data['message'] == "正在收集中..."
-        assert 'task' in data
-        assert isinstance(data['task'], dict)
-        assert data['task']['id'] == 3
-        assert data['task']['task_name'] == '手動採集任務'
+        assert data['message'] == "正在收集中..." # This is from executor_result.get('message')
+
+        assert 'data' in data
+        assert data['data']['task_status'] == TaskStatus.RUNNING.value
+        assert data['data']['scrape_phase'] == ScrapePhase.LINK_COLLECTION.value
+        assert data['data']['progress'] == 50
+        assert 'task' in data['data']
+        assert isinstance(data['data']['task'], dict)
+        assert data['data']['task']['id'] == 3
+        assert data['data']['task']['task_name'] == '手動採集任務'
 
     def test_get_task_status_not_found(self, client, mock_task_executor_service):
         """測試獲取不存在的任務狀態"""
@@ -709,23 +842,33 @@ class TestTasksApiRoutes:
 
     def test_fetch_links_manual_task(self, client, mock_task_service, mock_task_executor_service):
         """測試開始手動 links_only 任務"""
+        current_task_args = TASK_ARGS_DEFAULT.copy()
+        current_task_args.update({
+            'max_pages': 2,
+            'scrape_mode': ScrapeMode.LINKS_ONLY.value
+        })
         task_data = {
             'task_name': '新手動連結任務',
             'crawler_id': 1,
-            'task_args': {'max_pages': 2}
+            'task_args': current_task_args,
+            'scrape_phase': ScrapePhase.INIT.value
         }
         response = client.post('/api/tasks/manual/collect-links', json=task_data)
         assert response.status_code == 202
         data = json.loads(response.data)
         assert data['success'] is True
-        assert '任務 4 模擬執行成功' in data['message']
-        assert data['task_status'] == TaskStatus.COMPLETED.value
-        assert data['scrape_phase'] == ScrapePhase.LINK_COLLECTION.value
-        assert 'link_count' in data
-        assert 4 in mock_task_service.tasks
-        created_task = mock_task_service.tasks[4]
+        assert f'任務 {mock_task_service.next_id -1 } 模擬執行成功' in data['message']
+        
+        assert 'data' in data
+        assert data['data']['task_id'] == (mock_task_service.next_id -1)
+        assert data['data']['task_status'] == TaskStatus.COMPLETED.value
+        # scrape_phase and link_count are not in CollectLinksManualTaskSuccessResponseSchema.data
+
+        assert (mock_task_service.next_id -1) in mock_task_service.tasks
+        created_task = mock_task_service.tasks[(mock_task_service.next_id -1)]
         assert created_task.is_auto is False
-        assert created_task.scrape_mode == ScrapeMode.LINKS_ONLY
+        assert created_task.task_args.get('scrape_mode') == ScrapeMode.LINKS_ONLY.value
+        assert created_task.scrape_mode_internal == ScrapeMode.LINKS_ONLY
 
     def test_get_unscraped_links(self, client, mock_article_service):
         """測試獲取未抓取的連結"""
@@ -733,23 +876,31 @@ class TestTasksApiRoutes:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data['success'] is True
-        assert isinstance(data['articles'], list)
-        assert len(data['articles']) == 2
-        assert all(a['link'].startswith('http://example.com/') for a in data['articles'])
-        assert all(k in data['articles'][0] for k in ['title', 'link', 'summary', 'source', 'published_at'])
+        assert 'data' in data # Changed from 'articles'
+        assert isinstance(data['data'], list)
+        assert len(data['data']) == 2
+        assert all(a['link'].startswith('http://example.com/') for a in data['data'])
+        # ArticlePreviewSchema fields
+        expected_keys = ['id', 'title', 'link', 'source', 'pub_date', 'is_scraped']
+        assert all(k in data['data'][0] for k in expected_keys)
+
 
     def test_fetch_content_manual_task_from_db_links(self, client, mock_task_service, mock_article_service, mock_task_executor_service):
         """測試抓取內容 (從資料庫獲取連結)"""
-        request_data = {'task_args': {'get_links_by_task_id': True}}
+        request_data = {'task_args': {'get_links_by_task_id': True}} # scrape_mode will be set by API logic
         response = client.post('/api/tasks/manual/1/fetch-content', json=request_data)
         assert response.status_code == 202
         data = json.loads(response.data)
         assert data['success'] is True
         assert '任務 1 模擬執行成功' in data['message']
-        assert data['task_status'] == TaskStatus.COMPLETED.value
-        assert data['scrape_phase'] == ScrapePhase.CONTENT_SCRAPING.value
+        
+        assert 'data' in data
+        assert data['data']['task_id'] == 1
+        assert data['data']['task_status'] == TaskStatus.COMPLETED.value
+        # scrape_phase not in FetchContentManualTaskSuccessResponseSchema.data
+
         updated_task = mock_task_service.tasks[1]
-        assert updated_task.scrape_mode == ScrapeMode.CONTENT_ONLY
+        assert updated_task.task_args.get('scrape_mode') == ScrapeMode.CONTENT_ONLY.value
         assert 'article_links' in updated_task.task_args
         assert len(updated_task.task_args['article_links']) == 2
         assert updated_task.task_args['article_links'][0] == 'http://example.com/1'
@@ -761,6 +912,7 @@ class TestTasksApiRoutes:
             'task_args': {
                 'get_links_by_task_id': False,
                 'article_links': request_links
+                # scrape_mode will be set by API logic
             }
         }
         response = client.post('/api/tasks/manual/3/fetch-content', json=request_data)
@@ -768,8 +920,13 @@ class TestTasksApiRoutes:
         data = json.loads(response.data)
         assert data['success'] is True
         assert '任務 3 模擬執行成功' in data['message']
+        
+        assert 'data' in data
+        assert data['data']['task_id'] == 3
+        assert data['data']['task_status'] == TaskStatus.COMPLETED.value
+
         updated_task = mock_task_service.tasks[3]
-        assert updated_task.scrape_mode == ScrapeMode.CONTENT_ONLY
+        assert updated_task.task_args.get('scrape_mode') == ScrapeMode.CONTENT_ONLY.value
         assert 'article_links' in updated_task.task_args
         assert updated_task.task_args['article_links'] == request_links
 
@@ -788,29 +945,35 @@ class TestTasksApiRoutes:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data['success'] is True
-        assert len(data['articles']) == 1
-        assert data['articles'][0]['link'] == 'http://example.com/3'
-        assert all(k in data['articles'][0] for k in ['title', 'link', 'summary', 'source'])
+        assert 'data' in data # Changed from 'articles'
+        assert len(data['data']) == 1
+        assert data['data'][0]['link'] == 'http://example.com/3'
+        # ArticlePreviewSchema fields, as per MockArticleService:
+        # 'id', 'title', 'link', 'source', 'pub_date', 'is_scraped'
+        expected_keys = ['id', 'title', 'link', 'source', 'pub_date', 'is_scraped']
+        assert all(k in data['data'][0] for k in expected_keys)
+
 
     def test_test_crawler(self, client, mock_task_executor_service, mock_task_service):
         """測試爬蟲測試端點"""
         test_data = {
             'crawler_name': 'MyTestCrawler',
-            'crawler_id': 1,
-            'task_args': {**TASK_ARGS_DEFAULT, 'max_pages': 1}
+            'crawler_id': 1, # Optional, but good to include if service uses it
+            'task_args': {'max_pages': 1} # Other defaults from TASK_ARGS_DEFAULT will be merged by API
         }
         response = client.post('/api/tasks/manual/test', json=test_data)
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data['success'] is True
         assert '爬蟲 MyTestCrawler 測試成功' in data['message']
-        assert 'result' in data
-        assert data['result']['links_found'] == 3
-        assert 'validated_params' in data['result']
-        validated_params = data['result']['validated_params']
+        assert 'data' in data # Changed from 'result'
+        assert data['data']['links_found'] == 3
+        assert 'validated_params' in data['data']
+        validated_params = data['data']['validated_params']
+        # API logic for test sets scrape_mode to LINKS_ONLY and is_test to True etc.
         assert validated_params['scrape_mode'] == ScrapeMode.LINKS_ONLY.value
         assert validated_params['is_test'] is True
-        assert validated_params['max_pages'] == 1
+        assert validated_params['max_pages'] == 1 
         assert validated_params['save_to_database'] is False
 
     def test_cancel_task(self, client, mock_task_executor_service, mock_task_service):
@@ -837,27 +1000,54 @@ class TestTasksApiRoutes:
         assert response.status_code == 200
         data = json.loads(response.data)
         assert data['success'] is True
-        assert 'history' in data
-        assert isinstance(data['history'], list)
-        assert len(data['history']) == 2
-        assert 'total_count' in data
-        assert data['total_count'] == 2
-        assert isinstance(data['history'][0], dict)
-        assert data['history'][0]['id'] == 101
-        assert data['history'][0]['success'] is True
-        assert data['history'][1]['id'] == 102
-        assert data['history'][1]['success'] is False
-        assert data['history'][0]['task_status'] == TaskStatus.COMPLETED.value
+        assert 'message' in data
+        assert 'data' in data
+        
+        history_data = data['data']
+        assert 'history' in history_data
+        assert isinstance(history_data['history'], list)
+        # sample_history_data has 2 entries for task_id 1. Mock sorts by created_at desc.
+        # Item 101 (created_at = now - 5m)
+        # Item 102 (created_at = now - 1d)
+        # So 101 should be first.
+        assert len(history_data['history']) == 2
+        assert 'total_count' in history_data
+        assert history_data['total_count'] == 2
+        
+        # Check based on updated CrawlerTaskHistoryMock and sample_history_data
+        # Assuming mock service's find_task_history sorts by created_at descending
+        # History for task 1: id 101 (recent), id 102 (older)
+        
+        first_history_item = history_data['history'][0]
+        second_history_item = history_data['history'][1]
+
+        assert first_history_item['id'] == 101
+        assert first_history_item['task_id'] == 1
+        assert first_history_item['scrape_phase'] == ScrapePhase.COMPLETED.value
+        assert first_history_item['task_status'] == TaskStatus.COMPLETED.value
+        assert first_history_item['message'] == '執行成功'
+        assert first_history_item['details'] == {'articles_count': 10, 'status_detail': 'All done'}
+        
+        assert second_history_item['id'] == 102
+        assert second_history_item['scrape_phase'] == ScrapePhase.FAILED.value
+        assert second_history_item['task_status'] == TaskStatus.FAILED.value
+        assert second_history_item['details'] == {'error_code': 'E500', 'reason': 'Upstream service unavailable'}
+
 
     def test_get_task_history_not_found(self, client, mock_task_service):
         """測試獲取不存在任務的歷史記錄"""
-        def mock_find_history_not_found(task_id, **kwargs):
-            # 修正 key 名稱
-            return {'success': False, 'message': '任務不存在', 'history': []}
-        mock_task_service.find_task_history = mock_find_history_not_found
+        # Temporarily change the mock's behavior for this specific test case
+        original_find_history = mock_task_service.find_task_history
+        def mock_find_history_not_found_override(task_id, **kwargs):
+            if task_id == 999: # The ID being tested
+                return {'success': False, 'message': '任務不存在', 'history': []}
+            return original_find_history(task_id, **kwargs) # Call original for other IDs
+        mock_task_service.find_task_history = mock_find_history_not_found_override
 
         response = client.get('/api/tasks/999/history')
-        assert response.status_code == 404
+        mock_task_service.find_task_history = original_find_history # Restore original method
+
+        assert response.status_code == 404 # API returns 404 if service says not success
         data = json.loads(response.data)
         assert data['success'] is False
         assert '任務不存在' in data['message']
@@ -866,16 +1056,23 @@ class TestTasksApiRoutes:
         """測試創建任務時缺少必要字段導致的驗證錯誤"""
         task_data = {
             'task_name': '缺少字段任務',
+            'task_args': {}, # Deliberately missing (or add specific task_args test)
             'cron_expression': '0 0 * * *',
             'is_auto': True
         }
+        # This test is designed to fail validation.
+        # The current assertions check for crawler_id.
+        # If crawler_id was present, it would then likely fail for task_args or scrape_phase
+        # depending on the validator's logic.
+        # For now, this test remains as is, focusing on a general validation failure.
+        # If more specific "missing field" tests are needed, they can be added.
         response = client.post('/api/tasks/scheduled', json=task_data)
         assert response.status_code == 400
         data = json.loads(response.data)
         assert data['success'] is False
-        assert '資料驗證失敗' in data['message']
+        assert '以下必填欄位缺失或值為空/空白' in data['message']
         assert 'crawler_id' in data['message']
-        assert '此欄位不能為空' in data['message'] or '必須為正整數' in data['message']
+        assert '以下必填欄位缺失或值為空/空白' in data['message'] or '必須為正整數' in data['message']
 
     def test_validation_error_on_update(self, client, mock_task_service):
         """測試更新任務時數據驗證失敗"""
@@ -896,9 +1093,9 @@ class TestTasksApiRoutes:
         assert response.status_code == 400
         data = json.loads(response.data)
         assert data['success'] is False
-        assert '資料驗證失敗' in data['message']
+        assert 'cron_expression: Cron 表達式必須包含 5 個字段' in data['message']
         assert 'cron_expression' in data['message']
-        assert 'Cron 格式無效' in data['message']
+        assert 'cron_expression: Cron 表達式必須包含 5 個字段' in data['message']
 
         mock_task_service.validate_task_data = original_validate
 
@@ -908,10 +1105,10 @@ class TestTasksApiRoutes:
         assert response.status_code == 400
         data = json.loads(response.data)
         assert data['success'] is False
-        assert '缺少任務資料' in data['message']
+        assert '以下必填欄位缺失或值為空/空白' in data['message']
 
         response = client.put('/api/tasks/scheduled/1', data=None, content_type='application/json')
         assert response.status_code == 400
         data = json.loads(response.data)
         assert data['success'] is False
-        assert '缺少任務資料' in data['message'] 
+        assert '必須提供至少一個要更新的欄位' in data['message'] 

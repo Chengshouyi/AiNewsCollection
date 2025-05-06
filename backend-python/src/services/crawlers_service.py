@@ -251,7 +251,7 @@ class CrawlersService(BaseService[Crawlers]):
             return {"success": False, "message": f"更新爬蟲時發生錯誤: {str(e)}", "crawler": None}
 
     def delete_crawler(self, crawler_id: int) -> Dict[str, Any]:
-        """刪除爬蟲設定"""
+        """刪除爬蟲設定及其關聯的配置檔案"""
         try:
             with self._transaction() as session:
                 crawler_repo = cast(
@@ -262,19 +262,76 @@ class CrawlersService(BaseService[Crawlers]):
                         "success": False,
                         "message": "無法取得資料庫存取器",
                     }
-                result = crawler_repo.delete(crawler_id)
 
-                if not result:
+                # --- 1. 查找爬蟲以獲取檔名 ---
+                crawler_to_delete = crawler_repo.get_by_id(crawler_id)
+                if not crawler_to_delete:
                     return {
                         "success": False,
                         "message": f"爬蟲設定不存在，ID={crawler_id}",
                     }
 
-                return {"success": True, "message": "爬蟲設定刪除成功"}
+                config_filename = crawler_to_delete.config_file_name
+                config_file_path = None
+
+                # --- 2. 如果有檔名，嘗試刪除檔案 ---
+                if config_filename:
+                    logger.info("爬蟲 ID=%s 存在配置檔名 %s，準備刪除檔案。", crawler_id, config_filename)
+                    # 確定配置檔案路徑 (與 get_crawler_config 保持一致)
+                    default_config_dir = "/app/data/web_site_configs"
+                    config_dir = os.getenv('WEB_SITE_CONFIG_DIR', default_config_dir)
+                    config_file_path = os.path.join(config_dir, config_filename)
+                    logger.debug("預計刪除的配置檔案路徑: %s", config_file_path)
+
+                    try:
+                        if os.path.exists(config_file_path):
+                            os.remove(config_file_path)
+                            logger.info("成功刪除配置檔案: %s", config_file_path)
+                        else:
+                            logger.warning(
+                                "配置檔案 %s 不存在於路徑 %s，無需刪除。",
+                                config_filename, config_dir
+                            )
+                    except OSError as e:
+                        # 檔案刪除失敗通常不應阻止資料庫記錄刪除，但需要記錄錯誤
+                        logger.error(
+                            "刪除配置檔案 %s 失敗: %s。將繼續刪除資料庫記錄。",
+                            config_file_path, e
+                        )
+                    except Exception as e:
+                        logger.error(
+                            "嘗試刪除配置檔案 %s 時發生未預期錯誤: %s。將繼續刪除資料庫記錄。",
+                            config_file_path, e, exc_info=True
+                        )
+                else:
+                    logger.info("爬蟲 ID=%s 沒有關聯的配置檔案名，無需刪除檔案。", crawler_id)
+
+
+                # --- 3. 刪除資料庫記錄 ---
+                logger.info("準備刪除資料庫中的爬蟲記錄，ID=%s", crawler_id)
+                deleted = crawler_repo.delete(crawler_id) # delete 方法現在應該返回 True/False 或受影響行數
+
+                # 假設 delete 返回 True 表示成功
+                if deleted: # 或者 if deleted > 0 (如果返回的是行數)
+                    session.flush() # 確保刪除操作提交到資料庫 (如果 repo.delete 沒自動提交)
+                    logger.info("成功刪除資料庫中的爬蟲記錄，ID=%s", crawler_id)
+                    return {"success": True, "message": "爬蟲設定及關聯配置檔案（如果存在）已刪除"}
+                else:
+                    # 這種情況理論上不應該發生，因為前面已經檢查過存在性
+                    # 但以防萬一 (例如並發刪除)
+                    logger.error("嘗試刪除資料庫記錄失敗，ID=%s 可能已被刪除。", crawler_id)
+                    # 即使 DB 刪除失敗，檔案可能已被刪除，返回一個模糊的訊息
+                    # 或者可以認為操作失敗
+                    return {
+                         "success": False, 
+                         "message": f"刪除資料庫記錄失敗，爬蟲 ID={crawler_id} 可能已被刪除或操作失敗。"
+                    }
+
 
         except Exception as e:
-            logger.error("刪除爬蟲設定失敗，ID=%s: %s", crawler_id, str(e))
-            raise e
+            logger.error("刪除爬蟲設定過程中發生錯誤，ID=%s: %s", crawler_id, str(e), exc_info=True)
+            # 返回通用錯誤，避免向上拋出
+            return {"success": False, "message": f"刪除爬蟲時發生內部錯誤: {str(e)}"}
 
     def find_active_crawlers(
         self,
@@ -1273,8 +1330,17 @@ class CrawlersService(BaseService[Crawlers]):
                 if config_file:
                     logger.info("檢測到提供新的配置檔案，開始處理...")
                     try:
-                        config_content = config_file.read()
-                        config_file.seek(0) # 重設指針
+                        # --- 添加調試日誌 ---
+                        # logger.debug(f"讀取的 config_content (前 100 bytes): {config_file.read()[:100]}")
+                        # logger.debug(f"讀取的 config_content 類型: {type(config_file.read())}")
+                        # logger.debug(f"讀取的 config_content 長度: {len(config_file.read())}")
+                        # --- 調試日誌結束 ---
+                        
+                        # --- 在讀取前重設指針 ---
+                        config_file.seek(0) 
+                        
+                        config_content = config_file.read() # 只讀取一次
+                        # config_file.seek(0) # 重設指針以備後用 (如果需要) # 這裡的 seek 變得非必要，因為下面直接用 config_content
                         config_data_from_file = json.loads(config_content)
                     except json.JSONDecodeError as je:
                         logger.error("上傳的配置檔案 JSON 解析錯誤: %s", je)
@@ -1315,7 +1381,9 @@ class CrawlersService(BaseService[Crawlers]):
                     logger.info("準備將新的配置檔案寫入: %s", config_path)
                     try:
                         with open(config_path, "wb") as f: # 使用 wb 寫入二進制內容
-                             f.write(config_content) # 直接寫入原始讀取的 bytes
+                             # --- 修改：使用之前讀取的內容寫入 --- 
+                             # f.write(config_file.read()) # 直接寫入原始讀取的 bytes
+                             f.write(config_content) # 使用第一次讀取的內容
                         saved_config_path = config_path # 記錄已保存的路徑
                         logger.info("新的配置檔案已成功儲存到: %s", saved_config_path)
                     except Exception as e:
@@ -1418,8 +1486,19 @@ class CrawlersService(BaseService[Crawlers]):
                     return { "success": False, "message": "未提供配置檔案", "crawler": None }
 
                 try:
-                    config_content = config_file.read()
-                    config_file.seek(0) # 重設指針以備後用 (如果需要)
+                    # --- 添加調試日誌 ---
+                    logger.debug(f"檢查 config_file: {config_file}")
+                    logger.debug(f"config_file 初始位置: {config_file.tell()}")
+                    # ---
+                    
+                    # --- 在讀取前重設指針 ---
+                    config_file.seek(0) 
+                    
+                    config_content = config_file.read() # 只讀取一次
+                    logger.debug(f"讀取的 config_content (前 100 bytes): {config_content[:100]}")
+                    logger.debug(f"讀取的 config_content 類型: {type(config_content)}")
+                    logger.debug(f"讀取的 config_content 長度: {len(config_content)}")
+                    # config_file.seek(0) # 這裡的 seek 變得非必要
                     config_data_from_file = json.loads(config_content)
                 except json.JSONDecodeError as je:
                     logger.error("上傳的配置檔案 JSON 解析錯誤: %s", je)
@@ -1463,7 +1542,9 @@ class CrawlersService(BaseService[Crawlers]):
                 logger.info("準備將配置檔案寫入: %s", config_path)
                 try:
                     with open(config_path, "wb") as f: # 使用 wb 寫入二進制內容
-                         f.write(config_content) # 直接寫入原始讀取的 bytes
+                         # --- 修改：使用之前讀取的內容寫入 --- 
+                         # f.write(config_file.read()) # 不要再次讀取
+                         f.write(config_content) # 直接寫入之前讀取的 bytes
                     saved_config_path = config_path # 記錄已保存的路徑
                     logger.info("配置檔案已成功儲存到: %s", saved_config_path)
                 except Exception as e:

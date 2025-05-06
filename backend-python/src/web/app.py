@@ -282,8 +282,8 @@ init_application()
 
 # 自動註冊所有藍圖
 for blueprint in all_blueprints:
-    app.register_blueprint(blueprint)
-    spec.register(blueprint)  # 將藍圖註冊到 spec
+    spec.register(blueprint)  # 將藍圖註冊到 spec FIRST
+    app.register_blueprint(blueprint) # THEN register with Flask app
 
 # 新的路徑，顯示所有已註冊的 API
 @app.route("/api")

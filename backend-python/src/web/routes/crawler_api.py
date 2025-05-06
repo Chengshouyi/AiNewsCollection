@@ -68,10 +68,11 @@ def get_crawlers():
         if crawlers_schemas is None:
              return jsonify({"success": False, "message": "無法獲取爬蟲列表資料"}), 500
 
-        # 將 Schema 列表轉換為字典列表
-        crawlers_list = [c.model_dump() for c in crawlers_schemas]
-        # 返回標準結構 (數據放入 data 鍵)
-        return jsonify({"success": True, "message": result.get('message'), "data": crawlers_list}), 200
+        # --- 修改：返回 Pydantic 模型轉換後的 JSON 相容字典 --- 
+        return GetCrawlersSuccessResponseSchema(
+            message=result.get('message', ''), 
+            data=crawlers_schemas # 直接傳遞 Schema 列表
+        ).model_dump(mode='json') # 將模型轉換為 JSON 相容字典
     except Exception as e:
         return handle_api_error(e)
 
@@ -134,21 +135,30 @@ def create_crawler_with_config_route():
                                   "不正確" in result.get('message', '') or \
                                   "不得為空" in result.get('message', '') or \
                                   "無法生成" in result.get('message', '') else 500
-            return jsonify(result), status_code
+            # --- 修改：返回 BaseResponseSchema ---
+            return BaseResponseSchema(success=False, message=result.get('message', '創建失敗')).model_dump(mode='json'), status_code
+            # return jsonify(result), status_code # 舊的返回方式
 
         crawler_schema: Optional[CrawlerReadSchema] = result.get('crawler')
         if crawler_schema is None:
             logger.error("創建爬蟲與配置成功但 Service 未返回爬蟲物件")
             # 這種情況理論上不應該發生，如果發生了是內部錯誤
-            return jsonify({"success": False, "message": "創建爬蟲後未能獲取結果"}), 500
+            # --- 修改：返回 BaseResponseSchema ---
+            return BaseResponseSchema(success=False, message="創建爬蟲後未能獲取結果").model_dump(mode='json'), 500
+            # return jsonify({"success": False, "message": "創建爬蟲後未能獲取結果"}), 500 # 舊的返回方式
 
-        # 將 Schema 轉為字典並放入 data 鍵
-        response_data = crawler_schema.model_dump()
-        return jsonify({
-            "success": True, 
-            "message": result.get('message'), 
-            "data": response_data
-        }), 201 # 201 Created
+        # --- 修改：直接返回 Pydantic 模型實例 ---
+        # 將 Schema 轉為字典並放入 data 鍵 (不再需要手動轉)
+        # response_data = crawler_schema.model_dump()
+        return CrawlerActionSuccessResponseSchema(
+            message=result.get('message', '創建成功'),
+            data=crawler_schema # 直接傳遞 Pydantic 模型
+        ).model_dump(mode='json'), 201 # 201 Created
+        # return jsonify({ # 舊的返回方式
+        #     "success": True,
+        #     "message": result.get('message'),
+        #     "data": response_data
+        # }), 201
 
     except Exception as e:
         # 捕獲服務層或其他地方可能拋出的未預期異常
@@ -264,16 +274,23 @@ def update_crawler_with_config_route(crawler_id):
         updated_crawler_schema: Optional[CrawlerReadSchema] = result.get('crawler')
         if updated_crawler_schema is None:
             logger.error("更新爬蟲成功但 Service 未返回爬蟲物件 (ID: %s)", crawler_id)
-            return jsonify({"success": False, "message": "更新爬蟲後未能獲取結果"}), 500
+            # --- 修改：返回 BaseResponseSchema for consistency ---
+            # return jsonify({"success": False, "message": "更新爬蟲後未能獲取結果"}), 500
+            return BaseResponseSchema(success=False, message="更新爬蟲後未能獲取結果").model_dump(mode='json'), 500
 
+        # --- 修改：直接返回 Pydantic 模型實例 --- 
         # 將 Schema 轉為字典並放入 data 鍵
-        response_data = updated_crawler_schema.model_dump()
+        # response_data = updated_crawler_schema.model_dump()
         logger.info("爬蟲（含配置）更新成功，ID=%s", crawler_id)
-        return jsonify({
-            "success": True, 
-            "message": result.get('message'), 
-            "data": response_data
-        }), 200 # 200 OK
+        # return jsonify({ # 舊的返回方式
+        #     "success": True, 
+        #     "message": result.get('message'), 
+        #     "data": response_data
+        # }), 200 # 200 OK
+        return CrawlerActionSuccessResponseSchema(
+             message=result.get('message', '更新成功'),
+             data=updated_crawler_schema # 直接傳遞 Pydantic 模型
+        ).model_dump(mode='json'), 200 # 讓 Flask/Pydantic Spec 處理序列化
 
     except Exception as e:
         # 捕獲服務層或其他地方可能拋出的未預期異常
@@ -823,22 +840,47 @@ def get_crawler_config(crawler_id):
         logger.info("獲取爬蟲配置結果: %s", result)
         
         if not result.get('success'):
-            # 修改：無論失敗原因 (ID不存在或配置找不到)，都返回 404
-            status_code = 404 
-            logger.error("獲取爬蟲配置失敗 (ID: %s): %s", crawler_id, result.get('message')) # Log the specific reason
-            return jsonify(result), status_code
+            # --- 修改：區分錯誤類型 ---
+            message = result.get('message', '')
+            if "不存在" in message or "未設定配置檔案名稱" in message:
+                status_code = 404 # 資源確實找不到
+                logger.warning("獲取爬蟲配置失敗 (ID: %s) - 資源未找到: %s", crawler_id, message)
+            elif "格式錯誤" in message or "讀取配置檔案失敗" in message:
+                status_code = 500 # 找到檔案但檔案本身有問題或讀取錯誤
+                logger.error("獲取爬蟲配置失敗 (ID: %s) - 檔案問題: %s", crawler_id, message)
+            else:
+                 status_code = 500 # 其他未預期錯誤
+                 logger.error("獲取爬蟲配置失敗 (ID: %s) - 未知服務錯誤: %s", crawler_id, message)
+
+            # 返回包含錯誤訊息的標準響應
+            # return jsonify(result), status_code # 舊的方式
+            return BaseResponseSchema(
+                success=False, 
+                message=message, 
+                # config=None # BaseResponseSchema 沒有 config 欄位
+            ).model_dump(mode='json'), status_code
+            # --- 修改結束 ---
 
         # 提取 'data' 部分並返回標準結構
-        config_data = result.get('data')
+        # --- 修改：從 service 結果中提取 'config' 鍵 --- 
+        # config_data = result.get('data')
+        config_data = result.get('config') # Service 回傳的是 'config'
         if config_data is None:
-             logger.error("獲取配置成功但 Service 未返回 data (ID: %s)", crawler_id)
+             # 保持原來的錯誤日誌訊息，但說明根本原因
+             logger.error("獲取配置成功但 Service 未返回 config data (ID: %s)", crawler_id)
              return jsonify({"success": False, "message": "無法獲取配置資料內容"}), 500 # 認為是服務端問題
 
-        return jsonify({
-            "success": True,
-            "message": result.get('message'),
-            "data": config_data # config_data 應該是 dict
-        }), 200
+        # --- 修改：返回符合 GetCrawlerConfigSuccessResponseSchema 的結構 ---
+        # return jsonify({ # 舊的方式
+        #     "success": True,
+        #     "message": result.get('message'),
+        #     "data": config_data # config_data 應該是 dict
+        # }), 200
+        return GetCrawlerConfigSuccessResponseSchema(
+            message=result.get('message', '獲取配置成功'),
+            data=config_data # 將獲取的 config 放入 data
+        ).model_dump(mode='json'), 200
+
     except Exception as e:
         logger.error("獲取爬蟲配置時發生異常: %s", str(e), exc_info=True)
         return handle_api_error(e)
