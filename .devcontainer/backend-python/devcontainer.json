@@ -1,5 +1,5 @@
 {
-    "name": "Backend Python",
+    "name": "Backend Python (Dev)",
     // 指向你的基礎 docker-compose.yml 和 override 檔案
     "dockerComposeFile": [
         "../../docker-compose.yml", // 相對路徑指向專案根目錄
@@ -9,8 +9,13 @@
     "service": "backend-python", // 我們開發主要在 web 服務中進行
     // 指定 VS Code 在容器內開啟哪個資料夾作為工作區
     // 這應與 docker-compose.override.yml 中 volumes 的目標路徑一致
-    "workspaceFolder": "/app",
+    "workspaceFolder": "/workspace",
     "updateRemoteUserUID": false, // <<< 新增：停用 UID/GID 同步
+    "features": {
+        // --- 正確：確保 Git feature 存在 ---
+        "ghcr.io/devcontainers/features/git:1": {}
+        // 可以加入其他需要的 features，例如 Docker-in-Docker, Node.js 等
+    },
     "customizations": {
         "vscode": {
             "extensions": [
@@ -38,7 +43,7 @@
                 "python.linting.enabled": true,
                 "python.testing.pytestEnabled": true,
                 "python.testing.pytestArgs": [
-                    "tests"
+                    "backend-python/tests"
                 ],
                 "sqltools.connections": [
                     {
@@ -69,13 +74,18 @@
     "forwardPorts": [
         8001, // Gunicorn/Flask (主機端口) -> 8000 (容器端口)
         5432, // PostgreSQL (主機端口) -> 5432 (容器端口)
-        5000 // 新增：Flask (主機端口) -> 5000 (容器端口)
+        5000, // 新增：Flask (主機端口) -> 5000 (容器端口)
+        5251, // Frontend (如果 VS Code 也需要轉發)
+        3000, // Node Service 1 (如果需要)
+        4000  // Node Service 2 (如果需要)
     ],
     // 指定需要隨 Dev Container 一起啟動的其他服務
     "runServices": [
-        "db"
+        "db",
+        "frontend", 
+        "node-services"
     ],
-    // "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends && pip install --upgrade pip && pip install --user -r /app/requirements.txt -r /app/requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc && sudo mkdir -p /app/logs && sudo chown vscode:vscode /app/logs && sudo mkdir -p /app/data/web_site_configs && sudo chown vscode:vscode /app/data /app/data/web_site_configs && sudo cp /app/src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs/ && sudo chown vscode:vscode /app/data/web_site_configs/bnext_crawler_config.json",
+    "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends && pip install --upgrade pip && pip install --user -r /workspace/backend-python/requirements.txt -r /workspace/backend-python/requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc && sudo mkdir -p /workspace/logs && sudo chown vscode:vscode /workspace/logs && sudo mkdir -p /workspace/data/web_site_configs && sudo chown vscode:vscode /workspace/data /workspace/data/web_site_configs && sudo cp /workspace/backend-python/src/crawlers/configs/bnext_crawler_config.json /workspace/data/web_site_configs/ && sudo chown vscode:vscode /workspace/data/web_site_configs/bnext_crawler_config.json",
     "postStartCommand": "export PATH=\"/home/vscode/.local/bin:$PATH\"",
     "remoteUser": "vscode"
 }

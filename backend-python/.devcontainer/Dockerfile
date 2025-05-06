@@ -46,22 +46,26 @@ RUN groupadd --gid $USER_GID $USERNAME \
 # 設定使用者
 USER $USERNAME
 
-WORKDIR /app
+WORKDIR /workspace
 
-# 複製 requirements 檔案
-COPY --chown=vscode:vscode requirements.txt requirements-dev.txt ./
+# 若需要dockerfile能獨立完成環境安裝而不需要在 devcontainer.json 中安裝，則需要以下步驟
+# --- 不需要 COPY requirements.txt，因為會被 volume mount 覆蓋 ---
+# COPY --chown=vscode:vscode requirements.txt requirements-dev.txt ./
 
-# 安裝 Python 套件
-RUN pip install --upgrade pip \
-    && pip install --user -r requirements.txt -r requirements-dev.txt --no-warn-script-location
+# 安裝 Python 套件--> 在 devcontainer.json 中安裝
+# RUN pip install --upgrade pip \
+#     && pip install --user -r /workspace/requirements.txt -r /workspace/requirements-dev.txt --no-warn-script-location
 
 # 建立必要資料夾並設定權限
-RUN mkdir -p /app/logs \
-    && chown vscode:vscode /app/logs \
-    && mkdir -p /app/data/web_site_configs \
-    && chown vscode:vscode /app/data /app/data/web_site_configs
+# RUN mkdir -p /workspace/logs \
+#     && chown vscode:vscode /workspace/logs \
+#     && mkdir -p /workspace/data/web_site_configs \
+#     && chown vscode:vscode /workspace/data /workspace/data/web_site_configs
 
-# 複製 config 檔案（請確認來源路徑正確，這裡假設 config 檔案在 src/crawlers/configs 下）
-COPY --chown=vscode:vscode src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs/
+# 複製 config 檔案（確認來源路徑正確，config 檔案在 src/crawlers/configs 下）
+# COPY --chown=vscode:vscode src/crawlers/configs/bnext_crawler_config.json /workspace/data/web_site_configs/
 
 USER $USERNAME
+
+# --- 可以保留一個預設的 CMD 讓容器保持運行 ---
+CMD ["sleep", "infinity"]

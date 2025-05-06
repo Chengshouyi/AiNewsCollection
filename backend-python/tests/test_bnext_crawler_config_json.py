@@ -2,7 +2,7 @@ import json
 import os
 import pytest
 
-def load_config(file_path="src/crawlers/configs/bnext_crawler_config.json"):
+def load_config(file_path="backend-python/src/crawlers/configs/bnext_crawler_config.json"):
     """從 JSON 檔案載入設定"""
     try:
         with open(file_path, 'r', encoding='utf-8') as f:

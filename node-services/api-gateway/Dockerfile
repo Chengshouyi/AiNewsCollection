@@ -4,6 +4,7 @@ WORKDIR /app
 
 COPY package*.json ./
 RUN npm install
+# build image 前需確保本地 api-gateway 資料夾內容是最新的。
 COPY . .
 RUN npm run build
 

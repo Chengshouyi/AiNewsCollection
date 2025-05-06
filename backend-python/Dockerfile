@@ -54,6 +54,7 @@ ENV PATH="/home/${USERNAME}/.local/bin:${PATH}"
 
 # 複製應用程式碼 (建議在安裝依賴後複製，以更好利用快取)
 # 確保複製的檔案擁有者是 appuser
+#  build image 前需確保本地 backend-python 資料夾內容是最新的。
 COPY --chown=${USERNAME}:${USERNAME} . /app
 # copy 預設爬蟲config檔案
 COPY --chown=${USERNAME}:${USERNAME} src/crawlers/configs/bnext_crawler_config.json /app/data/web_site_configs

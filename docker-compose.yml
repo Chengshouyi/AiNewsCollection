@@ -66,7 +66,9 @@ services:
     volumes:
       - app-logs:/app/logs # 將日誌 volume 掛載到容器的 /app/logs
       - data-volume:/app/data # 將 data volume 掛載到容器的 /app/data
-      - ./backend-python:/app
+      # - ./backend-python:/app  # <--- 將程式碼掛載到 /app (或者考慮 COPY 進 image)
+      # 注意：生產環境通常建議將程式碼 COPY 到映像檔中，而不是 volume mount，除非有特殊需求。
+      # Dockerfile 中已經有 COPY， build image 前需確保本地 backend-python 資料夾內容是最新的。
     networks:
       - default
     healthcheck:
@@ -81,8 +83,9 @@ services:
       dockerfile: Dockerfile
     container_name: ainews-frontend
     command: sh -c "npm run build && npx serve -s dist"
-    volumes:
-      - ./frontend:/app
+    # volumes:
+      # - ./frontend:/app # <--- 生產環境只掛載 frontend 到 /app (或 COPY)
+      # Dockerfile 中已經有 COPY， build image 前需確保本地 frontend 資料夾內容是最新的。
     ports:
       - "8080:8080" # 生產環境可用 8080
     environment:
@@ -91,11 +94,13 @@ services:
   node-services:
     build:
       context: ./node-services
-      dockerfile: Dockerfile # <--- 請確保 node-services/Dockerfile 存在且為生產用
+      dockerfile: Dockerfile # <--- 請確保 node-services/Dockerfile 存在且為生產用，開發完成後需決定是整體build image 還是分開build image
+      # 目前 node-services 資料夾內有兩個 Dockerfile，分別是 api-gateway 和 websocket-server
     container_name: ainews-node-services
     command: sh -c "npm run build && npm run start"
-    volumes:
-      - ./node-services:/app
+    # volumes:
+      # - ./node-services:/app # <--- 生產環境只掛載 node-services 到 /app (或 COPY)
+      # Dockerfile 中已經有 COPY， build image 前需確保本地 node-services 資料夾內容是最新的。
     ports:
       - "3000:3000"   # API Gateway
       - "4000:4000"   # WebSocket

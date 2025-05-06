@@ -14,14 +14,15 @@ services:
     command: sleep infinity
     # flask run --host=0.0.0.0 --port=8000 --debug # 使用 Flask 開發伺服器並啟用除錯模式
     volumes:
-      - ./backend-python:/app
+      - .:/workspace:cached
         # 將專案根目錄掛載到容器的 /workspace 目錄 (假設 Dockerfile 中的 WORKDIR 是 /workspace)
         # 這樣修改本地程式碼會直接反映到容器內，Flask debug 模式會自動重載
+      # - ./backend-python:/app
       # - app-logs:/app/logs # <<<--- 掛載 named volume 到容器內的 logs 目錄
     environment:
       - FLASK_ENV=development # 設定為開發模式
       # - FLASK_APP=src.web.app:app
-      - PYTHONPATH=/app
+      - PYTHONPATH=/workspace
       # 例如，如果需要更詳細的 SQL 日誌:
       # - SQLALCHEMY_ECHO=True
     ports:
@@ -35,10 +36,12 @@ services:
       dockerfile: .devcontainer/Dockerfile
     volumes:
       # <--- 關鍵：確保 migrate 服務也能看到最新的程式碼
-      - ./backend-python:/app
-    # user: vscode
-    # working_dir: /app/backend-python
-    command: bash -c "pip install --user -r requirements.txt && export PATH=\"/home/vscode/.local/bin:$PATH\" && alembic upgrade head"
+      # - ./backend-python:/app
+      # --- 為了 Git 和路徑一致性，也掛載整個專案 ---
+      - .:/workspace:cached
+    
+    # ---命令需要在 /workspace/backend-python 下執行 ---
+    command: bash -c "pip install --user -r /workspace/backend-python/requirements.txt && export PATH=\"/home/vscode/.local/bin:$PATH\" && alembic upgrade head"
   frontend:
     build:
       context: ./frontend
@@ -46,7 +49,9 @@ services:
     # 開發模式下保持容器運行
     command: sh -c "npm run dev -- --host 0.0.0.0"
     volumes:
-      - ./frontend:/app
+      # --- 為了 Git 和路徑一致性，也掛載整個專案 ---
+      - .:/workspace:cached
+      # - ./frontend:/app
       # # 掛載 node_modules，避免本機 node_modules 覆蓋容器內的
       # - /app/node_modules
     ports:
@@ -60,7 +65,9 @@ services:
       dockerfile: .devcontainer/Dockerfile
     command: sleep infinity
     volumes:
-      - ./node-services:/app
+      # - ./node-services:/app
+      # --- 為了 Git 和路徑一致性，也掛載整個專案 ---
+      - .:/workspace:cached
     ports:
       - "3000:3000"
       - "4000:4000"
