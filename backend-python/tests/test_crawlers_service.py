@@ -454,7 +454,7 @@ class TestCrawlersService:
 
         result = crawlers_service.delete_crawler(crawler_id)
         assert result["success"] is True
-        assert "刪除成功" in result["message"]
+        assert "爬蟲設定及關聯配置檔案（如果存在）已刪除" in result["message"]
 
         # 確認爬蟲已被刪除
         get_result = crawlers_service.get_crawler_by_id(crawler_id)

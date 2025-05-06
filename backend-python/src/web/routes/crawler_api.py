@@ -842,8 +842,10 @@ def get_crawler_config(crawler_id):
         if not result.get('success'):
             # --- 修改：區分錯誤類型 ---
             message = result.get('message', '')
-            if "不存在" in message or "未設定配置檔案名稱" in message:
-                status_code = 404 # 資源確實找不到
+            if ("不存在" in message or
+                "未設定配置檔案名稱" in message or
+                ("找不到爬蟲" in message and "的配置檔案或無法讀取" in message)):
+                status_code = 404
                 logger.warning("獲取爬蟲配置失敗 (ID: %s) - 資源未找到: %s", crawler_id, message)
             elif "格式錯誤" in message or "讀取配置檔案失敗" in message:
                 status_code = 500 # 找到檔案但檔案本身有問題或讀取錯誤

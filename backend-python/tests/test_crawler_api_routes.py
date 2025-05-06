@@ -635,7 +635,7 @@ def mock_crawlers_service(monkeypatch, sample_crawlers_data):
              return {
                  'success': True,
                  'message': "獲取爬蟲配置成功",
-                 'data': crawler.config_content
+                 'config': crawler.config_content
              }
 
 
