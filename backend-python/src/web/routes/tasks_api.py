@@ -965,15 +965,19 @@ def create_task():
             # 如果創建失敗，返回錯誤
             return jsonify(create_task_result), 500
 
-        # 從結果中獲取創建的任務對象 (Pydantic Schema)
-        task = create_task_result.get('task')
-        task_data = _prepare_task_for_response(task)
+        task_model_instance = create_task_result.get('task') 
         
-        # 創建成功
+        if not task_model_instance:
+            logger.error("任務創建成功，但無法從服務獲取任務模型實例。")
+            return jsonify({"success": False, "message": "任務創建成功，但無法獲取返回的任務數據。"}), 500
+
+        # 將 Pydantic 模型實例轉換為 JSON 兼容的字典
+        task_data_dict = task_model_instance.model_dump(mode="json")
+        
         return jsonify({
             "success": True,
             "message": create_task_result.get('message', '任務創建成功'),
-            "data": task_data # 使用 'data' key
+            "data": task_data_dict
         }), 201
     except Exception as e:
         logger.exception("創建任務時出錯: %s", str(e))
@@ -1045,15 +1049,16 @@ def get_all_tasks():
     """獲取所有任務列表"""
     try:
         service = get_crawler_task_service()
-        # 使用 find_all_tasks
         result = service.find_all_tasks()
         
         if not result.get('success'):
             return jsonify({"success": False, "message": result.get('message', '獲取任務列表失敗')}), 500
         
-        tasks_list = result.get('tasks', [])
-        # 使用 _prepare_task_for_response 處理每個任務對象，確保枚舉類型被正確序列化
-        tasks_dict_list = [_prepare_task_for_response(task) for task in tasks_list]
+        tasks_list_models = result.get('tasks', []) # 假設這是一個 Pydantic 模型實例的列表
+        
+        # 將每個 Pydantic 模型實例轉換為 JSON 兼容的字典
+        # model_dump(mode="json") 會處理 datetime, Enum 等類型，使其可以直接被 json.dumps 序列化
+        tasks_dict_list = [task.model_dump(mode="json") for task in tasks_list_models]
         
         logger.info("成功獲取 %s 個任務", len(tasks_dict_list))
         

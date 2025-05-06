@@ -175,11 +175,13 @@ function setupWebSocket() {
     });
 
     socket.on('links_fetched', function (data) {
-        console.log('Links fetched:', data);
-        if (data.success) {
-            loadFetchedLinks(data.task_id);
+        console.log('Links fetched (WebSocket):', data); // data 應包含 { success, task_id, message, ... }
+        if (data.success && data.task_id) {
+            // data.task_id 是執行 "collect-links" 操作的任務 ID
+            displayAlert('info', `任務 ${data.task_id} 的連結已獲取，準備顯示選擇框。`);
+            loadFetchedLinks(data.task_id); // 使用 API/WebSocket 事件返回的 task_id
         } else {
-            displayAlert('danger', '抓取連結失敗: ' + data.message);
+            displayAlert('danger', '透過 WebSocket 獲取連結失敗: ' + (data.message || '未知錯誤'));
         }
     });
 }
@@ -527,6 +529,7 @@ function renderTasksTable(tasks) {
                     <div class="progress" style="height: 20px;">
                         <div class="progress-bar" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
                     </div>
+                    <small class="task-message text-muted d-block mt-1">-</small>
                     <div class="d-flex justify-content-between mt-1">
                         <small class="task-scrape-phase">-</small>
                         <small class="task-articles-count">-</small>
@@ -705,7 +708,6 @@ function resetTaskForm() {
 
 // 保存任務
 function saveTask() {
-    // 獲取表單數據
     const isEdit = $('#task-form').data('is-edit') === true;
     const taskId = $('#task-form').data('task-id');
     const taskName = $('#task-name').val().trim();
@@ -743,11 +745,11 @@ function saveTask() {
         return;
     }
 
-    // 添加高級參數
+    // 填充 task_args
     taskData.task_args = {
         max_pages: maxPages,
-        is_limit_num_articles: isLimitNumArticles, // 保存 Checkbox 狀態
-        num_articles: numArticles, // 保存數量值
+        is_limit_num_articles: isLimitNumArticles,
+        num_articles: numArticles,
         max_retries: maxRetries,
         retry_delay: retryDelay,
         timeout: timeout,
@@ -803,12 +805,8 @@ function saveTask() {
     } else {
         taskData.cron_expression = null;
     }
-
-    // 設置 scrape_phase 和 is_active
     taskData.scrape_phase = 'init';
     taskData.is_active = true;
-
-    console.log('Saving task data:', taskData);  // 添加日誌
 
     // 表單驗證
     let errorMessages = [];
@@ -844,73 +842,12 @@ function saveTask() {
             setTimeout(function () {
                 $('#add-task-btn').focus();
             }, 100);
-
-            displayAlert('success', isEdit ? '任務更新成功' : '任務新增成功');
-            loadTasks(); // 確保在成功後立即調用任務列表刷新
+            displayAlert('success', response.message || (isEdit ? '任務更新成功' : '任務新增成功'));
+            loadTasks();
         },
         error: function (xhr, status, error) {
-            console.error('保存任務失敗:', {
-                status: xhr.status,
-                statusText: xhr.statusText,
-                responseText: xhr.responseText,
-                error: error
-            });
-
-            // 嘗試從響應中提取更詳細的錯誤消息
-            let errorMessage = '保存失敗';
-
-            try {
-                // 首先檢查 responseJSON
-                if (xhr.responseJSON) {
-                    if (xhr.responseJSON.message) {
-                        errorMessage += ': ' + xhr.responseJSON.message;
-                    } else if (xhr.responseJSON.error) {
-                        errorMessage += ': ' + xhr.responseJSON.error;
-                    } else if (xhr.responseJSON.errors && Array.isArray(xhr.responseJSON.errors)) {
-                        // 處理可能的錯誤數組
-                        errorMessage += ': ' + xhr.responseJSON.errors.join('; ');
-                    } else if (typeof xhr.responseJSON === 'object') {
-                        // 遍歷對象中的所有錯誤信息
-                        const errorDetails = [];
-                        for (const key in xhr.responseJSON) {
-                            if (key !== 'success') { // 排除success字段
-                                errorDetails.push(`${key}: ${xhr.responseJSON[key]}`);
-                            }
-                        }
-                        if (errorDetails.length > 0) {
-                            errorMessage += ': ' + errorDetails.join('; ');
-                        }
-                    }
-                }
-                // 如果responseJSON沒有有用信息，嘗試解析responseText
-                else if (xhr.responseText) {
-                    try {
-                        const errorObj = JSON.parse(xhr.responseText);
-                        if (errorObj.message) {
-                            errorMessage += ': ' + errorObj.message;
-                        } else if (errorObj.error) {
-                            errorMessage += ': ' + errorObj.error;
-                        } else if (errorObj.errors && Array.isArray(errorObj.errors)) {
-                            errorMessage += ': ' + errorObj.errors.join('; ');
-                        } else {
-                            errorMessage += ': ' + JSON.stringify(errorObj);
-                        }
-                    } catch (e) {
-                        // 如果解析失敗，直接使用responseText
-                        errorMessage += ': ' + xhr.responseText;
-                    }
-                } else if (xhr.status) {
-                    // 添加HTTP狀態碼信息
-                    errorMessage += ` (HTTP ${xhr.status}: ${xhr.statusText || error})`;
-                } else {
-                    errorMessage += ': ' + error;
-                }
-            } catch (e) {
-                console.error('解析錯誤響應時出錯:', e);
-                errorMessage += `: ${error || '未知錯誤'}`;
-            }
-
-            displayAlert('danger', errorMessage, true);
+            console.error('保存任務失敗:', xhr.responseText);
+            displayAlert('danger', '保存失敗: ' + (xhr.responseJSON?.message || xhr.responseText || error), true);
         }
     });
 }
@@ -929,8 +866,7 @@ function deleteTask(taskId) {
             setTimeout(function () {
                 $('#add-task-btn').focus();
             }, 100);
-
-            displayAlert('success', '任務已刪除');
+            displayAlert('success', response.message || '任務已刪除');
             loadTasks();
         },
         error: function (xhr, status, error) {
@@ -949,26 +885,20 @@ function executeTask(taskId, button) {
     $.ajax({
         url: `/api/tasks/${taskId}/run`,
         method: 'POST',
-        success: function (response) {
+        success: function (response) { // response 結構: {success, message, data: {task_id, session_id, room}}
             console.log('任務啟動響應:', response);
-            if (response.success) {
-                // API 快速返回 202 Accepted
-                // 後續進度將通過 WebSocket 更新
+            if (response.success && response.data) {
+                // --- 從 response.data 中獲取 session_id ---
+                const sessionId = response.data.session_id;
+                // --- 始終加入通用的 task_taskId 房間 ---
+                const roomToJoin = `task_${taskId}`;
 
-                // 檢查是否返回了會話ID
-                const sessionId = response.session_id;
-                // --- 修改：始終使用基礎房間名稱 ---
-                const baseRoomName = `task_${taskId}`;
-                // --- 修改結束 ---
 
                 // 如果 WebSocket 已連接，加入相應房間
                 if (socket && socket.connected) {
-                    // --- 修改：使用基礎房間名稱加入 ---
-                    console.log(`啟動後加入房間: ${baseRoomName}`);
-                    socket.emit('join_room', { 'room': baseRoomName });
-                    // --- 修改結束 ---
+                    console.log(`啟動後加入房間: ${roomToJoin}`);
+                    socket.emit('join_room', { 'room': roomToJoin });
 
-                    // 保存會話ID到按鈕或行元素上，以便後續使用 (這部分邏輯可以保留，以備將來可能需要)
                     if (sessionId) {
                         const taskRow = $(`.task-row[data-task-id="${taskId}"]`);
                         if (taskRow.length) {
@@ -978,7 +908,7 @@ function executeTask(taskId, button) {
                 }
             } else {
                 button.prop('disabled', false).text('執行');
-                displayAlert('danger', '任務啟動失敗: ' + response.message);
+                displayAlert('danger', '任務啟動失敗: ' + (response.message || '未知錯誤'));
             }
         },
         error: function (xhr, status, error) {
