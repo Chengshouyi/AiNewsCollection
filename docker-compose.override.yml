@@ -47,18 +47,15 @@ services:
       context: ./frontend
       dockerfile: .devcontainer/Dockerfile
     # 開發模式下保持容器運行
-    command: sh -c "npm run dev -- --host 0.0.0.0"
+    command: sh -c "cd /workspace/frontend && npm install && npm run dev -- --host 0.0.0.0"
     volumes:
-      # --- 為了 Git 和路徑一致性，也掛載整個專案 ---
       - .:/workspace:cached
-      # - ./frontend:/app
-      # # 掛載 node_modules，避免本機 node_modules 覆蓋容器內的
-      # - /app/node_modules
     ports:
       - "5251:5173"
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true # 解決某些開發環境的檔案監控問題
+    user: vscode
   node-services:
     build:
       context: ./node-services

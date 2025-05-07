@@ -50,3 +50,5 @@ RUN pnpm install
 
 # 複製其餘專案檔案（如有需要）
 # COPY --chown=vscode:vscode . .
+# 設定開發環境
+ENV NODE_ENV=development

@@ -17,7 +17,6 @@
                 "dbaeumer.vscode-eslint",
                 "octref.vetur",
                 "Vue.volar",
-                // "Vue.vscode-typescript-vue-plugin", v2之後已經不需要
                 "ms-vsliveshare.vsliveshare",
                 "ms-azuretools.vscode-docker"
             ]
@@ -30,7 +29,8 @@
     ],
     "runServices": [
         "db",
-        "backend-python"
+        "backend-python",
+        "node-services"
     ],
     // 開發時的啟動指令
     // "postCreateCommand": "npm install",
