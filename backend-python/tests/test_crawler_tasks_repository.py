@@ -781,9 +781,6 @@ class TestCrawlerTasksRepository:
                 "is_auto": True,
                 "is_active": True,
                 "cron_expression": "0 * * * *",
-                # Set last_run_at to the beginning of the current hour (minute 0, second 0).
-                # This ensures that for a "0 * * * *" cron, the next run is at the start of the NEXT hour.
-                # So, within the current hour, this task should not be due.
                 "last_run_at": now.replace(minute=0, second=0, microsecond=0),
                 "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False},
                 "scrape_phase": ScrapePhase.INIT,
