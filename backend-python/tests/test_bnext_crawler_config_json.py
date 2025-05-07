@@ -1,9 +1,24 @@
 import json
 import os
 import pytest
+from pathlib import Path
 
-def load_config(file_path="backend-python/src/crawlers/configs/bnext_crawler_config.json"):
+def find_src_dir():
+    """自動找到 src 目錄的位置"""
+    current_dir = Path(__file__).parent
+    while current_dir != current_dir.parent:
+        src_dir = current_dir / 'src'
+        if src_dir.exists():
+            return src_dir
+        current_dir = current_dir.parent
+    raise FileNotFoundError("找不到 src 目錄")
+
+def load_config(file_path=None):
     """從 JSON 檔案載入設定"""
+    if file_path is None:
+        src_dir = find_src_dir()
+        file_path = src_dir / 'crawlers' / 'configs' / 'bnext_crawler_config.json'
+    
     try:
         with open(file_path, 'r', encoding='utf-8') as f:
             return json.load(f)
