@@ -35,13 +35,14 @@ services:
       context: ./backend-python
       dockerfile: .devcontainer/Dockerfile
     volumes:
-      # <--- 關鍵：確保 migrate 服務也能看到最新的程式碼
-      # - ./backend-python:/app
-      # --- 為了 Git 和路徑一致性，也掛載整個專案 ---
       - .:/workspace:cached
-    
-    # ---命令需要在 /workspace/backend-python 下執行 ---
-    command: bash -c "pip install --user -r /workspace/backend-python/requirements.txt && export PATH=\"/home/vscode/.local/bin:$PATH\" && alembic upgrade head"
+    command: >
+      bash -c "
+        pip install --user -r /workspace/backend-python/requirements.txt &&
+        export PATH=\"/home/vscode/.local/bin:$PATH\" &&
+        cd /workspace/backend-python &&
+        /usr/local/bin/python3 -m alembic upgrade head
+      "
   frontend:
     build:
       context: ./frontend
