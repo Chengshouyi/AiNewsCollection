@@ -37,7 +37,7 @@ RUN npm install
 # COPY --chown=vscode:vscode . .
 
 USER $USERNAME
-WORKDIR /app
+WORKDIR /workspace
 
 # 設定開發環境
 ENV NODE_ENV=development

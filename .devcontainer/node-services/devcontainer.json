@@ -9,11 +9,7 @@
     "service": "node-services",
     // 指定 VS Code 在容器內開啟哪個資料夾作為工作區
     // 這應與 docker-compose.override.yml 中 volumes 的目標路徑一致
-    "workspaceFolder": "/app",
-    // 掛載 backend-python 資料夾，移轉程式碼後移除
-    "mounts": [
-        "source=${localWorkspaceFolder}/backend-python,target=/app/backend-python,type=bind,consistency=cached"
-    ],
+    "workspaceFolder": "/workspace",
     "updateRemoteUserUID": false, 
     "customizations": {
         "vscode": {
@@ -34,10 +30,12 @@
     // 指定需要隨 Dev Container 一起啟動的其他服務
     "runServices": [
         "db",
-        "backend-python"
+        "backend-python",
+        "frontend"
     ],
     // "postCreateCommand": "pnpm install",
     "postStartCommand": "export PATH=\"/home/vscode/.local/bin:$PATH\"",
+    "postCreateCommand": "sudo chown -R vscode:vscode /workspace",
     "remoteUser": "vscode",
     "containerEnv": {
         "NODE_ENV": "development"

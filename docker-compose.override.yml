@@ -74,3 +74,5 @@ services:
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true # 解決某些開發環境的檔案監控問題
+    # 確保使用正確的用戶
+    user: vscode
