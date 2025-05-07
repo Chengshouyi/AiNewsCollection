@@ -775,13 +775,16 @@ class TestCrawlerTasksRepository:
                 "max_retries": 3,
                 "retry_count": 0,
             },
-            {  # 2. 上次執行不到1小時（不應該被找到）
-                "task_name": "不到1小時任務",
+            {  # 2. 上次執行於本小時初，cron 為每小時執行一次，因此本次不應執行 (不應該被找到)
+                "task_name": "本小時初已執行任務", # Renamed for clarity
                 "crawler_id": crawler_id,
                 "is_auto": True,
                 "is_active": True,
                 "cron_expression": "0 * * * *",
-                "last_run_at": now - timedelta(minutes=5),
+                # Set last_run_at to the beginning of the current hour (minute 0, second 0).
+                # This ensures that for a "0 * * * *" cron, the next run is at the start of the NEXT hour.
+                # So, within the current hour, this task should not be due.
+                "last_run_at": now.replace(minute=0, second=0, microsecond=0),
                 "task_args": {**TASK_ARGS_DEFAULT, "ai_only": False},
                 "scrape_phase": ScrapePhase.INIT,
                 "max_retries": 3,
@@ -845,7 +848,7 @@ class TestCrawlerTasksRepository:
 
             assert created_task_ids["超過1小時任務"] in found_ids
             assert created_task_ids["從未執行任務"] in found_ids
-            assert created_task_ids["不到1小時任務"] not in found_ids
+            assert created_task_ids["本小時初已執行任務"] not in found_ids
             assert created_task_ids["手動任務"] not in found_ids
             assert created_task_ids["非活動任務"] not in found_ids
             assert len(due_tasks) == 2
@@ -1458,7 +1461,7 @@ class TestCrawlerTasksRepository:
         self,
         crawler_tasks_repo: CrawlerTasksRepository,
         sample_tasks_data: List[Dict[str, Any]],
-        sample_crawler_data: Dict[str, Any],
+        sample_crawler_data: Dict[str, Any]
     ):
         """測試 advanced_search 方法"""
         total_tasks = len(sample_tasks_data)
