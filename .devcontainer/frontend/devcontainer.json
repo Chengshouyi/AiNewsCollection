@@ -25,7 +25,14 @@
     // --- Container Lifecycle ---
     // 轉發端口
     "forwardPorts": [
-        5251 // Vite 預設 port
+        8001, // Gunicorn/Flask (主機端口) -> 8000 (容器端口)
+        5432, // PostgreSQL (主機端口) -> 5432 (容器端口)
+        5000, // 新增：Flask (主機端口) -> 5000 (容器端口)
+        5251, // Frontend (如果 VS Code 也需要轉發)
+        3000, // Node Service 1 (如果需要)
+        4000, // WebSocket (如果需要)
+        5173, // Vue (如果需要)
+        5000 // Gunicorn/Flask (如果需要)
     ],
     "runServices": [
         "db",
