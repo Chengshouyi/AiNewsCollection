@@ -61,16 +61,26 @@ services:
     build:
       context: ./node-services
       dockerfile: .devcontainer/Dockerfile
-    command: sleep infinity
+    # 將工作目錄設定為 node-services monorepo 的根目錄
+    working_dir: /workspace/node-services
+    # 修改命令來啟動所有 NestJS 服務 (需要您在 package.json 中定義 'start:all' 腳本)
+    command: pnpm run start:all
     volumes:
-      # - ./node-services:/app
-      # --- 為了 Git 和路徑一致性，也掛載整個專案 ---
+      # 掛載整個專案根目錄到容器的 /workspace
       - .:/workspace:cached
     ports:
-      - "3000:3000"
-      - "4000:4000"
+      - "3000:3000" # api-gateway 可能的端口
+      - "4000:4000" # websocket-server 可能的端口
+      # 根據您的 NestJS 服務實際使用的端口添加或修改映射
     environment:
       - NODE_ENV=development
-      - CHOKIDAR_USEPOLLING=true # 解決某些開發環境的檔案監控問題
-    # 確保使用正確的用戶
+      - CHOKIDAR_USEPOLLING=true
+      - TSC_WATCHFILE=useFsEvents
+      - NEST_DEBUG=true
     user: vscode
+    # 添加健康檢查 (請根據您的服務實際情況調整端口和路徑)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

@@ -15,8 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sudo \
     && rm -rf /var/lib/apt/lists/*
 
-# 安裝 pnpm
-RUN npm install -g pnpm
+# 安裝 pnpm 和 NestJS CLI
+RUN npm install -g pnpm @nestjs/cli typescript ts-node
 
 # 檢查並創建用戶和群組
 RUN if ! getent group $USER_GID > /dev/null 2>&1; then \
