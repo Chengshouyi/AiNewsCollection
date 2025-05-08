@@ -43,9 +43,9 @@
         "backend-python",
         "frontend"
     ],
-    // "postCreateCommand": "pnpm install",
+    // 使用陣列來執行多個命令
+    "postCreateCommand": "sudo chown -R vscode:vscode /workspace && cd node-services && pnpm install && pnpm run build",
     "postStartCommand": "export PATH=\"/home/vscode/.local/bin:$PATH\"",
-    "postCreateCommand": "sudo chown -R vscode:vscode /workspace",
     "remoteUser": "vscode",
     "containerEnv": {
         "NODE_ENV": "development"

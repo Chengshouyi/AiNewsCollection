@@ -42,11 +42,11 @@ RUN mkdir -p /workspace && \
 # 切換到 vscode 用戶
 USER $USERNAME
 
-# 複製 package.json 與 pnpm-lock.yaml
-COPY --chown=$USERNAME:$USERNAME package.json pnpm-lock.yaml* ./
+# # 複製 package.json 與 pnpm-lock.yaml
+# COPY --chown=$USERNAME:$USERNAME package.json pnpm-lock.yaml* ./
 
-# 安裝 pnpm 套件
-RUN pnpm install
+# # 安裝 pnpm 套件
+# RUN pnpm install
 
 # 複製其餘專案檔案（如有需要）
 # COPY --chown=vscode:vscode . .

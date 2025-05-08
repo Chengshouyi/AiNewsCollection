@@ -64,7 +64,8 @@ services:
     # 將工作目錄設定為 node-services monorepo 的根目錄
     working_dir: /workspace/node-services
     # 修改命令來啟動所有 NestJS 服務 (需要您在 package.json 中定義 'start:all' 腳本)
-    command: pnpm run start:all
+    command: sleep infinity
+    # command: pnpm run dev # 在開發模式下啟動服務
     volumes:
       # 掛載整個專案根目錄到容器的 /workspace
       - .:/workspace:cached
