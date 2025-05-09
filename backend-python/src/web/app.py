@@ -354,6 +354,12 @@ def health_check():
     return jsonify(status)
 
 
+@app.route("/healthz")
+def healthz_check():
+    """簡單的健康檢查端點，供 API Gateway 使用"""
+    return jsonify({"status": "ok"})
+
+
 @app.route("/debug/routes")
 def list_routes():
     """列出所有已註冊的 Flask 路由，用於調試"""

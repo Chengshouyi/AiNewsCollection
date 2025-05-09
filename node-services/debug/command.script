@@ -1,1 +1,2 @@
+cd node-services/api-gateway
 pnpm run start:dev
