@@ -1,3 +1,3 @@
-cd backend-python
-pip install -r requirements.txt
+cd /workspace/backend-python
+pip install -r /workspace/backend-python/requirements.txt
 python -m src.web.app
