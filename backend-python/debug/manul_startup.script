@@ -1,0 +1,3 @@
+cd backend-python
+pip install -r requirements.txt
+python -m src.web.app

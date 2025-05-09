@@ -256,7 +256,7 @@ def main():
             app,
             debug=True,
             host="::",
-            port=5000,
+            port=8000,
             use_reloader=False,
             allow_unsafe_werkzeug=True
         )

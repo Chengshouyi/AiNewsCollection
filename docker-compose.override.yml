@@ -69,10 +69,11 @@ services:
     volumes:
       # 掛載整個專案根目錄到容器的 /workspace
       - .:/workspace:cached
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
-      - "3000:3000" # api-gateway 可能的端口
-      - "4000:4000" # websocket-server 可能的端口
-      # 根據您的 NestJS 服務實際使用的端口添加或修改映射
+      - "3000:3000" # api-gateway 的端口
+      - "4000:4000" # websocket-server 的端口
+    
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
