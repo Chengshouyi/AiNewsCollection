@@ -31,6 +31,19 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     # libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
+# Add Docker's official GPG key
+RUN mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+# Set up Docker's apt repository
+RUN echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+  $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker CLI (docker-ce-cli)
+RUN apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
+    && rm -rf /var/lib/apt/lists/*
+
 # 安裝 Node.js
 RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
     && apt-get install -y nodejs \
@@ -41,29 +54,25 @@ RUN curl -fsSL https://deb.nodesource.com/setup_lts.x | bash - \
 RUN groupadd --gid $USER_GID $USERNAME \
     && useradd --uid $USER_UID --gid $USER_GID -m $USERNAME \
     && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME \
-    && chmod 0440 /etc/sudoers.d/$USERNAME
+    && chmod 0440 /etc/sudoers.d/$USERNAME \
+    && echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME && \
+    chmod 0440 /etc/sudoers.d/$USERNAME
+
+# Create a group with the same GID as the host's Docker socket group (1001)
+# and add the vscode user to it, to allow access to the Docker socket.
+ARG DOCKER_HOST_GID_ARG=1001 
+RUN sudo groupadd -g ${DOCKER_HOST_GID_ARG} docker_host_socket_access_group || true && \
+    sudo usermod -aG docker_host_socket_access_group ${USERNAME}
+    
+# Also add vscode user to the root group (GID 0)
+# because the docker.sock inside the container appears as root:root
+RUN sudo usermod -aG root ${USERNAME} # or sudo usermod -aG 0 ${USERNAME}
 
 # 設定使用者
 USER $USERNAME
 
 WORKDIR /workspace
 
-# 若需要dockerfile能獨立完成環境安裝而不需要在 devcontainer.json 中安裝，則需要以下步驟
-# --- 不需要 COPY requirements.txt，因為會被 volume mount 覆蓋 ---
-# COPY --chown=vscode:vscode requirements.txt requirements-dev.txt ./
-
-# 安裝 Python 套件--> 在 devcontainer.json 中安裝
-# RUN pip install --upgrade pip \
-#     && pip install --user -r /workspace/requirements.txt -r /workspace/requirements-dev.txt --no-warn-script-location
-
-# 建立必要資料夾並設定權限
-# RUN mkdir -p /workspace/logs \
-#     && chown vscode:vscode /workspace/logs \
-#     && mkdir -p /workspace/data/web_site_configs \
-#     && chown vscode:vscode /workspace/data /workspace/data/web_site_configs
-
-# 複製 config 檔案（確認來源路徑正確，config 檔案在 src/crawlers/configs 下）
-# COPY --chown=vscode:vscode src/crawlers/configs/bnext_crawler_config.json /workspace/data/web_site_configs/
 
 USER $USERNAME
 

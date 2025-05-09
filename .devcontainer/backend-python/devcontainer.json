@@ -77,12 +77,12 @@
         5251, // Frontend
         3000, // Node Service 1
         4000, // WebSocket
-        5173  // Vue
+        5173 // Vue
     ],
     // 指定需要隨 Dev Container 一起啟動的其他服務
     "runServices": [
         "db",
-        "frontend", 
+        "frontend",
         "node-services"
     ],
     "postCreateCommand": "sudo apt-get update && sudo apt-get install -y --no-install-recommends && pip install --upgrade pip && pip install --user -r /workspace/backend-python/requirements.txt -r /workspace/backend-python/requirements-dev.txt --no-warn-script-location && echo 'export PATH=\"/home/vscode/.local/bin:$PATH\"' >> ~/.bashrc && sudo mkdir -p /workspace/logs && sudo chown vscode:vscode /workspace/logs && sudo mkdir -p /workspace/data/web_site_configs && sudo chown vscode:vscode /workspace/data /workspace/data/web_site_configs && sudo cp /workspace/backend-python/src/crawlers/configs/bnext_crawler_config.json /workspace/data/web_site_configs/ && sudo chown vscode:vscode /workspace/data/web_site_configs/bnext_crawler_config.json",

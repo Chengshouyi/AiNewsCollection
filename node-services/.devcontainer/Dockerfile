@@ -56,7 +56,7 @@ ARG DOCKER_HOST_GID_ARG=1001
 RUN sudo groupadd -g ${DOCKER_HOST_GID_ARG} docker_host_socket_access_group || true && \
     sudo usermod -aG docker_host_socket_access_group ${USERNAME}
 
-# Crucial fix: Also add vscode user to the root group (GID 0)
+# Also add vscode user to the root group (GID 0)
 # because the docker.sock inside the container appears as root:root
 RUN sudo usermod -aG root ${USERNAME} # or sudo usermod -aG 0 ${USERNAME}
 

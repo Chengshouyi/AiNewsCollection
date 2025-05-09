@@ -18,6 +18,19 @@ RUN apt-get update && apt-get install -y \
     sudo \
     && rm -rf /var/lib/apt/lists/*
 
+# Add Docker's official GPG key
+RUN mkdir -p /etc/apt/keyrings && \
+    curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+
+# Set up Docker's apt repository
+RUN echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian \
+  bookworm stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+# Install Docker CLI (docker-ce-cli)
+RUN apt-get update && apt-get install -y --no-install-recommends docker-ce-cli \
+    && rm -rf /var/lib/apt/lists/*
+
 # 檢查並創建用戶和群組
 RUN if ! getent group $USER_GID > /dev/null 2>&1; then \
         groupadd --gid $USER_GID $USERNAME; \
@@ -31,6 +44,16 @@ RUN if ! getent group $USER_GID > /dev/null 2>&1; then \
     fi && \
     echo $USERNAME ALL=\(root\) NOPASSWD:ALL > /etc/sudoers.d/$USERNAME && \
     chmod 0440 /etc/sudoers.d/$USERNAME
+
+# Create a group with the same GID as the host's Docker socket group (1001)
+# and add the vscode user to it, to allow access to the Docker socket.
+ARG DOCKER_HOST_GID_ARG=1001
+RUN sudo groupadd -g ${DOCKER_HOST_GID_ARG} docker_host_socket_access_group || true && \
+    sudo usermod -aG docker_host_socket_access_group ${USERNAME}
+
+# Also add vscode user to the root group (GID 0)
+# because the docker.sock inside the container appears as root:root
+RUN sudo usermod -aG root ${USERNAME} # or sudo usermod -aG 0 ${USERNAME}
 
     # 設定工作目錄
 WORKDIR /workspace

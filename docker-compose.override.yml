@@ -15,10 +15,8 @@ services:
     # flask run --host=0.0.0.0 --port=8000 --debug # 使用 Flask 開發伺服器並啟用除錯模式
     volumes:
       - .:/workspace:cached
-        # 將專案根目錄掛載到容器的 /workspace 目錄 (假設 Dockerfile 中的 WORKDIR 是 /workspace)
-        # 這樣修改本地程式碼會直接反映到容器內，Flask debug 模式會自動重載
-      # - ./backend-python:/app
-      # - app-logs:/app/logs # <<<--- 掛載 named volume 到容器內的 logs 目錄
+      - /var/run/docker.sock:/var/run/docker.sock
+
     environment:
       - FLASK_ENV=development # 設定為開發模式
       # - FLASK_APP=src.web.app:app
@@ -48,9 +46,11 @@ services:
       context: ./frontend
       dockerfile: .devcontainer/Dockerfile
     # 開發模式下保持容器運行
-    command: sh -c "cd /workspace/frontend && npm install && npm run dev -- --host 0.0.0.0"
+    command: sleep infinity
+    # sh -c "cd /workspace/frontend && npm install && npm run dev -- --host 0.0.0.0"
     volumes:
       - .:/workspace:cached
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "5251:5173"
     environment:
@@ -73,7 +73,7 @@ services:
     ports:
       - "3000:3000" # api-gateway 的端口
       - "4000:4000" # websocket-server 的端口
-    
+
     environment:
       - NODE_ENV=development
       - CHOKIDAR_USEPOLLING=true
@@ -82,7 +82,7 @@ services:
     user: vscode
     # 添加健康檢查 (請根據您的服務實際情況調整端口和路徑)
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      test: [ "CMD", "curl", "-f", "http://localhost:3000/healthz" ]
       interval: 30s
       timeout: 10s
       retries: 3
