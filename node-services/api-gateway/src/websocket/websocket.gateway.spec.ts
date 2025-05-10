@@ -6,6 +6,7 @@ import { io, Socket as ClientSocket } from 'socket.io-client'; // Use ClientSock
 import { Server as HttpServer } from 'http';
 import { INestApplication } from '@nestjs/common';
 import { IoAdapter } from '@nestjs/platform-socket.io';
+import { LoggerService } from '@app/logger';
 
 // 設置更長的超時時間
 jest.setTimeout(20000);
@@ -24,6 +25,24 @@ describe('ApiGatewayWebSocket', () => {
     }),
   };
 
+  const mockLoggerService = {
+    log: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.log(`[TEST LOG] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    error: jest.fn().mockImplementation((message: any, trace?: string, context?: string) => {
+      console.error(`[TEST ERROR] ${context ? '[' + context + '] ' : ''}${message}${trace ? '\n' + trace : ''}`);
+    }),
+    warn: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.warn(`[TEST WARN] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    debug: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.debug(`[TEST DEBUG] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    verbose: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.log(`[TEST VERBOSE] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+  };
+
   beforeEach(async () => {
     console.log('開始設置測試環境...');
     welcomeMessageReceived = null;
@@ -34,6 +53,10 @@ describe('ApiGatewayWebSocket', () => {
         {
           provide: ConfigService,
           useValue: mockConfigService,
+        },
+        {
+          provide: LoggerService,
+          useValue: mockLoggerService,
         },
       ],
     }).compile();
