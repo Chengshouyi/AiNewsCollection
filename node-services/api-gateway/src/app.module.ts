@@ -1,8 +1,13 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
-import { GatewayModule } from './gateway/gateway.module';
+import { TerminusModule } from '@nestjs/terminus';
+import { HealthController } from './health/health.controller';
+import { RedisModule } from './shared/redis/redis.module';
+import { TasksModule } from './tasks/tasks.module';
+import { AppService } from './app.service';
+import { MessageQueueService } from './services/message-queue.service';
+import { WebSocketGateway } from '@nestjs/websockets';
+import { WebSocketModule } from './websocket/websocket.module';
 
 @Module({
   imports: [
@@ -10,9 +15,13 @@ import { GatewayModule } from './gateway/gateway.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    GatewayModule,
+    TerminusModule,
+    RedisModule,
+    TasksModule,
+    WebSocketModule,
   ],
-  controllers: [AppController],
-  providers: [AppService],
+  controllers: [HealthController],
+  providers: [AppService, MessageQueueService],
+  exports: [AppService, MessageQueueService]
 })
 export class AppModule {}
