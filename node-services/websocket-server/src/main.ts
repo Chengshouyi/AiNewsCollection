@@ -4,9 +4,16 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { AppService } from './app.service';
 import { ConfigService } from '@nestjs/config';
+import { LoggerService } from '@app/logger';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    logger: false,
+  });
+
+  const appLogger = app.get(LoggerService);
+  app.useLogger(appLogger);
+
   const configService = app.get(ConfigService);
   
   // 創建 HTTP 服務器
@@ -15,7 +22,7 @@ async function bootstrap() {
   // 創建 Socket.IO 服務器
   const io = new Server(httpServer, {
     cors: {
-      origin: configService.get('CORS_ORIGIN', '*'), // 從配置中讀取 CORS 設置
+      origin: configService.get<string>('CORS_ORIGIN', '*'),
       methods: ['GET', 'POST'],
       credentials: true
     },
@@ -28,40 +35,40 @@ async function bootstrap() {
 
   // 監聽連接事件
   io.on('connection', (socket) => {
-    console.log('Client connected:', socket.id);
+    appLogger.log(`Client connected: ${socket.id}`, 'SocketConnection');
 
     // 處理加入房間
     socket.on('join_room', (data) => {
       const { room } = data;
       socket.join(room);
-      console.log(`Client ${socket.id} joined room: ${room}`);
+      appLogger.log(`Client ${socket.id} joined room: ${room}`, 'SocketRoom');
     });
 
     // 處理離開房間
     socket.on('leave_room', (data) => {
       const { room } = data;
       socket.leave(room);
-      console.log(`Client ${socket.id} left room: ${room}`);
+      appLogger.log(`Client ${socket.id} left room: ${room}`, 'SocketRoom');
     });
 
     // 處理斷開連接
     socket.on('disconnect', () => {
-      console.log('Client disconnected:', socket.id);
+      appLogger.log(`Client disconnected: ${socket.id}`, 'SocketConnection');
     });
 
     socket.on('error', (error) => {
-        console.error(`Socket error for client ${socket.id}:`, error);
+      appLogger.error(`Socket error for client ${socket.id}`, error, 'SocketError');
     });
 
     // 新增心跳檢測
     socket.on('ping', () => {
-        socket.emit('pong');
+      socket.emit('pong');
     });
   });
 
   // 從配置中讀取端口
-  const port = configService.get('PORT', 4000);
+  const port = configService.get<number>('PORT') || 4000;
   await httpServer.listen(port);
-  console.log(`Application is running on: ${await app.getUrl()}`);
+  appLogger.log(`WebSocket Server is running on port: ${port}`, 'Bootstrap');
 }
 bootstrap();

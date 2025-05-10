@@ -4,12 +4,12 @@ import {
   SubscribeMessage,
   MessageBody,
   ConnectedSocket,
-  OnModuleInit,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { RedisService } from '../shared/redis/redis.service';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
+import { OnModuleInit } from '@nestjs/common';
 
 @WebSocketGateway({
   namespace: '/tasks', // 前端連線時用 io('/tasks')

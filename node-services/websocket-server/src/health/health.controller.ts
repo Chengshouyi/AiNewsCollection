@@ -1,6 +1,6 @@
 import { Controller, Get, Logger } from '@nestjs/common';
-import { HealthCheck, HealthCheckService, HealthIndicatorResult, HealthCheckResult } from '@nestjs/terminus';
-import { RedisHealthIndicator } from '@nestjs/terminus-redis';
+import { HealthCheck, HealthCheckService, HealthIndicatorResult, HealthCheckResult, HttpHealthIndicator } from '@nestjs/terminus';
+import { RedisService } from '../shared/redis/redis.service';
 
 @Controller('health')
 export class HealthController {
@@ -8,7 +8,8 @@ export class HealthController {
 
   constructor(
     private health: HealthCheckService,
-    private redisIndicator: RedisHealthIndicator,
+    private http: HttpHealthIndicator,
+    private redisService: RedisService
   ) {}
 
   @Get()
@@ -16,7 +17,15 @@ export class HealthController {
   check(): Promise<HealthCheckResult> {
     this.logger.log('check_health');
     return this.health.check([
-      async () => this.redisIndicator.pingCheck('redis', { timeout: 1500 }),
+      () => this.http.pingCheck('nestjs-docs', 'https://docs.nestjs.com'),
+      async () => {
+        try {
+          await this.redisService.getClient().ping();
+          return { redis: { status: 'up' } };
+        } catch (error) {
+          return { redis: { status: 'down', message: error.message } };
+        }
+      }
     ]);
   }
 }

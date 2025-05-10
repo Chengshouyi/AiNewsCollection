@@ -5,14 +5,16 @@ import { HealthController } from './health/health.controller';
 import { RedisModule } from './shared/redis/redis.module';
 import { TasksModule } from './tasks/tasks.module';
 import { AppService } from './app.service';
-import { MessageQueueService } from './message-queue.service';
+import { MessageQueueService } from './services/message-queue.service';
+import { CustomLoggerModule } from '@app/logger';
 
 @Module({
   imports: [
     ConfigModule.forRoot({
-      isGlobal: true, // 全域可用
-      envFilePath: '.env',
+      isGlobal: true,
+      envFilePath: '.env', // 確保 SERVICE_NAME 和 LOG_LEVEL 在此定義
     }),
+    CustomLoggerModule.forRootAsync(), // <-- 加入 CustomLoggerModule
     TerminusModule,
     RedisModule,
     TasksModule,

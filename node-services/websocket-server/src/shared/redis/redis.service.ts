@@ -1,24 +1,35 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import * as Redis from 'ioredis';
+import Redis from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
-  private client: Redis.Redis;
-  private subscriber: Redis.Redis;
+  private client: Redis;
+  private subscriber: Redis;
 
   constructor(private readonly configService: ConfigService) {}
 
-  onModuleInit() {
+  async onModuleInit() {
     const redisUrl = this.configService.get<string>('REDIS_URL', 'redis://localhost:6379');
+    this.logger.log(`Connecting to Redis at ${redisUrl}`);
     this.client = new Redis(redisUrl);
     this.subscriber = new Redis(redisUrl);
+
+    this.client.on('connect', () => this.logger.log('Redis client connected'));
+    this.client.on('error', (err) => this.logger.error('Redis client error', err));
+    this.subscriber.on('connect', () => this.logger.log('Redis subscriber connected'));
+    this.subscriber.on('error', (err) => this.logger.error('Redis subscriber error', err));
   }
 
-  onModuleDestroy() {
-    this.client?.disconnect();
-    this.subscriber?.disconnect();
+  async onModuleDestroy() {
+    await this.client?.quit();
+    await this.subscriber?.quit();
+    this.logger.log('Redis connections closed');
+  }
+
+  getClient(): Redis {
+    return this.client;
   }
 
   // 發布訊息

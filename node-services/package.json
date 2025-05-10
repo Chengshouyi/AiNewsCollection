@@ -7,10 +7,26 @@
   ],
   "scripts": {
     "dev": "concurrently \"pnpm --filter api-gateway dev\" \"pnpm --filter websocket-server dev\"",
-    "build": "pnpm --filter api-gateway build && pnpm --filter websocket-server build",
+    "build": "pnpm --filter @app/logger build && pnpm --filter api-gateway build && pnpm --filter websocket-server build",
     "start": "concurrently \"pnpm --filter api-gateway start\" \"pnpm --filter websocket-server start\""
   },
   "devDependencies": {
     "concurrently": "^8.2.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "@nestjs/common": "^11.0.0",
+      "@nestjs/config": "^4.0.2",
+      "@nestjs/core": "^11.0.0",
+      "@nestjs/jwt": "^11.0.0",
+      "@nestjs/microservices": "^11.1.0",
+      "@nestjs/passport": "^11.0.0",
+      "@nestjs/platform-express": "^11.0.0",
+      "@nestjs/platform-socket.io": "^11.1.0",
+      "@nestjs/swagger": "^11.2.0",
+      "@nestjs/terminus": "^11.0.0",
+      "@nestjs/websockets": "^11.1.0"
+
+    }
   }
 }

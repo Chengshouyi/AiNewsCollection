@@ -13,7 +13,8 @@ export class MessageQueueService {
     if (!this.messageQueue.has(room)) {
       this.messageQueue.set(room, []);
     }
-    this.messageQueue.get(room).push(message);
+    const roomMessages = this.messageQueue.get(room)!;
+    roomMessages.push(message);
     this.logger.log(`Message queued for room ${room}: ${message.id}`);
   }
 
@@ -29,10 +30,10 @@ export class MessageQueueService {
     if (!this.messageHistory.has(room)) {
       this.messageHistory.set(room, []);
     }
-
-    const history = this.messageHistory.get(room);
+    const history = this.messageHistory.get(room)!;
+    
     history.push(message);
-
+    
     // 限制歷史記錄大小
     if (history.length > this.maxHistorySize) {
       history.shift();
