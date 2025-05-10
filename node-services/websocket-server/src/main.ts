@@ -3,9 +3,11 @@ import { AppModule } from './app.module';
 import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { AppService } from './app.service';
+import { ConfigService } from '@nestjs/config';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  const configService = app.get(ConfigService);
   
   // 創建 HTTP 服務器
   const httpServer = createServer(app.getHttpAdapter().getInstance());
@@ -13,7 +15,7 @@ async function bootstrap() {
   // 創建 Socket.IO 服務器
   const io = new Server(httpServer, {
     cors: {
-      origin: '*', // 在生產環境中應該設置具體的域名
+      origin: configService.get('CORS_ORIGIN', '*'), // 從配置中讀取 CORS 設置
       methods: ['GET', 'POST'],
       credentials: true
     },
@@ -57,8 +59,8 @@ async function bootstrap() {
     });
   });
 
-  // 啟動服務器
-  const port = process.env.PORT || 3000;
+  // 從配置中讀取端口
+  const port = configService.get('PORT', 4000);
   await httpServer.listen(port);
   console.log(`Application is running on: ${await app.getUrl()}`);
 }
