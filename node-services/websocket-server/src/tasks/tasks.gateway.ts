@@ -10,6 +10,7 @@ import { RedisService } from '../shared/redis/redis.service';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { OnModuleInit } from '@nestjs/common';
+import { LoggerService } from '@app/logger';
 
 @WebSocketGateway({
   namespace: '/tasks', // 前端連線時用 io('/tasks')
@@ -18,15 +19,15 @@ import { OnModuleInit } from '@nestjs/common';
   },
 })
 export class TasksGateway implements OnModuleInit {
-  private readonly logger = new Logger(TasksGateway.name);
 
   constructor(
     private readonly redisService: RedisService,
     private readonly configService: ConfigService,
+    private readonly logger: LoggerService,
   ) {
     // 需要從 .env 取得 REDIS_URL
     const redisUrl = this.configService.get<string>('REDIS_URL', 'redis://localhost:6379');
-    console.log(`Redis URL: ${redisUrl}`);
+    this.logger.log(`Redis URL: ${redisUrl}`);
   }
 
   @WebSocketServer()

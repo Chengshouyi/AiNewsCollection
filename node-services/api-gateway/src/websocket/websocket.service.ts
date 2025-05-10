@@ -1,15 +1,14 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ApiGatewayWebSocket } from './websocket.gateway';
-
+import { LoggerService } from '@app/logger';
 @Injectable()
 export class WebSocketService {
-  private readonly logger = new Logger(WebSocketService.name);
 
-  constructor(private readonly gateway: ApiGatewayWebSocket) {}
+  constructor(private readonly gateway: ApiGatewayWebSocket, private readonly logger: LoggerService) {}
 
   // 處理錯誤並記錄日誌
   private handleError(error: Error, context: string) {
-    this.logger.error(`Error in ${context}: ${error.message}`, error.stack);
+    this.logger.error(`Error in ${context}: ${error.message}`, WebSocketService.name);
     return {
       success: false,
       error: error.message,
@@ -21,7 +20,7 @@ export class WebSocketService {
   async broadcastMessage(event: string, data: any) {
     try {
       this.gateway.broadcastMessage(event, data);
-      this.logger.log(`Broadcast message: ${event}`);
+      this.logger.log(`Broadcast message: ${event}`, WebSocketService.name);
       return {
         success: true,
         event,
@@ -36,7 +35,7 @@ export class WebSocketService {
   async sendToClient(clientId: string, event: string, data: any) {
     try {
       this.gateway.sendToClient(clientId, event, data);
-      this.logger.log(`Sent message to client ${clientId}: ${event}`);
+      this.logger.log(`Sent message to client ${clientId}: ${event}`, WebSocketService.name);
       return {
         success: true,
         clientId,
@@ -52,7 +51,7 @@ export class WebSocketService {
   async sendToRoom(room: string, event: string, data: any) {
     try {
       this.gateway.sendToRoom(room, event, data);
-      this.logger.log(`Sent message to room ${room}: ${event}`);
+      this.logger.log(`Sent message to room ${room}: ${event}`, WebSocketService.name);
       return {
         success: true,
         room,
@@ -71,7 +70,7 @@ export class WebSocketService {
         connectedClients: this.gateway.getConnectedClientsCount(),
         timestamp: new Date().toISOString()
       };
-      this.logger.log(`Connection stats: ${JSON.stringify(stats)}`);
+      this.logger.log(`Connection stats: ${JSON.stringify(stats)}`, WebSocketService.name);
       return stats;
     } catch (error) {
       return this.handleError(error, 'getConnectionStats');
@@ -82,7 +81,7 @@ export class WebSocketService {
   getClientRooms(clientId: string) {
     try {
       const rooms = this.gateway.getClientRooms(clientId);
-      this.logger.log(`Client ${clientId} rooms: ${rooms.join(', ')}`);
+      this.logger.log(`Client ${clientId} rooms: ${rooms.join(', ')}`, WebSocketService.name);
       return {
         success: true,
         clientId,

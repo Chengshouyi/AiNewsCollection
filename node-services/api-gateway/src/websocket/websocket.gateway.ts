@@ -2,7 +2,7 @@ import { WebSocketGateway, WebSocketServer, OnGatewayConnection, OnGatewayDiscon
 import { Server, Socket, Namespace } from 'socket.io';
 // import { Logger } from '@nestjs/common'; // Temporarily comment out Logger
 import { ConfigService } from '@nestjs/config';
-
+import { LoggerService } from '@app/logger';
 @WebSocketGateway({
   cors: {
     origin: '*',
@@ -20,19 +20,19 @@ export class ApiGatewayWebSocket implements OnGatewayInit, OnGatewayConnection, 
   @WebSocketServer()
   server: Namespace;
 
-  constructor(private readonly configService: ConfigService) {
-    console.log('[GATEWAY] ApiGatewayWebSocket CONSTRUCTOR called');
+  constructor(private readonly configService: ConfigService, private readonly logger: LoggerService) {
+    this.logger.log('ApiGatewayWebSocket CONSTRUCTOR called', ApiGatewayWebSocket.name);
     this.heartbeatInterval = this.configService.get('WEBSOCKET_HEARTBEAT_INTERVAL', 30000);
-    console.log(`[GATEWAY] Heartbeat interval set to: ${this.heartbeatInterval}`);
+    this.logger.log(`Heartbeat interval set to: ${this.heartbeatInterval}`, ApiGatewayWebSocket.name);
   }
 
   afterInit(server: Namespace) {
-    console.log('[GATEWAY] ApiGatewayWebSocket AFTERINIT called');
+    this.logger.log('ApiGatewayWebSocket afterInit called', ApiGatewayWebSocket.name);
     if (server) {
-      console.log(`[GATEWAY] afterInit: server argument name: ${server.name}`);
-      console.log(`[GATEWAY] afterInit: this.server name: ${this.server?.name}`);
+      this.logger.log(`afterInit: server argument name: ${server.name}`, ApiGatewayWebSocket.name);
+      this.logger.log(`afterInit: this.server name: ${this.server?.name}`, ApiGatewayWebSocket.name);
     } else {
-      console.log('[GATEWAY] afterInit: server argument is NULL or UNDEFINED');
+      this.logger.log('afterInit: server argument is NULL or UNDEFINED', ApiGatewayWebSocket.name);
     }
   }
 
@@ -40,46 +40,46 @@ export class ApiGatewayWebSocket implements OnGatewayInit, OnGatewayConnection, 
     const clientId = client.id;
     this.connectedClients.set(clientId, client);
     this.clientRooms.set(clientId, new Set());
-    console.log(`[GATEWAY] Client connected: ${clientId} - handleConnection START, in namespace: ${client.nsp.name}`);
+    this.logger.log(`Client connected: ${clientId} - handleConnection START, in namespace: ${client.nsp.name}`, ApiGatewayWebSocket.name);
     
-    console.log(`[GATEWAY] Calling setupHeartbeat for ${clientId}`);
+    this.logger.log(`Calling setupHeartbeat for ${clientId}`, ApiGatewayWebSocket.name);
     this.setupHeartbeat(client);
-    console.log(`[GATEWAY] Finished setupHeartbeat for ${clientId}`);
+    this.logger.log(`Finished setupHeartbeat for ${clientId}`, ApiGatewayWebSocket.name);
 
-    console.log(`[GATEWAY] Attempting to send 'welcome' message to ${clientId}`);
+    this.logger.log(`Attempting to send 'welcome' message to ${clientId}`, ApiGatewayWebSocket.name);
     client.emit('welcome', {
       message: 'Welcome to API Gateway WebSocket',
       clientId,
       timestamp: new Date().toISOString()
     });
-    console.log(`[GATEWAY] 'welcome' message sent to ${clientId}`);
+    this.logger.log(`'welcome' message sent to ${clientId}`, ApiGatewayWebSocket.name);
   }
 
   handleDisconnect(client: Socket) {
     const clientId = client.id;
-    console.log(`[GATEWAY] handleDisconnect for ${clientId} - calling cleanupClient`); // Added log
+    this.logger.log(`handleDisconnect for ${clientId} - calling cleanupClient`, ApiGatewayWebSocket.name);
     this.cleanupClient(clientId);
-    console.log(`[GATEWAY] Client disconnected: ${clientId}`);
+    this.logger.log(`Client disconnected: ${clientId}`, ApiGatewayWebSocket.name);
   }
 
   @SubscribeMessage('join_room')
   handleJoinRoom(client: Socket, data: { room: string }) {
     const clientId = client.id;
     const { room } = data;
-    console.log(`[GATEWAY] handleJoinRoom called by ${clientId} for room ${room}`);
+    this.logger.log(`handleJoinRoom called by ${clientId} for room ${room}`, ApiGatewayWebSocket.name);
     try {
       client.join(room);
       const rooms = this.clientRooms.get(clientId) || new Set();
       rooms.add(room);
       this.clientRooms.set(clientId, rooms);
 
-      console.log(`[GATEWAY] Client ${clientId} joined room: ${room}`);
+      this.logger.log(`Client ${clientId} joined room: ${room}`, ApiGatewayWebSocket.name);
       client.emit('room_joined', {
         room,
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      console.error(`[GATEWAY] Error joining room for ${clientId}: ${error.message}`);
+      this.logger.error(`Error joining room for ${clientId}: ${error.message}`, ApiGatewayWebSocket.name);
       client.emit('error', {
         message: 'Failed to join room',
         error: error.message,
@@ -92,7 +92,7 @@ export class ApiGatewayWebSocket implements OnGatewayInit, OnGatewayConnection, 
   handleLeaveRoom(client: Socket, data: { room: string }) {
     const clientId = client.id;
     const { room } = data;
-    console.log(`[GATEWAY] handleLeaveRoom called by ${clientId} for room ${room}`);
+    this.logger.log(`handleLeaveRoom called by ${clientId} for room ${room}`, ApiGatewayWebSocket.name);
     try {
       client.leave(room);
       const rooms = this.clientRooms.get(clientId);
@@ -100,13 +100,13 @@ export class ApiGatewayWebSocket implements OnGatewayInit, OnGatewayConnection, 
         rooms.delete(room);
       }
 
-      console.log(`[GATEWAY] Client ${clientId} left room: ${room}`);
+      this.logger.log(`Client ${clientId} left room: ${room}`, ApiGatewayWebSocket.name);
       client.emit('room_left', {
         room,
         timestamp: new Date().toISOString()
       });
     } catch (error) {
-      console.error(`[GATEWAY] Error leaving room for ${clientId}: ${error.message}`);
+      this.logger.error(`Error leaving room for ${clientId}: ${error.message}`, ApiGatewayWebSocket.name);
       client.emit('error', {
         message: 'Failed to leave room',
         error: error.message,
@@ -117,7 +117,7 @@ export class ApiGatewayWebSocket implements OnGatewayInit, OnGatewayConnection, 
 
   @SubscribeMessage('ping')
   handlePing(client: Socket) {
-    console.log(`[GATEWAY] handlePing called by ${client.id}`);
+    this.logger.log(`handlePing called by ${client.id}`, ApiGatewayWebSocket.name);
     client.emit('pong', {
       timestamp: new Date().toISOString()
     });
@@ -129,6 +129,7 @@ export class ApiGatewayWebSocket implements OnGatewayInit, OnGatewayConnection, 
       ...data,
       timestamp: new Date().toISOString()
     });
+    this.logger.log(`broadcastMessage: ${event} ${data}`, ApiGatewayWebSocket.name);
   }
 
   // 發送訊息給特定客戶端
@@ -139,6 +140,7 @@ export class ApiGatewayWebSocket implements OnGatewayInit, OnGatewayConnection, 
         ...data,
         timestamp: new Date().toISOString()
       });
+      this.logger.log(`sendToClient: ${clientId} ${event} ${data}`, ApiGatewayWebSocket.name);
     }
   }
 
@@ -148,10 +150,12 @@ export class ApiGatewayWebSocket implements OnGatewayInit, OnGatewayConnection, 
       ...data,
       timestamp: new Date().toISOString()
     });
+    this.logger.log(`sendToRoom: ${room} ${event} ${data}`, ApiGatewayWebSocket.name);
   }
 
   // 獲取當前連接的客戶端數量
   getConnectedClientsCount(): number {
+    this.logger.log(`getConnectedClientsCount: ${this.connectedClients.size}`, ApiGatewayWebSocket.name);
     return this.connectedClients.size;
   }
 
@@ -163,26 +167,26 @@ export class ApiGatewayWebSocket implements OnGatewayInit, OnGatewayConnection, 
 
   private setupHeartbeat(client: Socket) {
     const clientId = client.id;
-    console.log(`[GATEWAY] setupHeartbeat for ${clientId}`);
+    this.logger.log(`setupHeartbeat for ${clientId}`, ApiGatewayWebSocket.name);
     
     // Clear any existing timers for this client before setting new ones
     this.clearClientTimers(clientId);
 
     const pingIntervalTimer = setInterval(() => {
-      console.log(`[GATEWAY] Sending ping to ${clientId}`); // Added log
+      this.logger.log(`Sending ping to ${clientId}`, ApiGatewayWebSocket.name);
       client.emit('ping');
     }, this.heartbeatInterval);
     this.pingIntervalTimers.set(clientId, pingIntervalTimer);
 
     const newHeartbeatTimeoutTimer = setTimeout(() => {
-      console.warn(`[GATEWAY] Client ${clientId} heartbeat timeout. Disconnecting.`);
+      this.logger.warn(`Client ${clientId} heartbeat timeout. Disconnecting.`, ApiGatewayWebSocket.name);
       this.heartbeatTimeoutTimers.delete(clientId); // Remove self before disconnecting
       client.disconnect(true);
     }, this.heartbeatInterval * 2);
     this.heartbeatTimeoutTimers.set(clientId, newHeartbeatTimeoutTimer);
 
     client.on('pong', () => {
-      console.log(`[GATEWAY] Received pong from ${clientId}`); // Added log
+      this.logger.log(`Received pong from ${clientId}`, ApiGatewayWebSocket.name);
       // Clear the current timeout and set a new one if we want a sliding window
       const existingTimeout = this.heartbeatTimeoutTimers.get(clientId);
       if (existingTimeout) {
@@ -194,7 +198,7 @@ export class ApiGatewayWebSocket implements OnGatewayInit, OnGatewayConnection, 
       // Or, we can set a new timeout here to keep the connection alive as long as pongs are received.
       // Let's re-set it for robustness:
       const refreshedTimeout = setTimeout(() => {
-        console.warn(`[GATEWAY] Client ${clientId} heartbeat timeout after pong. Disconnecting.`);
+        this.logger.warn(`Client ${clientId} heartbeat timeout after pong. Disconnecting.`, ApiGatewayWebSocket.name);
         this.heartbeatTimeoutTimers.delete(clientId);
         client.disconnect(true);
       }, this.heartbeatInterval * 2);
@@ -207,18 +211,18 @@ export class ApiGatewayWebSocket implements OnGatewayInit, OnGatewayConnection, 
     if (pingTimer) {
       clearInterval(pingTimer);
       this.pingIntervalTimers.delete(clientId);
-      console.log(`[GATEWAY] Cleared ping interval for ${clientId}`);
+      this.logger.log(`Cleared ping interval for ${clientId}`, ApiGatewayWebSocket.name);
     }
     const heartbeatTimeout = this.heartbeatTimeoutTimers.get(clientId);
     if (heartbeatTimeout) {
       clearTimeout(heartbeatTimeout);
       this.heartbeatTimeoutTimers.delete(clientId);
-      console.log(`[GATEWAY] Cleared heartbeat timeout for ${clientId}`);
+      this.logger.log(`Cleared heartbeat timeout for ${clientId}`, ApiGatewayWebSocket.name);
     }
   }
 
   private cleanupClient(clientId: string) {
-    console.log(`[GATEWAY] cleanupClient for ${clientId}`);
+    this.logger.log(`cleanupClient for ${clientId}`, ApiGatewayWebSocket.name);
     this.clearClientTimers(clientId); // Centralized timer clearing
     this.connectedClients.delete(clientId);
     this.clientRooms.delete(clientId);
