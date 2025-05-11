@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { WebSocketService } from './websocket.service';
 import { ApiGatewayWebSocket } from './websocket.gateway';
+import { LoggerService } from '@app/logger';
 
 describe('WebSocketService', () => {
   let service: WebSocketService;
@@ -12,6 +13,25 @@ describe('WebSocketService', () => {
     getConnectedClientsCount: jest.fn(),
   };
 
+  const mockLoggerService = {
+    log: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.log(`[TEST LOG] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    error: jest.fn().mockImplementation((message: any, trace?: string, context?: string) => {
+      console.error(`[TEST ERROR] ${context ? '[' + context + '] ' : ''}${message}${trace ? '\n' + trace : ''}`);
+    }),
+    warn: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.warn(`[TEST WARN] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    debug: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.debug(`[TEST DEBUG] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    verbose: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.log(`[TEST VERBOSE] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+  };
+
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -19,6 +39,10 @@ describe('WebSocketService', () => {
         {
           provide: ApiGatewayWebSocket,
           useValue: mockGateway,
+        },
+        {
+          provide: LoggerService,
+          useValue: mockLoggerService,
         },
       ],
     }).compile();
@@ -40,7 +64,9 @@ describe('WebSocketService', () => {
       const result = await service.broadcastMessage(event, data);
 
       expect(result.success).toBe(true);
-      expect(result.event).toBe(event);
+      if (result.success) {
+        expect(result.event).toBe(event);
+      }
       expect(mockGateway.broadcastMessage).toHaveBeenCalledWith(event, data);
     });
 

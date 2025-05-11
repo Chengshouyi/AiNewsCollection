@@ -1,6 +1,29 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ApiGatewayWebSocket } from './websocket.gateway';
 import { LoggerService } from '@app/logger';
+
+interface BroadcastResponse {
+  success: boolean;
+  event?: string;
+  error?: string;
+  timestamp: string;
+}
+
+interface SendToClientResponse {
+  success: boolean;
+  clientId?: string;
+  event?: string;
+  error?: string;
+  timestamp: string;
+}
+
+interface ConnectionStatsResponse {
+  success: boolean;
+  connectedClients?: number;
+  error?: string;
+  timestamp: string;
+}
+
 @Injectable()
 export class WebSocketService {
 
@@ -17,7 +40,7 @@ export class WebSocketService {
   }
 
   // 廣播訊息給所有客戶端
-  async broadcastMessage(event: string, data: any) {
+  async broadcastMessage(event: string, data: any): Promise<BroadcastResponse> {
     try {
       this.gateway.broadcastMessage(event, data);
       this.logger.log(`Broadcast message: ${event}`, WebSocketService.name);
@@ -32,7 +55,7 @@ export class WebSocketService {
   }
 
   // 發送訊息給特定客戶端
-  async sendToClient(clientId: string, event: string, data: any) {
+  async sendToClient(clientId: string, event: string, data: any): Promise<SendToClientResponse> {
     try {
       this.gateway.sendToClient(clientId, event, data);
       this.logger.log(`Sent message to client ${clientId}: ${event}`, WebSocketService.name);
@@ -64,14 +87,14 @@ export class WebSocketService {
   }
 
   // 獲取連接統計資訊
-  getConnectionStats() {
+  getConnectionStats(): ConnectionStatsResponse {
     try {
-      const stats = {
-        connectedClients: this.gateway.getConnectedClientsCount(),
+      const count = this.gateway.getConnectedClientsCount();
+      return {
+        success: true,
+        connectedClients: count,
         timestamp: new Date().toISOString()
       };
-      this.logger.log(`Connection stats: ${JSON.stringify(stats)}`, WebSocketService.name);
-      return stats;
     } catch (error) {
       return this.handleError(error, 'getConnectionStats');
     }

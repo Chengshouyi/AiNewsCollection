@@ -3,11 +3,13 @@ import { ConfigService } from '@nestjs/config';
 import { WebSocketServerService } from './websocket-server.service';
 import { WebSocketService } from '../websocket.service';
 import { WebSocketMessage, WebSocketResponse } from '../interfaces/websocket-message.interface';
+import { LoggerService } from '@app/logger';
 
 describe('WebSocketServerService', () => {
   let service: WebSocketServerService;
   let configService: ConfigService;
   let webSocketService: WebSocketService;
+  let loggerService: LoggerService;
 
   const mockConfigService = {
     get: jest.fn(),
@@ -16,6 +18,24 @@ describe('WebSocketServerService', () => {
   const mockWebSocketService = {
     sendToClient: jest.fn(),
     broadcastMessage: jest.fn(),
+  };
+
+  const mockLoggerService = {
+    log: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.log(`[TEST LOG] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    error: jest.fn().mockImplementation((message: any, trace?: string, context?: string) => {
+      console.error(`[TEST ERROR] ${context ? '[' + context + '] ' : ''}${message}${trace ? '\n' + trace : ''}`);
+    }),
+    warn: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.warn(`[TEST WARN] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    debug: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.debug(`[TEST DEBUG] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    verbose: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.log(`[TEST VERBOSE] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
   };
 
   beforeEach(async () => {
@@ -30,12 +50,22 @@ describe('WebSocketServerService', () => {
           provide: WebSocketService,
           useValue: mockWebSocketService,
         },
+        {
+          provide: LoggerService,
+          useValue: mockLoggerService,
+        },
       ],
     }).compile();
 
     service = module.get<WebSocketServerService>(WebSocketServerService);
     configService = module.get<ConfigService>(ConfigService);
     webSocketService = module.get<WebSocketService>(WebSocketService);
+    loggerService = module.get<LoggerService>(LoggerService);
+    
+    // 添加 socket 模擬
+    (service as any).socket = {
+      emit: jest.fn(),
+    };
   });
 
   it('should be defined', () => {
@@ -65,14 +95,36 @@ describe('WebSocketServerService', () => {
 
       // 模擬連接狀態
       (service as any).isConnected = true;
-      (service as any).socket = {
-        emit: jest.fn(),
+      
+      // 模擬 socket 行為
+      const mockSocket = {
+        emit: jest.fn((event, data, callback) => {
+          // 不調用 callback，模擬超時情況
+        }),
+        on: jest.fn((event, callback) => {
+          if (event === 'connect') {
+            callback();
+          }
+        }),
       };
+      (service as any).socket = mockSocket;
 
-      const result = await service.sendMessage(message);
-
+      // 模擬超時情況
+      jest.useFakeTimers();
+      
+      const messagePromise = service.sendMessage(message);
+      
+      // 快進時間以觸發超時
+      jest.advanceTimersByTime(5000);
+      
+      const result = await messagePromise;
+      
       expect(result.success).toBe(false);
       expect(result.error).toBe('Message timeout');
+      expect(mockSocket.emit).toHaveBeenCalledWith('message', message, expect.any(Function));
+      
+      // 清理
+      jest.useRealTimers();
     });
   });
 
@@ -106,6 +158,9 @@ describe('WebSocketServerService', () => {
         timestamp: new Date().toISOString(),
       };
 
+      // 確保 socket 已經被正確初始化
+      expect((service as any).socket).toBeDefined();
+      
       mockWebSocketService.broadcastMessage.mockResolvedValue({
         success: true,
         timestamp: new Date().toISOString(),

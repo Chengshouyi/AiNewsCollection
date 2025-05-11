@@ -39,6 +39,10 @@ export class WebSocketServerService implements OnModuleInit {
   }
 
   private setupEventListeners() {
+    if (!this.socket) {
+      this.logger.error('Socket not initialized', WebSocketServerService.name);
+      return;
+    }
     this.socket.on('connect', () => {
       this.isConnected = true;
       this.logger.log('Connected to WebSocket server', WebSocketServerService.name);
@@ -115,7 +119,7 @@ export class WebSocketServerService implements OnModuleInit {
       };
     }
 
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         resolve({
           success: false,
@@ -124,10 +128,15 @@ export class WebSocketServerService implements OnModuleInit {
         });
       }, 5000);
 
-      this.socket.emit('message', message, (response: WebSocketResponse) => {
+      try {
+        this.socket.emit('message', message, (response: WebSocketResponse) => {
+          clearTimeout(timeout);
+          resolve(response);
+        });
+      } catch (error) {
         clearTimeout(timeout);
-        resolve(response);
-      });
+        reject(error);
+      }
     });
   }
 
