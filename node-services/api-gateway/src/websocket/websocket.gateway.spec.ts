@@ -80,6 +80,7 @@ describe('ApiGatewayWebSocket', () => {
     console.log(`服務器監聽在端口 ${port}`);
 
     console.log('等待客戶端連接並接收歡迎訊息...');
+    
     await new Promise<void>((resolve, reject) => {
       const WELCOME_EVENT = 'welcome'; // Define event name
       let connectTimeoutId: NodeJS.Timeout;
@@ -251,17 +252,30 @@ describe('ApiGatewayWebSocket', () => {
         done(new Error('等待房間訊息超時 (3s)'));
       }, 3000);
 
-      clientSocket.on(event, (receivedData) => {
-        console.log('收到房間訊息:', receivedData);
-        expect(receivedData).toEqual(expect.objectContaining(data));
-        expect(receivedData).toHaveProperty('timestamp');
-        clearTimeout(timeout);
-        console.log('房間訊息測試完成');
-        done();
-      });
+      // 清理之前的事件監聽器
+      clientSocket.off('room_joined');
+      clientSocket.off(event);
 
+      // 加入房間
       clientSocket.emit('join_room', { room });
-      gateway.sendToRoom(room, event, data);
+      
+      // 等待確認加入房間
+      clientSocket.on('room_joined', (joinData) => {
+        console.log('成功加入房間:', joinData);
+        
+        // 設置事件監聽器
+        clientSocket.on(event, (receivedData) => {
+          console.log('收到房間訊息:', receivedData);
+          expect(receivedData).toEqual(expect.objectContaining(data));
+          expect(receivedData).toHaveProperty('timestamp');
+          clearTimeout(timeout);
+          console.log('房間訊息測試完成');
+          done();
+        });
+        
+        // 發送訊息
+        gateway.sendToRoom(room, event, data);
+      });
     }, 7000);
   });
 

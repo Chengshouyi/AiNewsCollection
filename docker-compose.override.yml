@@ -72,7 +72,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "3000:3000" # api-gateway 的端口
-      - "4000:4000" # websocket-server 的端口
+      - "15001:4000" # websocket-server 的端口
       - "6379:6379" # redis 的端口
 
     environment:
