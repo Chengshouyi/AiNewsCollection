@@ -128,14 +128,14 @@ export class GatewayController {
         this.logger.log(`sendResponse: ${error.response.status} ${error.response.data}`, GatewayController.name);
         res.status(error.response.status).send(error.response.data);
       } else if (error.request) {
-        this.logger.log(`sendResponse: 504 ${error.response.data}`, GatewayController.name);
+        this.logger.log(`sendResponse: 504 Gateway Timeout`, GatewayController.name);
         res.status(504).json({
           statusCode: 504,
           message: 'Gateway Timeout: No response from upstream server.',
           error: 'Gateway Timeout',
         });
       } else {
-        this.logger.log(`sendResponse: 502 ${error.response.data}`, GatewayController.name);
+        this.logger.log(`sendResponse: 502 Bad Gateway`, GatewayController.name);
         res.status(502).json({
           statusCode: 502,
           message: 'Bad Gateway: Error in setting up proxy request.',
@@ -147,37 +147,59 @@ export class GatewayController {
 
   // 判斷是否需要發送 WebSocket 事件
   private shouldEmitWebSocketEvent(path: string, method: string, data: any): boolean {
-    // 例如：當任務完成時發送通知
-    if (path.includes('/tasks/') && method === 'POST' && data.success) {
-      this.logger.log(`shouldEmitWebSocketEvent is true: ${path} ${method} ${data}`, GatewayController.name);
+    this.logger.log(`shouldEmitWebSocketEvent: ${path} ${method} ${JSON.stringify(data)}`, GatewayController.name);
+    
+    // 確保 data 是對象
+    const dataObj = typeof data === 'string' ? JSON.parse(data) : data;
+    
+    // 添加詳細的條件檢查日誌
+    const isTaskPath = path.startsWith('tasks/');
+    const isPostMethod = method === 'POST';
+    const hasData = !!dataObj;
+    const hasSuccess = dataObj?.success === true;
+    
+    this.logger.log(
+      `shouldEmitWebSocketEvent conditions: ${JSON.stringify({
+        path,
+        method,
+        isTaskPath,
+        isPostMethod,
+        hasData,
+        hasSuccess,
+        dataObj,
+      })}`,
+      GatewayController.name
+    );
+    
+    if (isTaskPath && isPostMethod && hasData && hasSuccess) {
+      this.logger.log(`shouldEmitWebSocketEvent is true: ${path} ${method} ${JSON.stringify(dataObj)}`, GatewayController.name);
       return true;
     }
-    this.logger.log(`shouldEmitWebSocketEvent is false: ${path} ${method} ${data}`, GatewayController.name);
+    
+    this.logger.log(`shouldEmitWebSocketEvent is false: ${path} ${method} ${JSON.stringify(dataObj)}`, GatewayController.name);
     return false;
   }
 
   // 發送 WebSocket 事件
   private async emitWebSocketEvent(path: string, method: string, data: any) {
     try {
-      if (path.includes('/tasks/')) {
-        const taskId = data.data?.task_id;
-        if (taskId) {
-          const room = `task_${taskId}`;
-          this.logger.log(`emitWebSocketEvent: ${room} ${method} ${data}`, GatewayController.name);
-          await firstValueFrom(
-            this.websocketClient.emit('task_progress', {
-              room,
-              event: 'task_progress',
-              data: {
-                task_id: taskId,
-                status: data.status || 'COMPLETED',
-                progress: data.progress || 100,
-                message: data.message || '任務已完成',
-                timestamp: new Date()
-              }
-            })
-          );
-        }
+      const taskId = data.data?.task_id;
+      if (taskId) {
+        const room = `task_${taskId}`;
+        this.logger.log(`emitWebSocketEvent: ${room} ${method} ${JSON.stringify(data)}`, GatewayController.name);
+        await firstValueFrom(
+          this.websocketClient.emit('task_progress', {
+            room,
+            event: 'task_progress',
+            data: {
+              task_id: taskId,
+              status: data.status || 'COMPLETED',
+              progress: data.progress || 100,
+              message: data.message || '任務已完成',
+              timestamp: new Date()
+            }
+          })
+        );
       }
     } catch (error) {
       this.logger.error('Error emitting WebSocket event:', error, GatewayController.name);

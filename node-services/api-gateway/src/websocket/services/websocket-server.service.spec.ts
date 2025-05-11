@@ -68,12 +68,12 @@ describe('WebSocketServerService', () => {
     };
   });
 
-  it('should be defined', () => {
+  it('應該被定義', () => {
     expect(service).toBeDefined();
   });
 
   describe('sendMessage', () => {
-    it('should queue message when not connected', async () => {
+    it('應該在未連接時將訊息加入佇列', async () => {
       const message: WebSocketMessage = {
         event: 'test-event',
         data: { test: 'data' },
@@ -86,7 +86,7 @@ describe('WebSocketServerService', () => {
       expect(result.error).toBe('Not connected to WebSocket server');
     });
 
-    it('should handle message timeout', async () => {
+    it('應該能夠處理訊息超時', async () => {
       const message: WebSocketMessage = {
         event: 'test-event',
         data: { test: 'data' },
@@ -129,7 +129,7 @@ describe('WebSocketServerService', () => {
   });
 
   describe('handleIncomingMessage', () => {
-    it('should forward message to specific client', async () => {
+    it('應該能夠將訊息轉發給特定客戶端', async () => {
       const message: WebSocketMessage = {
         event: 'test-event',
         data: { test: 'data' },
@@ -151,7 +151,7 @@ describe('WebSocketServerService', () => {
       );
     });
 
-    it('should broadcast message when no clientId specified', async () => {
+    it('應該能夠廣播訊息當沒有 clientId 指定時', async () => {
       const message: WebSocketMessage = {
         event: 'test-event',
         data: { test: 'data' },

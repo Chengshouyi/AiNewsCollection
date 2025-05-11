@@ -147,7 +147,7 @@ describe('ApiGatewayWebSocket', () => {
   });
 
   describe('Connection', () => {
-    it('should handle client connection and receive welcome message', () => {
+    it('應該能夠處理客戶端連接並接收歡迎訊息', () => {
       console.log('開始測試客戶端連接與歡迎訊息...');
       expect(welcomeMessageReceived).toBeTruthy(); // Check if message was received in beforeEach
       if (welcomeMessageReceived) {
@@ -161,7 +161,7 @@ describe('ApiGatewayWebSocket', () => {
   });
 
   describe('Room Management', () => {
-    it('should handle join room', (done) => {
+    it('應該能夠處理加入房間', (done) => {
       console.log('開始測試加入房間...');
       const room = 'test-room';
       const timeout = setTimeout(() => {
@@ -180,7 +180,7 @@ describe('ApiGatewayWebSocket', () => {
       clientSocket.emit('join_room', { room });
     }, 7000);
 
-    it('should handle leave room', (done) => {
+    it('應該能夠處理離開房間', (done) => {
       console.log('開始測試離開房間...');
       const room = 'test-room';
       const timeout = setTimeout(() => {
@@ -202,7 +202,7 @@ describe('ApiGatewayWebSocket', () => {
   });
 
   describe('Message Broadcasting', () => {
-    it('should broadcast message to all clients', (done) => {
+    it('應該能夠廣播訊息給所有客戶端', (done) => {
       console.log('開始測試廣播訊息...');
       const event = 'test-event';
       const data = { message: 'test' };
@@ -222,7 +222,7 @@ describe('ApiGatewayWebSocket', () => {
       gateway.broadcastMessage(event, data);
     }, 7000);
 
-    it('should send message to specific client', (done) => {
+    it('應該能夠發送訊息給特定客戶端', (done) => {
       console.log('開始測試發送訊息給特定客戶端...');
       const event = 'test-event';
       const data = { message: 'test' };
@@ -243,7 +243,7 @@ describe('ApiGatewayWebSocket', () => {
       gateway.sendToClient(clientId, event, data);
     }, 7000);
 
-    it('should send message to specific room', (done) => {
+    it('應該能夠發送訊息給特定房間', (done) => {
       console.log('開始測試發送訊息給特定房間...');
       const room = 'test-room';
       const event = 'test-event';
@@ -280,7 +280,7 @@ describe('ApiGatewayWebSocket', () => {
   });
 
   describe('Heartbeat', () => {
-    it('should handle ping-pong', (done) => {
+    it('應該能夠處理心跳機制', (done) => {
       console.log('開始測試心跳機制...');
       const timeout = setTimeout(() => {
         done(new Error('等待 pong 回應超時 (3s)'));

@@ -51,12 +51,12 @@ describe('WebSocketService', () => {
     gateway = module.get<ApiGatewayWebSocket>(ApiGatewayWebSocket);
   });
 
-  it('should be defined', () => {
+  it('應該被定義', () => {
     expect(service).toBeDefined();
   });
 
   describe('broadcastMessage', () => {
-    it('should broadcast message successfully', async () => {
+    it('應該能夠廣播訊息成功', async () => {
       const event = 'test-event';
       const data = { message: 'test' };
       mockGateway.broadcastMessage.mockImplementation(() => {});
@@ -70,7 +70,7 @@ describe('WebSocketService', () => {
       expect(mockGateway.broadcastMessage).toHaveBeenCalledWith(event, data);
     });
 
-    it('should handle broadcast error', async () => {
+    it('應該能夠處理廣播錯誤', async () => {
       const event = 'test-event';
       const data = { message: 'test' };
       mockGateway.broadcastMessage.mockImplementation(() => {
@@ -85,7 +85,7 @@ describe('WebSocketService', () => {
   });
 
   describe('sendToClient', () => {
-    it('should send message to client successfully', async () => {
+    it('應該能夠發送訊息給客戶端成功', async () => {
       const clientId = 'test-client';
       const event = 'test-event';
       const data = { message: 'test' };
@@ -99,7 +99,7 @@ describe('WebSocketService', () => {
       expect(mockGateway.sendToClient).toHaveBeenCalledWith(clientId, event, data);
     });
 
-    it('should handle send error', async () => {
+    it('應該能夠處理發送錯誤', async () => {
       const clientId = 'test-client';
       const event = 'test-event';
       const data = { message: 'test' };
@@ -115,7 +115,7 @@ describe('WebSocketService', () => {
   });
 
   describe('getConnectionStats', () => {
-    it('should return connection stats', () => {
+    it('應該能夠返回連接統計資訊', () => {
       const mockCount = 5;
       mockGateway.getConnectedClientsCount.mockReturnValue(mockCount);
 
@@ -125,7 +125,7 @@ describe('WebSocketService', () => {
       expect(mockGateway.getConnectedClientsCount).toHaveBeenCalled();
     });
 
-    it('should handle stats error', () => {
+    it('應該能夠處理統計錯誤', () => {
       mockGateway.getConnectedClientsCount.mockImplementation(() => {
         throw new Error('Stats failed');
       });
