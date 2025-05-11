@@ -1,12 +1,23 @@
 import { Module } from '@nestjs/common';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TerminusModule } from '@nestjs/terminus';
+import { JwtModule } from '@nestjs/jwt';
 import { HealthController } from './health/health.controller';
 import { RedisModule } from './shared/redis/redis.module';
 import { TasksModule } from './tasks/tasks.module';
 import { AppService } from './app.service';
 import { MessageQueueService } from './services/message-queue.service';
 import { CustomLoggerModule } from '@app/logger';
+
+// 新增的服務
+import { ConnectionPoolService } from './services/connection-pool.service';
+import { BroadcastService } from './services/broadcast.service';
+import { ClientStateService } from './services/client-state.service';
+import { ReconnectionService } from './services/reconnection.service';
+import { QueueMonitorService } from './services/queue-monitor.service';
+import { MetricsService } from './services/metrics.service';
+import { MonitoringService } from './services/monitoring.service';
+import { WebSocketGateway } from './gateway/websocket.gateway';
 
 @Module({
   imports: [
@@ -18,9 +29,37 @@ import { CustomLoggerModule } from '@app/logger';
     TerminusModule,
     RedisModule,
     TasksModule,
+    JwtModule.registerAsync({
+      useFactory: (configService: ConfigService) => ({
+        secret: configService.get('JWT_SECRET'),
+        signOptions: { expiresIn: '1d' },
+      }),
+      inject: [ConfigService],
+    }),
   ],
   controllers: [HealthController],
-  providers: [AppService, MessageQueueService],
-  exports: [AppService, MessageQueueService]
+  providers: [
+    AppService,
+    MessageQueueService,
+    ConnectionPoolService,
+    BroadcastService,
+    ClientStateService,
+    ReconnectionService,
+    QueueMonitorService,
+    MetricsService,
+    MonitoringService,
+    WebSocketGateway,
+  ],
+  exports: [
+    AppService,
+    MessageQueueService,
+    ConnectionPoolService,
+    BroadcastService,
+    ClientStateService,
+    ReconnectionService,
+    QueueMonitorService,
+    MetricsService,
+    MonitoringService,
+  ]
 })
 export class AppModule {}

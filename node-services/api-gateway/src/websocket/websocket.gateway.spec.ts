@@ -140,7 +140,7 @@ describe('ApiGatewayWebSocket', () => {
     console.log('測試環境已清理');
   });
 
-  it('should be defined', () => {
+  it('應該能夠定義', () => {
     console.log('執行基本定義測試');
     expect(gateway).toBeDefined();
     console.log('基本定義測試完成');

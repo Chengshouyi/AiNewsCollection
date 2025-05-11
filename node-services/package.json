@@ -26,7 +26,21 @@
       "@nestjs/swagger": "^11.2.0",
       "@nestjs/terminus": "^11.0.0",
       "@nestjs/websockets": "^11.1.0"
-
     }
+  },
+  "dependencies": {
+    "@nestjs/axios": "^4.0.0",
+    "@nestjs/common": "^11.1.0",
+    "@nestjs/config": "^4.0.2",
+    "@nestjs/core": "^11.1.0",
+    "@nestjs/microservices": "^11.1.0",
+    "@nestjs/platform-express": "^11.1.0",
+    "@nestjs/swagger": "^11.2.0",
+    "@nestjs/testing": "^11.1.0",
+    "axios": "^1.9.0",
+    "express": "^5.1.0",
+    "reflect-metadata": "^0.2.2",
+    "rxjs": "^7.8.2",
+    "socket.io-client": "^4.8.1"
   }
 }
