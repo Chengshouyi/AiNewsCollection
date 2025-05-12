@@ -82,15 +82,32 @@ export class AppService {
     const attempts = this.reconnectAttempts.get(clientId) || 0;
 
     if (attempts < this.maxReconnectAttempts) {
-      this.reconnectAttempts.set(clientId, attempts + 1);
+      const nextAttempt = attempts + 1;
+      this.reconnectAttempts.set(clientId, nextAttempt);
+      this.logger.log(`Scheduling reconnection attempt ${nextAttempt} for client ${clientId} in ${this.reconnectDelay * nextAttempt}ms`, AppService.name);
+
       setTimeout(() => {
-        if (socket.connected) {
-          this.logger.log(`Client ${clientId} reconnected successfully`, AppService.name);
-          this.reconnectAttempts.delete(clientId);
+        const currentAttempts = this.reconnectAttempts.get(clientId);
+        if (currentAttempts !== nextAttempt) {
+            this.logger.log(`Reconnection attempt ${nextAttempt} for ${clientId} aborted or superseded.`, AppService.name);
+            return;
         }
-      }, this.reconnectDelay * (attempts + 1));
+
+        if (socket.connected) {
+          this.logger.log(`Client ${clientId} reconnected successfully on attempt ${nextAttempt}`, AppService.name);
+          this.reconnectAttempts.delete(clientId);
+        } else {
+            this.logger.log(`Client ${clientId} still not connected after attempt ${nextAttempt}.`, AppService.name);
+            if (nextAttempt < this.maxReconnectAttempts) {
+                 this.handleReconnection(socket);
+            } else {
+                 this.logger.warn(`Client ${clientId} exceeded max reconnection attempts after timeout check.`, AppService.name);
+                 this.reconnectAttempts.delete(clientId);
+            }
+        }
+      }, this.reconnectDelay * nextAttempt);
     } else {
-      this.logger.warn(`Client ${clientId} exceeded max reconnection attempts`, AppService.name);
+      this.logger.warn(`Client ${clientId} already exceeded max reconnection attempts before scheduling attempt ${attempts + 1}`, AppService.name);
       this.reconnectAttempts.delete(clientId);
     }
   }

@@ -6,7 +6,7 @@ import { AppService } from './app.service';
 import { ConfigService } from '@nestjs/config';
 import { LoggerService } from '@app/logger';
 
-async function bootstrap() {
+export async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     logger: false,
   });
@@ -71,4 +71,3 @@ async function bootstrap() {
   await httpServer.listen(port);
   appLogger.log(`WebSocket Server is running on port: ${port}`, 'Bootstrap');
 }
-bootstrap();
