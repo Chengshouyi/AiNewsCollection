@@ -17,7 +17,7 @@ import { ReconnectionService } from './services/reconnection.service';
 import { QueueMonitorService } from './services/queue-monitor.service';
 import { MetricsService } from './services/metrics.service';
 import { MonitoringService } from './services/monitoring.service';
-import { WebSocketGateway } from './gateway/websocket.gateway';
+import { AppWebSocketGateway } from './gateway/websocket.gateway';
 
 @Module({
   imports: [
@@ -48,7 +48,7 @@ import { WebSocketGateway } from './gateway/websocket.gateway';
     QueueMonitorService,
     MetricsService,
     MonitoringService,
-    WebSocketGateway,
+    AppWebSocketGateway,
   ],
   exports: [
     AppService,
