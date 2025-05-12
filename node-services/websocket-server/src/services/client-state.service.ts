@@ -19,4 +19,8 @@ export class ClientStateService {
   getClientState(socketId: string): ClientState | undefined {
     return this.clientStates.get(socketId);
   }
+
+  removeClientState(socketId: string): boolean {
+    return this.clientStates.delete(socketId);
+  }
 }
