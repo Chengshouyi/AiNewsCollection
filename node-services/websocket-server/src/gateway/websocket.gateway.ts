@@ -1,10 +1,19 @@
+import { WebSocketGateway, OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect, SubscribeMessage, MessageBody, ConnectedSocket } from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { ConnectionPoolService } from '../services/connection-pool.service';
+import { BroadcastService } from '../services/broadcast.service';
+import { ClientStateService } from '../services/client-state.service';
+import { ReconnectionService } from '../services/reconnection.service';
+import { MetricsService } from '../services/metrics.service';
+import { LoggerService } from '@app/logger';
+
 @WebSocketGateway({
   namespace: '/ws',
   cors: {
     origin: process.env.CORS_ORIGIN || '*',
   },
 })
-export class WebSocketGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+export class AppWebSocketGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly connectionPool: ConnectionPoolService,
     private readonly broadcastService: BroadcastService,

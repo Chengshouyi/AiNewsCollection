@@ -1,3 +1,5 @@
+import { Injectable } from '@nestjs/common';
+
 @Injectable()
 export class QueueMonitorService {
   private readonly metrics = {
@@ -17,5 +19,10 @@ export class QueueMonitorService {
 
   getMetrics() {
     return { ...this.metrics };
+  }
+
+  private updateAverageProcessingTime(processingTime: number) {
+    this.metrics.averageProcessingTime = 
+      (this.metrics.averageProcessingTime + processingTime) / 2;
   }
 }

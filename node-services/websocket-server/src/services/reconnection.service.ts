@@ -1,3 +1,6 @@
+import { Injectable } from '@nestjs/common';
+import { Socket } from 'socket.io';
+
 @Injectable()
 export class ReconnectionService {
   private readonly reconnectAttempts = new Map<string, number>();

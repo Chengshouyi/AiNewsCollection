@@ -1,3 +1,5 @@
+import { Injectable } from '@nestjs/common';
+
 @Injectable()
 export class MetricsService {
   private readonly metrics = {

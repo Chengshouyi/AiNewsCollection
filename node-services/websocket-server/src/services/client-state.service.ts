@@ -1,3 +1,12 @@
+import { Injectable } from '@nestjs/common';
+
+interface ClientState {
+  userId?: string;
+  room?: string;
+  status?: string;
+  lastActivity?: Date;
+}
+
 @Injectable()
 export class ClientStateService {
   private readonly clientStates = new Map<string, ClientState>();

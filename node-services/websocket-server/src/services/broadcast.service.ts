@@ -1,3 +1,7 @@
+import { Injectable } from '@nestjs/common';
+import { ConnectionPoolService } from './connection-pool.service';
+import { LoggerService } from '@app/logger';
+
 @Injectable()
 export class BroadcastService {
   constructor(

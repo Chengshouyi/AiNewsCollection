@@ -1,3 +1,8 @@
+import { Injectable } from '@nestjs/common';
+import { MetricsService } from './metrics.service';
+import { QueueMonitorService } from './queue-monitor.service';
+import { LoggerService } from '@app/logger';
+
 @Injectable()
 export class MonitoringService {
   constructor(
@@ -13,7 +18,7 @@ export class MonitoringService {
       const metrics = this.metrics.getMetrics();
       const queueMetrics = this.queueMonitor.getMetrics();
       
-      this.logger.log('系統指標', {
+      this.logger.log('系統指標', 'MonitoringService', {
         ...metrics,
         ...queueMetrics,
         timestamp: new Date(),

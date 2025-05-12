@@ -1,5 +1,11 @@
+import { Injectable } from '@nestjs/common';
+import { Socket } from 'socket.io';
+import { LoggerService } from '@app/logger';
+
 @Injectable()
 export class ConnectionPoolService {
+  constructor(private readonly logger: LoggerService) {}
+
   private readonly connections = new Map<string, Socket>();
   private readonly roomConnections = new Map<string, Set<string>>();
 
@@ -21,10 +27,18 @@ export class ConnectionPoolService {
     if (!this.roomConnections.has(room)) {
       this.roomConnections.set(room, new Set());
     }
-    this.roomConnections.get(room).add(socketId);
+    this.roomConnections.get(room)?.add(socketId);
   }
 
   removeFromRoom(socketId: string, room: string) {
     this.roomConnections.get(room)?.delete(socketId);
+  }
+
+  getRoomConnections(room: string): Set<string> {
+    return this.roomConnections.get(room) || new Set();
+  }
+
+  getAllConnections(): Socket[] {
+    return Array.from(this.connections.values());
   }
 }

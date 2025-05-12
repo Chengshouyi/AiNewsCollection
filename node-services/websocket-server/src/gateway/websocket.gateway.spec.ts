@@ -1,32 +1,46 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { WebSocketGateway } from './websocket.gateway';
+import { AppWebSocketGateway } from './websocket.gateway';
 import { ConnectionPoolService } from '../services/connection-pool.service';
 import { BroadcastService } from '../services/broadcast.service';
 import { ClientStateService } from '../services/client-state.service';
 import { MetricsService } from '../services/metrics.service';
+import { ReconnectionService } from '../services/reconnection.service';
 import { LoggerService } from '@app/logger';
 
-describe('WebSocketGateway', () => {
-  let gateway: WebSocketGateway;
+describe('AppWebSocketGateway', () => {
+  let gateway: AppWebSocketGateway;
   let connectionPool: ConnectionPoolService;
   let broadcastService: BroadcastService;
   let clientState: ClientStateService;
   let metrics: MetricsService;
+  let reconnection: ReconnectionService;
 
   const mockLoggerService = {
-    log: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn(),
+    log: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.log(`[TEST LOG] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    error: jest.fn().mockImplementation((message: any, trace?: string, context?: string) => {
+      console.error(`[TEST ERROR] ${context ? '[' + context + '] ' : ''}${message}${trace ? '\n' + trace : ''}`);
+    }),
+    warn: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.warn(`[TEST WARN] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    debug: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.debug(`[TEST DEBUG] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
+    verbose: jest.fn().mockImplementation((message: any, context?: string) => {
+      console.log(`[TEST VERBOSE] ${context ? '[' + context + '] ' : ''}${message}`);
+    }),
   };
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
-        WebSocketGateway,
+        AppWebSocketGateway,
         ConnectionPoolService,
         BroadcastService,
         ClientStateService,
+        ReconnectionService,
         MetricsService,
         {
           provide: LoggerService,
@@ -35,10 +49,11 @@ describe('WebSocketGateway', () => {
       ],
     }).compile();
 
-    gateway = module.get<WebSocketGateway>(WebSocketGateway);
+    gateway = module.get<AppWebSocketGateway>(AppWebSocketGateway);
     connectionPool = module.get<ConnectionPoolService>(ConnectionPoolService);
     broadcastService = module.get<BroadcastService>(BroadcastService);
     clientState = module.get<ClientStateService>(ClientStateService);
+    reconnection = module.get<ReconnectionService>(ReconnectionService);
     metrics = module.get<MetricsService>(MetricsService);
   });
 
@@ -73,93 +88,5 @@ describe('WebSocketGateway', () => {
       expect(connectionPool.getConnection('test-id')).toBeUndefined();
       expect(metrics.getMetrics().activeConnections).toBe(0);
     });
-  });
-});
-
-// src/services/connection-pool.service.spec.ts
-import { Test, TestingModule } from '@nestjs/testing';
-import { ConnectionPoolService } from './connection-pool.service';
-import { LoggerService } from '@app/logger';
-
-describe('ConnectionPoolService', () => {
-  let service: ConnectionPoolService;
-
-  const mockLoggerService = {
-    log: jest.fn(),
-    error: jest.fn(),
-  };
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        ConnectionPoolService,
-        {
-          provide: LoggerService,
-          useValue: mockLoggerService,
-        },
-      ],
-    }).compile();
-
-    service = module.get<ConnectionPoolService>(ConnectionPoolService);
-  });
-
-  it('應該正確管理連接池', () => {
-    const mockSocket = {
-      id: 'test-id',
-      join: jest.fn(),
-      leave: jest.fn(),
-    };
-
-    service.addConnection(mockSocket as any);
-    expect(service.getConnection('test-id')).toBeDefined();
-
-    service.removeConnection('test-id');
-    expect(service.getConnection('test-id')).toBeUndefined();
-  });
-});
-
-// src/services/broadcast.service.spec.ts
-import { Test, TestingModule } from '@nestjs/testing';
-import { BroadcastService } from './broadcast.service';
-import { ConnectionPoolService } from './connection-pool.service';
-import { LoggerService } from '@app/logger';
-
-describe('BroadcastService', () => {
-  let service: BroadcastService;
-  let connectionPool: ConnectionPoolService;
-
-  const mockLoggerService = {
-    log: jest.fn(),
-    error: jest.fn(),
-  };
-
-  beforeEach(async () => {
-    const module: TestingModule = await Test.createTestingModule({
-      providers: [
-        BroadcastService,
-        ConnectionPoolService,
-        {
-          provide: LoggerService,
-          useValue: mockLoggerService,
-        },
-      ],
-    }).compile();
-
-    service = module.get<BroadcastService>(BroadcastService);
-    connectionPool = module.get<ConnectionPoolService>(ConnectionPoolService);
-  });
-
-  it('應該正確廣播訊息到房間', async () => {
-    const mockSocket = {
-      id: 'test-id',
-      emit: jest.fn(),
-    };
-
-    connectionPool.addConnection(mockSocket as any);
-    connectionPool.addToRoom('test-id', 'test-room');
-
-    await service.broadcastToRoom('test-room', 'test-event', { data: 'test' });
-
-    expect(mockSocket.emit).toHaveBeenCalledWith('test-event', { data: 'test' });
   });
 });
