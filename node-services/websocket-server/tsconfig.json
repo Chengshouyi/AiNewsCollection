@@ -10,6 +10,10 @@
     "sourceMap": true,
     "outDir": "./dist",
     "baseUrl": "./",
+    "paths": {
+      "@app/logger": ["../packages/logger/dist"],
+      "@app/logger/*": ["../packages/logger/dist/*"]
+    },
     "incremental": true,
     "skipLibCheck": true,
     "strictNullChecks": true,

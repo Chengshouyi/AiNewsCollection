@@ -125,29 +125,29 @@ function setupWebSocket() {
         return;
     }
 
-    // 連接到 Socket.IO 伺服器和 /tasks 命名空間
-    // 使用 location.protocol, document.domain, location.port 動態構建 URL
-    console.log(`嘗試連接到WebSocket: /tasks`);
-    socket = io('/tasks');
+    // 連接到 api-gateway 的 WebSocket 服務
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+    console.log(`嘗試連接到WebSocket: ${wsUrl}`);
+    socket = io(wsUrl);
 
     socket.on('connect', () => {
-        console.log('Socket.IO Connected to /tasks');
+        console.log('Socket.IO Connected');
         // 連接成功後，自動加入當前頁面上可見任務的房間
         joinVisibleTaskRooms();
     });
 
     socket.on('disconnect', (reason) => {
-        console.log(`Socket.IO Disconnected from /tasks: ${reason}`);
+        console.log(`Socket.IO Disconnected: ${reason}`);
         // 可以加入重連邏輯
-        // if (reason === 'io server disconnect') {
-        //     // the disconnection was initiated by the server, you need to reconnect manually
-        //     socket.connect();
-        // }
+        if (reason === 'io server disconnect') {
+            // 服務器主動斷開連接，需要手動重連
+            socket.connect();
+        }
     });
 
     socket.on('connect_error', (error) => {
         console.error('Socket.IO Connection Error:', error);
-        // 可以在 UI 上顯示錯誤訊息
+        displayAlert('danger', 'WebSocket 連接錯誤，請檢查網絡連接');
     });
 
     socket.on('task_progress', function (data) {
@@ -168,22 +168,29 @@ function setupWebSocket() {
         // 標記任務完成，傳入會話ID以便在需要時使用
         markTaskAsFinished(taskId, data.status, sessionId);
 
-        // 修改：只離開基本房間名稱，因為這是我們實際加入的房間
+        // 離開房間
         const roomName = `task_${taskId}`;
         socket.emit('leave_room', { 'room': roomName });
         console.log(`離開房間: ${roomName}`);
     });
 
-    socket.on('links_fetched', function (data) {
-        console.log('Links fetched (WebSocket):', data); // data 應包含 { success, task_id, message, ... }
-        if (data.success && data.task_id) {
-            // data.task_id 是執行 "collect-links" 操作的任務 ID
-            displayAlert('info', `任務 ${data.task_id} 的連結已獲取，準備顯示選擇框。`);
-            loadFetchedLinks(data.task_id); // 使用 API/WebSocket 事件返回的 task_id
+    socket.on('system_message', function (data) {
+        console.log('System message:', data);
+        if (data.level === 'error') {
+            displayAlert('danger', data.message);
+        } else if (data.level === 'warning') {
+            displayAlert('warning', data.message);
         } else {
-            displayAlert('danger', '透過 WebSocket 獲取連結失敗: ' + (data.message || '未知錯誤'));
+            displayAlert('info', data.message);
         }
     });
+
+    // 心跳檢測
+    setInterval(() => {
+        if (socket && socket.connected) {
+            socket.emit('ping');
+        }
+    }, 30000); // 每30秒發送一次心跳
 }
 
 function joinVisibleTaskRooms() {

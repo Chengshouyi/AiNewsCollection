@@ -2,10 +2,18 @@
 import logging
 from typing import Dict, Any, List, Optional
 from enum import Enum
+import os
+import json
+import time
+import uuid
+import asyncio
+import aiohttp
+from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, current_app
 from flask_pydantic_spec import Response, Request
 from src.web.spec import spec  # 你已在 crawler_api.py 用這個
+from flask_login import login_required, current_user
 
 # 本地應用程式導入
 from src.error.handle_api_error import handle_api_error
@@ -39,6 +47,27 @@ from src.web.routes.task_response_schema import (
 # 使用統一的 logger
 logger = logging.getLogger(__name__)  # 使用統一的 logger
 
+# WebSocket 服務器配置
+WS_SERVER_URL = os.getenv('WS_SERVER_URL', 'http://node-services:4000')
+WS_API_KEY = os.getenv('WS_API_KEY', 'your-api-key')
+
+async def emit_to_websocket(room: str, event: str, data: dict):
+    """發送訊息到 WebSocket 服務器"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{WS_SERVER_URL}/api/emit",
+                json={
+                    "room": room,
+                    "event": event,
+                    "data": data
+                },
+                headers={"X-API-Key": WS_API_KEY}
+            ) as response:
+                if response.status != 200:
+                    current_app.logger.error(f"WebSocket emit failed: {await response.text()}")
+    except Exception as e:
+        current_app.logger.error(f"WebSocket emit error: {str(e)}")
 
 tasks_bp = Blueprint('tasks_api', __name__, url_prefix='/api/tasks')
 

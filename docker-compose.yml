@@ -103,7 +103,7 @@ services:
       # Dockerfile 中已經有 COPY， build image 前需確保本地 node-services 資料夾內容是最新的。
     ports:
       - "3000:3000"   # API Gateway
-      - "4000:4000"   # WebSocket
+      - "15001:4000"   # WebSocket
     environment:
       - NODE_ENV=production
     restart: unless-stopped

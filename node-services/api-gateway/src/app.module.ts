@@ -1,8 +1,8 @@
 import { Module } from '@nestjs/common';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
 import { ConfigModule } from '@nestjs/config';
-import { GatewayModule } from './gateway/gateway.module';
+import { AppService } from './app.service';
+import { WebSocketModule } from './websocket/websocket.module';
+import { CustomLoggerModule } from '@app/logger';
 
 @Module({
   imports: [
@@ -10,9 +10,10 @@ import { GatewayModule } from './gateway/gateway.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
-    GatewayModule,
+    CustomLoggerModule.forRootAsync(),
+    WebSocketModule,
   ],
-  controllers: [AppController],
   providers: [AppService],
+  exports: [AppService]
 })
 export class AppModule {}

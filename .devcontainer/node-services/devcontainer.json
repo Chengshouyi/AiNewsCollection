@@ -34,7 +34,8 @@
         5251, // Frontend (如果 VS Code 也需要轉發)
         3000, // api-gateway
         4000, // websocket-server
-        5173
+        5173, // frontend
+        6379 // redis
     ],
     // 指定需要隨 Dev Container 一起啟動的其他服務
     "runServices": [

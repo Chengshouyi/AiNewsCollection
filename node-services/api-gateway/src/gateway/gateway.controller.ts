@@ -8,6 +8,7 @@ import {
   Body,
   Headers,
   Logger,
+  Inject,
 } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
@@ -15,21 +16,25 @@ import { Request, Response } from 'express';
 import { AxiosRequestConfig, Method } from 'axios';
 import { firstValueFrom } from 'rxjs';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
+import { ClientProxy } from '@nestjs/microservices';
+import { LoggerService } from '@app/logger';
 
 @ApiTags('Backend Gateway')
 @Controller() // You can add a prefix if needed, e.g., @Controller('proxy')
 export class GatewayController {
-  private readonly logger = new Logger(GatewayController.name);
   private readonly PYTHON_BACKEND_URL: string;
 
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    @Inject('WEBSOCKET_SERVICE') private readonly websocketClient: ClientProxy,
+    private readonly logger: LoggerService,
   ) {
     const backendUrl = this.configService.get<string>(
       'PYTHON_BACKEND_URL',
     );
     if (!backendUrl) {
+      this.logger.error('PYTHON_BACKEND_URL is not defined in environment variables', GatewayController.name);
       throw new Error('PYTHON_BACKEND_URL is not defined in environment variables');
     }
     this.PYTHON_BACKEND_URL = backendUrl;
@@ -68,6 +73,7 @@ export class GatewayController {
 
     this.logger.log(
       `Forwarding request: ${method} ${targetUrl} query: ${JSON.stringify(query)}`,
+      GatewayController.name,
     );
 
     const headersToForward = { ...originalHeaders };
@@ -81,6 +87,7 @@ export class GatewayController {
       data: body,
       headers: headersToForward,
       validateStatus: function (status) {
+        this.logger.log(`validateStatus: ${status}`, GatewayController.name);
         return status >= 200 && status < 600; // Handle all status codes from backend
       },
     };
@@ -90,36 +97,112 @@ export class GatewayController {
         this.httpService.request(axiosConfig),
       );
 
+      // 處理 WebSocket 通知
+      if (backendResponse.status === 200 || backendResponse.status === 201) {
+        // 檢查是否需要發送 WebSocket 通知
+        if (this.shouldEmitWebSocketEvent(forwardPath, method, backendResponse.data)) {
+          this.logger.log(`shouldEmitWebSocketEvent: ${forwardPath} ${method} ${backendResponse.data}`, GatewayController.name);
+          await this.emitWebSocketEvent(forwardPath, method, backendResponse.data);
+        }
+      }
+
       Object.keys(backendResponse.headers).forEach((key) => {
         if (key.toLowerCase() !== 'transfer-encoding' && key.toLowerCase() !== 'connection') {
-           res.setHeader(key, backendResponse.headers[key]);
+          this.logger.log(`setHeader: ${key} ${backendResponse.headers[key]}`, GatewayController.name);
+          res.setHeader(key, backendResponse.headers[key]);
         }
       });
-      
+
+      this.logger.log(`sendResponse: ${backendResponse.status} ${backendResponse.data}`, GatewayController.name);
       res.status(backendResponse.status).send(backendResponse.data);
 
     } catch (error) {
-      this.logger.error(`Error forwarding request to ${targetUrl}: ${error.message}`);
+      this.logger.error(`Error forwarding request to ${targetUrl}: ${error.message}`, GatewayController.name);
       if (error.response) {
         Object.keys(error.response.headers).forEach((key) => {
           if (key.toLowerCase() !== 'transfer-encoding' && key.toLowerCase() !== 'connection') {
+            this.logger.log(`setHeader: ${key} ${error.response.headers[key]}`, GatewayController.name);
             res.setHeader(key, error.response.headers[key]);
           }
         });
+        this.logger.log(`sendResponse: ${error.response.status} ${error.response.data}`, GatewayController.name);
         res.status(error.response.status).send(error.response.data);
       } else if (error.request) {
+        this.logger.log(`sendResponse: 504 Gateway Timeout`, GatewayController.name);
         res.status(504).json({
           statusCode: 504,
           message: 'Gateway Timeout: No response from upstream server.',
           error: 'Gateway Timeout',
         });
       } else {
+        this.logger.log(`sendResponse: 502 Bad Gateway`, GatewayController.name);
         res.status(502).json({
           statusCode: 502,
           message: 'Bad Gateway: Error in setting up proxy request.',
           error: 'Bad Gateway',
         });
       }
+    }
+  }
+
+  // 判斷是否需要發送 WebSocket 事件
+  private shouldEmitWebSocketEvent(path: string, method: string, data: any): boolean {
+    this.logger.log(`shouldEmitWebSocketEvent: ${path} ${method} ${JSON.stringify(data)}`, GatewayController.name);
+    
+    // 確保 data 是對象
+    const dataObj = typeof data === 'string' ? JSON.parse(data) : data;
+    
+    // 添加詳細的條件檢查日誌
+    const isTaskPath = path.startsWith('tasks/');
+    const isPostMethod = method === 'POST';
+    const hasData = !!dataObj;
+    const hasSuccess = dataObj?.success === true;
+    
+    this.logger.log(
+      `shouldEmitWebSocketEvent conditions: ${JSON.stringify({
+        path,
+        method,
+        isTaskPath,
+        isPostMethod,
+        hasData,
+        hasSuccess,
+        dataObj,
+      })}`,
+      GatewayController.name
+    );
+    
+    if (isTaskPath && isPostMethod && hasData && hasSuccess) {
+      this.logger.log(`shouldEmitWebSocketEvent is true: ${path} ${method} ${JSON.stringify(dataObj)}`, GatewayController.name);
+      return true;
+    }
+    
+    this.logger.log(`shouldEmitWebSocketEvent is false: ${path} ${method} ${JSON.stringify(dataObj)}`, GatewayController.name);
+    return false;
+  }
+
+  // 發送 WebSocket 事件
+  private async emitWebSocketEvent(path: string, method: string, data: any) {
+    try {
+      const taskId = data.data?.task_id;
+      if (taskId) {
+        const room = `task_${taskId}`;
+        this.logger.log(`emitWebSocketEvent: ${room} ${method} ${JSON.stringify(data)}`, GatewayController.name);
+        await firstValueFrom(
+          this.websocketClient.emit('task_progress', {
+            room,
+            event: 'task_progress',
+            data: {
+              task_id: taskId,
+              status: data.status || 'COMPLETED',
+              progress: data.progress || 100,
+              message: data.message || '任務已完成',
+              timestamp: new Date()
+            }
+          })
+        );
+      }
+    } catch (error) {
+      this.logger.error('Error emitting WebSocket event:', error, GatewayController.name);
     }
   }
 } 
