@@ -14,7 +14,15 @@ export class BroadcastService {
     for (const socketId of connections) {
       const socket = this.connectionPool.getConnection(socketId);
       if (socket) {
-        socket.emit(event, data);
+        try {
+          socket.emit(event, data);
+        } catch (error) {
+          this.logger.error(
+            `廣播到房間 ${room} 的 socket ${socketId} 失敗`,
+            error.stack,
+            'BroadcastService'
+          );
+        }
       }
     }
   }
@@ -22,7 +30,15 @@ export class BroadcastService {
   async broadcastToAll(event: string, data: any) {
     const connections = this.connectionPool.getAllConnections();
     for (const socket of connections) {
-      socket.emit(event, data);
+      try {
+        socket.emit(event, data);
+      } catch (error) {
+        this.logger.error(
+          `廣播到所有連接的 socket ${socket.id} 失敗`,
+          error.stack,
+          'BroadcastService'
+        );
+      }
     }
   }
 }
