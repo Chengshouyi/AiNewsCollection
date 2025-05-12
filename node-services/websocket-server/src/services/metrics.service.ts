@@ -9,17 +9,23 @@ export class MetricsService {
     errorRate: 0,
   };
 
+  private latencyCount = 0;
+  private totalLatency = 0;
+
   recordConnection() {
     this.metrics.activeConnections++;
   }
 
   recordDisconnection() {
-    this.metrics.activeConnections--;
+    if (this.metrics.activeConnections > 0) {
+      this.metrics.activeConnections--;
+    }
   }
 
   recordMessageLatency(latency: number) {
-    this.metrics.averageLatency = 
-      (this.metrics.averageLatency + latency) / 2;
+    this.latencyCount++;
+    this.totalLatency += latency;
+    this.metrics.averageLatency = this.totalLatency / this.latencyCount;
   }
 
   getMetrics() {
