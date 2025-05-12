@@ -28,15 +28,21 @@ export class AppWebSocketGateway implements OnGatewayInit, OnGatewayConnection, 
   }
 
   handleConnection(client: Socket) {
-    this.connectionPool.addConnection(client);
-    this.metrics.recordConnection();
-    this.logger.log(`客戶端已連線: ${client.id}`);
+    const existingConnection = this.connectionPool.getConnection(client.id);
+    if (!existingConnection) {
+      this.connectionPool.addConnection(client);
+      this.metrics.recordConnection();
+      this.logger.log(`客戶端已連線: ${client.id}`);
+    }
   }
 
   handleDisconnect(client: Socket) {
-    this.connectionPool.removeConnection(client.id);
-    this.metrics.recordDisconnection();
-    this.logger.log(`客戶端已斷線: ${client.id}`);
+    const existingConnection = this.connectionPool.getConnection(client.id);
+    if (existingConnection) {
+      this.connectionPool.removeConnection(client.id);
+      this.metrics.recordDisconnection();
+      this.logger.log(`客戶端已斷線: ${client.id}`);
+    }
   }
 
   @SubscribeMessage('join_room')

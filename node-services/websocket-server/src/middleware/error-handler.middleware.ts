@@ -1,3 +1,7 @@
+import { Injectable, NestMiddleware } from '@nestjs/common';
+import { Request, Response } from 'express';
+import { LoggerService } from '@app/logger';
+
 @Injectable()
 export class ErrorHandlerMiddleware implements NestMiddleware {
   constructor(private readonly logger: LoggerService) {}

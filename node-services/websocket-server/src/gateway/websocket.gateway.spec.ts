@@ -71,6 +71,20 @@ describe('AppWebSocketGateway', () => {
       expect(connectionPool.getConnection('test-id')).toBeDefined();
       expect(metrics.getMetrics().activeConnections).toBe(1);
     });
+
+    it('應該處理重複連線的情況', () => {
+      const mockSocket = {
+        id: 'test-id',
+        join: jest.fn(),
+        leave: jest.fn(),
+        emit: jest.fn(),
+      };
+
+      gateway.handleConnection(mockSocket as any);
+      gateway.handleConnection(mockSocket as any);
+
+      expect(metrics.getMetrics().activeConnections).toBe(1);
+    });
   });
 
   describe('handleDisconnect', () => {
@@ -87,6 +101,85 @@ describe('AppWebSocketGateway', () => {
 
       expect(connectionPool.getConnection('test-id')).toBeUndefined();
       expect(metrics.getMetrics().activeConnections).toBe(0);
+    });
+
+    it('應該處理未知客戶端斷線的情況', () => {
+      const mockSocket = {
+        id: 'unknown-id',
+        join: jest.fn(),
+        leave: jest.fn(),
+        emit: jest.fn(),
+      };
+
+      gateway.handleDisconnect(mockSocket as any);
+      expect(metrics.getMetrics().activeConnections).toBe(0);
+    });
+  });
+
+  describe('handleJoinRoom', () => {
+    it('應該正確處理加入房間的請求', () => {
+      const mockSocket = {
+        id: 'test-id',
+        join: jest.fn(),
+        leave: jest.fn(),
+        emit: jest.fn(),
+      };
+
+      gateway.handleConnection(mockSocket as any);
+      gateway.handleJoinRoom({ room: 'test-room' }, mockSocket as any);
+
+      const roomConnections = connectionPool.getRoomConnections('test-room');
+      expect(roomConnections.has('test-id')).toBe(true);
+    });
+
+    it('應該處理加入多個房間的情況', () => {
+      const mockSocket = {
+        id: 'test-id',
+        join: jest.fn(),
+        leave: jest.fn(),
+        emit: jest.fn(),
+      };
+
+      gateway.handleConnection(mockSocket as any);
+      gateway.handleJoinRoom({ room: 'room1' }, mockSocket as any);
+      gateway.handleJoinRoom({ room: 'room2' }, mockSocket as any);
+
+      expect(connectionPool.getRoomConnections('room1').has('test-id')).toBe(true);
+      expect(connectionPool.getRoomConnections('room2').has('test-id')).toBe(true);
+    });
+  });
+
+  describe('錯誤處理', () => {
+    it('應該處理無效的房間加入請求', () => {
+      const mockSocket = {
+        id: 'test-id',
+        join: jest.fn(),
+        leave: jest.fn(),
+        emit: jest.fn(),
+      };
+
+      gateway.handleConnection(mockSocket as any);
+      gateway.handleJoinRoom({ room: '' }, mockSocket as any);
+
+      expect(connectionPool.getRoomConnections('')).toBeDefined();
+    });
+
+    it('應該處理斷線後重新連線的情況', async () => {
+      const mockSocket = {
+        id: 'test-id',
+        join: jest.fn(),
+        leave: jest.fn(),
+        emit: jest.fn(),
+        connected: true,
+      };
+
+      gateway.handleConnection(mockSocket as any);
+      gateway.handleDisconnect(mockSocket as any);
+      await reconnection.handleReconnection(mockSocket as any);
+      gateway.handleConnection(mockSocket as any);
+
+      expect(connectionPool.getConnection('test-id')).toBeDefined();
+      expect(metrics.getMetrics().activeConnections).toBe(1);
     });
   });
 });

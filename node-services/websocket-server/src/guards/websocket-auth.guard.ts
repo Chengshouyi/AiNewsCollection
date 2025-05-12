@@ -1,7 +1,7 @@
 import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Socket } from 'socket.io';
-import { LoggerService } from '../services/logger.service';
+import { LoggerService } from '@app/logger';
 
 @Injectable()
 export class WebSocketAuthGuard implements CanActivate {
