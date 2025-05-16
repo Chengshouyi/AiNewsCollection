@@ -67,6 +67,12 @@ export class GatewayController {
   ) {
     const { method, headers: originalHeaders, body } = req;
 
+    // 處理OPTIONS請求（CORS預檢請求）
+    if (method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+
     // forwardPath should now directly contain the path segment matched by '*path'
     
     const targetUrl = `${this.PYTHON_BACKEND_URL}/${forwardPath}`;
@@ -76,9 +82,28 @@ export class GatewayController {
       GatewayController.name,
     );
 
+    // 處理請求頭
     const headersToForward = { ...originalHeaders };
-    delete headersToForward['host'];
-    delete headersToForward['connection'];
+    
+    // 移除不應轉發的請求頭
+    const headersToRemove = [
+      'host', 
+      'connection', 
+      'origin', 
+      'referer', 
+      'sec-fetch-site', 
+      'sec-fetch-mode', 
+      'sec-fetch-dest'
+    ];
+    
+    headersToRemove.forEach(header => {
+      delete headersToForward[header];
+    });
+    
+    // 添加必要的請求頭
+    headersToForward['x-forwarded-for'] = req.ip;
+    headersToForward['x-forwarded-proto'] = req.protocol;
+    headersToForward['x-forwarded-host'] = req.get('host');
 
     const axiosConfig: AxiosRequestConfig = {
       method: method as Method,
@@ -106,10 +131,15 @@ export class GatewayController {
         }
       }
 
-      Object.keys(backendResponse.headers).forEach((key) => {
-        if (key.toLowerCase() !== 'transfer-encoding' && key.toLowerCase() !== 'connection') {
-          this.logger.log(`setHeader: ${key} ${backendResponse.headers[key]}`, GatewayController.name);
-          res.setHeader(key, backendResponse.headers[key]);
+      // 處理響應頭
+      const responseHeaders = backendResponse.headers;
+      const headersToSkip = ['transfer-encoding', 'connection', 'content-length'];
+      
+      Object.keys(responseHeaders).forEach((key) => {
+        const lowerKey = key.toLowerCase();
+        if (!headersToSkip.includes(lowerKey)) {
+          this.logger.log(`setHeader: ${key} ${responseHeaders[key]}`, GatewayController.name);
+          res.setHeader(key, responseHeaders[key]);
         }
       });
 
@@ -119,12 +149,18 @@ export class GatewayController {
     } catch (error) {
       this.logger.error(`Error forwarding request to ${targetUrl}: ${error.message}`, GatewayController.name);
       if (error.response) {
-        Object.keys(error.response.headers).forEach((key) => {
-          if (key.toLowerCase() !== 'transfer-encoding' && key.toLowerCase() !== 'connection') {
-            this.logger.log(`setHeader: ${key} ${error.response.headers[key]}`, GatewayController.name);
-            res.setHeader(key, error.response.headers[key]);
+        // 處理錯誤響應頭
+        const errorHeaders = error.response.headers;
+        const headersToSkip = ['transfer-encoding', 'connection', 'content-length'];
+        
+        Object.keys(errorHeaders).forEach((key) => {
+          const lowerKey = key.toLowerCase();
+          if (!headersToSkip.includes(lowerKey)) {
+            this.logger.log(`setHeader: ${key} ${errorHeaders[key]}`, GatewayController.name);
+            res.setHeader(key, errorHeaders[key]);
           }
         });
+        
         this.logger.log(`sendResponse: ${error.response.status} ${error.response.data}`, GatewayController.name);
         res.status(error.response.status).send(error.response.data);
       } else if (error.request) {

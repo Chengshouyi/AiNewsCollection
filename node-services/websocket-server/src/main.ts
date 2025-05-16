@@ -67,7 +67,7 @@ export async function bootstrap() {
   });
 
   // 從配置中讀取端口
-  const port = configService.get<number>('PORT') || 4000;
+  const port = configService.get<number>('PORT') || 15001;
   await httpServer.listen(port);
   appLogger.log(`WebSocket Server is running on port: ${port}`, 'Bootstrap');
 }
