@@ -82,15 +82,24 @@ describe('GatewayController', () => {
   });
 
   describe('handleAllRequests', () => {
-    const mockRequest = {
+    const mockRequestBase = {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        'host': 'localhost',
-        'connection': 'keep-alive',
+        host: 'localhost',
+        connection: 'keep-alive',
       },
       body: { test: 'data' },
-    } as Request;
+      ip: '127.0.0.1',
+      protocol: 'http',
+      get: jest.fn(function(headerName: string) {
+        const lowerCaseHeaderName = headerName.toLowerCase();
+        if (this.headers && this.headers[lowerCaseHeaderName]) {
+          return this.headers[lowerCaseHeaderName];
+        }
+        return undefined;
+      }),
+    };
 
     const mockResponse = {
       setHeader: jest.fn(),
@@ -99,17 +108,42 @@ describe('GatewayController', () => {
       json: jest.fn(),
     } as unknown as Response;
 
+    beforeEach(() => {
+      jest.clearAllMocks();
+      
+      mockConfigService.get.mockImplementation((key: string) => {
+        if (key === 'PYTHON_BACKEND_URL') return 'http://python-backend';
+        return null;
+      });
+      mockLoggerService.log.mockImplementation((message: any, context?: string) => {
+        console.log(`[TEST LOG] ${context ? '[' + context + '] ' : ''}${message}`);
+      });
+      mockLoggerService.error.mockImplementation((message: any, trace?: string, context?: string) => {
+        console.error(`[TEST ERROR] ${context ? '[' + context + '] ' : ''}${message}${trace ? '\n' + trace : ''}`);
+      });
+
+      mockRequestBase.get.mockClear();
+      mockRequestBase.get.mockImplementation(function(headerName: string) {
+        const lowerCaseHeaderName = headerName.toLowerCase();
+        if (this.headers && this.headers[lowerCaseHeaderName]) {
+          return this.headers[lowerCaseHeaderName];
+        }
+        return undefined;
+      });
+    });
+
     it('應該成功轉發請求並返回響應', async () => {
-      const mockRequest = {
+      const currentTestMockRequest = {
+        ...mockRequestBase,
         method: 'GET',
         headers: {
+          ...mockRequestBase.headers,
           'content-type': 'application/json',
-          'host': 'localhost',
-          'connection': 'keep-alive',
+          host: 'testhost.com',
         },
         body: { test: 'data' },
-      } as Request;
-
+      } as unknown as Request;
+      
       const mockBackendResponse = {
         status: 200,
         data: { message: 'success' },
@@ -122,7 +156,7 @@ describe('GatewayController', () => {
 
       await controller.handleAllRequests(
         'test-path',
-        mockRequest,
+        currentTestMockRequest,
         mockResponse,
         { query: 'param' },
       );
@@ -132,7 +166,11 @@ describe('GatewayController', () => {
         url: 'http://python-backend/test-path',
         params: { query: 'param' },
         data: { test: 'data' },
-        headers: expect.any(Object),
+        headers: expect.objectContaining({
+          'x-forwarded-host': 'testhost.com',
+          'x-forwarded-for': currentTestMockRequest.ip,
+          'x-forwarded-proto': currentTestMockRequest.protocol,
+        }),
         validateStatus: expect.any(Function),
       }));
 
@@ -140,12 +178,21 @@ describe('GatewayController', () => {
       expect(mockResponse.status).toHaveBeenCalledWith(200);
       expect(mockResponse.send).toHaveBeenCalledWith({ message: 'success' });
 
-      if (controller['shouldEmitWebSocketEvent']('test-path', mockRequest.method, mockBackendResponse.data)) {
-        await controller['emitWebSocketEvent']('test-path', mockRequest.method, mockBackendResponse.data);
+      if (controller['shouldEmitWebSocketEvent']('test-path', currentTestMockRequest.method, mockBackendResponse.data)) {
+        await controller['emitWebSocketEvent']('test-path', currentTestMockRequest.method, mockBackendResponse.data);
       }
     });
 
     it('應該處理後端錯誤響應', async () => {
+      const currentTestMockRequest = {
+        ...mockRequestBase,
+        method: 'POST',
+        headers: {
+          ...mockRequestBase.headers,
+          host: 'anotherhost.com',
+        },
+      } as unknown as Request;
+
       const mockErrorResponse = {
         response: {
           status: 404,
@@ -160,29 +207,43 @@ describe('GatewayController', () => {
 
       await controller.handleAllRequests(
         'test-path',
-        mockRequest,
+        currentTestMockRequest,
         mockResponse,
         {},
       );
+
+      expect(mockHttpService.request).toHaveBeenCalledWith(expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-forwarded-host': 'anotherhost.com',
+        }),
+      }));
 
       expect(mockResponse.status).toHaveBeenCalledWith(404);
       expect(mockResponse.send).toHaveBeenCalledWith({ message: 'Not Found' });
     });
 
     it('應該處理後端超時錯誤', async () => {
+      const currentTestMockRequest = {
+        ...mockRequestBase,
+        headers: { ...mockRequestBase.headers, host: 'timeout-host.com' },
+      } as unknown as Request;
+    
       const mockTimeoutError = {
         request: {},
       };
-
+    
       mockHttpService.request.mockReturnValue(throwError(() => mockTimeoutError));
-
+    
       await controller.handleAllRequests(
         'test-path',
-        mockRequest,
+        currentTestMockRequest,
         mockResponse,
         {},
       );
-
+    
+      expect(mockHttpService.request).toHaveBeenCalledWith(expect.objectContaining({
+        headers: expect.objectContaining({ 'x-forwarded-host': 'timeout-host.com' }),
+      }));
       expect(mockResponse.status).toHaveBeenCalledWith(504);
       expect(mockResponse.json).toHaveBeenCalledWith({
         statusCode: 504,
@@ -190,19 +251,27 @@ describe('GatewayController', () => {
         error: 'Gateway Timeout',
       });
     });
-
+    
     it('應該處理其他錯誤', async () => {
+      const currentTestMockRequest = {
+        ...mockRequestBase,
+        headers: { ...mockRequestBase.headers, host: 'other-error-host.com' },
+      } as unknown as Request;
+
       const mockError = new Error('Unknown error');
-
+    
       mockHttpService.request.mockReturnValue(throwError(() => mockError));
-
+    
       await controller.handleAllRequests(
         'test-path',
-        mockRequest,
+        currentTestMockRequest,
         mockResponse,
         {},
       );
-
+    
+      expect(mockHttpService.request).toHaveBeenCalledWith(expect.objectContaining({
+        headers: expect.objectContaining({ 'x-forwarded-host': 'other-error-host.com' }),
+      }));
       expect(mockResponse.status).toHaveBeenCalledWith(502);
       expect(mockResponse.json).toHaveBeenCalledWith({
         statusCode: 502,
@@ -210,45 +279,54 @@ describe('GatewayController', () => {
         error: 'Bad Gateway',
       });
     });
-
+    
     it('應該在任務完成時發送 WebSocket 通知', async () => {
+      const currentTestMockRequest = {
+        ...mockRequestBase,
+        method: 'POST',
+        headers: { 
+          ...mockRequestBase.headers, 
+          'content-type': 'application/json',
+          host: 'task-host.com',
+        },
+        body: { test: 'data' },
+      } as unknown as Request;
+
       const mockTaskResponse = {
         status: 200,
         data: {
           success: true,
-          data: {
-            task_id: '123',
-          },
+          data: { task_id: '123' },
           status: 'COMPLETED',
           progress: 100,
           message: '任務已完成',
         },
-        headers: {
-          'content-type': 'application/json',
-        },
+        headers: { 'content-type': 'application/json' },
       };
-
+    
       mockHttpService.request.mockReturnValue(of(mockTaskResponse));
       mockWebsocketClient.emit.mockReturnValue(of({}));
-
-      // 添加更多日誌
+    
       console.log('Debug info before handleAllRequests:', {
         mockTaskResponse,
-        mockRequest,
+        mockRequest: currentTestMockRequest,
       });
-
+    
       await controller.handleAllRequests(
         'tasks/create',
-        mockRequest,
+        currentTestMockRequest,
         mockResponse,
         {},
       );
-
-      // 添加更多日誌
+      
+      expect(mockHttpService.request).toHaveBeenCalledWith(expect.objectContaining({
+        headers: expect.objectContaining({ 'x-forwarded-host': 'task-host.com' }),
+      }));
+    
       console.log('Debug info after handleAllRequests:', {
         emitCalls: mockWebsocketClient.emit.mock.calls,
       });
-
+    
       expect(mockWebsocketClient.emit).toHaveBeenCalledWith('task_progress', {
         room: 'task_123',
         event: 'task_progress',
@@ -260,6 +338,8 @@ describe('GatewayController', () => {
           timestamp: expect.any(Date),
         },
       });
+      expect(mockResponse.status).toHaveBeenCalledWith(200);
+      expect(mockResponse.send).toHaveBeenCalledWith(mockTaskResponse.data);
     });
   });
 });
