@@ -1,0 +1,45 @@
+---
+description:
+globs:
+alwaysApply: false
+---
+# Vue.js 狀態管理規範
+
+## 架構設計
+- 使用 Pinia 進行狀態管理
+- 按功能模塊劃分 store
+- 使用 TypeScript 定義類型
+- 遵循以下目錄結構：
+  ```
+  store/
+    ├── index.js          # store 主配置
+    ├── modules/          # store 模塊
+    │   ├── user.js      # 用戶相關狀態
+    │   ├── app.js       # 應用全局狀態
+    │   └── settings.js  # 設置相關狀態
+    └── types/           # 類型定義
+  ```
+
+## 狀態設計
+- 使用 defineStore 定義 store
+- 實現狀態的類型安全
+- 使用 actions 處理異步操作
+- 使用 getters 處理派生狀態
+
+## 模塊化
+- 按功能劃分 store 模塊
+- 實現模塊間的通信
+- 避免循環依賴
+- 保持模塊獨立性
+
+## 性能優化
+- 使用 computed 優化計算
+- 實現狀態持久化
+- 優化狀態更新
+- 處理大量數據
+
+## 開發工具
+- 配置 Vue DevTools
+- 實現狀態快照
+- 支持時間旅行調試
+- 記錄狀態變更

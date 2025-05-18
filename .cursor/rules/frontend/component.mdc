@@ -1,0 +1,63 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Vue.js 組件開發規範
+
+## 組件結構
+- 使用 Vue 3 Composition API
+- 遵循單文件組件（SFC）規範
+- 使用 TypeScript 進行類型檢查
+- 組件命名使用 PascalCase
+
+## 文件組織
+- 組件文件使用 .vue 擴展名
+- 相關組件放在同一目錄下
+- 使用 index.js 導出組件
+- 遵循以下目錄結構：
+  ```
+  components/
+    ├── common/          # 通用組件
+    ├── layout/          # 布局組件
+    └── features/        # 功能組件
+  ```
+
+## 組件設計
+- 使用 Composition API 的 setup 函數
+- 使用 defineProps 和 defineEmits 進行類型檢查
+- 使用 provide/inject 進行深層組件通信
+- 使用 v-model 進行雙向綁定
+
+## 狀態管理
+- 使用 Pinia 進行狀態管理
+- 按功能模塊劃分 store
+- 使用 actions 處理異步操作
+- 使用 getters 處理派生狀態
+
+## 性能優化
+- 使用 v-memo 優化渲染
+- 實現適當的錯誤邊界
+- 使用動態組件和異步組件
+- 合理使用 keep-alive
+
+## 樣式規範
+- 使用 scoped 樣式
+- 使用 CSS 變量管理主題
+- 遵循 BEM 命名規範
+- 使用 SCSS/SASS 預處理器
+
+## 測試
+- 使用 Vitest 進行單元測試
+- 使用 Vue Test Utils
+- 實現組件快照測試
+- 測試覆蓋關鍵業務邏輯
+
+## 文檔
+- 使用 JSDoc 註釋
+- 為組件添加使用說明
+- 記錄 props 和 events
+- 提供使用示例
+
+
+

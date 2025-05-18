@@ -1,0 +1,37 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Node.js 微服務開發規範
+
+## 代碼風格
+- 使用 ESLint 和 Prettier
+- 遵循 Airbnb JavaScript 風格指南
+- 使用 TypeScript 進行類型檢查
+
+## 架構設計
+- 使用 Express/NestJS 框架
+- 實現微服務架構
+- 使用適當的設計模式
+
+## API 設計
+- 遵循 RESTful 原則
+- 實現適當的版本控制
+- 使用 OpenAPI/Swagger 文檔
+
+## 錯誤處理
+- 實現全局錯誤處理
+- 使用適當的錯誤日誌
+- 返回標準化的錯誤響應
+
+## 性能優化
+- 實現緩存策略
+- 優化數據庫查詢
+- 使用適當的負載均衡
+
+## 監控
+- 實現健康檢查
+- 使用適當的監控工具
+- 記錄關鍵指標
+
