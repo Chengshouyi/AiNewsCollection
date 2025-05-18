@@ -3,8 +3,10 @@ description:
 globs: 
 alwaysApply: true
 ---
-# Git Commit Message 規範
-
+---
+description: Git Commit Message 規範
+globs: ["**/**"]
+--- 
 ## 基本格式
 ```
 <type>(<scope>): <subject>
@@ -112,4 +114,6 @@ Closes #123
 - 錯誤修復：每修復一個問題
 - 代碼重構：每完成一個重構單元
 - 文檔更新：每完成一個文檔章節 -->
+
+
 
