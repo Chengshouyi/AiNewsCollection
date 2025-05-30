@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: 當進行frontend的路由開發時使用
+globs: 
 alwaysApply: false
 ---
 # Vue.js 路由配置規範

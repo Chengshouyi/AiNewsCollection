@@ -1,6 +1,6 @@
 ---
-description:
-globs:
+description: 當進行frontend狀態管理時使用
+globs: 
 alwaysApply: false
 ---
 # Vue.js 狀態管理規範

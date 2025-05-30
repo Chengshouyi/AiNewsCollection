@@ -1,6 +1,6 @@
 ---
 description: 
-globs: 
+globs: *.py
 alwaysApply: false
 ---
 # Python 後端開發規範
