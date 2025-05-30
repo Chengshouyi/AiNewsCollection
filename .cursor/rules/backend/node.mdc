@@ -1,10 +1,8 @@
 ---
 description: 
-globs: 
+globs: *.ts
 alwaysApply: false
 ---
-# Node.js 微服務開發規範
-
 ## 代碼風格
 - 使用 ESLint 和 Prettier
 - 遵循 Airbnb JavaScript 風格指南
@@ -34,4 +32,3 @@ alwaysApply: false
 - 實現健康檢查
 - 使用適當的監控工具
 - 記錄關鍵指標
-

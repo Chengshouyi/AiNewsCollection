@@ -1,12 +1,9 @@
 ---
 description: 
-globs: 
-alwaysApply: true
+globs: *.*
+alwaysApply: false
 ---
----
-description: Git Commit Message 規範
-globs: ["**/**"]
---- 
+
 ## 基本格式
 ```
 <type>(<scope>): <subject>
