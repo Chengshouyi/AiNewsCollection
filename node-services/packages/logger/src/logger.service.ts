@@ -31,7 +31,6 @@ export class LoggerService {
       level: logLevel,
       base: {
         service: this.serviceName,
-        // pid: process.pid, // pid can be noisy, consider if needed
       },
       timestamp: () => `,"time":"${dayjs().format()}"`,
       formatters: {
@@ -42,20 +41,24 @@ export class LoggerService {
     };
 
     if (usePrettyPrint) {
-      pinoOptions.transport = {
-        target: 'pino-pretty',
-        options: {
-          colorize: true,
-          translateTime: 'SYS:standard',
-          ignore: 'pid,hostname,service', // service is part of our base
-          messageFormat: (log, messageKey) => {
-            const context = log.context ? `[${log.context}] ` : '';
-            const service = log.service ? `(${log.service}) ` : ''; // if not ignored
-            return `${service}${context}${log[messageKey]}`;
-          }
-        },
-      };
+      // 在測試環境中避免使用 transport 以防止 DataCloneError
+      if (process.env.NODE_ENV === 'test') {
+        // 在測試環境中使用簡單的格式，不使用 transport
+        pinoOptions.transport = undefined;
+      } else {
+        pinoOptions.transport = {
+          target: 'pino-pretty',
+          options: {
+            colorize: true,
+            translateTime: 'SYS:standard',
+            ignore: 'pid,hostname,service',
+            // 使用字符串模板，避免函數序列化問題
+            messageFormat: '{if service}({service}) {end}{if context}[{context}] {end}{msg}'
+          },
+        };
+      }
     }
+
     this.pinoLogger = pino(pinoOptions, destination);
   }
 

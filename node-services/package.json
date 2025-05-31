@@ -8,10 +8,18 @@
   "scripts": {
     "dev": "concurrently \"pnpm --filter api-gateway dev\" \"pnpm --filter websocket-server dev\"",
     "build": "pnpm --filter @app/logger build && pnpm --filter api-gateway build && pnpm --filter websocket-server build",
-    "start": "concurrently \"pnpm --filter api-gateway start\" \"pnpm --filter websocket-server start\""
+    "start": "concurrently \"pnpm --filter api-gateway start\" \"pnpm --filter websocket-server start\"",
+    "test:logger": "pnpm --filter @app/logger test",
+    "test:logger:cov": "pnpm --filter @app/logger test:cov",
+    "test:all": "pnpm --filter @app/logger test && pnpm --filter api-gateway test && pnpm --filter websocket-server test",
+    "test:e2e:all": "pnpm --filter api-gateway test:e2e && pnpm --filter websocket-server test:e2e",
+    "test:cov:all": "pnpm --filter @app/logger test:cov && pnpm --filter api-gateway test:cov && pnpm --filter websocket-server test:cov"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "@types/jest": "^29.5.14",
+    "concurrently": "^8.2.2",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.3.4"
   },
   "pnpm": {
     "overrides": {

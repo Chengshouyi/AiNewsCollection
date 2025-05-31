@@ -12,8 +12,8 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request, current_app
 from flask_pydantic_spec import Response, Request
-from src.web.spec import spec  # 你已在 crawler_api.py 用這個
-from flask_login import login_required, current_user
+from src.web.spec import spec
+# from flask_login import login_required, current_user
 
 # 本地應用程式導入
 from src.error.handle_api_error import handle_api_error
