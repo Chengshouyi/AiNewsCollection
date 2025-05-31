@@ -4,23 +4,34 @@ import { LoggerService } from '@app/logger';
 
 describe('ClientStateService', () => {
   let service: ClientStateService;
-  let loggerService: LoggerService;
 
   const mockLoggerService = {
     log: jest.fn().mockImplementation((message: any, context?: string) => {
-      console.log(`[TEST LOG] ${context ? '[' + context + '] ' : ''}${message}`);
+      console.log(
+        `[TEST LOG] ${context ? '[' + context + '] ' : ''}${message}`,
+      );
     }),
-    error: jest.fn().mockImplementation((message: any, trace?: string, context?: string) => {
-      console.error(`[TEST ERROR] ${context ? '[' + context + '] ' : ''}${message}${trace ? '\n' + trace : ''}`);
-    }),
+    error: jest
+      .fn()
+      .mockImplementation((message: any, trace?: string, context?: string) => {
+        console.error(
+          `[TEST ERROR] ${context ? '[' + context + '] ' : ''}${message}${trace ? '\n' + trace : ''}`,
+        );
+      }),
     warn: jest.fn().mockImplementation((message: any, context?: string) => {
-      console.warn(`[TEST WARN] ${context ? '[' + context + '] ' : ''}${message}`);
+      console.warn(
+        `[TEST WARN] ${context ? '[' + context + '] ' : ''}${message}`,
+      );
     }),
     debug: jest.fn().mockImplementation((message: any, context?: string) => {
-      console.debug(`[TEST DEBUG] ${context ? '[' + context + '] ' : ''}${message}`);
+      console.debug(
+        `[TEST DEBUG] ${context ? '[' + context + '] ' : ''}${message}`,
+      );
     }),
     verbose: jest.fn().mockImplementation((message: any, context?: string) => {
-      console.log(`[TEST VERBOSE] ${context ? '[' + context + '] ' : ''}${message}`);
+      console.log(
+        `[TEST VERBOSE] ${context ? '[' + context + '] ' : ''}${message}`,
+      );
     }),
   };
 
@@ -36,7 +47,6 @@ describe('ClientStateService', () => {
     }).compile();
 
     service = module.get<ClientStateService>(ClientStateService);
-    loggerService = module.get<LoggerService>(LoggerService);
   });
 
   it('應該被定義', () => {
@@ -168,12 +178,12 @@ describe('ClientStateService', () => {
       ];
 
       // 設置多個客戶端狀態
-      clients.forEach(client => {
+      clients.forEach((client) => {
         service.updateClientState(client.id, client.state);
       });
 
       // 驗證每個客戶端狀態
-      clients.forEach(client => {
+      clients.forEach((client) => {
         const result = service.getClientState(client.id);
         expect(result).toEqual(client.state);
       });
@@ -207,7 +217,7 @@ describe('ClientStateService', () => {
         'socket&ghi',
       ];
 
-      specialIds.forEach(id => {
+      specialIds.forEach((id) => {
         const state = { userId: `user-${id}` };
         service.updateClientState(id, state);
         const result = service.getClientState(id);
@@ -230,4 +240,4 @@ describe('ClientStateService', () => {
       expect(result).toEqual({});
     });
   });
-}); 
+});

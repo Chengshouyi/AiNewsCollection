@@ -32,4 +32,4 @@ export interface AckMessage {
   status: 'received' | 'processed' | 'failed';
   timestamp: Date;
   error?: string;
-} 
+}

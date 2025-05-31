@@ -21,7 +21,9 @@ import { LoggerService } from '@app/logger';
     origin: process.env.CORS_ORIGIN || '*',
   },
 })
-export class AppWebSocketGateway implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect {
+export class AppWebSocketGateway
+  implements OnGatewayInit, OnGatewayConnection, OnGatewayDisconnect
+{
   constructor(
     private readonly connectionPool: ConnectionPoolService,
     private readonly broadcastService: BroadcastService,
@@ -31,7 +33,8 @@ export class AppWebSocketGateway implements OnGatewayInit, OnGatewayConnection, 
     private readonly logger: LoggerService,
   ) {}
 
-  afterInit(server: Server) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  afterInit(_server: Server) {
     this.logger.log('WebSocket 閘道已初始化');
   }
 
@@ -59,10 +62,8 @@ export class AppWebSocketGateway implements OnGatewayInit, OnGatewayConnection, 
     @ConnectedSocket() client: Socket,
   ) {
     this.connectionPool.addToRoom(client.id, data.room);
-    this.broadcastService.broadcastToRoom(
-      data.room,
-      'user_joined',
-      { userId: client.id }
-    );
+    void this.broadcastService.broadcastToRoom(data.room, 'user_joined', {
+      userId: client.id,
+    });
   }
 }

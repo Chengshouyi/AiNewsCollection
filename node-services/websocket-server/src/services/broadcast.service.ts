@@ -6,10 +6,10 @@ import { LoggerService } from '@app/logger';
 export class BroadcastService {
   constructor(
     private readonly connectionPool: ConnectionPoolService,
-    private readonly logger: LoggerService
+    private readonly logger: LoggerService,
   ) {}
 
-  async broadcastToRoom(room: string, event: string, data: any) {
+  broadcastToRoom(room: string, event: string, data: any) {
     const connections = this.connectionPool.getRoomConnections(room);
     for (const socketId of connections) {
       const socket = this.connectionPool.getConnection(socketId);
@@ -19,15 +19,15 @@ export class BroadcastService {
         } catch (error) {
           this.logger.error(
             `廣播到房間 ${room} 的 socket ${socketId} 失敗`,
-            error.stack,
-            'BroadcastService'
+            (error as Error).stack,
+            'BroadcastService',
           );
         }
       }
     }
   }
 
-  async broadcastToAll(event: string, data: any) {
+  broadcastToAll(event: string, data: any) {
     const connections = this.connectionPool.getAllConnections();
     for (const socket of connections) {
       try {
@@ -35,8 +35,8 @@ export class BroadcastService {
       } catch (error) {
         this.logger.error(
           `廣播到所有連接的 socket ${socket.id} 失敗`,
-          error.stack,
-          'BroadcastService'
+          (error as Error).stack,
+          'BroadcastService',
         );
       }
     }

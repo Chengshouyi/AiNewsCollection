@@ -155,24 +155,24 @@ describe('bootstrap', () => {
     expect(mockSetSocketServer).toHaveBeenCalledWith(mockIoServerInstance);
 
     expect(mockConfigServiceGet).toHaveBeenCalledWith('PORT');
-    expect(mockHttpServerListen).toHaveBeenCalledWith(4000); // Default port
-    expect(mockLoggerLog).toHaveBeenCalledWith('WebSocket Server is running on port: 4000', 'Bootstrap');
+    expect(mockHttpServerListen).toHaveBeenCalledWith(15001); // Default port
+    expect(mockLoggerLog).toHaveBeenCalledWith('WebSocket Server is running on port: 15001', 'Bootstrap');
   });
 
   it('should use PORT from config if available', async () => {
     mockConfigServiceGet.mockImplementation((key: string) => {
-      if (key === 'PORT') return 5000;
+      if (key === 'PORT') return 15001;
       return undefined;
     });
     await bootstrap();
-    expect(mockHttpServerListen).toHaveBeenCalledWith(5000);
-    expect(mockLoggerLog).toHaveBeenCalledWith('WebSocket Server is running on port: 5000', 'Bootstrap');
+    expect(mockHttpServerListen).toHaveBeenCalledWith(15001);
+    expect(mockLoggerLog).toHaveBeenCalledWith('WebSocket Server is running on port: 15001', 'Bootstrap');
   });
 
   it('should use CORS_ORIGIN from config if available', async () => {
     mockConfigServiceGet.mockImplementation((key: string, defaultValue?: any) => {
       if (key === 'CORS_ORIGIN') return 'http://custom.origin';
-      if (key === 'PORT') return 4000;
+      if (key === 'PORT') return 15001;
       return defaultValue;
     });
     await bootstrap();

@@ -1,15 +1,19 @@
-import { Controller, Get, Logger } from '@nestjs/common';
-import { HealthCheck, HealthCheckService, HealthIndicatorResult, HealthCheckResult, HttpHealthIndicator } from '@nestjs/terminus';
+import { Controller, Get } from '@nestjs/common';
+import {
+  HealthCheck,
+  HealthCheckService,
+  HealthCheckResult,
+  HttpHealthIndicator,
+} from '@nestjs/terminus';
 import { RedisService } from '../shared/redis/redis.service';
 import { LoggerService } from '@app/logger';
 @Controller('health')
 export class HealthController {
-
   constructor(
     private health: HealthCheckService,
     private http: HttpHealthIndicator,
     private redisService: RedisService,
-    private logger: LoggerService
+    private logger: LoggerService,
   ) {}
 
   @Get()
@@ -23,11 +27,20 @@ export class HealthController {
           await this.redisService.getClient().ping();
           this.logger.log('redis_ping_success', HealthController.name);
           return { redis: { status: 'up' } };
-        } catch (error) {
-          this.logger.error('redis_ping_failed', error, HealthController.name);
-          return { redis: { status: 'down', message: error.message } };
+        } catch (error: unknown) {
+          this.logger.error(
+            'redis_ping_failed',
+            error as Error,
+            HealthController.name,
+          );
+          return {
+            redis: {
+              status: 'down',
+              message: (error as Error).message,
+            },
+          };
         }
-      }
+      },
     ]);
   }
 }

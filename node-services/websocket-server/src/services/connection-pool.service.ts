@@ -37,14 +37,14 @@ export class ConnectionPoolService {
       this.roomConnections.set(room, new Set());
     }
     this.roomConnections.get(room)?.add(socketId);
-    socket.join(room);
+    void socket.join(room);
     this.logger.log(`添加到房間: ${socketId} -> ${room}`);
   }
 
   removeFromRoom(socketId: string, room: string) {
     const socket = this.connections.get(socketId);
     if (socket) {
-      socket.leave(room);
+      void socket.leave(room);
     }
     this.roomConnections.get(room)?.delete(socketId);
     this.logger.log(`從房間移除: ${socketId} -> ${room}`);

@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { BaseMessage, ChatMessage, TaskMessage } from '../interfaces/message.interface';
+import { Injectable } from '@nestjs/common';
+import { BaseMessage } from '../interfaces/message.interface';
 import { LoggerService } from '@app/logger';
 
 @Injectable()
@@ -11,32 +11,41 @@ export class MessageQueueService {
   constructor(private readonly logger: LoggerService) {}
 
   // 儲存訊息到佇列
-  async queueMessage(room: string, message: BaseMessage): Promise<void> {
+  queueMessage(room: string, message: BaseMessage): void {
     if (!this.messageQueue.has(room)) {
       this.messageQueue.set(room, []);
     }
-    const roomMessages = this.messageQueue.get(room)!;
+    const roomMessages = this.messageQueue.get(room);
     roomMessages.push(message);
-    this.logger.log(`Message queued for room ${room}: ${message.id}`, MessageQueueService.name);
+    this.logger.log(
+      `Message queued for room ${room}: ${message.id}`,
+      MessageQueueService.name,
+    );
   }
 
   // 從佇列中獲取訊息
-  async getQueuedMessages(room: string): Promise<BaseMessage[]> {
+  getQueuedMessages(room: string): BaseMessage[] {
     const messages = this.messageQueue.get(room) || [];
     this.messageQueue.delete(room);
-    this.logger.log(`getQueuedMessages: ${room} ${messages.length}`, MessageQueueService.name);
+    this.logger.log(
+      `getQueuedMessages: ${room} ${messages.length}`,
+      MessageQueueService.name,
+    );
     return messages;
   }
 
   // 儲存訊息到歷史記錄
-  async saveToHistory(room: string, message: BaseMessage): Promise<void> {
+  saveToHistory(room: string, message: BaseMessage): void {
     if (!this.messageHistory.has(room)) {
       this.messageHistory.set(room, []);
     }
-    const history = this.messageHistory.get(room)!;
-    this.logger.log(`saveToHistory: ${room} ${message.id}`, MessageQueueService.name);
+    const history = this.messageHistory.get(room);
+    this.logger.log(
+      `saveToHistory: ${room} ${message.id}`,
+      MessageQueueService.name,
+    );
     history.push(message);
-    
+
     // 限制歷史記錄大小
     if (history.length > this.maxHistorySize) {
       history.shift();
@@ -44,15 +53,21 @@ export class MessageQueueService {
   }
 
   // 獲取歷史訊息
-  async getMessageHistory(room: string, limit: number = 50): Promise<BaseMessage[]> {
+  getMessageHistory(room: string, limit: number = 50): BaseMessage[] {
     const history = this.messageHistory.get(room) || [];
-    this.logger.log(`getMessageHistory: ${room} ${history.length}`, MessageQueueService.name);
+    this.logger.log(
+      `getMessageHistory: ${room} ${history.length}`,
+      MessageQueueService.name,
+    );
     return history.slice(-limit);
   }
 
   // 清除特定房間的歷史記錄
-  async clearHistory(room: string): Promise<void> {
+  clearHistory(room: string): void {
     this.messageHistory.delete(room);
-    this.logger.log(`History cleared for room ${room}`, MessageQueueService.name);
+    this.logger.log(
+      `History cleared for room ${room}`,
+      MessageQueueService.name,
+    );
   }
-} 
+}

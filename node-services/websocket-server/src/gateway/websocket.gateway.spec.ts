@@ -6,30 +6,45 @@ import { ClientStateService } from '../services/client-state.service';
 import { MetricsService } from '../services/metrics.service';
 import { ReconnectionService } from '../services/reconnection.service';
 import { LoggerService } from '@app/logger';
+import { Socket } from 'socket.io';
 
 describe('AppWebSocketGateway', () => {
   let gateway: AppWebSocketGateway;
   let connectionPool: ConnectionPoolService;
-  let broadcastService: BroadcastService;
-  let clientState: ClientStateService;
   let metrics: MetricsService;
   let reconnection: ReconnectionService;
 
   const mockLoggerService = {
     log: jest.fn().mockImplementation((message: any, context?: string) => {
-      console.log(`[TEST LOG] ${context ? '[' + context + '] ' : ''}${message}`);
+      console.log(
+        `[TEST LOG] ${context ? '[' + context + '] ' : ''}${message}`,
+      );
     }),
-    error: jest.fn().mockImplementation((message: any, trace?: string, context?: string) => {
-      console.error(`[TEST ERROR] ${context ? '[' + context + '] ' : ''}${message}${trace ? '\n' + trace : ''}`);
-    }),
+    error: jest
+      .fn()
+      .mockImplementation((message: any, trace?: string, context?: string) => {
+        if (trace) {
+          console.error(
+            `[TEST ERROR] ${context ? '[' + context + '] ' : ''}${message}${trace ? '\n' + trace : ''}`,
+          );
+        } else {
+          console.error(`[TEST ERROR] ${message}`);
+        }
+      }),
     warn: jest.fn().mockImplementation((message: any, context?: string) => {
-      console.warn(`[TEST WARN] ${context ? '[' + context + '] ' : ''}${message}`);
+      console.warn(
+        `[TEST WARN] ${context ? '[' + context + '] ' : ''}${message}`,
+      );
     }),
     debug: jest.fn().mockImplementation((message: any, context?: string) => {
-      console.debug(`[TEST DEBUG] ${context ? '[' + context + '] ' : ''}${message}`);
+      console.debug(
+        `[TEST DEBUG] ${context ? '[' + context + '] ' : ''}${message}`,
+      );
     }),
     verbose: jest.fn().mockImplementation((message: any, context?: string) => {
-      console.log(`[TEST VERBOSE] ${context ? '[' + context + '] ' : ''}${message}`);
+      console.log(
+        `[TEST VERBOSE] ${context ? '[' + context + '] ' : ''}${message}`,
+      );
     }),
   };
 
@@ -51,8 +66,6 @@ describe('AppWebSocketGateway', () => {
 
     gateway = module.get<AppWebSocketGateway>(AppWebSocketGateway);
     connectionPool = module.get<ConnectionPoolService>(ConnectionPoolService);
-    broadcastService = module.get<BroadcastService>(BroadcastService);
-    clientState = module.get<ClientStateService>(ClientStateService);
     reconnection = module.get<ReconnectionService>(ReconnectionService);
     metrics = module.get<MetricsService>(MetricsService);
   });
@@ -64,9 +77,9 @@ describe('AppWebSocketGateway', () => {
         join: jest.fn(),
         leave: jest.fn(),
         emit: jest.fn(),
-      };
+      } as Partial<Socket> as Socket;
 
-      gateway.handleConnection(mockSocket as any);
+      gateway.handleConnection(mockSocket);
 
       expect(connectionPool.getConnection('test-id')).toBeDefined();
       expect(metrics.getMetrics().activeConnections).toBe(1);
@@ -78,10 +91,10 @@ describe('AppWebSocketGateway', () => {
         join: jest.fn(),
         leave: jest.fn(),
         emit: jest.fn(),
-      };
+      } as Partial<Socket> as Socket;
 
-      gateway.handleConnection(mockSocket as any);
-      gateway.handleConnection(mockSocket as any);
+      gateway.handleConnection(mockSocket);
+      gateway.handleConnection(mockSocket);
 
       expect(metrics.getMetrics().activeConnections).toBe(1);
     });
@@ -94,10 +107,10 @@ describe('AppWebSocketGateway', () => {
         join: jest.fn(),
         leave: jest.fn(),
         emit: jest.fn(),
-      };
+      } as Partial<Socket> as Socket;
 
-      gateway.handleConnection(mockSocket as any);
-      gateway.handleDisconnect(mockSocket as any);
+      gateway.handleConnection(mockSocket);
+      gateway.handleDisconnect(mockSocket);
 
       expect(connectionPool.getConnection('test-id')).toBeUndefined();
       expect(metrics.getMetrics().activeConnections).toBe(0);
@@ -109,9 +122,9 @@ describe('AppWebSocketGateway', () => {
         join: jest.fn(),
         leave: jest.fn(),
         emit: jest.fn(),
-      };
+      } as Partial<Socket> as Socket;
 
-      gateway.handleDisconnect(mockSocket as any);
+      gateway.handleDisconnect(mockSocket);
       expect(metrics.getMetrics().activeConnections).toBe(0);
     });
   });
@@ -123,10 +136,10 @@ describe('AppWebSocketGateway', () => {
         join: jest.fn(),
         leave: jest.fn(),
         emit: jest.fn(),
-      };
+      } as Partial<Socket> as Socket;
 
-      gateway.handleConnection(mockSocket as any);
-      gateway.handleJoinRoom({ room: 'test-room' }, mockSocket as any);
+      gateway.handleConnection(mockSocket);
+      gateway.handleJoinRoom({ room: 'test-room' }, mockSocket);
 
       const roomConnections = connectionPool.getRoomConnections('test-room');
       expect(roomConnections.has('test-id')).toBe(true);
@@ -138,14 +151,18 @@ describe('AppWebSocketGateway', () => {
         join: jest.fn(),
         leave: jest.fn(),
         emit: jest.fn(),
-      };
+      } as Partial<Socket> as Socket;
 
-      gateway.handleConnection(mockSocket as any);
-      gateway.handleJoinRoom({ room: 'room1' }, mockSocket as any);
-      gateway.handleJoinRoom({ room: 'room2' }, mockSocket as any);
+      gateway.handleConnection(mockSocket);
+      gateway.handleJoinRoom({ room: 'room1' }, mockSocket);
+      gateway.handleJoinRoom({ room: 'room2' }, mockSocket);
 
-      expect(connectionPool.getRoomConnections('room1').has('test-id')).toBe(true);
-      expect(connectionPool.getRoomConnections('room2').has('test-id')).toBe(true);
+      expect(connectionPool.getRoomConnections('room1').has('test-id')).toBe(
+        true,
+      );
+      expect(connectionPool.getRoomConnections('room2').has('test-id')).toBe(
+        true,
+      );
     });
   });
 
@@ -156,10 +173,10 @@ describe('AppWebSocketGateway', () => {
         join: jest.fn(),
         leave: jest.fn(),
         emit: jest.fn(),
-      };
+      } as Partial<Socket> as Socket;
 
-      gateway.handleConnection(mockSocket as any);
-      gateway.handleJoinRoom({ room: '' }, mockSocket as any);
+      gateway.handleConnection(mockSocket);
+      gateway.handleJoinRoom({ room: '' }, mockSocket);
 
       expect(connectionPool.getRoomConnections('')).toBeDefined();
     });
@@ -171,12 +188,12 @@ describe('AppWebSocketGateway', () => {
         leave: jest.fn(),
         emit: jest.fn(),
         connected: true,
-      };
+      } as Partial<Socket> as Socket;
 
-      gateway.handleConnection(mockSocket as any);
-      gateway.handleDisconnect(mockSocket as any);
-      await reconnection.handleReconnection(mockSocket as any);
-      gateway.handleConnection(mockSocket as any);
+      gateway.handleConnection(mockSocket);
+      gateway.handleDisconnect(mockSocket);
+      await reconnection.handleReconnection(mockSocket);
+      gateway.handleConnection(mockSocket);
 
       expect(connectionPool.getConnection('test-id')).toBeDefined();
       expect(metrics.getMetrics().activeConnections).toBe(1);
