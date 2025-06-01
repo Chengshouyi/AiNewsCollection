@@ -51,4 +51,4 @@ describe('QueueMonitorService', () => {
       expect(service.getMetrics().messagesProcessed).toBe(1);
     });
   });
-}); 
+});

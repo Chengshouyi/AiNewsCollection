@@ -25,7 +25,7 @@ export class MonitoringService {
       try {
         const metrics = this.metrics.getMetrics();
         const queueMetrics = this.queueMonitor.getMetrics();
-        
+
         this.logger.log('系統指標', 'MonitoringService', {
           ...metrics,
           ...queueMetrics,
@@ -33,9 +33,9 @@ export class MonitoringService {
         });
       } catch (error) {
         this.logger.error(
-          '收集系統指標時發生錯誤', 
-          error instanceof Error ? error : new Error(String(error)), 
-          'MonitoringService'
+          '收集系統指標時發生錯誤',
+          error instanceof Error ? error : new Error(String(error)),
+          'MonitoringService',
         );
       }
     }, this.monitoringInterval);

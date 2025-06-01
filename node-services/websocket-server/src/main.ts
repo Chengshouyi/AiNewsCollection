@@ -1,6 +1,6 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
-import { createServer } from 'http';
+import { Server as HttpServer } from 'http';
 import { Server } from 'socket.io';
 import { AppService } from './app.service';
 import { ConfigService } from '@nestjs/config';
@@ -15,18 +15,18 @@ export async function bootstrap() {
   app.useLogger(appLogger);
 
   const configService = app.get(ConfigService);
-  
+
   // 創建 HTTP 服務器
-  const httpServer = createServer(app.getHttpAdapter().getInstance());
-  
+  const httpServer: HttpServer = app.getHttpServer() as unknown as HttpServer;
+
   // 創建 Socket.IO 服務器
   const io = new Server(httpServer, {
     cors: {
       origin: configService.get<string>('CORS_ORIGIN', '*'),
       methods: ['GET', 'POST'],
-      credentials: true
+      credentials: true,
     },
-    path: '/socket.io'
+    path: '/socket.io',
   });
 
   // 獲取 AppService 實例並設置 Socket.IO 服務器
@@ -39,15 +39,15 @@ export async function bootstrap() {
 
     // 處理加入房間
     socket.on('join_room', (data) => {
-      const { room } = data;
-      socket.join(room);
+      const { room } = data as { room: string };
+      void socket.join(room);
       appLogger.log(`Client ${socket.id} joined room: ${room}`, 'SocketRoom');
     });
 
     // 處理離開房間
     socket.on('leave_room', (data) => {
-      const { room } = data;
-      socket.leave(room);
+      const { room } = data as { room: string };
+      void socket.leave(room);
       appLogger.log(`Client ${socket.id} left room: ${room}`, 'SocketRoom');
     });
 
@@ -57,7 +57,11 @@ export async function bootstrap() {
     });
 
     socket.on('error', (error) => {
-      appLogger.error(`Socket error for client ${socket.id}`, error, 'SocketError');
+      appLogger.error(
+        `Socket error for client ${socket.id}`,
+        error,
+        'SocketError',
+      );
     });
 
     // 新增心跳檢測
@@ -68,6 +72,6 @@ export async function bootstrap() {
 
   // 從配置中讀取端口
   const port = configService.get<number>('PORT') || 15001;
-  await httpServer.listen(port);
+  httpServer.listen(port);
   appLogger.log(`WebSocket Server is running on port: ${port}`, 'Bootstrap');
 }

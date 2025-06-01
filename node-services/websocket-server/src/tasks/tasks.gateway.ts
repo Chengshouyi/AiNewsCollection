@@ -8,7 +8,6 @@ import {
 import { Server, Socket } from 'socket.io';
 import { RedisService } from '../shared/redis/redis.service';
 import { ConfigService } from '@nestjs/config';
-import { Logger } from '@nestjs/common';
 import { OnModuleInit } from '@nestjs/common';
 import { LoggerService } from '@app/logger';
 
@@ -26,7 +25,10 @@ export class TasksGateway implements OnModuleInit {
     private readonly logger: LoggerService,
   ) {
     // 需要從 .env 取得 REDIS_URL
-    const redisUrl = this.configService.get<string>('REDIS_URL', 'redis://localhost:6379');
+    const redisUrl = this.configService.get<string>(
+      'REDIS_URL',
+      'redis://localhost:6379',
+    );
     this.logger.log(`Redis URL: ${redisUrl}`);
   }
 
@@ -62,9 +64,15 @@ export class TasksGateway implements OnModuleInit {
   onModuleInit() {
     // 訂閱 Redis 頻道，收到訊息時廣播給房間
     this.redisService.subscribe('task_events', (message) => {
-      const { room, event, data } = message;
+      const { room, event, data } = message as unknown as {
+        room: string;
+        event: string;
+        data: any;
+      };
       this.server.to(room).emit(event, data);
-      this.logger.debug(`已從 Redis 收到事件並廣播到房間: ${room}, 事件: ${event}`);
+      this.logger.debug(
+        `已從 Redis 收到事件並廣播到房間: ${room}, 事件: ${event}`,
+      );
     });
   }
 }

@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import { LoggerService } from '@app/logger';
@@ -9,18 +9,32 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
   private client: Redis;
   private subscriber: Redis;
 
-  constructor(private readonly configService: ConfigService, private readonly logger: LoggerService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    private readonly logger: LoggerService,
+  ) {}
 
-  async onModuleInit() {
-    const redisUrl = this.configService.get<string>('REDIS_URL', 'redis://localhost:6379');
+  onModuleInit() {
+    const redisUrl = this.configService.get<string>(
+      'REDIS_URL',
+      'redis://localhost:6379',
+    );
     this.logger.log(`Connecting to Redis at ${redisUrl}`, RedisService.name);
     this.client = new Redis(redisUrl);
     this.subscriber = new Redis(redisUrl);
 
-    this.client.on('connect', () => this.logger.log('Redis client connected', RedisService.name));
-    this.client.on('error', (err) => this.logger.error('Redis client error', err, RedisService.name));
-    this.subscriber.on('connect', () => this.logger.log('Redis subscriber connected', RedisService.name));
-    this.subscriber.on('error', (err) => this.logger.error('Redis subscriber error', err, RedisService.name));
+    this.client.on('connect', () =>
+      this.logger.log('Redis client connected', RedisService.name),
+    );
+    this.client.on('error', (err) =>
+      this.logger.error('Redis client error', err, RedisService.name),
+    );
+    this.subscriber.on('connect', () =>
+      this.logger.log('Redis subscriber connected', RedisService.name),
+    );
+    this.subscriber.on('error', (err) =>
+      this.logger.error('Redis subscriber error', err, RedisService.name),
+    );
   }
 
   async onModuleDestroy() {
@@ -42,7 +56,7 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   // 訂閱訊息
   subscribe(channel: string, handler: (message: any) => void) {
-    this.subscriber.subscribe(channel, (err, count) => {
+    void this.subscriber.subscribe(channel, (err: Error) => {
       if (err) {
         this.logger.error(`Redis 訂閱失敗: ${err}`, RedisService.name);
       } else {

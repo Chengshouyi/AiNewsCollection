@@ -2,6 +2,12 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ReconnectionService } from './reconnection.service';
 import { Socket } from 'socket.io';
 
+// 測試專用類型定義，用於訪問私有成員
+interface ReconnectionServiceTestAccess {
+  reconnectAttempts: Map<string, number>;
+  delayReconnection: (socket: Socket, attempt: number) => Promise<void>;
+}
+
 describe('ReconnectionService', () => {
   let service: ReconnectionService;
 
@@ -23,9 +29,13 @@ describe('ReconnectionService', () => {
         id: 'socket-1',
         connected: false,
       };
-      const delaySpy = jest.spyOn<any, any>(service as any, 'delayReconnection').mockResolvedValue(undefined);
+      const serviceWithAccess = service as ReconnectionService &
+        ReconnectionServiceTestAccess;
+      const delaySpy = jest
+        .spyOn(serviceWithAccess, 'delayReconnection' as any)
+        .mockResolvedValue(undefined as never);
       await service.handleReconnection(mockSocket as Socket);
-      expect((service as any).reconnectAttempts.get('socket-1')).toBe(1);
+      expect(serviceWithAccess.reconnectAttempts.get('socket-1')).toBe(1);
       expect(delaySpy).toHaveBeenCalledWith(mockSocket, 0);
       delaySpy.mockRestore();
     });
@@ -35,11 +45,16 @@ describe('ReconnectionService', () => {
         id: 'socket-2',
         connected: false,
       };
-      (service as any).reconnectAttempts.set('socket-2', 5);
-      const delaySpy = jest.spyOn<any, any>(service as any, 'delayReconnection');
+      const serviceWithAccess = service as ReconnectionService &
+        ReconnectionServiceTestAccess;
+      serviceWithAccess.reconnectAttempts.set('socket-2', 5);
+      const delaySpy = jest.spyOn(
+        serviceWithAccess,
+        'delayReconnection' as any,
+      );
       await service.handleReconnection(mockSocket as Socket);
       expect(delaySpy).not.toHaveBeenCalled();
-      expect((service as any).reconnectAttempts.get('socket-2')).toBe(5);
+      expect(serviceWithAccess.reconnectAttempts.get('socket-2')).toBe(5);
       delaySpy.mockRestore();
     });
   });
@@ -57,8 +72,10 @@ describe('ReconnectionService', () => {
         id: 'socket-3',
         connected: false,
       };
-      const promise = (service as any).delayReconnection(mockSocket as Socket, 2);
-      jest.advanceTimersByTime(1000 * 3); // 3秒
+      const serviceWithAccess = service as ReconnectionService &
+        ReconnectionServiceTestAccess;
+      const promise = serviceWithAccess.delayReconnection(mockSocket as Socket, 2);
+      jest.advanceTimersByTime(1000 * 3);
       await promise;
     });
 
@@ -67,11 +84,13 @@ describe('ReconnectionService', () => {
         id: 'socket-4',
         connected: true,
       };
-      (service as any).reconnectAttempts.set('socket-4', 2);
-      const promise = (service as any).delayReconnection(mockSocket as Socket, 2);
+      const serviceWithAccess = service as ReconnectionService &
+        ReconnectionServiceTestAccess;
+      serviceWithAccess.reconnectAttempts.set('socket-4', 2);
+      const promise = serviceWithAccess.delayReconnection(mockSocket as Socket, 2);
       jest.runAllTimers();
       await promise;
-      expect((service as any).reconnectAttempts.has('socket-4')).toBe(false);
+      expect(serviceWithAccess.reconnectAttempts.has('socket-4')).toBe(false);
     });
 
     it('當 socket 未連線時不應該移除重連次數紀錄', async () => {
@@ -79,11 +98,13 @@ describe('ReconnectionService', () => {
         id: 'socket-5',
         connected: false,
       };
-      (service as any).reconnectAttempts.set('socket-5', 2);
-      const promise = (service as any).delayReconnection(mockSocket as Socket, 2);
+      const serviceWithAccess = service as ReconnectionService &
+        ReconnectionServiceTestAccess;
+      serviceWithAccess.reconnectAttempts.set('socket-5', 2);
+      const promise = serviceWithAccess.delayReconnection(mockSocket as Socket, 2);
       jest.runAllTimers();
       await promise;
-      expect((service as any).reconnectAttempts.has('socket-5')).toBe(true);
+      expect(serviceWithAccess.reconnectAttempts.has('socket-5')).toBe(true);
     });
   });
-}); 
+});

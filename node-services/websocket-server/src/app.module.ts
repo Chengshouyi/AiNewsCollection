@@ -60,6 +60,6 @@ import { AppWebSocketGateway } from './gateway/websocket.gateway';
     QueueMonitorService,
     MetricsService,
     MonitoringService,
-  ]
+  ],
 })
 export class AppModule {}

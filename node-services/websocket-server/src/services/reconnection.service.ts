@@ -16,7 +16,9 @@ export class ReconnectionService {
   }
 
   private async delayReconnection(socket: Socket, attempts: number) {
-    await new Promise(resolve => setTimeout(resolve, this.delay * (attempts + 1)));
+    await new Promise((resolve) =>
+      setTimeout(resolve, this.delay * (attempts + 1)),
+    );
     if (socket.connected) {
       this.reconnectAttempts.delete(socket.id);
     }

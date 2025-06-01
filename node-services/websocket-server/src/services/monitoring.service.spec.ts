@@ -8,8 +8,14 @@ describe('MonitoringService', () => {
   let service: MonitoringService;
   let metricsService: { getMetrics: jest.Mock };
   let queueMonitorService: { getMetrics: jest.Mock };
-  let loggerService: { log: jest.Mock; error: jest.Mock; warn: jest.Mock; debug: jest.Mock; verbose: jest.Mock; };
-  
+  let loggerService: {
+    log: jest.Mock;
+    error: jest.Mock;
+    warn: jest.Mock;
+    debug: jest.Mock;
+    verbose: jest.Mock;
+  };
+
   // originalSetInterval and originalClearInterval are kept due to existing beforeAll/afterAll
   // but their direct manipulation is generally superseded by Jest's timer and spy management.
   let originalSetInterval: typeof setInterval;
@@ -90,10 +96,10 @@ describe('MonitoringService', () => {
     // Stop monitoring to clear any intervals set by the service itself.
     // This will use the spied clearInterval.
     service.stopMonitoring();
-    
+
     // Clear all mocks (including spies on setInterval/clearInterval)
     jest.clearAllMocks();
-    
+
     // Restore real timers
     jest.useRealTimers();
   });
@@ -118,12 +124,18 @@ describe('MonitoringService', () => {
     it('應該在建構時啟動監控', () => {
       // global.setInterval is now a Jest spy
       expect(global.setInterval).toHaveBeenCalled();
-      expect(global.setInterval).toHaveBeenCalledWith(expect.any(Function), 60000);
+      expect(global.setInterval).toHaveBeenCalledWith(
+        expect.any(Function),
+        60000,
+      );
     });
 
     it('應該設置正確的監控時間間隔', () => {
       // global.setInterval is now a Jest spy
-      expect(global.setInterval).toHaveBeenCalledWith(expect.any(Function), service.getMonitoringInterval());
+      expect(global.setInterval).toHaveBeenCalledWith(
+        expect.any(Function),
+        service.getMonitoringInterval(),
+      );
     });
   });
 
@@ -131,13 +143,13 @@ describe('MonitoringService', () => {
     it('應該能夠正確停止監控', () => {
       // stopMonitoring calls clearInterval internally
       service.stopMonitoring();
-      
+
       // global.clearInterval is now a Jest spy
       expect(global.clearInterval).toHaveBeenCalled();
-      
+
       // Advance timers to see if the callback would have been called
       jest.advanceTimersByTime(service.getMonitoringInterval());
-      
+
       expect(metricsService.getMetrics).not.toHaveBeenCalled();
       expect(queueMonitorService.getMetrics).not.toHaveBeenCalled();
       expect(loggerService.log).not.toHaveBeenCalled();
@@ -156,7 +168,7 @@ describe('MonitoringService', () => {
         expect.objectContaining({
           ...mockMetrics,
           ...mockQueueMetrics,
-          timestamp: expect.any(Date),
+          timestamp: expect.any(Date) as Date,
         }),
       );
     });
@@ -171,7 +183,7 @@ describe('MonitoringService', () => {
 
     it('應該在指標變化時仍然正確記錄', () => {
       jest.advanceTimersByTime(service.getMonitoringInterval()); // First call
-      
+
       const newMetrics = {
         activeConnections: 10,
         messagesPerSecond: 20,
@@ -183,12 +195,12 @@ describe('MonitoringService', () => {
         messagesFailed: 4,
         averageProcessingTime: 35,
       };
-      
+
       metricsService.getMetrics.mockReturnValue(newMetrics);
       queueMonitorService.getMetrics.mockReturnValue(newQueueMetrics);
-      
+
       jest.advanceTimersByTime(service.getMonitoringInterval()); // Second call
-      
+
       expect(loggerService.log).toHaveBeenNthCalledWith(
         2, // Second call to logger.log
         '系統指標',
@@ -196,7 +208,7 @@ describe('MonitoringService', () => {
         expect.objectContaining({
           ...newMetrics,
           ...newQueueMetrics,
-          timestamp: expect.any(Date),
+          timestamp: expect.any(Date) as Date,
         }),
       );
     });
@@ -205,8 +217,11 @@ describe('MonitoringService', () => {
   describe('數據整合', () => {
     it('應該正確合併指標數據', () => {
       jest.advanceTimersByTime(service.getMonitoringInterval());
-      const loggedData = loggerService.log.mock.calls[0][2];
-      
+      const loggedData = loggerService.log.mock.calls[0][2] as Record<
+        string,
+        unknown
+      >;
+
       expect(loggedData).toMatchObject({
         activeConnections: mockMetrics.activeConnections,
         messagesPerSecond: mockMetrics.messagesPerSecond,
@@ -221,12 +236,14 @@ describe('MonitoringService', () => {
     it('應該包含正確的時間戳', () => {
       const beforeTime = new Date().getTime();
       jest.advanceTimersByTime(service.getMonitoringInterval());
-      const afterTime = new Date().getTime();
 
-      const loggedData = loggerService.log.mock.calls[0][2];
+      const loggedData = loggerService.log.mock.calls[0][2] as Record<
+        string,
+        unknown
+      >;
       expect(loggedData.timestamp).toBeInstanceOf(Date);
-      
-      const loggedTimestamp = loggedData.timestamp.getTime();
+
+      const loggedTimestamp = (loggedData.timestamp as Date).getTime();
       // Check if the logged timestamp is within a reasonable range of when the timer fired
       // Allow for a small delta due to test execution, and fake timer precision.
       // This test is slightly more robust than comparing to `new Date()` directly after advancing time.
@@ -239,17 +256,17 @@ describe('MonitoringService', () => {
       // For fake timers, `new Date()` inside a callback fired by `advanceTimersByTime`
       // should reflect the "advanced" time.
       const dateNowInFakeTimer = new Date(Date.now()); // Date.now() should be mocked by fake timers
-      expect(Math.abs(dateNowInFakeTimer.getTime() - loggedTimestamp)).toBeLessThan(1000);
-
-
+      expect(
+        Math.abs(dateNowInFakeTimer.getTime() - loggedTimestamp),
+      ).toBeLessThan(1000);
     });
-    
+
     it('應該使用正確的日誌類別', () => {
       jest.advanceTimersByTime(service.getMonitoringInterval());
       expect(loggerService.log).toHaveBeenCalledWith(
         '系統指標',
         'MonitoringService',
-        expect.any(Object)
+        expect.any(Object),
       );
     });
   });
@@ -260,13 +277,13 @@ describe('MonitoringService', () => {
       metricsService.getMetrics.mockImplementation(() => {
         throw testError;
       });
-      
+
       jest.advanceTimersByTime(service.getMonitoringInterval());
-      
+
       expect(loggerService.error).toHaveBeenCalledWith(
         '收集系統指標時發生錯誤',
         testError,
-        'MonitoringService'
+        'MonitoringService',
       );
       expect(loggerService.log).not.toHaveBeenCalled();
     });
@@ -276,13 +293,13 @@ describe('MonitoringService', () => {
       queueMonitorService.getMetrics.mockImplementation(() => {
         throw testError;
       });
-      
+
       jest.advanceTimersByTime(service.getMonitoringInterval());
-      
+
       expect(loggerService.error).toHaveBeenCalledWith(
         '收集系統指標時發生錯誤',
         testError,
-        'MonitoringService'
+        'MonitoringService',
       );
       expect(loggerService.log).not.toHaveBeenCalled();
     });
@@ -292,18 +309,18 @@ describe('MonitoringService', () => {
       metricsService.getMetrics.mockImplementation(() => {
         throw nonErrorObject;
       });
-      
+
       jest.advanceTimersByTime(service.getMonitoringInterval());
-      
+
       expect(loggerService.error).toHaveBeenCalledWith(
         '收集系統指標時發生錯誤',
         expect.any(Error), // The service wraps non-Errors
-        'MonitoringService'
+        'MonitoringService',
       );
-      
+
       const errorCaughtByLogger = loggerService.error.mock.calls[0][1] as Error;
       expect(errorCaughtByLogger.message).toBe(String(nonErrorObject));
       expect(loggerService.log).not.toHaveBeenCalled();
     });
   });
-}); 
+});

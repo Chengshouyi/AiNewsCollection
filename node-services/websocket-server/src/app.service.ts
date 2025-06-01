@@ -1,7 +1,11 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { v4 as uuidv4 } from 'uuid';
-import { BaseMessage, ChatMessage, TaskMessage, SystemMessage, AckMessage } from './interfaces/message.interface';
+import {
+  BaseMessage,
+  SystemMessage,
+  AckMessage,
+} from './interfaces/message.interface';
 import { LoggerService } from '@app/logger';
 
 interface MessagePayload {
@@ -53,7 +57,10 @@ export class AppService {
     });
 
     socket.on('disconnect', (reason) => {
-      this.logger.log(`Client ${clientId} disconnected: ${reason}`, AppService.name);
+      this.logger.log(
+        `Client ${clientId} disconnected: ${reason}`,
+        AppService.name,
+      );
       if (reason === 'transport close') {
         this.handleReconnection(socket);
       }
@@ -68,12 +75,12 @@ export class AppService {
   private handleClientError(socket: Socket, error: Error) {
     const clientId = socket.id;
     this.logger.error(`Error for client ${clientId}:`, error, AppService.name);
-    
+
     // 發送錯誤訊息給客戶端
     this.sendSystemMessage(socket, {
       level: 'error',
       code: 'CLIENT_ERROR',
-      message: '發生錯誤，請稍後重試'
+      message: '發生錯誤，請稍後重試',
     });
   }
 
@@ -84,43 +91,64 @@ export class AppService {
     if (attempts < this.maxReconnectAttempts) {
       const nextAttempt = attempts + 1;
       this.reconnectAttempts.set(clientId, nextAttempt);
-      this.logger.log(`Scheduling reconnection attempt ${nextAttempt} for client ${clientId} in ${this.reconnectDelay * nextAttempt}ms`, AppService.name);
+      this.logger.log(
+        `Scheduling reconnection attempt ${nextAttempt} for client ${clientId} in ${this.reconnectDelay * nextAttempt}ms`,
+        AppService.name,
+      );
 
       setTimeout(() => {
         const currentAttempts = this.reconnectAttempts.get(clientId);
         if (currentAttempts !== nextAttempt) {
-            this.logger.log(`Reconnection attempt ${nextAttempt} for ${clientId} aborted or superseded.`, AppService.name);
-            return;
+          this.logger.log(
+            `Reconnection attempt ${nextAttempt} for ${clientId} aborted or superseded.`,
+            AppService.name,
+          );
+          return;
         }
 
         if (socket.connected) {
-          this.logger.log(`Client ${clientId} reconnected successfully on attempt ${nextAttempt}`, AppService.name);
+          this.logger.log(
+            `Client ${clientId} reconnected successfully on attempt ${nextAttempt}`,
+            AppService.name,
+          );
           this.reconnectAttempts.delete(clientId);
         } else {
-            this.logger.log(`Client ${clientId} still not connected after attempt ${nextAttempt}.`, AppService.name);
-            if (nextAttempt < this.maxReconnectAttempts) {
-                 this.handleReconnection(socket);
-            } else {
-                 this.logger.warn(`Client ${clientId} exceeded max reconnection attempts after timeout check.`, AppService.name);
-                 this.reconnectAttempts.delete(clientId);
-            }
+          this.logger.log(
+            `Client ${clientId} still not connected after attempt ${nextAttempt}.`,
+            AppService.name,
+          );
+          if (nextAttempt < this.maxReconnectAttempts) {
+            this.handleReconnection(socket);
+          } else {
+            this.logger.warn(
+              `Client ${clientId} exceeded max reconnection attempts after timeout check.`,
+              AppService.name,
+            );
+            this.reconnectAttempts.delete(clientId);
+          }
         }
       }, this.reconnectDelay * nextAttempt);
     } else {
-      this.logger.warn(`Client ${clientId} already exceeded max reconnection attempts before scheduling attempt ${attempts + 1}`, AppService.name);
+      this.logger.warn(
+        `Client ${clientId} already exceeded max reconnection attempts before scheduling attempt ${attempts + 1}`,
+        AppService.name,
+      );
       this.reconnectAttempts.delete(clientId);
     }
   }
 
-  private sendSystemMessage(socket: Socket, data: Omit<SystemMessage, keyof BaseMessage>) {
+  private sendSystemMessage(
+    socket: Socket,
+    data: Omit<SystemMessage, keyof BaseMessage>,
+  ) {
     const message: SystemMessage = {
       id: uuidv4(),
       type: 'system',
       timestamp: new Date(),
       sender: 'system',
-      ...data
+      ...data,
     };
-    this.logger.log(`sendSystemMessage: ${message}`, AppService.name);
+    this.logger.log(`sendSystemMessage: ${message.message}`, AppService.name);
     socket.emit('system_message', message);
   }
 
@@ -146,9 +174,17 @@ export class AppService {
   }
 
   // 廣播給房間內除了發送者外的所有人
-  emitToRoomExcludingSender(room: string, event: string, data: any, senderId: string) {
+  emitToRoomExcludingSender(
+    room: string,
+    event: string,
+    data: any,
+    senderId: string,
+  ) {
     if (this.io) {
-      this.logger.log(`emitToRoomExcludingSender: ${room} ${event} ${data} ${senderId}`, AppService.name);
+      this.logger.log(
+        `emitToRoomExcludingSender: ${room} ${event} ${data} ${senderId}`,
+        AppService.name,
+      );
       this.io.to(room).except(senderId).emit(event, data);
     }
   }
@@ -156,7 +192,10 @@ export class AppService {
   // 廣播給房間內所有人（包括發送者）
   emitToRoomIncludingSender(room: string, event: string, data: any) {
     if (this.io) {
-      this.logger.log(`emitToRoomIncludingSender: ${room} ${event} ${data}`, AppService.name);
+      this.logger.log(
+        `emitToRoomIncludingSender: ${room} ${event} ${data}`,
+        AppService.name,
+      );
       this.io.to(room).emit(event, data);
     }
   }
@@ -171,39 +210,63 @@ export class AppService {
       user: senderId,
       room,
       message,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
-    this.logger.log(`sendMessageToRoom: ${room} ${message} ${senderId}`, AppService.name);
+    this.logger.log(
+      `sendMessageToRoom: ${room} ${message} ${senderId}`,
+      AppService.name,
+    );
     this.emitToRoom(room, 'new_message', payload);
   }
 
-  updateTaskProgress(taskId: number, status: string, progress: number, message: string): void {
+  updateTaskProgress(
+    taskId: number,
+    status: string,
+    progress: number,
+    message: string,
+  ): void {
     const payload: TaskProgressPayload = {
       task_id: taskId,
       status,
       progress,
       message,
-      timestamp: new Date()
+      timestamp: new Date(),
     };
-    this.logger.log(`updateTaskProgress: ${taskId} ${status} ${progress} ${message}`, AppService.name);
+    this.logger.log(
+      `updateTaskProgress: ${taskId} ${status} ${progress} ${message}`,
+      AppService.name,
+    );
     this.emitToRoom(`task_${taskId}`, 'task_progress', payload);
   }
 
   // 發送訊息並等待確認
-  async sendMessageWithAck(room: string, message: BaseMessage, timeout: number = 5000): Promise<boolean> {
+  async sendMessageWithAck(
+    room: string,
+    message: BaseMessage,
+    timeout: number = 5000,
+  ): Promise<boolean> {
     return new Promise((resolve) => {
       const timer = setTimeout(() => {
-        this.logger.warn(`Message ${message.id} ACK timeout`, AppService.name);
+        this.logger.warn(
+          `Message ${message as unknown as string} ACK timeout`,
+          AppService.name,
+        );
         resolve(false);
       }, timeout);
 
       this.io.to(room).emit('message', message, (ack: AckMessage) => {
         clearTimeout(timer);
         if (ack.status === 'received') {
-          this.logger.log(`Message ${message.id} acknowledged`, AppService.name);
+          this.logger.log(
+            `Message ${message as unknown as string} acknowledged`,
+            AppService.name,
+          );
           resolve(true);
         } else {
-          this.logger.error(`Message ${message.id} failed: ${ack.error}`, AppService.name);
+          this.logger.error(
+            `Message ${message as unknown as string} failed: ${ack.error}`,
+            AppService.name,
+          );
           resolve(false);
         }
       });
@@ -211,24 +274,42 @@ export class AppService {
   }
 
   // 處理訊息確認
-  private handleMessageAck(socket: Socket, messageId: string, status: 'received' | 'processed' | 'failed', error?: string) {
+  private handleMessageAck(
+    socket: Socket,
+    messageId: string,
+    status: 'received' | 'processed' | 'failed',
+    error?: string,
+  ) {
     const ack: AckMessage = {
       messageId,
       status,
       timestamp: new Date(),
-      error
+      error,
     };
-    this.logger.log(`handleMessageAck: ${messageId} ${status} ${error}`, AppService.name);
+    this.logger.log(
+      `handleMessageAck: ${messageId} ${status} ${error}`,
+      AppService.name,
+    );
     socket.emit('message_ack', ack);
   }
 
   // 廣播訊息（可選擇是否包含發送者）
-  async broadcastMessage(room: string, message: BaseMessage, includeSender: boolean = false) {
+  broadcastMessage(
+    room: string,
+    message: BaseMessage,
+    includeSender: boolean = false,
+  ) {
     if (includeSender) {
-      this.logger.log(`broadcastMessage: ${room} ${message} ${includeSender}`, AppService.name);
+      this.logger.log(
+        `broadcastMessage: ${room} ${message as unknown as string} ${includeSender}`,
+        AppService.name,
+      );
       this.emitToRoomIncludingSender(room, 'message', message);
     } else {
-      this.logger.log(`broadcastMessage: ${room} ${message} ${includeSender}`, AppService.name);
+      this.logger.log(
+        `broadcastMessage: ${room} ${message as unknown as string} ${includeSender}`,
+        AppService.name,
+      );
       this.emitToRoomExcludingSender(room, 'message', message, message.sender);
     }
   }
