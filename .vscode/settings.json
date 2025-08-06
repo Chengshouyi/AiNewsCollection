@@ -11,5 +11,11 @@
     "debug.internalConsoleOptions": "neverOpen",
     "debug.console.fontSize": 14,
     "sqltools.useNodeRuntime": true,
-    "remote.autoForwardPortsFallback": 0
+    "remote.autoForwardPortsFallback": 0,
+    "python.languageServer": "None",
+    "cursorpyright.analysis.autoImportCompletions": true,
+    "cursorpyright.analysis.extraPaths": [
+        "${workspaceFolder}"
+    ],
+    "cursorpyright.analysis.typeCheckingMode": "basic"
 }

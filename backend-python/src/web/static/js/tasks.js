@@ -125,8 +125,13 @@ function setupWebSocket() {
         return;
     }
 
-    // 連接到 api-gateway 的 WebSocket 服務
-    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+    // // 連接到 api-gateway 的 WebSocket 服務
+    // const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 
+    // 'ws:'}//${window.location.host}/ws`;
+
+    // 連接到 Socket.IO 服務
+    const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
+
     console.log(`嘗試連接到WebSocket: ${wsUrl}`);
     socket = io(wsUrl);
 
